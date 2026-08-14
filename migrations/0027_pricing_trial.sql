@@ -68,12 +68,3 @@ CREATE TABLE IF NOT EXISTS tenant_trials (
   FOREIGN KEY(setup_option_id) REFERENCES managed_setup_options(id)
 );
 CREATE INDEX IF NOT EXISTS idx_tenant_trials_status_time ON tenant_trials(status,trial_ends_at,read_only_ends_at);
-
-ALTER TABLE tenant_entitlements ADD COLUMN billing_cycle TEXT NOT NULL DEFAULT 'monthly';
-ALTER TABLE tenant_entitlements ADD COLUMN annual_total_cents INTEGER;
-ALTER TABLE commercial_quotes ADD COLUMN billing_cycle TEXT NOT NULL DEFAULT 'monthly';
-ALTER TABLE commercial_quotes ADD COLUMN managed_setup_option_id TEXT;
-ALTER TABLE commercial_quotes ADD COLUMN annual_total_cents INTEGER;
-ALTER TABLE commercial_orders ADD COLUMN billing_cycle TEXT NOT NULL DEFAULT 'monthly';
-ALTER TABLE commercial_orders ADD COLUMN managed_setup_option_id TEXT;
-ALTER TABLE commercial_orders ADD COLUMN annual_total_cents INTEGER;
