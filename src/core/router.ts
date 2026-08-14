@@ -69,7 +69,11 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
 
     if(u.pathname==='/api/billing/summary'&&request.method==='GET')return json({ok:true,...await billingSummary(env,a,tenantId)});
     if(u.pathname==='/api/billing/change-quote'&&request.method==='POST')return json({ok:true,quote:await quoteExpansion(env,a,tenantId,await body(request))});
-    if(u.pathname==='/api/billing/expand'&&request.method==='POST')return json({ok:true,...await requestExpansion(env,a,tenantId,await body(request))},201);
+    if(u.pathname==='/api/billing/expand'&&request.method==='POST'){
+      const b=await body(request);
+      if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');
+      return json({ok:true,...await requestExpansion(env,a,tenantId,b)},201);
+    }
     if(u.pathname==='/api/tenant/logo'&&request.method==='POST')return json({ok:true,...await uploadTenantLogo(env,a,tenantId,request)});
     if(u.pathname==='/api/timetable/preview'&&request.method==='POST')return json({ok:true,...await previewTimetable(env,a,tenantId,request)});
     if(u.pathname==='/api/timetable/apply'&&request.method==='POST')return json({ok:true,...await applyTimetable(env,a,tenantId,request)});
