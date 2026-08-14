@@ -72,7 +72,7 @@ export async function createInitialCommerceBooking(env:Env,args:{tenantId:string
     env.DB.prepare(`INSERT INTO commercial_quotes(id,quote_number,onboarding_invitation_id,tenant_id,plan_id,requested_courses,currency,recurring_monthly_cents,setup_cents,first_total_cents,status,valid_until,pricing_snapshot_json,accepted_at,accepted_ip,accepted_user_agent,created_at,updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,'accepted',?,?,?,?,?,?,?)`).bind(qid,docNumber('ANG'),args.invitationId,args.tenantId,args.planId,args.courseCount,price.currency,price.recurringMonthlyCents,price.setupCents,price.firstTotalCents,valid,snapshot,ts,ip,ua,ts,ts),
     env.DB.prepare(`INSERT INTO commercial_orders(id,order_number,tenant_id,quote_id,plan_id,course_limit,status,currency,recurring_monthly_cents,setup_cents,booked_at)
-      VALUES(?,?,?,?,?,?,'pending_payment',?,?,?,?,?)`).bind(oid,docNumber('AUF'),args.tenantId,qid,args.planId,args.courseCount,price.currency,price.recurringMonthlyCents,price.setupCents,ts),
+      VALUES(?,?,?,?,?,?,'pending_payment',?,?,?,?)`).bind(oid,docNumber('AUF'),args.tenantId,qid,args.planId,args.courseCount,price.currency,price.recurringMonthlyCents,price.setupCents,ts),
     env.DB.prepare(`INSERT INTO commercial_invoices(id,invoice_number,tenant_id,order_id,type,status,currency,net_cents,tax_cents,gross_cents,snapshot_json,created_at)
       VALUES(?,?,?,?,'initial','pending_provider',?,?,0,?,?,?)`).bind(iid,docNumber('ENTW'),args.tenantId,oid,price.currency,price.firstTotalCents,price.firstTotalCents,snapshot,ts),
   ]);
