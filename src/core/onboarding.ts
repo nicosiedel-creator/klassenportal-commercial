@@ -1,0 +1,100 @@
+import type { CoreAuthContext, Env } from './types.js';
+import { requirePlatform } from './permissions.js';
+import { audit } from './audit.js';
+import { b64, id, normalizeEmail, nowIso, randomBytes, safeString, sha256Text, slugify } from './utils.js';
+import { provisionTenantFromOnboarding } from './provision.js';
+
+type InvitationRow={
+  id:string;token_hash:string;customer_email:string;plan_id:string;status:string;expires_at:string;
+  created_by:string;created_at:string;processing_nonce:string|null;completed_at:string|null;tenant_id:string|null;form_json:string|null;
+};
+
+type OnboardingInput={
+  legal_name?:unknown;portal_name?:unknown;contact_name?:unknown;contact_email?:unknown;phone?:unknown;website?:unknown;
+  street?:unknown;postal_code?:unknown;city?:unknown;country?:unknown;billing_email?:unknown;
+  admin_name?:unknown;admin_email?:unknown;admin_password?:unknown;admin_password_confirm?:unknown;
+  first_course_name?:unknown;first_course_code?:unknown;access_mode?:unknown;
+};
+
+function validEmail(value:string):boolean{return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);}
+function publicInvitation(row:InvitationRow){return{customer_email:row.customer_email,plan_id:row.plan_id,status:row.status,expires_at:row.expires_at};}
+function safeJson(value:unknown):Record<string,unknown>{return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};}
+
+export async function createOnboardingInvitation(env:Env,auth:CoreAuthContext,request:Request):Promise<Record<string,unknown>>{
+  requirePlatform(auth);
+  const body=safeJson(await request.json().catch(()=>({})));
+  const email=normalizeEmail(body.customer_email);if(!validEmail(email))throw new Error('CUSTOMER_EMAIL_INVALID');
+  const planId=safeString(body.plan_id||'provider',80);const plan=await env.DB.prepare('SELECT id,name FROM plans WHERE id=? AND is_active=1').bind(planId).first<{id:string;name:string}>();if(!plan)throw new Error('PLAN_NOT_FOUND');
+  let days=Number(body.valid_days??14);if(!Number.isFinite(days))days=14;days=Math.max(1,Math.min(60,Math.round(days)));
+  const raw=b64(randomBytes(32)).replace(/[+/=]/g,'').slice(0,43),hash=await sha256Text(raw),invitationId=id('obi_'),created=nowIso();
+  const expires=new Date(Date.now()+days*86400000).toISOString();
+  await env.DB.prepare("INSERT INTO onboarding_invitations(id,token_hash,customer_email,plan_id,status,expires_at,created_by,created_at) VALUES(?,?,?,?,'open',?,?,?)")
+    .bind(invitationId,hash,email,planId,expires,auth.userId,created).run();
+  await audit(env.DB,auth.userId,'onboarding.invitation.created',undefined,undefined,'onboarding_invitation',invitationId,{customerEmail:email,planId,expiresAt:expires});
+  const origin=env.APP_ORIGIN||new URL(request.url).origin;
+  return{id:invitationId,customer_email:email,plan_id:planId,plan_name:plan.name,expires_at:expires,url:`${origin}/einrichtung/${encodeURIComponent(raw)}`};
+}
+
+export async function listOnboardingInvitations(env:Env,auth:CoreAuthContext):Promise<Record<string,unknown>[]> {
+  requirePlatform(auth);
+  await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at<=?").bind(nowIso()).run();
+  const rows=await env.DB.prepare(`SELECT i.id,i.customer_email,i.plan_id,p.name AS plan_name,i.status,i.expires_at,i.created_at,i.completed_at,i.tenant_id,t.name AS tenant_name
+    FROM onboarding_invitations i LEFT JOIN plans p ON p.id=i.plan_id LEFT JOIN tenants t ON t.id=i.tenant_id ORDER BY i.created_at DESC LIMIT 200`).all();
+  return rows.results??[];
+}
+
+export async function revokeOnboardingInvitation(env:Env,auth:CoreAuthContext,invitationId:string):Promise<void>{
+  requirePlatform(auth);
+  const row=await env.DB.prepare("SELECT id,status FROM onboarding_invitations WHERE id=?").bind(invitationId).first<{id:string;status:string}>();if(!row)throw new Error('ONBOARDING_NOT_FOUND');
+  if(row.status==='completed')throw new Error('ONBOARDING_ALREADY_COMPLETED');
+  await env.DB.prepare("UPDATE onboarding_invitations SET status='revoked',processing_nonce=NULL WHERE id=? AND status IN ('open','processing')").bind(invitationId).run();
+  await audit(env.DB,auth.userId,'onboarding.invitation.revoked',undefined,undefined,'onboarding_invitation',invitationId);
+}
+
+async function invitationByToken(env:Env,token:string):Promise<InvitationRow|null>{
+  if(token.length<20||token.length>100)return null;const hash=await sha256Text(token);return env.DB.prepare('SELECT * FROM onboarding_invitations WHERE token_hash=?').bind(hash).first<InvitationRow>();
+}
+
+export async function getPublicOnboarding(env:Env,token:string):Promise<Record<string,unknown>>{
+  const row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
+  if(row.status==='open'&&row.expires_at<=nowIso()){await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE id=? AND status='open'").bind(row.id).run();row.status='expired';}
+  return publicInvitation(row);
+}
+
+export async function submitPublicOnboarding(env:Env,token:string,request:Request):Promise<Record<string,unknown>>{
+  const before=await invitationByToken(env,token);if(!before)throw new Error('ONBOARDING_NOT_FOUND');
+  if(before.status==='completed')return{ok:true,already_completed:true,tenant_id:before.tenant_id};
+  if(before.status!=='open')throw new Error(before.status==='expired'?'ONBOARDING_EXPIRED':'ONBOARDING_UNAVAILABLE');
+  if(before.expires_at<=nowIso()){await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE id=? AND status='open'").bind(before.id).run();throw new Error('ONBOARDING_EXPIRED');}
+  const raw=safeJson(await request.json().catch(()=>({}))) as OnboardingInput;
+  const legalName=safeString(raw.legal_name,200),portalName=safeString(raw.portal_name||legalName,200),contactName=safeString(raw.contact_name,200),contactEmail=normalizeEmail(raw.contact_email||before.customer_email);
+  const adminName=safeString(raw.admin_name||contactName,200),adminEmail=normalizeEmail(raw.admin_email||contactEmail),password=safeString(raw.admin_password,256),confirm=safeString(raw.admin_password_confirm,256);
+  const street=safeString(raw.street,250),postal=safeString(raw.postal_code,30),city=safeString(raw.city,120),country=safeString(raw.country||'Deutschland',120);
+  if(!legalName||!contactName||!validEmail(contactEmail)||!adminName||!validEmail(adminEmail)||!street||!postal||!city)throw new Error('ONBOARDING_REQUIRED_FIELDS');
+  if(password.length<10||password.length>256)throw new Error('PASSWORD_LENGTH');if(password!==confirm)throw new Error('PASSWORD_CONFIRMATION_MISMATCH');
+  const firstCourse=safeString(raw.first_course_name,200),firstCourseCode=safeString(raw.first_course_code,80),accessMode=['public','link_code','login','hybrid'].includes(String(raw.access_mode||''))?String(raw.access_mode):'login';
+  if(accessMode==='link_code'||accessMode==='hybrid')throw new Error('ONBOARDING_ACCESS_MODE_REQUIRES_LATER_CODE');
+  const nonce=id('claim_');const hash=await sha256Text(token);
+  await env.DB.prepare("UPDATE onboarding_invitations SET status='processing',processing_nonce=? WHERE token_hash=? AND status='open' AND expires_at>?").bind(nonce,hash,nowIso()).run();
+  const claimed=await env.DB.prepare('SELECT * FROM onboarding_invitations WHERE token_hash=?').bind(hash).first<InvitationRow>();
+  if(!claimed||claimed.status!=='processing'||claimed.processing_nonce!==nonce)throw new Error('ONBOARDING_ALREADY_IN_PROGRESS');
+  try{
+    const provisioned=await provisionTenantFromOnboarding(env,`onboarding:${claimed.id}`,{
+      name:legalName,slug:slugify(legalName),portal_name:portalName,admin_name:adminName,admin_email:adminEmail,admin_password:password,
+      course_name:firstCourse||undefined,course_code:firstCourseCode||undefined,access_mode:accessMode,plan_id:claimed.plan_id,
+    });
+    const profile={legal_name:legalName,portal_name:portalName,contact_name:contactName,contact_email:contactEmail,phone:safeString(raw.phone,80),website:safeString(raw.website,250),street,postal_code:postal,city,country,billing_email:normalizeEmail(raw.billing_email||contactEmail),admin_name:adminName,admin_email:adminEmail,first_course_name:firstCourse||null,first_course_code:firstCourseCode||null};
+    const ts=nowIso();
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO tenant_profiles(tenant_id,legal_name,contact_name,contact_email,phone,website,street,postal_code,city,country,billing_email,onboarding_invitation_id,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(provisioned.tenantId,legalName,contactName,contactEmail,safeString(raw.phone,80)||null,safeString(raw.website,250)||null,street,postal,city,country,normalizeEmail(raw.billing_email||contactEmail),claimed.id,ts),
+      env.DB.prepare("UPDATE onboarding_invitations SET status='completed',processing_nonce=NULL,completed_at=?,tenant_id=?,form_json=? WHERE id=? AND processing_nonce=?")
+        .bind(ts,provisioned.tenantId,JSON.stringify(profile),claimed.id,nonce),
+    ]);
+    await audit(env.DB,`onboarding:${claimed.id}`,'onboarding.completed',provisioned.tenantId,provisioned.courseId,'onboarding_invitation',claimed.id,{customerEmail:claimed.customer_email});
+    return{ok:true,tenant_id:provisioned.tenantId,login_email:adminEmail};
+  }catch(e){
+    await env.DB.prepare("UPDATE onboarding_invitations SET status='open',processing_nonce=NULL WHERE id=? AND processing_nonce=?").bind(claimed.id,nonce).run();
+    throw e;
+  }
+}
