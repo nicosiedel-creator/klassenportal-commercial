@@ -2,7 +2,8 @@ import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { calculateCommercialOffer, getCommercePolicy, listManagedSetupOptions, tenantTrialSummary } from './commerce-offers.js';
 import { billingSummaryWithStripe, createPaidBookingWithStripe, quoteExpansionWithStripe, requestExpansionWithStripe, retryInitialCheckout } from './payment-orchestration.js';
-import { createStripeCheckout, createStripePortalSession, handleStripeWebhook } from './stripe.js';
+import { createStripePortalSession, handleStripeWebhook } from './stripe.js';
+import { createTaxStripeCheckout } from './stripe-tax-billing.js';
 import { assertSameOrigin, nowIso } from './utils.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status});}
@@ -52,7 +53,7 @@ export async function augmentPaidOnboardingResponse(env:Env,request:Request,resp
   if(data?.commercial_action!=='book'||!data?.commercial?.orderId||!data?.commercial?.invoiceId||!data?.commercial?.offer)return response;
   const tenantId=String(data.tenant_id||''),orderId=String(data.commercial.orderId),invoiceId=String(data.commercial.invoiceId);
   try{
-    const checkout=await createStripeCheckout(env,{tenantId,orderId,invoiceId,offer:data.commercial.offer,request});
+    const checkout=await createTaxStripeCheckout(env,{tenantId,orderId,invoiceId,offer:data.commercial.offer,request});
     return out({...data,commercial:{...data.commercial,...checkout,paymentProvider:'stripe'}});
   }catch(e){
     await env.DB.batch([
