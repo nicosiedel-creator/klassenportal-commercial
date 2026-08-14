@@ -2,52 +2,136 @@ const root=document.querySelector('#setup-app');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const token=decodeURIComponent(location.pathname.split('/').filter(Boolean).at(-1)||'');
 const planNames={starter:'Starter',provider:'Bildungsträger',white_label:'White-Label'};
-async function api(url,opt={}){const r=await fetch(url,{credentials:'same-origin',...opt,headers:{'content-type':'application/json',...(opt.headers||{})}});let d={};try{d=await r.json()}catch{}if(!r.ok){const e=new Error(d.error||`HTTP_${r.status}`);e.data=d;throw e;}return d;}
-function errorText(code){return({ONBOARDING_NOT_FOUND:'Dieser Einrichtungslink ist ungültig.',ONBOARDING_EXPIRED:'Dieser Einrichtungslink ist abgelaufen. Bitte fordere einen neuen Link an.',ONBOARDING_UNAVAILABLE:'Dieser Einrichtungslink kann nicht mehr verwendet werden.',ONBOARDING_ALREADY_IN_PROGRESS:'Die Einrichtung wird bereits verarbeitet. Bitte einen Moment warten.',ONBOARDING_REQUIRED_FIELDS:'Bitte fülle alle mit * gekennzeichneten Felder aus.',CUSTOMER_EMAIL_INVALID:'Bitte eine gültige E-Mail-Adresse eingeben.',PASSWORD_LENGTH:'Das Passwort muss mindestens 10 Zeichen lang sein.',PASSWORD_CONFIRMATION_MISMATCH:'Die beiden Passwörter stimmen nicht überein.',TENANT_SLUG_REQUIRED:'Der Name des Bildungsträgers kann nicht als Portalkennung verwendet werden.',PLAN_NOT_FOUND:'Das gewählte Paket ist nicht mehr verfügbar.',COURSE_COUNT_INVALID:'Bitte gib eine gültige Anzahl von Klassen/Kursen ein.',PLAN_COURSE_LIMIT_EXCEEDED:'Für diese Anzahl ist ein größeres Paket erforderlich.',OFFER_ACCEPTANCE_REQUIRED:'Bitte bestätige das angezeigte Angebot, bevor du buchst.',DOUBLE_COST_CONFIRMATION_REQUIRED:'Bitte bestätige Angebot und Kostenhinweis jeweils separat.'})[code]||'Die Einrichtung konnte nicht abgeschlossen werden. Bitte prüfe die Angaben und versuche es erneut.';}
+
+async function api(url,opt={}){
+  const r=await fetch(url,{credentials:'same-origin',...opt,headers:{'content-type':'application/json',...(opt.headers||{})}});
+  let d={};try{d=await r.json()}catch{}
+  if(!r.ok){const e=new Error(d.error||`HTTP_${r.status}`);e.data=d;throw e;}return d;
+}
 function money(cents,currency='EUR'){try{return new Intl.NumberFormat('de-DE',{style:'currency',currency}).format(Number(cents||0)/100)}catch{return `${(Number(cents||0)/100).toFixed(2)} ${currency}`}}
+function errorText(code){return ({
+  ONBOARDING_NOT_FOUND:'Dieser Einrichtungslink ist ungültig.',
+  ONBOARDING_EXPIRED:'Dieser Einrichtungslink ist abgelaufen. Bitte fordere einen neuen Link an.',
+  ONBOARDING_UNAVAILABLE:'Dieser Einrichtungslink kann nicht mehr verwendet werden.',
+  ONBOARDING_ALREADY_IN_PROGRESS:'Die Einrichtung wird bereits verarbeitet. Bitte einen Moment warten.',
+  ONBOARDING_REQUIRED_FIELDS:'Bitte fülle alle mit * gekennzeichneten Felder aus.',
+  CUSTOMER_EMAIL_INVALID:'Bitte eine gültige E-Mail-Adresse eingeben.',
+  PASSWORD_LENGTH:'Das Passwort muss mindestens 10 Zeichen lang sein.',
+  PASSWORD_CONFIRMATION_MISMATCH:'Die beiden Passwörter stimmen nicht überein.',
+  PLAN_NOT_FOUND:'Das gewählte Paket ist nicht mehr verfügbar.',
+  COURSE_COUNT_INVALID:'Bitte gib eine gültige Anzahl von Klassen/Kursen ein.',
+  PLAN_COURSE_LIMIT_EXCEEDED:'Für diese Anzahl ist ein größeres Paket erforderlich.',
+  DOUBLE_COST_CONFIRMATION_REQUIRED:'Bitte bestätige Buchung und Kosten jeweils separat.',
+  SETUP_OPTION_COURSE_LIMIT:'Die gewählte Kompletteinrichtung passt nicht zur angegebenen Anzahl von Klassen/Kursen.',
+  SETUP_OPTION_NOT_FOUND:'Die gewählte Einrichtungsoption ist nicht mehr verfügbar.',
+  PAYMENT_ALREADY_PENDING:'Für diesen Kunden läuft bereits eine Zahlungsbuchung.'
+})[code]||'Die Einrichtung konnte nicht abgeschlossen werden. Bitte prüfe die Angaben und versuche es erneut.';}
 
 function renderForm(inv){
+  const trial=inv.trial||{days:30,course_limit:2,read_only_days:7};
+  const setupOptions=(inv.setup_options||[]).filter(x=>!x.is_trial_setup);
   const expires=new Date(inv.expires_at).toLocaleDateString('de-DE');
-  root.innerHTML=`<div class="setup-head"><h1>Klassenportal einrichten</h1><div class="muted">In wenigen Minuten startklar. Keine technische Konfiguration nötig.</div></div>
-    <div class="setup-note"><strong>Paket:</strong> ${esc(planNames[inv.plan_id]||inv.plan_id)} · <strong>Einrichtungslink gültig bis:</strong> ${esc(expires)}</div>
+  root.innerHTML=`<div class="setup-head"><h1>Klassenportal einrichten</h1><div class="muted">Einfach starten: Daten eintragen, testen oder direkt buchen. Keine technische Konfiguration nötig.</div></div>
+    <div class="setup-note"><strong>Vorgesehenes Paket:</strong> ${esc(planNames[inv.plan_id]||inv.plan_id)} · <strong>Einrichtungslink gültig bis:</strong> ${esc(expires)}</div>
     <form id="onboarding-form">
       <section class="setup-card"><h2><span class="setup-step">1</span>Bildungsträger</h2>
         <div class="row"><label class="field"><span class="required">Name des Bildungsträgers</span><input name="legal_name" required autocomplete="organization"></label><label class="field">Name des Portals <span class="muted">(optional)</span><input name="portal_name" placeholder="wird sonst automatisch übernommen"></label></div>
         <div class="row"><label class="field">Webseite <span class="muted">(optional)</span><input name="website" type="url" autocomplete="url" placeholder="https://…"></label><label class="field">Telefon <span class="muted">(optional)</span><input name="phone" autocomplete="tel"></label></div>
       </section>
-      <section class="setup-card"><h2><span class="setup-step">2</span>Gewünschter Umfang</h2>
-        <div class="row"><label class="field"><span class="required">Anzahl Klassen / Kurse</span><input name="desired_course_count" id="course-count" type="number" min="1" max="10000" step="1" value="1" required></label><div class="field"><span>Einfach starten</span><div class="muted">Hier ist nur die Anzahl nötig. Klassennamen und Stundenpläne können anschließend importiert oder von Klassenverantwortlichen gepflegt werden.</div></div></div>
-        <div id="live-offer" class="notice" style="margin-top:12px">Preis wird berechnet …</div>
+
+      <section class="setup-card"><h2><span class="setup-step">2</span>Umfang & Start</h2>
+        <div class="row"><label class="field"><span class="required">Wie viele Klassen / Kurse werden insgesamt benötigt?</span><input name="desired_course_count" id="course-count" type="number" min="1" max="10000" step="1" value="1" required></label><div class="field"><span>Nur die Anzahl</span><div class="muted">Klassennamen, Fächer, Dozenten und Stundenpläne können später automatisch importiert werden.</div></div></div>
+        <div class="grid" style="margin-top:14px">
+          <label class="card" style="cursor:pointer"><div style="display:flex;gap:10px;align-items:flex-start"><input type="radio" name="commercial_action" value="trial" checked><div><strong>${esc(trial.days)} Tage kostenlos testen</strong><div class="muted">Keine Kreditkarte nötig · bis zu ${esc(trial.course_limit)} Testklassen · alle Testdaten bleiben bei späterer Buchung erhalten.</div></div></div></label>
+          <label class="card" style="cursor:pointer"><div style="display:flex;gap:10px;align-items:flex-start"><input type="radio" name="commercial_action" value="book"><div><strong>Direkt kostenpflichtig buchen</strong><div class="muted">Paket sofort verbindlich bestellen. Vor dem Absenden werden alle Kosten zweimal bestätigt.</div></div></div></label>
+        </div>
+        <div id="paid-options" style="display:none;margin-top:14px">
+          <div class="row"><label class="field">Abrechnung<select name="billing_cycle" id="billing-cycle"><option value="monthly">Monatlich</option><option value="annual">Jährlich – nur 10 Monatsraten zahlen</option></select></label><label class="field">Einrichtung<select name="managed_setup_option_id" id="setup-option"></select></label></div>
+          <div class="muted">Selbsteinrichtung ist kostenlos. Wenn wir die komplette Einrichtung übernehmen, wird der einmalige Servicepreis transparent im Angebot ausgewiesen.</div>
+        </div>
+        <div id="live-offer" class="notice" style="margin-top:14px">Preis wird berechnet …</div>
         <div id="offer-confirmations" style="display:none;margin-top:12px">
           <label style="display:flex;gap:10px;align-items:flex-start;margin-top:8px"><input type="checkbox" name="commercial_acceptance" value="1" id="offer-accept"><span><strong>Bestätigung 1:</strong> Ich möchte das angezeigte Paket mit diesem Umfang verbindlich buchen.</span></label>
-          <label style="display:flex;gap:10px;align-items:flex-start;margin-top:10px"><input type="checkbox" name="commercial_cost_confirmation" value="1" id="cost-accept"><span><strong>Bestätigung 2:</strong> Ich habe monatlichen Preis, einmalige Einrichtungskosten und den ersten Abrechnungsbetrag geprüft und akzeptiere diese Kosten.</span></label>
+          <label style="display:flex;gap:10px;align-items:flex-start;margin-top:10px"><input type="checkbox" name="commercial_cost_confirmation" value="1" id="cost-accept"><span><strong>Bestätigung 2:</strong> Ich habe laufenden Preis, Abrechnungsintervall, eventuelle Einrichtungskosten und den ersten Abrechnungsbetrag geprüft und akzeptiere diese Kosten.</span></label>
         </div>
       </section>
+
       <section class="setup-card"><h2><span class="setup-step">3</span>Ansprechpartner & Rechnungsdaten</h2>
         <div class="row"><label class="field"><span class="required">Ansprechpartner/in</span><input name="contact_name" required autocomplete="name"></label><label class="field"><span class="required">E-Mail</span><input name="contact_email" type="email" required autocomplete="email" value="${esc(inv.customer_email||'')}"></label></div>
         <label class="field"><span class="required">Straße und Hausnummer</span><input name="street" required autocomplete="street-address"></label>
         <div class="row"><label class="field"><span class="required">PLZ</span><input name="postal_code" required autocomplete="postal-code"></label><label class="field"><span class="required">Ort</span><input name="city" required autocomplete="address-level2"></label><label class="field">Land<input name="country" value="Deutschland" autocomplete="country-name"></label></div>
         <div class="row"><label class="field">Rechnungs-E-Mail <span class="muted">(optional, sonst Ansprechpartner)</span><input name="billing_email" type="email"></label><label class="field">USt-IdNr. <span class="muted">(optional)</span><input name="vat_id"></label></div>
       </section>
+
       <section class="setup-card"><h2><span class="setup-step">4</span>Portal-Administrator</h2>
         <label style="display:flex;gap:10px;align-items:center;margin-bottom:12px"><input id="same-admin" type="checkbox" checked> Ansprechpartner/in verwaltet auch das Portal</label>
         <div id="admin-fields" style="display:none"><div class="row"><label class="field"><span class="required">Admin-Name</span><input name="admin_name"></label><label class="field"><span class="required">Admin-E-Mail</span><input name="admin_email" type="email"></label></div></div>
         <div class="row"><label class="field"><span class="required">Passwort festlegen</span><input name="admin_password" type="password" required minlength="10" autocomplete="new-password"></label><label class="field"><span class="required">Passwort wiederholen</span><input name="admin_password_confirm" type="password" required minlength="10" autocomplete="new-password"></label></div>
-        <div class="muted">Mindestens 10 Zeichen. Dieses Passwort wird direkt für den ersten Kunden-Admin verwendet.</div>
+        <div class="muted">Mindestens 10 Zeichen. Das Passwort wird direkt für den ersten Kunden-Admin verwendet.</div>
       </section>
+
       <section class="setup-card"><h2><span class="setup-step">5</span>Erste Klasse / erster Kurs <span class="muted">(optional)</span></h2>
-        <p class="muted">Nur wenn du sofort mit einer Klasse starten möchtest. Weitere Klassen können später automatisch importiert oder ergänzt werden.</p>
+        <p class="muted">Nur wenn sofort eine Klasse angelegt werden soll. Weitere Klassen können später importiert oder ergänzt werden.</p>
         <div class="row"><label class="field">Klasse / Kurs<input name="first_course_name" placeholder="z. B. VFA 13"></label><label class="field">Kürzel / Code <span class="muted">(optional)</span><input name="first_course_code" placeholder="z. B. VFA13"></label></div>
       </section>
-      <div class="setup-actions"><button class="btn" id="submit-setup">Einrichtung abschließen</button><span id="setup-status" class="muted"></span></div><div id="setup-error" class="setup-error"></div>
+
+      <div class="setup-actions"><button class="btn" id="submit-setup">${esc(trial.days)} Tage kostenlos testen</button><span id="setup-status" class="muted"></span></div><div id="setup-error" class="setup-error"></div>
     </form>`;
-  const form=document.querySelector('#onboarding-form'),same=document.querySelector('#same-admin'),adminFields=document.querySelector('#admin-fields'),count=document.querySelector('#course-count'),offer=document.querySelector('#live-offer'),confirmations=document.querySelector('#offer-confirmations'),accept=document.querySelector('#offer-accept'),costAccept=document.querySelector('#cost-accept');
-  let quoteReady=false,quoteTimer=null;
+
+  const form=document.querySelector('#onboarding-form');
+  const same=document.querySelector('#same-admin'),adminFields=document.querySelector('#admin-fields');
+  const count=document.querySelector('#course-count'),paidOptions=document.querySelector('#paid-options'),cycle=document.querySelector('#billing-cycle'),setup=document.querySelector('#setup-option');
+  const offer=document.querySelector('#live-offer'),confirmations=document.querySelector('#offer-confirmations'),accept=document.querySelector('#offer-accept'),costAccept=document.querySelector('#cost-accept'),submit=document.querySelector('#submit-setup');
+  let quoteTimer=null,quoteReady=false;
+
+  function selectedAction(){return form.elements.commercial_action.value==='book'?'book':'trial';}
   function syncAdmin(){adminFields.style.display=same.checked?'none':'';const n=form.elements.admin_name,e=form.elements.admin_email;n.required=!same.checked;e.required=!same.checked;if(same.checked){n.value=form.elements.contact_name.value;e.value=form.elements.contact_email.value;}}
   same.addEventListener('change',syncAdmin);form.elements.contact_name.addEventListener('input',()=>{if(same.checked)form.elements.admin_name.value=form.elements.contact_name.value});form.elements.contact_email.addEventListener('input',()=>{if(same.checked)form.elements.admin_email.value=form.elements.contact_email.value});syncAdmin();
-  async function updateQuote(){const courses=Math.max(1,Number(count.value||1));offer.textContent='Preis wird berechnet …';confirmations.style.display='none';accept.checked=false;costAccept.checked=false;quoteReady=false;try{const r=await api(`/api/onboarding/${encodeURIComponent(token)}/quote?courses=${encodeURIComponent(courses)}`),q=r.quote;if(q.pricingReady){quoteReady=true;offer.className='notice ok';offer.innerHTML=`<strong>${esc(q.planName)}</strong> für <strong>${esc(q.courseCount)}</strong> Klasse(n)/Kurs(e)<div style="margin-top:7px">Monatlich: <strong>${esc(money(q.recurringMonthlyCents,q.currency))}</strong> · Einrichtung einmalig: <strong>${esc(money(q.setupCents,q.currency))}</strong></div><div class="muted" style="margin-top:4px">Erster Abrechnungsbetrag: ${esc(money(q.firstTotalCents,q.currency))}${q.extraCourses?` · davon ${esc(q.extraCourses)} zusätzliche Klasse(n)/Kurs(e)`:''}</div>`;confirmations.style.display='block';}else{offer.className='notice';offer.innerHTML='<strong>Paketumfang übernommen.</strong><div class="muted" style="margin-top:4px">Die automatische Preisregel für dieses Paket ist noch nicht freigeschaltet. Es wird deshalb kein ungeprüfter Preis angezeigt.</div>';}}catch(e){offer.className='setup-error';offer.textContent=errorText(e.message);}}
-  count.addEventListener('input',()=>{clearTimeout(quoteTimer);quoteTimer=setTimeout(updateQuote,250)});updateQuote();
-  form.addEventListener('submit',async e=>{e.preventDefault();syncAdmin();const btn=document.querySelector('#submit-setup'),status=document.querySelector('#setup-status'),error=document.querySelector('#setup-error');btn.disabled=true;error.textContent='';if(quoteReady&&(!accept.checked||!costAccept.checked)){btn.disabled=false;error.textContent='Bitte bestätige das Angebot und die Kosten jeweils separat.';return;}status.textContent='Portal wird eingerichtet …';const data=Object.fromEntries(new FormData(form));data.access_mode='login';try{const r=await api(`/api/onboarding/${encodeURIComponent(token)}`,{method:'POST',body:JSON.stringify(data)});status.textContent='Einrichtung abgeschlossen.';let loggedIn=false;try{await api('/api/auth/login',{method:'POST',body:JSON.stringify({email:r.login_email||data.admin_email,password:data.admin_password})});loggedIn=true;}catch{}root.innerHTML=`<div class="setup-success"><h1>Fertig 🎉</h1><p>Das Klassenportal ist eingerichtet. Stammdaten, gebuchter Klassenumfang und erster Administrator wurden übernommen.</p><p class="muted">${r.payment_pending?'Die Buchung ist erfasst; die Zahlungsabwicklung wird über die konfigurierte Abrechnung verarbeitet. ':''}${loggedIn?'Du bist bereits angemeldet und kannst direkt weitermachen.':'Du kannst dich jetzt mit der angegebenen Admin-E-Mail und deinem Passwort anmelden.'}</p><a class="btn" href="/">Portal öffnen</a></div>`;}catch(x){btn.disabled=false;status.textContent='';error.textContent=errorText(x.message);}});
+
+  function fillSetupOptions(){
+    const courses=Math.max(1,Number(count.value||1));
+    const current=setup.value;
+    setup.innerHTML=setupOptions.map(o=>{const over=o.max_courses!==null&&Number(o.max_courses)<courses;const suffix=o.id==='self_service'?'kostenlos':`${money(o.price_cents)} einmalig${o.max_courses?` · bis ${o.max_courses} Klassen`:''}`;return `<option value="${esc(o.id)}" ${over?'disabled':''}>${esc(o.name)} – ${esc(suffix)}${over?' – Umfang zu groß':''}</option>`}).join('');
+    if([...setup.options].some(x=>x.value===current&&!x.disabled))setup.value=current;else setup.value='self_service';
+  }
+
+  async function updateQuote(){
+    const action=selectedAction(),courses=Math.max(1,Number(count.value||1));
+    paidOptions.style.display=action==='book'?'block':'none';confirmations.style.display='none';accept.checked=false;costAccept.checked=false;quoteReady=false;
+    submit.textContent=action==='trial'?`${trial.days} Tage kostenlos testen`:'Kostenpflichtig buchen und Portal einrichten';
+    fillSetupOptions();offer.className='notice';offer.textContent='Preis wird berechnet …';
+    try{
+      const params=new URLSearchParams({courses:String(courses),purpose:action,billing_cycle:cycle.value,setup:action==='trial'?'self_service':setup.value});
+      const q=(await api(`/api/onboarding/${encodeURIComponent(token)}/quote?${params}`)).quote;
+      quoteReady=!!q.pricingReady;
+      if(action==='trial'){
+        const future=cycle.value==='annual'?`${money(q.annualTotalCents,q.currency)} pro Jahr`:`${money(q.recurringMonthlyCents,q.currency)} pro Monat`;
+        offer.className='notice ok';offer.innerHTML=`<strong>${trial.days} Tage kostenlos · 0 €</strong><div style="margin-top:6px">Im Test können bis zu <strong>${esc(trial.course_limit)} Klassen/Kurse</strong> genutzt werden. Gewünschter späterer Umfang: ${esc(courses)}.</div><div class="muted" style="margin-top:5px">Nach dem Test: ${trial.read_only_days} Tage nur lesen. Es erfolgt keine automatische kostenpflichtige Verlängerung. Bei Buchung läge das vorgesehene Paket derzeit bei <strong>${esc(future)}</strong>.</div>`;
+      }else if(q.pricingReady){
+        const billing=q.billingCycle==='annual'?`Jährlich: <strong>${money(q.annualTotalCents,q.currency)}</strong> (10 Monatsraten statt 12)`:`Monatlich: <strong>${money(q.recurringMonthlyCents,q.currency)}</strong>`;
+        offer.className='notice ok';offer.innerHTML=`<strong>${esc(q.planName)}</strong> für <strong>${esc(q.courseCount)}</strong> Klasse(n)/Kurs(e)<div style="margin-top:7px">${billing}</div><div style="margin-top:5px">Einrichtung: <strong>${esc(q.managedSetupName)}</strong> · ${money(q.managedSetupCents,q.currency)} einmalig</div><div class="muted" style="margin-top:5px">Erster Abrechnungsbetrag: <strong>${money(q.firstTotalCents,q.currency)}</strong>${q.extraCourses?` · ${esc(q.extraCourses)} zusätzliche Klasse(n)/Kurs(e) eingerechnet`:''}</div>`;confirmations.style.display='block';
+      }else{offer.innerHTML='<strong>Preisregel noch nicht freigeschaltet.</strong><div class="muted">Bitte wende dich an den Anbieter.</div>';}
+    }catch(e){offer.className='setup-error';offer.textContent=errorText(e.message);}
+  }
+  function delayedQuote(){clearTimeout(quoteTimer);quoteTimer=setTimeout(updateQuote,180);}
+  form.querySelectorAll('input[name="commercial_action"]').forEach(x=>x.addEventListener('change',updateQuote));count.addEventListener('input',delayedQuote);cycle.addEventListener('change',updateQuote);setup.addEventListener('change',updateQuote);fillSetupOptions();updateQuote();
+
+  form.addEventListener('submit',async e=>{
+    e.preventDefault();syncAdmin();const action=selectedAction(),status=document.querySelector('#setup-status'),error=document.querySelector('#setup-error');error.textContent='';
+    if(action==='book'&&(!quoteReady||!accept.checked||!costAccept.checked)){error.textContent='Bitte prüfe das Angebot und bestätige Buchung und Kosten jeweils separat.';return;}
+    submit.disabled=true;status.textContent=action==='trial'?'Testportal wird eingerichtet …':'Buchung und Portal werden eingerichtet …';
+    const data=Object.fromEntries(new FormData(form));data.access_mode='login';if(action==='trial'){data.managed_setup_option_id='self_service';delete data.commercial_acceptance;delete data.commercial_cost_confirmation;}
+    try{
+      const r=await api(`/api/onboarding/${encodeURIComponent(token)}`,{method:'POST',body:JSON.stringify(data)});let loggedIn=false;
+      try{await api('/api/auth/login',{method:'POST',body:JSON.stringify({email:r.login_email||data.admin_email,password:data.admin_password})});loggedIn=true;}catch{}
+      if(action==='trial')root.innerHTML=`<div class="setup-success"><h1>Testportal ist bereit 🎉</h1><p>Die kostenlose Testphase läuft ${esc(trial.days)} Tage und umfasst bis zu ${esc(trial.course_limit)} Klassen/Kurse.</p><p class="muted">Es wird nicht automatisch kostenpflichtig verlängert. Deine Testdaten bleiben bei einer späteren Buchung erhalten.</p><a class="btn" href="/">${loggedIn?'Portal jetzt öffnen':'Zum Login'}</a></div>`;
+      else root.innerHTML=`<div class="setup-success"><h1>Buchung erfasst 🎉</h1><p>Portal, gebuchter Umfang und Einrichtungsauswahl wurden übernommen.</p><p class="muted">Die Zahlungsabwicklung wird über den eingerichteten Zahlungsdienst verarbeitet. ${loggedIn?'Du bist bereits angemeldet.':''}</p><a class="btn" href="/">Portal öffnen</a></div>`;
+    }catch(x){submit.disabled=false;status.textContent='';error.textContent=errorText(x.message);}
+  });
 }
 
-(async()=>{try{if(!token)throw new Error('ONBOARDING_NOT_FOUND');const d=await api(`/api/onboarding/${encodeURIComponent(token)}`);const inv=d.invitation;if(inv.status==='completed'){root.innerHTML='<div class="setup-success"><h1>Bereits eingerichtet</h1><p>Dieser Einrichtungslink wurde bereits verwendet.</p><a class="btn" href="/">Zum Portal</a></div>';return;}if(inv.status!=='open')throw new Error(inv.status==='expired'?'ONBOARDING_EXPIRED':'ONBOARDING_UNAVAILABLE');renderForm(inv);}catch(e){root.innerHTML=`<div class="setup-success"><h1>Einrichtung nicht möglich</h1><p>${esc(errorText(e.message))}</p></div>`;}})();
+(async()=>{try{
+  if(!token)throw new Error('ONBOARDING_NOT_FOUND');const d=await api(`/api/onboarding/${encodeURIComponent(token)}`),inv=d.invitation;
+  if(inv.status==='completed'){root.innerHTML='<div class="setup-success"><h1>Bereits eingerichtet</h1><p>Dieser Einrichtungslink wurde bereits verwendet.</p><a class="btn" href="/">Zum Portal</a></div>';return;}
+  if(inv.status!=='open')throw new Error(inv.status==='expired'?'ONBOARDING_EXPIRED':'ONBOARDING_UNAVAILABLE');renderForm(inv);
+}catch(e){root.innerHTML=`<div class="setup-success"><h1>Einrichtung nicht möglich</h1><p>${esc(errorText(e.message))}</p></div>`;}})();
