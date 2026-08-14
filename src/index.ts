@@ -1,10 +1,14 @@
 import { handleCoreApi, handlePublicApi } from './core/router.js';
 import { resolvePortabilityAuth } from './core/auth.js';
+import { serveTenantLogo } from './core/branding.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const logo = url.pathname.match(/^\/brand\/logo\/([^/]+)$/);
+    if (logo) return serveTenantLogo(env, decodeURIComponent(logo[1]));
     const portability = await handlePortabilityRequest(request, env, portabilityConfig, (r) => resolvePortabilityAuth(env, r));
     if (portability) return portability;
     const api = await handleCoreApi(request, env); if (api) return api;
