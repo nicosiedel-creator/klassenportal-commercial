@@ -12,6 +12,7 @@ function accessError(e:unknown):Response{
   const status=code==='TRIAL_EXPIRED'?410:code==='TRIAL_READ_ONLY'?423:402;
   return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
 }
+function jsonError(code:string,status:number):Response{return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -31,6 +32,12 @@ export default {
 
     const payment=await handlePaymentApi(request,env);if(payment)return payment;
 
+    const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);
+    if(onboardingPost){
+      const payload=await request.clone().json().catch(()=>({})) as Record<string,unknown>;
+      if(String(payload.commercial_action||'trial')==='book'&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);
+    }
+
     const tenantId=url.searchParams.get('tenant_id');
     const mutating=request.method!=='GET'&&request.method!=='HEAD';
     const exemptMutation=url.pathname==='/api/timetable/preview'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/onboarding/')||url.pathname.startsWith('/api/platform/');
@@ -42,7 +49,7 @@ export default {
     if (portability) return portability;
     const api = await handleCoreApi(request, env);
     if (api) {
-      if(request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname))return augmentPaidOnboardingResponse(env,request,api);
+      if(onboardingPost)return augmentPaidOnboardingResponse(env,request,api);
       return api;
     }
     const pub = await handlePublicApi(request, env); if (pub) return pub;
