@@ -2,6 +2,7 @@ import { handleCoreApi, handlePublicApi } from './core/router.js';
 import { resolvePortabilityAuth } from './core/auth.js';
 import { serveTenantLogo } from './core/branding.js';
 import { assertTenantWriteAllowed, refreshTrialStates } from './core/commerce-offers.js';
+import { augmentPaidOnboardingResponse, handlePaymentApi } from './core/payment-router.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
@@ -15,6 +16,14 @@ export default {
       const assetUrl=new URL('/onboarding.html',request.url);
       return env.ASSETS.fetch(new Request(assetUrl,{method:request.method,headers:request.headers}));
     }
+    if (url.pathname==='/zahlung/erfolg' || url.pathname==='/zahlung/abgebrochen') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Methode nicht erlaubt',{status:405});
+      const assetUrl=new URL('/payment-result.html',request.url);
+      return env.ASSETS.fetch(new Request(assetUrl,{method:request.method,headers:request.headers}));
+    }
+
+    const payment=await handlePaymentApi(request,env);if(payment)return payment;
+
     if(url.pathname.startsWith('/api/portability/')&&request.method!=='GET'&&url.pathname!=='/api/portability/import/preview'){
       const tenantId=url.searchParams.get('tenant_id');
       if(tenantId){
@@ -27,7 +36,11 @@ export default {
     }
     const portability = await handlePortabilityRequest(request, env, portabilityConfig, (r) => resolvePortabilityAuth(env, r));
     if (portability) return portability;
-    const api = await handleCoreApi(request, env); if (api) return api;
+    const api = await handleCoreApi(request, env);
+    if (api) {
+      if(request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname))return augmentPaidOnboardingResponse(env,request,api);
+      return api;
+    }
     const pub = await handlePublicApi(request, env); if (pub) return pub;
     return env.ASSETS.fetch(request);
   },
