@@ -1,7 +1,7 @@
 import { handleCoreApi, handlePublicApi } from './core/router.js';
 import { resolvePortabilityAuth } from './core/auth.js';
 import { serveTenantLogo } from './core/branding.js';
-import { refreshTrialStates } from './core/commerce-offers.js';
+import { assertTenantWriteAllowed, refreshTrialStates } from './core/commerce-offers.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
@@ -14,6 +14,10 @@ export default {
       if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Methode nicht erlaubt',{status:405});
       const assetUrl=new URL('/onboarding.html',request.url);
       return env.ASSETS.fetch(new Request(assetUrl,{method:request.method,headers:request.headers}));
+    }
+    if(url.pathname.startsWith('/api/portability/')&&request.method!=='GET'&&url.pathname!=='/api/portability/import/preview'){
+      const tenantId=url.searchParams.get('tenant_id');
+      if(tenantId)await assertTenantWriteAllowed(env,tenantId);
     }
     const portability = await handlePortabilityRequest(request, env, portabilityConfig, (r) => resolvePortabilityAuth(env, r));
     if (portability) return portability;
