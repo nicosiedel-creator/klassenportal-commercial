@@ -107,10 +107,10 @@ export async function startTenantTrial(env:Env,args:{tenantId:string;planId:stri
       VALUES(?,?,?,?,'active',?,?,?,?,?,?)
       ON CONFLICT(tenant_id) DO UPDATE SET target_plan_id=excluded.target_plan_id,requested_course_count=excluded.requested_course_count,trial_course_limit=excluded.trial_course_limit,status='active',started_at=excluded.started_at,trial_ends_at=excluded.trial_ends_at,read_only_ends_at=excluded.read_only_ends_at,converted_at=NULL,setup_option_id=excluded.setup_option_id,pricing_snapshot_json=excluded.pricing_snapshot_json,updated_at=excluded.updated_at`)
       .bind(args.tenantId,args.planId,args.requestedCourseCount,limit,ts,trialEnd.toISOString(),readOnlyEnd.toISOString(),offer.managedSetupOptionId,JSON.stringify(offer),ts),
-    env.DB.prepare(`INSERT INTO tenant_entitlements(tenant_id,plan_id,course_limit,currency,recurring_monthly_cents,setup_cents,pricing_snapshot_json,updated_at,billing_cycle,annual_total_cents)
-      VALUES(?,?,?,?,0,0,?,?,?,?)
-      ON CONFLICT(tenant_id) DO UPDATE SET plan_id=excluded.plan_id,course_limit=excluded.course_limit,currency=excluded.currency,recurring_monthly_cents=0,setup_cents=0,pricing_snapshot_json=excluded.pricing_snapshot_json,updated_at=excluded.updated_at,billing_cycle=excluded.billing_cycle,annual_total_cents=excluded.annual_total_cents`)
-      .bind(args.tenantId,args.planId,limit,offer.currency,JSON.stringify(offer),ts,'monthly',offer.annualTotalCents),
+    env.DB.prepare(`INSERT INTO tenant_entitlements(tenant_id,plan_id,course_limit,currency,recurring_monthly_cents,setup_cents,pricing_snapshot_json,updated_at)
+      VALUES(?,?,?,?,0,0,?,?)
+      ON CONFLICT(tenant_id) DO UPDATE SET plan_id=excluded.plan_id,course_limit=excluded.course_limit,currency=excluded.currency,recurring_monthly_cents=0,setup_cents=0,pricing_snapshot_json=excluded.pricing_snapshot_json,updated_at=excluded.updated_at`)
+      .bind(args.tenantId,args.planId,limit,offer.currency,JSON.stringify(offer),ts),
     env.DB.prepare("UPDATE subscriptions SET plan_id=?,status='trial',starts_at=?,ends_at=? WHERE tenant_id=?").bind(args.planId,ts,trialEnd.toISOString(),args.tenantId),
   ]);
   await audit(env.DB,args.actorId,'commerce.trial.started',args.tenantId,undefined,'tenant_trial',args.tenantId,{trialDays:policy.trial_days,readOnlyDays:policy.read_only_days,trialCourseLimit:limit,targetCourseCount:args.requestedCourseCount,targetPlanId:args.planId});
@@ -128,15 +128,15 @@ export async function createPaidBooking(env:Env,args:{tenantId:string;invitation
   const ip=args.request.headers.get('CF-Connecting-IP')||null;
   const ua=safeString(args.request.headers.get('User-Agent'),500)||null;
   await env.DB.batch([
-    env.DB.prepare(`INSERT INTO tenant_entitlements(tenant_id,plan_id,course_limit,currency,recurring_monthly_cents,setup_cents,pricing_snapshot_json,updated_at,billing_cycle,annual_total_cents)
-      VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET plan_id=excluded.plan_id,course_limit=excluded.course_limit,currency=excluded.currency,recurring_monthly_cents=excluded.recurring_monthly_cents,setup_cents=excluded.setup_cents,pricing_snapshot_json=excluded.pricing_snapshot_json,updated_at=excluded.updated_at,billing_cycle=excluded.billing_cycle,annual_total_cents=excluded.annual_total_cents`)
-      .bind(args.tenantId,args.planId,args.courseCount,offer.currency,offer.recurringMonthlyCents,offer.managedSetupCents,snapshot,ts,offer.billingCycle,offer.annualTotalCents),
-    env.DB.prepare(`INSERT INTO commercial_quotes(id,quote_number,onboarding_invitation_id,tenant_id,plan_id,requested_courses,currency,recurring_monthly_cents,setup_cents,first_total_cents,status,valid_until,pricing_snapshot_json,accepted_at,accepted_ip,accepted_user_agent,created_at,updated_at,billing_cycle,managed_setup_option_id,annual_total_cents)
-      VALUES(?,?,?,?,?,?,?,?,?,?,'accepted',?,?,?,?,?,?,?,?,?,?)`)
-      .bind(qid,documentNumber('ANG'),args.invitationId||null,args.tenantId,args.planId,args.courseCount,offer.currency,offer.recurringMonthlyCents,offer.managedSetupCents,offer.firstTotalCents,valid,snapshot,ts,ip,ua,ts,ts,offer.billingCycle,offer.managedSetupOptionId,offer.annualTotalCents),
-    env.DB.prepare(`INSERT INTO commercial_orders(id,order_number,tenant_id,quote_id,plan_id,course_limit,status,currency,recurring_monthly_cents,setup_cents,booked_at,billing_cycle,managed_setup_option_id,annual_total_cents)
-      VALUES(?,?,?,?,?,?,'pending_payment',?,?,?,?,?,?,?)`)
-      .bind(oid,documentNumber('AUF'),args.tenantId,qid,args.planId,args.courseCount,offer.currency,offer.recurringMonthlyCents,offer.managedSetupCents,ts,offer.billingCycle,offer.managedSetupOptionId,offer.annualTotalCents),
+    env.DB.prepare(`INSERT INTO tenant_entitlements(tenant_id,plan_id,course_limit,currency,recurring_monthly_cents,setup_cents,pricing_snapshot_json,updated_at)
+      VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET plan_id=excluded.plan_id,course_limit=excluded.course_limit,currency=excluded.currency,recurring_monthly_cents=excluded.recurring_monthly_cents,setup_cents=excluded.setup_cents,pricing_snapshot_json=excluded.pricing_snapshot_json,updated_at=excluded.updated_at`)
+      .bind(args.tenantId,args.planId,args.courseCount,offer.currency,offer.recurringMonthlyCents,offer.managedSetupCents,snapshot,ts),
+    env.DB.prepare(`INSERT INTO commercial_quotes(id,quote_number,onboarding_invitation_id,tenant_id,plan_id,requested_courses,currency,recurring_monthly_cents,setup_cents,first_total_cents,status,valid_until,pricing_snapshot_json,accepted_at,accepted_ip,accepted_user_agent,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,'accepted',?,?,?,?,?,?,?)`)
+      .bind(qid,documentNumber('ANG'),args.invitationId||null,args.tenantId,args.planId,args.courseCount,offer.currency,offer.recurringMonthlyCents,offer.managedSetupCents,offer.firstTotalCents,valid,snapshot,ts,ip,ua,ts,ts),
+    env.DB.prepare(`INSERT INTO commercial_orders(id,order_number,tenant_id,quote_id,plan_id,course_limit,status,currency,recurring_monthly_cents,setup_cents,booked_at)
+      VALUES(?,?,?,?,?,?,'pending_payment',?,?,?,?)`)
+      .bind(oid,documentNumber('AUF'),args.tenantId,qid,args.planId,args.courseCount,offer.currency,offer.recurringMonthlyCents,offer.managedSetupCents,ts),
     env.DB.prepare(`INSERT INTO commercial_invoices(id,invoice_number,tenant_id,order_id,type,status,currency,net_cents,tax_cents,gross_cents,snapshot_json,created_at)
       VALUES(?,?,?,?,'initial','pending_provider',?,?,0,?,?,?)`)
       .bind(iid,documentNumber('ENTW'),args.tenantId,oid,offer.currency,offer.firstTotalCents,offer.firstTotalCents,snapshot,ts),
