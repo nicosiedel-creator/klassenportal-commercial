@@ -11,7 +11,7 @@ import { applyTimetable, previewTimetable } from './timetable.js';
 import { storeTimetableSource } from './timetable-source.js';
 import { createOnboardingInvitation, getPublicOnboarding, getPublicOnboardingQuote, listOnboardingInvitations, revokeOnboardingInvitation, submitPublicOnboarding } from './onboarding.js';
 import { billingSummary, enforceCourseEntitlement, getSellerProfile, listCommercePlans, quoteExpansion, requestExpansion, updateCommercePlan, updateSellerProfile } from './commerce.js';
-import { assertTenantWriteAllowed, createPaidBooking, tenantTrialSummary } from './commerce-offers.js';
+import { assertTenantWriteAllowed, calculateCommercialOffer, createPaidBooking, getCommercePolicy, listManagedSetupOptions, tenantTrialSummary } from './commerce-offers.js';
 
 function err(e:unknown):Response{
   const ex=e as Error&{issues?:unknown};const code=ex?.message||'INTERNAL_ERROR';
@@ -41,28 +41,15 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
 
     const publicQuote=u.pathname.match(/^\/api\/onboarding\/([^/]+)\/quote$/);
     if(publicQuote&&request.method==='GET')return json({ok:true,quote:await getPublicOnboardingQuote(env,decodeURIComponent(publicQuote[1]),{
-      courses:u.searchParams.get('courses')||'1',
-      billingCycle:u.searchParams.get('billing_cycle')||'monthly',
-      setupOptionId:u.searchParams.get('setup')||'self_service',
-      purpose:u.searchParams.get('purpose')||'paid',
+      courses:u.searchParams.get('courses')||'1',billingCycle:u.searchParams.get('billing_cycle')||'monthly',setupOptionId:u.searchParams.get('setup')||'self_service',purpose:u.searchParams.get('purpose')||'paid',
     })});
     const publicOnboarding=u.pathname.match(/^\/api\/onboarding\/([^/]+)$/);
-    if(publicOnboarding){
-      const token=decodeURIComponent(publicOnboarding[1]);
-      if(request.method==='GET')return json({ok:true,invitation:await getPublicOnboarding(env,token)});
-      if(request.method==='POST')return json(await submitPublicOnboarding(env,token,request));
-    }
+    if(publicOnboarding){const token=decodeURIComponent(publicOnboarding[1]);if(request.method==='GET')return json({ok:true,invitation:await getPublicOnboarding(env,token)});if(request.method==='POST')return json(await submitPublicOnboarding(env,token,request));}
 
-    if(u.pathname==='/api/platform/onboarding-invitations'&&request.method==='GET'){
-      const a=await resolveCoreAuth(env,request);requirePlatform(a);return json({ok:true,invitations:await listOnboardingInvitations(env,a)});
-    }
-    if(u.pathname==='/api/platform/onboarding-invitations'&&request.method==='POST'){
-      const a=await resolveCoreAuth(env,request);requirePlatform(a);return json({ok:true,...await createOnboardingInvitation(env,a,request)},201);
-    }
+    if(u.pathname==='/api/platform/onboarding-invitations'&&request.method==='GET'){const a=await resolveCoreAuth(env,request);requirePlatform(a);return json({ok:true,invitations:await listOnboardingInvitations(env,a)});}
+    if(u.pathname==='/api/platform/onboarding-invitations'&&request.method==='POST'){const a=await resolveCoreAuth(env,request);requirePlatform(a);return json({ok:true,...await createOnboardingInvitation(env,a,request)},201);}
     const revoke=u.pathname.match(/^\/api\/platform\/onboarding-invitations\/([^/]+)\/revoke$/);
-    if(revoke&&request.method==='POST'){
-      const a=await resolveCoreAuth(env,request);requirePlatform(a);await revokeOnboardingInvitation(env,a,decodeURIComponent(revoke[1]));return json({ok:true});
-    }
+    if(revoke&&request.method==='POST'){const a=await resolveCoreAuth(env,request);requirePlatform(a);await revokeOnboardingInvitation(env,a,decodeURIComponent(revoke[1]));return json({ok:true});}
     if(u.pathname==='/api/platform/commerce/plans'&&request.method==='GET'){const a=await resolveCoreAuth(env,request);return json({ok:true,plans:await listCommercePlans(env,a)});}
     const planCommerce=u.pathname.match(/^\/api\/platform\/commerce\/plans\/([^/]+)$/);
     if(planCommerce&&request.method==='PUT'){const a=await resolveCoreAuth(env,request);await updateCommercePlan(env,a,decodeURIComponent(planCommerce[1]),await body(request));return json({ok:true});}
@@ -75,21 +62,20 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(!tenantId)throw new Error('TENANT_ID_REQUIRED');
     const a=await resolveCoreAuth(env,request,tenantId,courseId);
 
-    if(u.pathname==='/api/billing/summary'&&request.method==='GET')return json({ok:true,...await billingSummary(env,a,tenantId),trial:await tenantTrialSummary(env,a,tenantId)});
-    if(u.pathname==='/api/billing/change-quote'&&request.method==='POST')return json({ok:true,quote:await quoteExpansion(env,a,tenantId,await body(request))});
-    if(u.pathname==='/api/billing/expand'&&request.method==='POST'){
-      const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');
-      return json({ok:true,...await requestExpansion(env,a,tenantId,b)},201);
+    if(u.pathname==='/api/billing/summary'&&request.method==='GET')return json({ok:true,...await billingSummary(env,a,tenantId),trial:await tenantTrialSummary(env,a,tenantId),commercePolicy:await getCommercePolicy(env),setupOptions:await listManagedSetupOptions(env)});
+    if(u.pathname==='/api/billing/trial-quote'&&request.method==='POST'){
+      const b=await body(request);const trial=await tenantTrialSummary(env,a,tenantId);if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');
+      return json({ok:true,quote:await calculateCommercialOffer(env,{planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id||'self_service',purpose:'paid'})});
     }
+    if(u.pathname==='/api/billing/change-quote'&&request.method==='POST')return json({ok:true,quote:await quoteExpansion(env,a,tenantId,await body(request))});
+    if(u.pathname==='/api/billing/expand'&&request.method==='POST'){const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');return json({ok:true,...await requestExpansion(env,a,tenantId,b)},201);}
     if(u.pathname==='/api/billing/convert-trial'&&request.method==='POST'){
       const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');
       const trial=await tenantTrialSummary(env,a,tenantId);if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');
       return json({ok:true,...await createPaidBooking(env,{tenantId,planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id,accepted:true,request,actorId:a.userId})},201);
     }
 
-    const mutating=request.method!=='GET'&&request.method!=='HEAD'&&u.pathname!=='/api/timetable/preview';
-    if(mutating)await assertTenantWriteAllowed(env,tenantId);
-
+    const mutating=request.method!=='GET'&&request.method!=='HEAD'&&u.pathname!=='/api/timetable/preview';if(mutating)await assertTenantWriteAllowed(env,tenantId);
     if(u.pathname==='/api/tenant/logo'&&request.method==='POST')return json({ok:true,...await uploadTenantLogo(env,a,tenantId,request)});
     if(u.pathname==='/api/timetable/preview'&&request.method==='POST')return json({ok:true,...await previewTimetable(env,a,tenantId,request)});
     if(u.pathname==='/api/timetable/apply'&&request.method==='POST')return json({ok:true,...await applyTimetable(env,a,tenantId,request)});
@@ -110,7 +96,4 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
   }catch(e){return err(e);}
 }
 
-export async function handlePublicApi(request:Request,env:Env):Promise<Response|null>{
-  const u=new URL(request.url);const m=u.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);if(!m)return null;
-  try{return json({ok:true,...await publicOverview(env,decodeURIComponent(m[1]),decodeURIComponent(m[2]),await getSession(env,request),u.searchParams.get('access_code')||undefined)});}catch(e){return err(e);}
-}
+export async function handlePublicApi(request:Request,env:Env):Promise<Response|null>{const u=new URL(request.url);const m=u.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);if(!m)return null;try{return json({ok:true,...await publicOverview(env,decodeURIComponent(m[1]),decodeURIComponent(m[2]),await getSession(env,request),u.searchParams.get('access_code')||undefined)});}catch(e){return err(e);}}
