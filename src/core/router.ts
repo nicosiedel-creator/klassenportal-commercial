@@ -1,0 +1,44 @@
+import type { Env } from './types.js';
+import { assertSameOrigin, json } from './utils.js';
+import { bootstrapPlatformAdmin, getSession, login, logout, resolveCoreAuth } from './auth.js';
+import { provisionTenant } from './provision.js';
+import { createContent, createCourse, getModules, getSettings, listContent, listCourses, listPersonalGrades, listTenants, savePersonalGrade, setExamVisibility, setModule, updateSettings } from './data.js';
+import { publicOverview } from './public.js';
+import { requirePlatform } from './permissions.js';
+import { createTenantUser, listTenantUsers } from './users.js';
+
+function err(e:unknown):Response{ const code=(e as Error)?.message||'INTERNAL_ERROR'; const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code==='LOGIN_RATE_LIMITED'?429:code==='INTERNAL_ERROR'?500:400; return json({ok:false,error:code},status); }
+async function body(request:Request):Promise<Record<string,unknown>>{ try{return await request.json() as Record<string,unknown>;}catch{return{};} }
+
+export async function handleCoreApi(request:Request,env:Env):Promise<Response|null>{
+  const u=new URL(request.url); if(!u.pathname.startsWith('/api/'))return null;
+  try{
+    assertSameOrigin(request,env.APP_ORIGIN);
+    if(u.pathname==='/api/health')return json({ok:true,service:'klassenportal-commercial'});
+    if(u.pathname==='/api/bootstrap'&&request.method==='POST')return bootstrapPlatformAdmin(env,request);
+    if(u.pathname==='/api/auth/login'&&request.method==='POST')return login(env,request);
+    if(u.pathname==='/api/auth/logout'&&request.method==='POST')return logout(env,request);
+    if(u.pathname==='/api/auth/me'&&request.method==='GET')return json({ok:true,user:await getSession(env,request)});
+
+    const tenantId=u.searchParams.get('tenant_id')||undefined; const courseId=u.searchParams.get('course_id')||undefined;
+    if(u.pathname==='/api/platform/tenants'&&request.method==='GET'){const a=await resolveCoreAuth(env,request);return json({ok:true,tenants:await listTenants(env,a)});}
+    if(u.pathname==='/api/platform/tenants'&&request.method==='POST'){const a=await resolveCoreAuth(env,request);requirePlatform(a);return json({ok:true,...await provisionTenant(env,a,await body(request))},201);}
+    if(!tenantId)throw new Error('TENANT_ID_REQUIRED'); const a=await resolveCoreAuth(env,request,tenantId,courseId);
+
+    if(u.pathname==='/api/tenant/settings'&&request.method==='GET')return json({ok:true,settings:await getSettings(env,a,tenantId)});
+    if(u.pathname==='/api/tenant/settings'&&request.method==='PUT')return json({ok:true,settings:await updateSettings(env,a,tenantId,await body(request))});
+    if(u.pathname==='/api/tenant/modules'&&request.method==='GET')return json({ok:true,modules:await getModules(env,a,tenantId)});
+    if(u.pathname==='/api/tenant/modules'&&request.method==='PUT'){const b=await body(request);await setModule(env,a,tenantId,String(b.feature_key||''),!!b.enabled);return json({ok:true});}
+    if(u.pathname==='/api/courses'&&request.method==='GET')return json({ok:true,courses:await listCourses(env,a,tenantId)});
+    if(u.pathname==='/api/courses'&&request.method==='POST')return json({ok:true,course:await createCourse(env,a,tenantId,await body(request))},201);
+    if(u.pathname==='/api/tenant/users'&&request.method==='GET')return json({ok:true,users:await listTenantUsers(env,a,tenantId)});
+    if(u.pathname==='/api/tenant/users'&&request.method==='POST')return json({ok:true,...await createTenantUser(env,a,tenantId,await body(request))},201);
+    if(u.pathname.startsWith('/api/content/')){const type=u.pathname.split('/')[3]||''; if(request.method==='GET')return json({ok:true,items:await listContent(env,a,tenantId,type,courseId)}); if(request.method==='POST')return json({ok:true,item:await createContent(env,a,tenantId,type,await body(request))},201);}
+    if(u.pathname.match(/^\/api\/exams\/[^/]+\/visibility$/)&&request.method==='PATCH'){const examId=u.pathname.split('/')[3];const b=await body(request);await setExamVisibility(env,a,tenantId,examId,!!b.visible);return json({ok:true});}
+    if(u.pathname==='/api/personal/grades'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,grades:await listPersonalGrades(env,a,tenantId,courseId)});}
+    if(u.pathname==='/api/personal/grades'&&request.method==='POST'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,grade:await savePersonalGrade(env,a,tenantId,courseId,await body(request))},201);}
+    return json({ok:false,error:'NOT_FOUND'},404);
+  }catch(e){return err(e);}
+}
+
+export async function handlePublicApi(request:Request,env:Env):Promise<Response|null>{ const u=new URL(request.url); const m=u.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/); if(!m)return null; try{return json({ok:true,...await publicOverview(env,decodeURIComponent(m[1]),decodeURIComponent(m[2]),await getSession(env,request),u.searchParams.get('access_code')||undefined)});}catch(e){return err(e);} }
