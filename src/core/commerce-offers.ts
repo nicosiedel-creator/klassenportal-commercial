@@ -36,6 +36,7 @@ export type CommercialOffer = Awaited<ReturnType<typeof calculatePlanPrice>> & {
   managedSetupName:string;
   managedSetupCents:number;
   firstTotalCents:number;
+  trialFree:boolean;
 };
 
 function normalizeCycle(v:unknown):BillingCycle{return String(v)==='annual'?'annual':'monthly';}
@@ -69,8 +70,9 @@ export async function calculateCommercialOffer(env:Env,args:{planId:string;cours
   const policy=await getCommercePolicy(env);
   const annualMonths=Math.max(1,Number(policy.annual_months_charged||10));
   const annualTotal=base.recurringMonthlyCents*annualMonths;
-  const subscriptionCharge=cycle==='annual'?annualTotal:base.recurringMonthlyCents;
+  const paidSubscriptionCharge=cycle==='annual'?annualTotal:base.recurringMonthlyCents;
   const managedSetupCents=purpose==='trial'&&setup.id==='self_service'?0:Number(setup.price_cents||0);
+  const subscriptionCharge=purpose==='trial'?0:paidSubscriptionCharge;
   return {
     ...base,
     setupCents:managedSetupCents,
@@ -82,6 +84,7 @@ export async function calculateCommercialOffer(env:Env,args:{planId:string;cours
     managedSetupName:setup.name,
     managedSetupCents,
     firstTotalCents:subscriptionCharge+managedSetupCents,
+    trialFree:purpose==='trial'&&managedSetupCents===0,
   };
 }
 
@@ -115,6 +118,8 @@ export async function startTenantTrial(env:Env,args:{tenantId:string;planId:stri
 }
 
 export async function createPaidBooking(env:Env,args:{tenantId:string;invitationId?:string;planId:string;courseCount:number;billingCycle?:unknown;setupOptionId?:unknown;accepted:boolean;request:Request;actorId:string}):Promise<Record<string,unknown>>{
+  const pending=await env.DB.prepare("SELECT id FROM commercial_orders WHERE tenant_id=? AND status='pending_payment' ORDER BY booked_at DESC LIMIT 1").bind(args.tenantId).first<{id:string}>();
+  if(pending)throw new Error('PAYMENT_ALREADY_PENDING');
   const offer=await calculateCommercialOffer(env,{planId:args.planId,courseCount:args.courseCount,billingCycle:args.billingCycle,setupOptionId:args.setupOptionId,purpose:'paid'});
   if(!offer.pricingReady)throw new Error('PRICING_NOT_CONFIGURED');
   if(!args.accepted)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');
