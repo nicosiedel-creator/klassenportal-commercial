@@ -4,10 +4,13 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-pdfjs.mjs",
     "test": "npm run build && node tests/run.mjs",
     "db:migrate": "wrangler d1 migrations apply DB --remote",
     "deploy": "npm run db:migrate && wrangler deploy"
+  },
+  "dependencies": {
+    "pdfjs-dist": "5.7.284"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
