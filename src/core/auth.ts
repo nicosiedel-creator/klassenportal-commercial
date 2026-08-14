@@ -2,7 +2,7 @@ import type { AuthContext as PortabilityAuth } from '../portability/types.js';
 import type { CoreAuthContext, Env, SessionUser } from './types.js';
 import { b64, cookie, fromB64, id, json, noCookie, normalizeEmail, nowIso, parseCookie, randomBytes, sha256Text, toArrayBuffer } from './utils.js';
 
-const ITERATIONS = 210_000;
+const ITERATIONS = 100_000;
 const SESSION_DAYS = 7;
 
 export async function hashPassword(password: string): Promise<string> {
@@ -16,7 +16,7 @@ export async function hashPassword(password: string): Promise<string> {
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [kind, iterText, saltText, hashText] = stored.split('$');
   if (kind !== 'pbkdf2' || !iterText || !saltText || !hashText) return false;
-  const iterations = Number(iterText); if (!Number.isFinite(iterations) || iterations < 100_000) return false;
+  const iterations = Number(iterText); if (!Number.isFinite(iterations) || iterations < 100_000 || iterations > 100_000) return false;
   const salt = fromB64(saltText); const expected = fromB64(hashText);
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
   const actual = new Uint8Array(await crypto.subtle.deriveBits({ name:'PBKDF2', hash:'SHA-256', salt:toArrayBuffer(salt), iterations }, key, expected.length*8));
