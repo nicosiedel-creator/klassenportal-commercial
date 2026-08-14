@@ -6,25 +6,26 @@ import { parseCsv } from '../portability/csv.js';
 import { parseXlsx } from '../portability/xlsx.js';
 import { normalizeHeader } from '../portability/utils.js';
 
-type MappingKey = 'date'|'start'|'end'|'subject'|'teacher'|'room'|'notes'|'course'|'mode';
+type MappingKey = 'date'|'start'|'end'|'subject'|'subjectShort'|'teacher'|'room'|'notes'|'course'|'mode';
 type Mapping = Partial<Record<MappingKey,string>>;
 type RawRow = Record<string,unknown>;
-
 type CourseRow = {id:string;name:string;code:string;is_active:number};
 type NormalizedLesson = {
   rowNo:number; lessonId:string; courseId:string; courseName:string;
-  date:string; startsAt:string; endsAt:string; subject:string|null; teacher:string|null;
+  date:string; startsAt:string; endsAt:string;
+  subject:string|null; subjectShort:string|null; teacher:string|null;
   room:string|null; notes:string|null;
 };
-
 type ImportIssue = {row:number;field:string;message:string;value?:unknown};
+type SubjectInput = {name:string;shortName:string|null};
 
 const ALIASES: Record<MappingKey,string[]> = {
   date:['datum','date','tag','unterrichtstag','schultag'],
   start:['beginn','start','von','startzeit','beginn_uhrzeit','uhrzeit_von','start_uhrzeit'],
   end:['ende','end','bis','endzeit','ende_uhrzeit','uhrzeit_bis','schluss'],
-  subject:['fach','subject','unterrichtsfach','modul','lernfeld','thema'],
-  teacher:['dozent','dozentin','lehrer','lehrkraft','trainer','trainerin','teacher','referent','referentin'],
+  subject:['fach','fachbezeichnung','fach_bezeichnung','fachname','fach_name','subject','unterrichtsfach','modul','modulbezeichnung','lernfeld','lernfeldbezeichnung','thema'],
+  subjectShort:['fachkurzel','fachkuerzel','fach_kurzel','fach_kuerzel','kurzel','kuerzel','kurzbezeichnung','fachcode','fach_code','subject_code','modulcode','modul_code'],
+  teacher:['dozent','dozentin','dozentenname','dozent_name','lehrer','lehrkraft','lehrkraftname','trainer','trainerin','trainername','teacher','referent','referentin'],
   room:['raum','room','ort','unterrichtsraum','standort'],
   notes:['hinweis','hinweise','info','infos','information','informationen','bemerkung','bemerkungen','notiz','notizen'],
   course:['klasse','kurs','course','class','gruppe','lehrgang'],
@@ -79,6 +80,8 @@ function parseTime(value:unknown):string|null {
 function addDay(date:string):string {const d=new Date(`${date}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10);}
 function value(row:RawRow,mapping:Mapping,key:MappingKey):unknown {const h=mapping[key];return h?row[h]:undefined;}
 function clean(value:unknown,max=500):string|null {const s=String(value??'').trim();return s?s.slice(0,max):null;}
+function token(v:string):string{return normalizeHeader(v).replace(/_/g,'');}
+function subjectKey(name:string,shortName:string|null):string{return `${name.toLocaleLowerCase('de-DE')}|${(shortName??'').toLocaleLowerCase('de-DE')}`;}
 
 async function courses(env:Env,tenantId:string):Promise<CourseRow[]> {
   const r=await env.DB.prepare('SELECT id,name,code,is_active FROM courses WHERE tenant_id=? ORDER BY name').bind(tenantId).all<CourseRow>();
@@ -88,6 +91,21 @@ function resolveCourse(text:unknown,all:CourseRow[]):CourseRow|null {
   const s=String(text??'').trim().toLocaleLowerCase('de-DE'); if(!s)return null;
   const byCode=all.find(c=>c.code.toLocaleLowerCase('de-DE')===s); if(byCode)return byCode;
   const matches=all.filter(c=>c.name.toLocaleLowerCase('de-DE')===s); return matches.length===1?matches[0]:null;
+}
+function inferCourseFromFilename(fileName:string,all:CourseRow[],auth:CoreAuthContext):CourseRow|null {
+  const base=token(fileName.replace(/\.(pdf|xlsx|csv)$/i,'')); if(!base)return null;
+  const allowed=all.filter(c=>{try{requireCourseAccess(auth,c.id);return true;}catch{return false;}});
+  const scored=allowed.map(c=>{
+    const name=token(c.name),code=token(c.code);
+    let score=0;
+    if(code&&base===code)score=120;else if(name&&base===name)score=115;
+    else if(code&&base.includes(code))score=Math.max(score,90+Math.min(code.length,20));
+    else if(name&&base.includes(name))score=Math.max(score,80+Math.min(name.length,25));
+    return{c,score};
+  }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+  if(!scored.length)return null;
+  if(scored.length>1&&scored[0].score===scored[1].score)return null;
+  return scored[0].c;
 }
 
 function buildNormalized(rawRows:RawRow[],mapping:Mapping,allCourses:CourseRow[],fallbackCourseId:string|undefined,auth:CoreAuthContext):{rows:NormalizedLesson[];issues:ImportIssue[];duplicates:number} {
@@ -109,13 +127,15 @@ function buildNormalized(rawRows:RawRow[],mapping:Mapping,allCourses:CourseRow[]
     if(!start){issues.push({row:rowNo,field:'start',message:'Beginn konnte nicht gelesen werden.',value:value(raw,mapping,'start')});return;}
     if(!end){issues.push({row:rowNo,field:'end',message:'Ende konnte nicht gelesen werden.',value:value(raw,mapping,'end')});return;}
     if(end<=start){issues.push({row:rowNo,field:'end',message:'Das Ende muss nach dem Beginn liegen.',value:value(raw,mapping,'end')});return;}
-    const subject=clean(value(raw,mapping,'subject'),200),teacher=clean(value(raw,mapping,'teacher'),200),room=clean(value(raw,mapping,'room'),200);
+    let subject=clean(value(raw,mapping,'subject'),200),subjectShort=clean(value(raw,mapping,'subjectShort'),80);
+    if(!subject&&subjectShort)subject=subjectShort;
+    const teacher=clean(value(raw,mapping,'teacher'),200),room=clean(value(raw,mapping,'room'),200);
     const note=clean(value(raw,mapping,'notes'),2000),mode=clean(value(raw,mapping,'mode'),200);
     const notes=[mode?`Unterrichtsart: ${mode}`:null,note].filter(Boolean).join('\n')||null;
     const startsAt=`${date}T${start}:00`,endsAt=`${date}T${end}:00`;
-    const key=[course.id,startsAt,endsAt,subject?.toLocaleLowerCase('de-DE')||'',teacher?.toLocaleLowerCase('de-DE')||'',room?.toLocaleLowerCase('de-DE')||''].join('|');
+    const key=[course.id,startsAt,endsAt,subject?.toLocaleLowerCase('de-DE')||'',subjectShort?.toLocaleLowerCase('de-DE')||'',teacher?.toLocaleLowerCase('de-DE')||'',room?.toLocaleLowerCase('de-DE')||''].join('|');
     if(seen.has(key)){duplicates++;return;}seen.add(key);
-    rows.push({rowNo,lessonId:id('les_'),courseId:course.id,courseName:course.name,date,startsAt,endsAt,subject,teacher,room,notes});
+    rows.push({rowNo,lessonId:id('les_'),courseId:course.id,courseName:course.name,date,startsAt,endsAt,subject,subjectShort,teacher,room,notes});
   });
   return{rows,issues,duplicates};
 }
@@ -124,22 +144,40 @@ function parseMapping(text:FormDataEntryValue|null,headers:string[]):Mapping {
   if(!text)return detectMapping(headers);
   try{const raw=JSON.parse(String(text)) as Record<string,unknown>,out:Mapping={};for(const key of Object.keys(ALIASES) as MappingKey[]){const h=String(raw[key]??'');if(h&&headers.includes(h))out[key]=h;}return out;}catch{return detectMapping(headers);}
 }
+function fallbackCourse(form:FormData,file:File,allCourses:CourseRow[],auth:CoreAuthContext):string|undefined {
+  const explicit=clean(form.get('course_id'),200)??undefined;
+  if(explicit)return explicit;
+  return inferCourseFromFilename(String(form.get('source_name')??file.name),allCourses,auth)?.id;
+}
 
 export async function previewTimetable(env:Env,auth:CoreAuthContext,tenantId:string,request:Request):Promise<Record<string,unknown>> {
   requireRole(auth,'class_admin');
   const form=await request.formData(),file=form.get('file');if(!(file instanceof File))throw new Error('TIMETABLE_FILE_REQUIRED');
-  if(file.size>12*1024*1024)throw new Error('TIMETABLE_FILE_TOO_LARGE');
+  if(file.size>20*1024*1024)throw new Error('TIMETABLE_FILE_TOO_LARGE');
   const parsed=await parseFile(file);if(!parsed.rows.length)throw new Error('TIMETABLE_EMPTY');if(parsed.rows.length>5000)throw new Error('TIMETABLE_TOO_MANY_ROWS');
-  const mapping=parseMapping(form.get('mapping'),parsed.headers),allCourses=await courses(env,tenantId),fallbackCourseId=clean(form.get('course_id'),200)??undefined;
+  const mapping=parseMapping(form.get('mapping'),parsed.headers),allCourses=await courses(env,tenantId),fallbackCourseId=fallbackCourse(form,file,allCourses,auth);
   const normalized=buildNormalized(parsed.rows,mapping,allCourses,fallbackCourseId,auth);
   const dates=normalized.rows.map(r=>r.date).sort();
-  return {headers:parsed.headers,mapping,rowsSeen:parsed.rows.length,rowsValid:normalized.rows.length,rowsInvalid:new Set(normalized.issues.filter(x=>x.row>1).map(x=>x.row)).size,duplicates:normalized.duplicates,dateFrom:dates[0]??null,dateTo:dates.at(-1)??null,issues:normalized.issues.slice(0,250),sample:normalized.rows.slice(0,15).map(r=>({row:r.rowNo,klasse:r.courseName,datum:r.date,beginn:r.startsAt.slice(11,16),ende:r.endsAt.slice(11,16),fach:r.subject,dozent:r.teacher,raum:r.room,hinweise:r.notes}))};
+  const subjects=[...new Map(normalized.rows.filter(r=>r.subject).map(r=>[subjectKey(r.subject!,r.subjectShort),{name:r.subject!,shortName:r.subjectShort}])).values()];
+  const teachers=[...new Set(normalized.rows.flatMap(r=>r.teacher?[r.teacher]:[]))].sort((a,b)=>a.localeCompare(b,'de'));
+  return {headers:parsed.headers,mapping,autoCourseId:fallbackCourseId??null,rowsSeen:parsed.rows.length,rowsValid:normalized.rows.length,rowsInvalid:new Set(normalized.issues.filter(x=>x.row>1).map(x=>x.row)).size,duplicates:normalized.duplicates,dateFrom:dates[0]??null,dateTo:dates.at(-1)??null,subjects,teachers,issues:normalized.issues.slice(0,250),sample:normalized.rows.slice(0,15).map(r=>({row:r.rowNo,klasse:r.courseName,datum:r.date,beginn:r.startsAt.slice(11,16),ende:r.endsAt.slice(11,16),fach:r.subject,fachkuerzel:r.subjectShort,dozent:r.teacher,raum:r.room,hinweise:r.notes}))};
 }
 
-async function getOrCreateSubjects(env:Env,tenantId:string,names:string[]):Promise<Map<string,string>> {
-  const out=new Map<string,string>(),existing=await env.DB.prepare('SELECT id,name FROM subjects WHERE tenant_id=?').bind(tenantId).all<{id:string;name:string}>();
-  for(const x of existing.results??[])out.set(x.name.toLocaleLowerCase('de-DE'),x.id);
-  for(const name of [...new Set(names)]){const key=name.toLocaleLowerCase('de-DE');if(out.has(key))continue;const newId=id('sub_');await env.DB.prepare('INSERT OR IGNORE INTO subjects(id,tenant_id,name,short_name,created_at) VALUES(?,?,?,?,?)').bind(newId,tenantId,name,null,nowIso()).run();const row=await env.DB.prepare('SELECT id FROM subjects WHERE tenant_id=? AND name=? COLLATE NOCASE').bind(tenantId,name).first<{id:string}>();out.set(key,row?.id??newId);}
+async function getOrCreateSubjects(env:Env,tenantId:string,items:SubjectInput[]):Promise<Map<string,string>> {
+  const out=new Map<string,string>();
+  const existing=await env.DB.prepare('SELECT id,name,short_name FROM subjects WHERE tenant_id=?').bind(tenantId).all<{id:string;name:string;short_name:string|null}>();
+  const byName=new Map<string,{id:string;short:string|null}>(),byShort=new Map<string,{id:string;name:string}>();
+  for(const x of existing.results??[]){byName.set(x.name.toLocaleLowerCase('de-DE'),{id:x.id,short:x.short_name});if(x.short_name)byShort.set(x.short_name.toLocaleLowerCase('de-DE'),{id:x.id,name:x.name});}
+  const unique=new Map<string,SubjectInput>();for(const item of items)unique.set(subjectKey(item.name,item.shortName),item);
+  for(const item of unique.values()){
+    const nameKey=item.name.toLocaleLowerCase('de-DE'),shortKey=item.shortName?.toLocaleLowerCase('de-DE')??'';
+    let found=byName.get(nameKey);let foundId=found?.id;
+    if(!foundId&&shortKey)foundId=byShort.get(shortKey)?.id;
+    if(foundId){if(item.shortName&&found&&!found.short){await env.DB.prepare('UPDATE subjects SET short_name=? WHERE id=? AND tenant_id=?').bind(item.shortName,foundId,tenantId).run();found.short=item.shortName;byShort.set(shortKey,{id:foundId,name:item.name});}out.set(subjectKey(item.name,item.shortName),foundId);continue;}
+    const newId=id('sub_');await env.DB.prepare('INSERT OR IGNORE INTO subjects(id,tenant_id,name,short_name,created_at) VALUES(?,?,?,?,?)').bind(newId,tenantId,item.name,item.shortName,nowIso()).run();
+    const row=await env.DB.prepare('SELECT id,short_name FROM subjects WHERE tenant_id=? AND name=? COLLATE NOCASE').bind(tenantId,item.name).first<{id:string;short_name:string|null}>();
+    const actual=row?.id??newId;byName.set(nameKey,{id:actual,short:row?.short_name??item.shortName});if(shortKey)byShort.set(shortKey,{id:actual,name:item.name});out.set(subjectKey(item.name,item.shortName),actual);
+  }
   return out;
 }
 async function getOrCreateTeachers(env:Env,tenantId:string,names:string[]):Promise<Map<string,string>> {
@@ -152,19 +190,21 @@ async function getOrCreateTeachers(env:Env,tenantId:string,names:string[]):Promi
 export async function applyTimetable(env:Env,auth:CoreAuthContext,tenantId:string,request:Request):Promise<{runId:string;imported:number;skipped:number;dateFrom:string|null;dateTo:string|null}> {
   requireRole(auth,'class_admin');
   const form=await request.formData(),file=form.get('file');if(!(file instanceof File))throw new Error('TIMETABLE_FILE_REQUIRED');
-  if(file.size>12*1024*1024)throw new Error('TIMETABLE_FILE_TOO_LARGE');
+  if(file.size>20*1024*1024)throw new Error('TIMETABLE_FILE_TOO_LARGE');
   const mode=String(form.get('mode')??'sync');if(!['sync','append'].includes(mode))throw new Error('TIMETABLE_MODE_INVALID');
   const parsed=await parseFile(file);if(!parsed.rows.length)throw new Error('TIMETABLE_EMPTY');if(parsed.rows.length>5000)throw new Error('TIMETABLE_TOO_MANY_ROWS');
-  const mapping=parseMapping(form.get('mapping'),parsed.headers),allCourses=await courses(env,tenantId),fallbackCourseId=clean(form.get('course_id'),200)??undefined;
+  const mapping=parseMapping(form.get('mapping'),parsed.headers),allCourses=await courses(env,tenantId),fallbackCourseId=fallbackCourse(form,file,allCourses,auth);
   const normalized=buildNormalized(parsed.rows,mapping,allCourses,fallbackCourseId,auth);
   if(normalized.issues.length){const e=new Error('TIMETABLE_VALIDATION_FAILED') as Error&{issues?:ImportIssue[]};e.issues=normalized.issues.slice(0,500);throw e;}
   if(!normalized.rows.length)throw new Error('TIMETABLE_NO_VALID_ROWS');
-  const subjectMap=await getOrCreateSubjects(env,tenantId,normalized.rows.flatMap(r=>r.subject?[r.subject]:[]));
+  const subjectInputs=normalized.rows.flatMap(r=>r.subject?[{name:r.subject,shortName:r.subjectShort}]:[]);
+  const subjectMap=await getOrCreateSubjects(env,tenantId,subjectInputs);
   const teacherMap=await getOrCreateTeachers(env,tenantId,normalized.rows.flatMap(r=>r.teacher?[r.teacher]:[]));
   const runId=id('tti_'),created=nowIso(),dates=normalized.rows.map(r=>r.date).sort(),dateFrom=dates[0]??null,dateTo=dates.at(-1)??null;
-  await env.DB.prepare("INSERT INTO timetable_import_runs(id,tenant_id,original_name,mode,row_count,status,created_by,created_at,date_from,date_to) VALUES(?,?,?,?,?,'staging',?,?,?,?)").bind(runId,tenantId,safeString(file.name,250),mode,normalized.rows.length,auth.userId,created,dateFrom,dateTo).run();
+  const originalName=safeString(String(form.get('source_name')??file.name),250);
+  await env.DB.prepare("INSERT INTO timetable_import_runs(id,tenant_id,original_name,mode,row_count,status,created_by,created_at,date_from,date_to) VALUES(?,?,?,?,?,'staging',?,?,?,?)").bind(runId,tenantId,originalName,mode,normalized.rows.length,auth.userId,created,dateFrom,dateTo).run();
   try{
-    const staged=normalized.rows.map(r=>({lesson_id:r.lessonId,tenant_id:tenantId,course_id:r.courseId,subject_id:r.subject?subjectMap.get(r.subject.toLocaleLowerCase('de-DE'))??null:null,teacher_id:r.teacher?teacherMap.get(r.teacher.toLocaleLowerCase('de-DE'))??null:null,starts_at:r.startsAt,ends_at:r.endsAt,room:r.room,notes:r.notes,source_row_no:r.rowNo}));
+    const staged=normalized.rows.map(r=>({lesson_id:r.lessonId,tenant_id:tenantId,course_id:r.courseId,subject_id:r.subject?subjectMap.get(subjectKey(r.subject,r.subjectShort))??null:null,teacher_id:r.teacher?teacherMap.get(r.teacher.toLocaleLowerCase('de-DE'))??null:null,starts_at:r.startsAt,ends_at:r.endsAt,room:r.room,notes:r.notes,source_row_no:r.rowNo}));
     for(let i=0;i<staged.length;i+=70){const statements=staged.slice(i,i+70).map((row,j)=>env.DB.prepare('INSERT INTO timetable_import_rows(run_id,row_no,row_json) VALUES(?,?,?)').bind(runId,i+j+1,JSON.stringify(row)));await env.DB.batch(statements);}
     const commit=[];
     if(mode==='sync'){
@@ -172,20 +212,13 @@ export async function applyTimetable(env:Env,auth:CoreAuthContext,tenantId:strin
       for(const r of normalized.rows){const x=byCourse.get(r.courseId);if(!x)byCourse.set(r.courseId,{from:r.date,to:r.date});else{if(r.date<x.from)x.from=r.date;if(r.date>x.to)x.to=r.date;}}
       for(const [courseId,range] of byCourse)commit.push(env.DB.prepare(`DELETE FROM lessons WHERE id IN (SELECT lesson_id FROM timetable_import_lessons WHERE tenant_id=? AND course_id=? AND starts_at>=? AND starts_at<?)`).bind(tenantId,courseId,`${range.from}T00:00:00`,`${addDay(range.to)}T00:00:00`));
     }
-    commit.push(env.DB.prepare(`INSERT INTO lessons(id,tenant_id,course_id,subject_id,teacher_id,starts_at,ends_at,room,notes,created_at)
-      SELECT json_extract(r.row_json,'$.lesson_id'),json_extract(r.row_json,'$.tenant_id'),json_extract(r.row_json,'$.course_id'),json_extract(r.row_json,'$.subject_id'),json_extract(r.row_json,'$.teacher_id'),json_extract(r.row_json,'$.starts_at'),json_extract(r.row_json,'$.ends_at'),json_extract(r.row_json,'$.room'),json_extract(r.row_json,'$.notes'),CURRENT_TIMESTAMP
-      FROM timetable_import_rows r WHERE r.run_id=? AND NOT EXISTS(
-        SELECT 1 FROM lessons l WHERE l.tenant_id=json_extract(r.row_json,'$.tenant_id') AND l.course_id=json_extract(r.row_json,'$.course_id') AND l.starts_at=json_extract(r.row_json,'$.starts_at') AND l.ends_at=json_extract(r.row_json,'$.ends_at')
-        AND l.subject_id IS json_extract(r.row_json,'$.subject_id') AND l.teacher_id IS json_extract(r.row_json,'$.teacher_id') AND COALESCE(l.room,'')=COALESCE(json_extract(r.row_json,'$.room'),'')
-      )` ).bind(runId));
-    commit.push(env.DB.prepare(`INSERT INTO timetable_import_lessons(run_id,tenant_id,course_id,lesson_id,starts_at,ends_at,source_row_no)
-      SELECT ?,json_extract(r.row_json,'$.tenant_id'),json_extract(r.row_json,'$.course_id'),json_extract(r.row_json,'$.lesson_id'),json_extract(r.row_json,'$.starts_at'),json_extract(r.row_json,'$.ends_at'),json_extract(r.row_json,'$.source_row_no')
-      FROM timetable_import_rows r WHERE r.run_id=? AND EXISTS(SELECT 1 FROM lessons l WHERE l.id=json_extract(r.row_json,'$.lesson_id'))`).bind(runId,runId));
+    commit.push(env.DB.prepare(`INSERT INTO lessons(id,tenant_id,course_id,subject_id,teacher_id,starts_at,ends_at,room,notes,created_at) SELECT json_extract(r.row_json,'$.lesson_id'),json_extract(r.row_json,'$.tenant_id'),json_extract(r.row_json,'$.course_id'),json_extract(r.row_json,'$.subject_id'),json_extract(r.row_json,'$.teacher_id'),json_extract(r.row_json,'$.starts_at'),json_extract(r.row_json,'$.ends_at'),json_extract(r.row_json,'$.room'),json_extract(r.row_json,'$.notes'),CURRENT_TIMESTAMP FROM timetable_import_rows r WHERE r.run_id=? AND NOT EXISTS(SELECT 1 FROM lessons l WHERE l.tenant_id=json_extract(r.row_json,'$.tenant_id') AND l.course_id=json_extract(r.row_json,'$.course_id') AND l.starts_at=json_extract(r.row_json,'$.starts_at') AND l.ends_at=json_extract(r.row_json,'$.ends_at') AND l.subject_id IS json_extract(r.row_json,'$.subject_id') AND l.teacher_id IS json_extract(r.row_json,'$.teacher_id') AND COALESCE(l.room,'')=COALESCE(json_extract(r.row_json,'$.room'),''))`).bind(runId));
+    commit.push(env.DB.prepare(`INSERT INTO timetable_import_lessons(run_id,tenant_id,course_id,lesson_id,starts_at,ends_at,source_row_no) SELECT ?,json_extract(r.row_json,'$.tenant_id'),json_extract(r.row_json,'$.course_id'),json_extract(r.row_json,'$.lesson_id'),json_extract(r.row_json,'$.starts_at'),json_extract(r.row_json,'$.ends_at'),json_extract(r.row_json,'$.source_row_no') FROM timetable_import_rows r WHERE r.run_id=? AND EXISTS(SELECT 1 FROM lessons l WHERE l.id=json_extract(r.row_json,'$.lesson_id'))`).bind(runId,runId));
     commit.push(env.DB.prepare('DELETE FROM timetable_import_rows WHERE run_id=?').bind(runId));
     await env.DB.batch(commit);
     const count=await env.DB.prepare('SELECT COUNT(*) AS n FROM timetable_import_lessons WHERE run_id=?').bind(runId).first<{n:number}>(),imported=Number(count?.n??0),skipped=normalized.rows.length-imported+normalized.duplicates;
     await env.DB.prepare("UPDATE timetable_import_runs SET status='completed',imported_count=?,skipped_count=?,completed_at=? WHERE id=?").bind(imported,skipped,nowIso(),runId).run();
-    await audit(env.DB,auth.userId,'timetable.imported',tenantId,undefined,'timetable_import',runId,{mode,rows:parsed.rows.length,imported,skipped,dateFrom,dateTo});
+    await audit(env.DB,auth.userId,'timetable.imported',tenantId,undefined,'timetable_import',runId,{mode,rows:parsed.rows.length,imported,skipped,dateFrom,dateTo,subjects:subjectInputs.length,teachers:teacherMap.size});
     return{runId,imported,skipped,dateFrom,dateTo};
   }catch(e){await env.DB.prepare("UPDATE timetable_import_runs SET status='failed',error_message=?,completed_at=? WHERE id=?").bind(String((e as Error)?.message||'IMPORT_FAILED').slice(0,1000),nowIso(),runId).run();await env.DB.prepare('DELETE FROM timetable_import_rows WHERE run_id=?').bind(runId).run();throw e;}
 }
