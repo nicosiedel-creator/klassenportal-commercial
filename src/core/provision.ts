@@ -13,9 +13,16 @@ export type ProvisionInput={
 };
 export type ProvisionResult={tenantId:string;adminUserId:string;temporaryPassword?:string;courseId?:string};
 
+async function uniqueTenantSlug(env:Env,value:string):Promise<string>{
+  const base=slugify(value).slice(0,72);if(!base)throw new Error('TENANT_SLUG_REQUIRED');
+  const exists=await env.DB.prepare('SELECT id FROM tenants WHERE slug=?').bind(base).first();if(!exists)return base;
+  for(let i=2;i<=99;i++){const candidate=`${base.slice(0,75-String(i).length)}-${i}`;const row=await env.DB.prepare('SELECT id FROM tenants WHERE slug=?').bind(candidate).first();if(!row)return candidate;}
+  return `${base.slice(0,65)}-${crypto.randomUUID().slice(0,8)}`;
+}
+
 async function provisionInternal(env:Env,actorUserId:string,input:ProvisionInput):Promise<ProvisionResult>{
   const name=safeString(input.name,200); if(!name) throw new Error('TENANT_NAME_REQUIRED');
-  const slug=slugify(input.slug||name); if(!slug) throw new Error('TENANT_SLUG_REQUIRED');
+  const slug=await uniqueTenantSlug(env,input.slug||name);
   const email=normalizeEmail(input.admin_email); const adminName=safeString(input.admin_name,200); if(!email||!adminName) throw new Error('ADMIN_REQUIRED');
   const planId=safeString(input.plan_id||'provider',80); const plan=await env.DB.prepare('SELECT id FROM plans WHERE id=? AND is_active=1').bind(planId).first();if(!plan)throw new Error('PLAN_NOT_FOUND');
   const tenantId=id('ten_'), adminUserId=id('usr_'), ts=nowIso();
