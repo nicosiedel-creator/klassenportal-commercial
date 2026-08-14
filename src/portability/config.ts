@@ -1,103 +1,18 @@
-import type { PortabilityConfig, ResourceDefinition } from './types.js';
-
-const r = (x: ResourceDefinition): ResourceDefinition => x;
+import type { PortabilityConfig } from './types.js';
 
 export const portabilityConfig: PortabilityConfig = {
-  tenantTable: 'tenants',
-  tenantIdColumn: 'id',
-  tenantNameColumn: 'name',
-  tenantSlugColumn: 'slug',
-  maxImportRows: 10000,
-  maxPdfBytes: 25 * 1024 * 1024,
-  deleteGraceDays: 14,
+  tenantTable: 'tenants', tenantIdColumn: 'id', tenantNameColumn: 'name', tenantSlugColumn: 'slug',
+  maxImportRows: 20_000, maxPdfBytes: 50 * 1024 * 1024, deleteGraceDays: 14,
   resources: [
-    r({
-      key: 'locations', table: 'locations', idColumn: 'id', tenantColumn: 'tenant_id', restoreOrder: 10,
-      columns: {
-        name: { required: true, sourceAliases: ['standort', 'location'], maxLength: 200 },
-        address: { sourceAliases: ['adresse'], maxLength: 500 },
-      },
-      uniqueBy: ['name'], exportOrderBy: 'name',
-    }),
-    r({
-      key: 'courses', table: 'courses', idColumn: 'id', tenantColumn: 'tenant_id', restoreOrder: 20,
-      columns: {
-        name: { required: true, sourceAliases: ['kurs', 'klasse', 'course'], maxLength: 200 },
-        location_id: { sourceAliases: ['standort_id'] },
-        start_date: { sourceAliases: ['beginn', 'start'], type: 'date' },
-        end_date: { sourceAliases: ['ende'], type: 'date' },
-      },
-      uniqueBy: ['name'], exportOrderBy: 'name',
-    }),
-    r({
-      key: 'subjects', table: 'subjects', idColumn: 'id', tenantColumn: 'tenant_id', restoreOrder: 30,
-      columns: {
-        name: { required: true, sourceAliases: ['fach'], maxLength: 200 },
-        short_name: { sourceAliases: ['kuerzel', 'kürzel'], maxLength: 40 },
-      }, uniqueBy: ['name'], exportOrderBy: 'name',
-    }),
-    r({
-      key: 'teachers', table: 'teachers', idColumn: 'id', tenantColumn: 'tenant_id', restoreOrder: 30,
-      columns: {
-        name: { required: true, sourceAliases: ['dozent', 'dozentin', 'lehrer'], maxLength: 200 },
-        email: { sourceAliases: ['e_mail', 'mail'], maxLength: 320 },
-      }, uniqueBy: ['name'], exportOrderBy: 'name',
-    }),
-    r({
-      key: 'lessons', table: 'lessons', idColumn: 'id', tenantColumn: 'tenant_id', restoreOrder: 40,
-      columns: {
-        course_id: { required: true, sourceAliases: ['kurs_id', 'klasse_id'] },
-        subject_id: { sourceAliases: ['fach_id'] },
-        teacher_id: { sourceAliases: ['dozent_id'] },
-        starts_at: { required: true, sourceAliases: ['beginn', 'start'], type: 'date' },
-        ends_at: { sourceAliases: ['ende'], type: 'date' },
-        room: { sourceAliases: ['raum'], maxLength: 100 },
-      }, exportOrderBy: 'starts_at',
-    }),
-    r({
-      key: 'homework', table: 'homework', idColumn: 'id', tenantColumn: 'tenant_id', restoreOrder: 40,
-      columns: {
-        course_id: { required: true, sourceAliases: ['kurs_id', 'klasse_id'] },
-        title: { required: true, sourceAliases: ['titel', 'hausaufgabe'], maxLength: 300 },
-        description: { sourceAliases: ['beschreibung', 'text'], maxLength: 10000 },
-        due_at: { sourceAliases: ['faellig', 'fällig', 'faellig_bis'], type: 'date' },
-      }, exportOrderBy: 'due_at',
-    }),
-    r({
-      key: 'appointments', table: 'appointments', idColumn: 'id', tenantColumn: 'tenant_id', restoreOrder: 40,
-      columns: {
-        course_id: { sourceAliases: ['kurs_id', 'klasse_id'] },
-        title: { required: true, sourceAliases: ['titel', 'termin'], maxLength: 300 },
-        starts_at: { required: true, sourceAliases: ['beginn', 'datum'], type: 'date' },
-        ends_at: { sourceAliases: ['ende'], type: 'date' },
-        description: { sourceAliases: ['beschreibung'], maxLength: 10000 },
-      }, exportOrderBy: 'starts_at',
-    }),
-    r({
-      key: 'announcements', table: 'announcements', idColumn: 'id', tenantColumn: 'tenant_id', restoreOrder: 40,
-      columns: {
-        course_id: { sourceAliases: ['kurs_id', 'klasse_id'] },
-        title: { required: true, sourceAliases: ['titel'], maxLength: 300 },
-        body: { required: true, sourceAliases: ['text', 'inhalt'], maxLength: 20000 },
-        visible_from: { sourceAliases: ['sichtbar_ab'], type: 'date' },
-      }, exportOrderBy: 'visible_from',
-    }),
-    r({
-      key: 'exams', table: 'exams', idColumn: 'id', tenantColumn: 'tenant_id', restoreOrder: 40,
-      columns: {
-        course_id: { required: true, sourceAliases: ['kurs_id', 'klasse_id'] },
-        title: { required: true, sourceAliases: ['titel', 'pruefung', 'prüfung'], maxLength: 300 },
-        exam_at: { required: true, sourceAliases: ['datum', 'termin'], type: 'date' },
-        topics: { sourceAliases: ['themen'], maxLength: 10000 },
-        aids: { sourceAliases: ['hilfsmittel'], maxLength: 5000 },
-        visible_to_students: { sourceAliases: ['sichtbar', 'sichtbar_fuer_schueler'], type: 'boolean' },
-      }, exportOrderBy: 'exam_at',
-    }),
+    { key:'locations',table:'locations',idColumn:'id',tenantColumn:'tenant_id',restoreOrder:10,columns:{name:{required:true,type:'string',maxLength:200,sourceAliases:['standort','location']},address:{type:'string',maxLength:500,sourceAliases:['adresse']}},uniqueBy:['name'],exportOrderBy:'name ASC' },
+    { key:'courses',table:'courses',idColumn:'id',tenantColumn:'tenant_id',restoreOrder:20,columns:{name:{required:true,type:'string',maxLength:200,sourceAliases:['kurs','klasse','course']},code:{type:'string',maxLength:80,sourceAliases:['kurscode','klassencode']},start_date:{type:'date',sourceAliases:['start','beginn']},end_date:{type:'date',sourceAliases:['ende']}},uniqueBy:['name'],exportOrderBy:'name ASC' },
+    { key:'subjects',table:'subjects',idColumn:'id',tenantColumn:'tenant_id',restoreOrder:30,columns:{name:{required:true,type:'string',maxLength:150,sourceAliases:['fach','subject']},short_name:{type:'string',maxLength:30,sourceAliases:['kürzel','kuerzel']}},uniqueBy:['name'],exportOrderBy:'name ASC' },
+    { key:'teachers',table:'teachers',idColumn:'id',tenantColumn:'tenant_id',restoreOrder:40,columns:{name:{required:true,type:'string',maxLength:200,sourceAliases:['dozent','lehrer','teacher']},email:{type:'string',maxLength:320,sourceAliases:['e-mail','mail']}},uniqueBy:['email'],exportOrderBy:'name ASC' },
+    { key:'lessons',table:'lessons',idColumn:'id',tenantColumn:'tenant_id',restoreOrder:50,columns:{course_id:{required:true,type:'string',sourceAliases:['kurs_id','klasse_id']},subject_id:{type:'string',sourceAliases:['fach_id']},teacher_id:{type:'string',sourceAliases:['dozent_id','lehrer_id']},starts_at:{required:true,type:'date',sourceAliases:['beginn','start']},ends_at:{required:true,type:'date',sourceAliases:['ende']},room:{type:'string',maxLength:100,sourceAliases:['raum']}},exportOrderBy:'starts_at ASC' },
+    { key:'homework',table:'homework',idColumn:'id',tenantColumn:'tenant_id',restoreOrder:60,columns:{course_id:{required:true,type:'string',sourceAliases:['kurs_id','klasse_id']},title:{required:true,type:'string',maxLength:250,sourceAliases:['titel','aufgabe']},description:{type:'string',maxLength:20000,sourceAliases:['beschreibung']},due_at:{type:'date',sourceAliases:['fällig','faellig','fällig bis','faellig bis']}},exportOrderBy:'due_at ASC' },
+    { key:'appointments',table:'appointments',idColumn:'id',tenantColumn:'tenant_id',restoreOrder:70,columns:{course_id:{type:'string',sourceAliases:['kurs_id','klasse_id']},title:{required:true,type:'string',maxLength:250,sourceAliases:['titel','termin']},starts_at:{required:true,type:'date',sourceAliases:['beginn','start']},ends_at:{type:'date',sourceAliases:['ende']},location:{type:'string',maxLength:250,sourceAliases:['ort']}},exportOrderBy:'starts_at ASC' },
+    { key:'announcements',table:'announcements',idColumn:'id',tenantColumn:'tenant_id',restoreOrder:80,columns:{title:{required:true,type:'string',maxLength:250,sourceAliases:['titel']},body:{required:true,type:'string',maxLength:50000,sourceAliases:['text','inhalt']},published_at:{type:'date',sourceAliases:['veröffentlicht','veroeffentlicht']}},exportOrderBy:'published_at DESC' },
+    { key:'links',table:'links',idColumn:'id',tenantColumn:'tenant_id',restoreOrder:90,columns:{title:{required:true,type:'string',maxLength:250,sourceAliases:['titel']},url:{required:true,type:'string',maxLength:2048,sourceAliases:['link']},category:{type:'string',maxLength:120,sourceAliases:['kategorie']}},exportOrderBy:'title ASC' },
+    { key:'exams',table:'exams',idColumn:'id',tenantColumn:'tenant_id',restoreOrder:100,columns:{course_id:{required:true,type:'string',sourceAliases:['kurs_id','klasse_id']},subject_id:{type:'string',sourceAliases:['fach_id']},title:{required:true,type:'string',maxLength:250,sourceAliases:['titel','prüfung','pruefung']},starts_at:{required:true,type:'date',sourceAliases:['beginn','datum']},room:{type:'string',maxLength:100,sourceAliases:['raum']},notes:{type:'string',maxLength:20000,sourceAliases:['hinweise']}},exportOrderBy:'starts_at ASC' },
   ],
 };
-
-export function resourceByKey(key: string): ResourceDefinition {
-  const found = portabilityConfig.resources.find((x) => x.key === key);
-  if (!found) throw new Error(`UNKNOWN_RESOURCE:${key}`);
-  return found;
-}
