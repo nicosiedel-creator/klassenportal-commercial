@@ -11,7 +11,10 @@
       "/api/*",
       "/public/*",
       "/brand/*",
-      "/einrichtung/*"
+      "/einrichtung/*",
+      "/plattform-admin*",
+      "/kunden-admin*",
+      "/zahlung/*"
     ]
   },
   "d1_databases": [
