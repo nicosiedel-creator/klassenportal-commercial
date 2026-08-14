@@ -1,32 +1,14 @@
-import { portabilityConfig, resourceByKey } from './config.js';
-import type { PortabilityEnv } from './types.js';
-import { csvEscape, safeFilename, textEncoder } from './utils.js';
-import { selectAllByTenant } from './db.js';
+import type { AuthContext, PortabilityConfig, PortabilityEnv, ResourceDefinition } from './types.js';
+import { assertTenantAdmin, csvEscape, safeFilename } from './utils.js';
+import { readTenantRows, resourceByKey, tenantExists } from './db.js';
 import { xlsxFromRows } from './xlsx-export.js';
 import { simplePdf } from './pdf.js';
 import { createZipStream, type ZipEntry } from './zip.js';
 import { listTenantFiles } from './files.js';
-
-function csvOf(headers:string[],rows:Record<string,unknown>[]):Uint8Array { return textEncoder.encode('\uFEFF'+[headers.join(';'),...rows.map(r=>headers.map(h=>csvEscape(r[h])).join(';'))].join('\r\n')); }
-function pdfLines(headers:string[],rows:Record<string,unknown>[]):string[]{ return rows.map((r,i)=>`${i+1}. ${headers.map(h=>`${h}: ${String(r[h]??'')}`).join(' | ')}`); }
-
-export async function exportResource(env:PortabilityEnv,tenantId:string,resourceKey:string,format:'csv'|'xlsx'|'pdf'):Promise<Response> {
-  const resource=resourceByKey(resourceKey); const rows=await selectAllByTenant(env.DB,resource,tenantId); const headers=[resource.idColumn,resource.tenantColumn,...Object.keys(resource.columns)];
-  let body:Uint8Array; let type:string; let ext:string;
-  if(format==='xlsx'){body=await xlsxFromRows(headers,rows);type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';ext='xlsx';}
-  else if(format==='pdf'){body=simplePdf(`Export ${resourceKey}`,pdfLines(headers,rows));type='application/pdf';ext='pdf';}
-  else {body=csvOf(headers,rows);type='text/csv; charset=utf-8';ext='csv';}
-  return new Response(body,{headers:{'content-type':type,'content-disposition':`attachment; filename="${safeFilename(resourceKey)}.${ext}"`,'cache-control':'no-store'}});
-}
-
-export async function exportTenantZip(env:PortabilityEnv,tenantId:string):Promise<Response> {
-  async function* entries():AsyncGenerator<ZipEntry>{
-    const tenant=await env.DB.prepare('SELECT * FROM tenants WHERE id=?').bind(tenantId).first<Record<string,unknown>>();
-    yield {name:'tenant.json',body:JSON.stringify(tenant??{},null,2)};
-    for(const r of portabilityConfig.resources){const rows=await selectAllByTenant(env.DB,r,tenantId);yield{name:`data/${r.key}.csv`,body:csvOf([r.idColumn,r.tenantColumn,...Object.keys(r.columns)],rows)};}
-    const files=await listTenantFiles(env,tenantId); for(const f of files){const obj=await env.FILES.get(f.object_key);if(obj)yield{name:`files/${safeFilename(f.original_name)}`,body:obj.body};}
-    const audit=await env.DB.prepare('SELECT * FROM portability_audit WHERE tenant_id=? ORDER BY created_at').bind(tenantId).all<Record<string,unknown>>();
-    yield {name:'audit-log.json',body:JSON.stringify(audit.results??[],null,2)};
-  }
-  return new Response(createZipStream(entries()),{headers:{'content-type':'application/zip','content-disposition':`attachment; filename="customer-export-${safeFilename(tenantId)}-${new Date().toISOString().slice(0,10)}.zip"`,'cache-control':'no-store'}});
-}
+function csvFromRows(headers:string[],rows:Record<string,unknown>[]):string{const lines=[headers.map(csvEscape).join(';')];for(const row of rows)lines.push(headers.map(h=>csvEscape(row[h])).join(';'));return '\uFEFF'+lines.join('\r\n')+'\r\n';}
+function exportHeaders(r:ResourceDefinition):string[]{return[r.idColumn,...Object.keys(r.columns)];}
+function stripTenant(r:ResourceDefinition,rows:Record<string,unknown>[]):Record<string,unknown>[]{return rows.map(row=>Object.fromEntries(exportHeaders(r).map(h=>[h,row[h]])));}
+export async function exportResource(env:PortabilityEnv,config:PortabilityConfig,auth:AuthContext,tenantId:string,resourceKey:string,format:'csv'|'xlsx'|'pdf'):Promise<Response>{assertTenantAdmin(auth,tenantId);if(!await tenantExists(env.DB,config.tenantTable,config.tenantIdColumn,tenantId))throw new Error('TENANT_NOT_FOUND');const r=resourceByKey(config.resources,resourceKey),rows=stripTenant(r,await readTenantRows(env.DB,r,tenantId)),headers=exportHeaders(r),base=`${safeFilename(resourceKey)}-${new Date().toISOString().slice(0,10)}`;if(format==='csv')return new Response(csvFromRows(headers,rows),{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':`attachment; filename="${base}.csv"`,'cache-control':'no-store'}});if(format==='xlsx')return new Response(await xlsxFromRows(headers,rows),{headers:{'content-type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','content-disposition':`attachment; filename="${base}.xlsx"`,'cache-control':'no-store'}});const lines=rows.map((row,i)=>`${i+1}. `+headers.map(h=>`${h}: ${String(row[h]??'')}`).join(' | '));return new Response(simplePdf(`Export ${resourceKey}`,lines),{headers:{'content-type':'application/pdf','content-disposition':`attachment; filename="${base}.pdf"`,'cache-control':'no-store'}});}
+export async function buildFullTenantExport(env:PortabilityEnv,config:PortabilityConfig,auth:AuthContext,tenantId:string):Promise<{stream:ReadableStream<Uint8Array>;filename:string}>{assertTenantAdmin(auth,tenantId);if(!await tenantExists(env.DB,config.tenantTable,config.tenantIdColumn,tenantId))throw new Error('TENANT_NOT_FOUND');const files=await listTenantFiles(env,tenantId),manifest={exportVersion:1,tenantId,createdAt:new Date().toISOString(),generatedBy:auth.userId,resources:config.resources.map(r=>r.key),files:files.map(f=>({name:f.original_name,contentType:f.content_type,size:f.size_bytes}))};async function* entries():AsyncGenerator<ZipEntry>{yield{name:'manifest.json',body:JSON.stringify(manifest,null,2)};for(const r of [...config.resources].sort((a,b)=>a.restoreOrder-b.restoreOrder)){const rows=stripTenant(r,await readTenantRows(env.DB,r,tenantId)),headers=exportHeaders(r);yield{name:`daten/${r.key}.csv`,body:csvFromRows(headers,rows)};}yield{name:'export-uebersicht.pdf',body:simplePdf('Vollständiger Kundenexport',[`Mandant: ${tenantId}`,`Erstellt: ${manifest.createdAt}`,`Datenbereiche: ${config.resources.length}`,`Originaldateien: ${files.length}`,'Dieser Export enthält strukturierte CSV-Daten und die hochgeladenen Originaldateien.'])};for(const f of files){const key=String(f.object_key),obj=await env.FILES.get(key);if(!obj)continue;yield{name:`dateien/${safeFilename(String(f.id??'datei'))}-${safeFilename(String(f.original_name??key.split('/').pop()??'datei'))}`,body:obj.body};}}const filename=`kundenexport-${safeFilename(tenantId)}-${new Date().toISOString().replace(/[:.]/g,'-')}.zip`;return{stream:createZipStream(entries()),filename};}
+export async function fullTenantExport(env:PortabilityEnv,config:PortabilityConfig,auth:AuthContext,tenantId:string):Promise<Response>{const built=await buildFullTenantExport(env,config,auth,tenantId);return new Response(built.stream,{headers:{'content-type':'application/zip','content-disposition':`attachment; filename="${built.filename}"`,'cache-control':'no-store'}});}
+export async function storeFullTenantExport(env:PortabilityEnv,config:PortabilityConfig,auth:AuthContext,tenantId:string,purpose:'contract_end'|'archive'='archive'):Promise<{key:string;filename:string}>{const built=await buildFullTenantExport(env,config,auth,tenantId),key=`exports/${tenantId}/${purpose}/${built.filename}`;await env.FILES.put(key,built.stream,{httpMetadata:{contentType:'application/zip',contentDisposition:`attachment; filename="${built.filename}"`},customMetadata:{tenantId,purpose,generatedBy:auth.userId}});return{key,filename:built.filename};}
