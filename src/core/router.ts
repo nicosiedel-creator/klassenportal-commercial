@@ -9,7 +9,8 @@ import { createTenantUser, listTenantUsers } from './users.js';
 import { uploadTenantLogo } from './branding.js';
 import { applyTimetable, previewTimetable } from './timetable.js';
 import { storeTimetableSource } from './timetable-source.js';
-import { createOnboardingInvitation, getPublicOnboarding, listOnboardingInvitations, revokeOnboardingInvitation, submitPublicOnboarding } from './onboarding.js';
+import { createOnboardingInvitation, getPublicOnboarding, getPublicOnboardingQuote, listOnboardingInvitations, revokeOnboardingInvitation, submitPublicOnboarding } from './onboarding.js';
+import { billingSummary, getSellerProfile, listCommercePlans, quoteExpansion, requestExpansion, updateCommercePlan, updateSellerProfile } from './commerce.js';
 
 function err(e:unknown):Response{
   const ex=e as Error&{issues?:unknown};const code=ex?.message||'INTERNAL_ERROR';
@@ -18,7 +19,7 @@ function err(e:unknown):Response{
     :code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'?403
     :code.includes('NOT_FOUND')?404
     :code==='ONBOARDING_EXPIRED'||code==='ONBOARDING_UNAVAILABLE'?410
-    :code==='ONBOARDING_ALREADY_IN_PROGRESS'||code==='ONBOARDING_ALREADY_COMPLETED'?409
+    :['ONBOARDING_ALREADY_IN_PROGRESS','ONBOARDING_ALREADY_COMPLETED','COURSE_LIMIT_REACHED','PRICING_NOT_CONFIGURED','SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE'].includes(code)?409
     :code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413
     :code==='LOGIN_RATE_LIMITED'?429
     :code==='INTERNAL_ERROR'?500:400;
@@ -36,6 +37,8 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(u.pathname==='/api/auth/me'&&request.method==='GET')return json({ok:true,user:await getSession(env,request)});
     if(u.pathname==='/api/auth/change-password'&&request.method==='POST')return changePassword(env,request);
 
+    const publicQuote=u.pathname.match(/^\/api\/onboarding\/([^/]+)\/quote$/);
+    if(publicQuote&&request.method==='GET')return json({ok:true,quote:await getPublicOnboardingQuote(env,decodeURIComponent(publicQuote[1]),u.searchParams.get('courses')||'1')});
     const publicOnboarding=u.pathname.match(/^\/api\/onboarding\/([^/]+)$/);
     if(publicOnboarding){
       const token=decodeURIComponent(publicOnboarding[1]);
@@ -53,12 +56,20 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(revoke&&request.method==='POST'){
       const a=await resolveCoreAuth(env,request);requirePlatform(a);await revokeOnboardingInvitation(env,a,decodeURIComponent(revoke[1]));return json({ok:true});
     }
+    if(u.pathname==='/api/platform/commerce/plans'&&request.method==='GET'){const a=await resolveCoreAuth(env,request);return json({ok:true,plans:await listCommercePlans(env,a)});}
+    const planCommerce=u.pathname.match(/^\/api\/platform\/commerce\/plans\/([^/]+)$/);
+    if(planCommerce&&request.method==='PUT'){const a=await resolveCoreAuth(env,request);await updateCommercePlan(env,a,decodeURIComponent(planCommerce[1]),await body(request));return json({ok:true});}
+    if(u.pathname==='/api/platform/commerce/seller'&&request.method==='GET'){const a=await resolveCoreAuth(env,request);return json({ok:true,profile:await getSellerProfile(env,a)});}
+    if(u.pathname==='/api/platform/commerce/seller'&&request.method==='PUT'){const a=await resolveCoreAuth(env,request);await updateSellerProfile(env,a,await body(request));return json({ok:true});}
 
     const tenantId=u.searchParams.get('tenant_id')||undefined; const courseId=u.searchParams.get('course_id')||undefined;
     if(u.pathname==='/api/platform/tenants'&&request.method==='GET'){const a=await resolveCoreAuth(env,request);return json({ok:true,tenants:await listTenants(env,a)});}
     if(u.pathname==='/api/platform/tenants'&&request.method==='POST'){const a=await resolveCoreAuth(env,request);requirePlatform(a);return json({ok:true,...await provisionTenant(env,a,await body(request))},201);}
     if(!tenantId)throw new Error('TENANT_ID_REQUIRED'); const a=await resolveCoreAuth(env,request,tenantId,courseId);
 
+    if(u.pathname==='/api/billing/summary'&&request.method==='GET')return json({ok:true,...await billingSummary(env,a,tenantId)});
+    if(u.pathname==='/api/billing/change-quote'&&request.method==='POST')return json({ok:true,quote:await quoteExpansion(env,a,tenantId,await body(request))});
+    if(u.pathname==='/api/billing/expand'&&request.method==='POST')return json({ok:true,...await requestExpansion(env,a,tenantId,await body(request))},201);
     if(u.pathname==='/api/tenant/logo'&&request.method==='POST')return json({ok:true,...await uploadTenantLogo(env,a,tenantId,request)});
     if(u.pathname==='/api/timetable/preview'&&request.method==='POST')return json({ok:true,...await previewTimetable(env,a,tenantId,request)});
     if(u.pathname==='/api/timetable/apply'&&request.method==='POST')return json({ok:true,...await applyTimetable(env,a,tenantId,request)});
