@@ -1,7 +1,7 @@
 export interface D1PreparedStatementLike {
   bind(...values: unknown[]): D1PreparedStatementLike;
   run<T = unknown>(): Promise<{ success: boolean; results?: T[]; meta?: unknown }>;
-  all<T = unknown>(): Promise<{ success: boolean; results: T[]; meta?: unknown }>;
+  all<T = Record<string, unknown>>(): Promise<{ success: boolean; results: T[]; meta?: unknown }>;
   first<T = unknown>(column?: string): Promise<T | null>;
 }
 
