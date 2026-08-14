@@ -1,14 +1,14 @@
 import type { Env } from './types.js';
 import { assertSameOrigin, json } from './utils.js';
-import { getSession, login, logout, resolveCoreAuth } from './auth.js';
+import { changePassword, getSession, login, logout, resolveCoreAuth } from './auth.js';
 import { provisionTenant } from './provision.js';
 import { createContent, createCourse, getModules, getSettings, listContent, listCourses, listPersonalGrades, listTenants, savePersonalGrade, setExamVisibility, setModule, updateSettings } from './data.js';
 import { publicOverview } from './public.js';
 import { requirePlatform } from './permissions.js';
 import { createTenantUser, listTenantUsers } from './users.js';
 
-function err(e:unknown):Response{ const code=(e as Error)?.message||'INTERNAL_ERROR'; const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code==='LOGIN_RATE_LIMITED'?429:code==='INTERNAL_ERROR'?500:400; return json({ok:false,error:code},status); }
-async function body(request:Request):Promise<Record<string,unknown>>{ try{return await request.json() as Record<string,unknown>;}catch{return{};} }
+function err(e:unknown):Response{ const code=(e as Error)?.message||'INTERNAL_ERROR'; const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code==='PASSWORD_CHANGE_REQUIRED'?428:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code==='LOGIN_RATE_LIMITED'?429:code==='INTERNAL_ERROR'?500:400; return json({ok:false,error:code},status); }
+async function body(request:Request):Promise<Record<string,unknown>>{ try{const b=await request.json() as Record<string,unknown>;if(b.course_id==='')b.course_id=null;return b;}catch{return{};} }
 
 export async function handleCoreApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url); if(!u.pathname.startsWith('/api/'))return null;
@@ -18,6 +18,7 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(u.pathname==='/api/auth/login'&&request.method==='POST')return login(env,request);
     if(u.pathname==='/api/auth/logout'&&request.method==='POST')return logout(env,request);
     if(u.pathname==='/api/auth/me'&&request.method==='GET')return json({ok:true,user:await getSession(env,request)});
+    if(u.pathname==='/api/auth/change-password'&&request.method==='POST')return changePassword(env,request);
 
     const tenantId=u.searchParams.get('tenant_id')||undefined; const courseId=u.searchParams.get('course_id')||undefined;
     if(u.pathname==='/api/platform/tenants'&&request.method==='GET'){const a=await resolveCoreAuth(env,request);return json({ok:true,tenants:await listTenants(env,a)});}
