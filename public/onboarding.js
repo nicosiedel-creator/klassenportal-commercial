@@ -1,5 +1,5 @@
 const root=document.querySelector('#setup-app');
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const token=decodeURIComponent(location.pathname.split('/').filter(Boolean).at(-1)||'');
 const planNames={starter:'Starter',provider:'Bildungsträger',white_label:'White-Label'};
 async function api(url,opt={}){const r=await fetch(url,{credentials:'same-origin',...opt,headers:{'content-type':'application/json',...(opt.headers||{})}});let d={};try{d=await r.json()}catch{}if(!r.ok){const e=new Error(d.error||`HTTP_${r.status}`);e.data=d;throw e;}return d;}
