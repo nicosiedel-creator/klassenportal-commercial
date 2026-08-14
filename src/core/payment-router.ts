@@ -1,7 +1,7 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
-import { calculateCommercialOffer, tenantTrialSummary } from './commerce-offers.js';
-import { billingSummaryWithStripe, createPaidBookingWithStripe, quoteExpansionWithStripe, requestExpansionWithStripe } from './payment-orchestration.js';
+import { calculateCommercialOffer, getCommercePolicy, listManagedSetupOptions, tenantTrialSummary } from './commerce-offers.js';
+import { billingSummaryWithStripe, createPaidBookingWithStripe, quoteExpansionWithStripe, requestExpansionWithStripe, retryInitialCheckout } from './payment-orchestration.js';
 import { createStripeCheckout, createStripePortalSession, handleStripeWebhook } from './stripe.js';
 import { assertSameOrigin, nowIso } from './utils.js';
 
@@ -9,7 +9,7 @@ function out(data:unknown,status=200):Response{return Response.json(data,{status
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function error(e:unknown):Response{
   const code=(e as Error)?.message||'INTERNAL_ERROR';
-  const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code==='ORIGIN_MISMATCH'?403:code==='STRIPE_NOT_CONFIGURED'?503:code.includes('NOT_FOUND')?404:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('CONFIRMATION')?400:code==='SELF_SERVICE_DOWNGRADE_NOT_ALLOWED'||code==='NO_CHANGE'?409:500;
+  const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code==='ORIGIN_MISMATCH'?403:code==='STRIPE_NOT_CONFIGURED'?503:code.includes('NOT_FOUND')?404:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('CONFIRMATION')?400:code==='SELF_SERVICE_DOWNGRADE_NOT_ALLOWED'||code==='NO_CHANGE'||code==='PAYMENT_ALREADY_PENDING'?409:500;
   return out({ok:false,error:code},status);
 }
 
@@ -23,7 +23,7 @@ export async function handlePaymentApi(request:Request,env:Env):Promise<Response
   try{
     assertSameOrigin(request,env.APP_ORIGIN);
     const auth=await resolveCoreAuth(env,request,tenantId,u.searchParams.get('course_id')||undefined);
-    if(u.pathname==='/api/billing/summary'&&request.method==='GET')return out({ok:true,...await billingSummaryWithStripe(env,auth,tenantId)});
+    if(u.pathname==='/api/billing/summary'&&request.method==='GET')return out({ok:true,...await billingSummaryWithStripe(env,auth,tenantId),trial:await tenantTrialSummary(env,auth,tenantId),commercePolicy:await getCommercePolicy(env),setupOptions:await listManagedSetupOptions(env)});
     if(u.pathname==='/api/billing/change-quote'&&request.method==='POST')return out({ok:true,quote:await quoteExpansionWithStripe(env,auth,tenantId,await body(request))});
     if(u.pathname==='/api/billing/expand'&&request.method==='POST'){
       const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');
@@ -35,6 +35,7 @@ export async function handlePaymentApi(request:Request,env:Env):Promise<Response
       const booked=await createPaidBookingWithStripe(env,{tenantId,planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id,accepted:true,request,actorId:auth.userId});
       return out({ok:true,...booked},201);
     }
+    if(u.pathname==='/api/billing/retry-checkout'&&request.method==='POST')return out({ok:true,...await retryInitialCheckout(env,auth,tenantId,request)});
     if(u.pathname==='/api/billing/stripe-portal'&&request.method==='POST')return out({ok:true,...await createStripePortalSession(env,auth,tenantId,request)});
     if(u.pathname==='/api/billing/trial-quote'&&request.method==='POST'){
       const b=await body(request),trial=await tenantTrialSummary(env,auth,tenantId) as Record<string,any>|null;if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');
