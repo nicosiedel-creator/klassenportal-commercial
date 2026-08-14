@@ -5,6 +5,7 @@ import { billingSummaryWithStripe, createPaidBookingWithStripe, quoteExpansionWi
 import { createStripePortalSession, handleStripeWebhook } from './stripe.js';
 import { createTaxStripeCheckout } from './stripe-tax-billing.js';
 import { ensureTenantCommerceState } from './commerce-state.js';
+import { getStripeDiagnostics } from './stripe-diagnostics.js';
 import { assertSameOrigin, nowIso } from './utils.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status});}
@@ -19,6 +20,13 @@ export async function handlePaymentApi(request:Request,env:Env):Promise<Response
   const u=new URL(request.url);
   if(u.pathname==='/api/payments/stripe/webhook'&&request.method==='POST'){
     try{return await handleStripeWebhook(env,request);}catch(e){return error(e);}
+  }
+  if(u.pathname==='/api/platform/payments/diagnostics'&&request.method==='GET'){
+    try{
+      assertSameOrigin(request,env.APP_ORIGIN);
+      const auth=await resolveCoreAuth(env,request);
+      return out({ok:true,...await getStripeDiagnostics(env,auth)});
+    }catch(e){return error(e);}
   }
   if(!u.pathname.startsWith('/api/billing/'))return null;
   const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)return out({ok:false,error:'TENANT_ID_REQUIRED'},400);
