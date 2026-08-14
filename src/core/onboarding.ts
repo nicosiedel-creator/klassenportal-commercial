@@ -65,7 +65,7 @@ export async function getPublicOnboarding(env:Env,token:string):Promise<Record<s
   return publicInvitation(row);
 }
 
-export async function getPublicOnboardingQuote(env:Env,token:string,requestedCourses:unknown):Promise<Record<string,unknown>>{
+export async function getPublicOnboardingQuote(env:Env,token:string,requestedCourses:unknown){
   const row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
   if(row.status!=='open'||row.expires_at<=nowIso())throw new Error(row.expires_at<=nowIso()?'ONBOARDING_EXPIRED':'ONBOARDING_UNAVAILABLE');
   return calculatePlanPrice(env,row.plan_id,courseCount(requestedCourses));
