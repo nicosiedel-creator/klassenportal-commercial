@@ -6,8 +6,9 @@ import { createContent, createCourse, getModules, getSettings, listContent, list
 import { publicOverview } from './public.js';
 import { requirePlatform } from './permissions.js';
 import { createTenantUser, listTenantUsers } from './users.js';
+import { uploadTenantLogo } from './branding.js';
 
-function err(e:unknown):Response{ const code=(e as Error)?.message||'INTERNAL_ERROR'; const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code==='PASSWORD_CHANGE_REQUIRED'?428:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code==='LOGIN_RATE_LIMITED'?429:code==='INTERNAL_ERROR'?500:400; return json({ok:false,error:code},status); }
+function err(e:unknown):Response{ const code=(e as Error)?.message||'INTERNAL_ERROR'; const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code==='PASSWORD_CHANGE_REQUIRED'?428:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code.includes('TOO_LARGE')?413:code==='LOGIN_RATE_LIMITED'?429:code==='INTERNAL_ERROR'?500:400; return json({ok:false,error:code},status); }
 async function body(request:Request):Promise<Record<string,unknown>>{ try{const b=await request.json() as Record<string,unknown>;if(b.course_id==='')b.course_id=null;return b;}catch{return{};} }
 
 export async function handleCoreApi(request:Request,env:Env):Promise<Response|null>{
@@ -25,6 +26,7 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(u.pathname==='/api/platform/tenants'&&request.method==='POST'){const a=await resolveCoreAuth(env,request);requirePlatform(a);return json({ok:true,...await provisionTenant(env,a,await body(request))},201);}
     if(!tenantId)throw new Error('TENANT_ID_REQUIRED'); const a=await resolveCoreAuth(env,request,tenantId,courseId);
 
+    if(u.pathname==='/api/tenant/logo'&&request.method==='POST')return json({ok:true,...await uploadTenantLogo(env,a,tenantId,request)});
     if(u.pathname==='/api/tenant/settings'&&request.method==='GET')return json({ok:true,settings:await getSettings(env,a,tenantId)});
     if(u.pathname==='/api/tenant/settings'&&request.method==='PUT')return json({ok:true,settings:await updateSettings(env,a,tenantId,await body(request))});
     if(u.pathname==='/api/tenant/modules'&&request.method==='GET')return json({ok:true,modules:await getModules(env,a,tenantId)});
