@@ -51,6 +51,7 @@ ALTER TABLE commercial_orders ADD COLUMN external_subscription_id TEXT;
 ALTER TABLE commercial_invoices ADD COLUMN external_invoice_url TEXT;
 ALTER TABLE commercial_invoices ADD COLUMN external_invoice_pdf_url TEXT;
 ALTER TABLE subscription_changes ADD COLUMN external_invoice_id TEXT;
+ALTER TABLE billing_provider_state ADD COLUMN external_config_id TEXT;
 
 UPDATE billing_provider_state
 SET provider='stripe',status='not_connected',automatic_collection=0,updated_at=CURRENT_TIMESTAMP
