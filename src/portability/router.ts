@@ -1,52 +1,78 @@
-import type { AuthContext, PortabilityEnv } from './types.js';
-import { assertTenantAccess, json } from './utils.js';
-import { previewImport, commitImport } from './import.js';
-import { exportResource, exportTenantZip } from './export.js';
-import { uploadPdf } from './files.js';
-import { createBackup, restoreBackup } from './backup.js';
-import { requestTenantDeletion, confirmTenantDeletion, executeDueTenantDeletion } from './delete.js';
+import type { AuthContext, PortabilityConfig, PortabilityEnv } from './types.js';
+import { json } from './utils.js';
+import { previewImport, executeImport, importPdf } from './import.js';
+import { exportResource, fullTenantExport } from './export.js';
+import { createTenantBackup, listTenantBackups, restoreTenantBackup } from './backup.js';
+import { requestTenantDeletion, cancelTenantDeletion, finalizeTenantDeletion } from './delete.js';
 
-function tenantFrom(url: URL): string { const x=url.searchParams.get('tenantId'); if(!x) throw new Error('TENANT_REQUIRED'); return x; }
-function requirePlatformAdmin(auth: AuthContext): void { if(!auth.isPlatformAdmin) throw new Error('PLATFORM_ADMIN_REQUIRED'); }
+export type ResolveAuth = (request: Request) => Promise<AuthContext>;
 
-export async function handlePortabilityRequest(request: Request, env: PortabilityEnv, auth: AuthContext): Promise<Response> {
+function errorResponse(error: unknown): Response {
+  const e = error as Error & { issues?: unknown };
+  const code = e.message || 'INTERNAL_ERROR';
+  const status = code.startsWith('FORBIDDEN') || code.includes('ADMIN_REQUIRED') ? 403
+    : code.includes('NOT_FOUND') || code.includes('MISSING') ? 404
+    : code.includes('TOO_LARGE') || code.includes('TOO_MANY') ? 413
+    : code === 'INTERNAL_ERROR' ? 500 : 400;
+  return json({ ok: false, error: code, issues: e.issues }, status);
+}
+
+export async function handlePortabilityRequest(
+  request: Request,
+  env: PortabilityEnv,
+  config: PortabilityConfig,
+  resolveAuth: ResolveAuth,
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith('/api/portability/')) return null;
   try {
-    const url = new URL(request.url); const p=url.pathname;
-    if (p.endsWith('/import/preview') && request.method==='POST') {
-      const tenantId=tenantFrom(url); assertTenantAccess(auth,tenantId);
-      const resource=url.searchParams.get('resource') ?? ''; const body=await request.arrayBuffer(); const sourceName=request.headers.get('x-file-name') ?? 'import'; const sourceType=(url.searchParams.get('type') ?? 'csv') as 'csv'|'xlsx';
-      return json(await previewImport(env,tenantId,resource,sourceType,sourceName,body,auth.userId));
+    const auth = await resolveAuth(request);
+    const tenantId = url.searchParams.get('tenant_id') ?? '';
+    if (!tenantId) throw new Error('TENANT_ID_REQUIRED');
+
+    if (url.pathname === '/api/portability/import/preview' && request.method === 'POST') {
+      const form = await request.formData();
+      const file = form.get('file'); const resource = String(form.get('resource') ?? '');
+      if (!(file instanceof File) || !resource) throw new Error('FILE_AND_RESOURCE_REQUIRED');
+      return json({ ok: true, preview: await previewImport(env, config, auth, tenantId, resource, file) });
     }
-    if (p.endsWith('/import/commit') && request.method==='POST') {
-      const tenantId=tenantFrom(url); assertTenantAccess(auth,tenantId); const {jobId}=await request.json() as {jobId:string}; await commitImport(env,tenantId,jobId,auth.userId); return json({ok:true});
+    if (url.pathname === '/api/portability/import/execute' && request.method === 'POST') {
+      const form = await request.formData();
+      const file = form.get('file'); const resource = String(form.get('resource') ?? '');
+      const mode = String(form.get('mode') ?? 'append') as 'append' | 'replace';
+      if (!(file instanceof File) || !resource || !['append','replace'].includes(mode)) throw new Error('INVALID_IMPORT_REQUEST');
+      return json({ ok: true, ...(await executeImport(env, config, auth, tenantId, resource, file, mode)) });
     }
-    if (p.endsWith('/files/pdf') && request.method==='POST') {
-      const tenantId=tenantFrom(url); assertTenantAccess(auth,tenantId); const name=request.headers.get('x-file-name') ?? 'document.pdf'; const resourceType=url.searchParams.get('resourceType') ?? undefined; const resourceId=url.searchParams.get('resourceId') ?? undefined;
-      return json(await uploadPdf(env,tenantId,name,request.headers.get('content-type') ?? 'application/pdf',await request.arrayBuffer(),auth.userId,resourceType,resourceId));
+    if (url.pathname === '/api/portability/import/pdf' && request.method === 'POST') {
+      const form = await request.formData(); const file = form.get('file');
+      if (!(file instanceof File)) throw new Error('PDF_REQUIRED');
+      return json({ ok: true, file: await importPdf(env, config, auth, tenantId, file) });
     }
-    if (p.endsWith('/export/resource') && request.method==='GET') {
-      const tenantId=tenantFrom(url); assertTenantAccess(auth,tenantId); const resource=url.searchParams.get('resource') ?? ''; const format=(url.searchParams.get('format') ?? 'csv') as 'csv'|'xlsx'|'pdf'; return exportResource(env,tenantId,resource,format);
+    if (url.pathname === '/api/portability/export' && request.method === 'GET') {
+      const resource = url.searchParams.get('resource') ?? '';
+      const format = (url.searchParams.get('format') ?? 'csv') as 'csv'|'xlsx'|'pdf';
+      if (!resource || !['csv','xlsx','pdf'].includes(format)) throw new Error('INVALID_EXPORT_REQUEST');
+      return exportResource(env, config, auth, tenantId, resource, format);
     }
-    if (p.endsWith('/export/full') && request.method==='GET') {
-      const tenantId=tenantFrom(url); assertTenantAccess(auth,tenantId); return exportTenantZip(env,tenantId);
+    if (url.pathname === '/api/portability/export/full' && request.method === 'GET') return fullTenantExport(env, config, auth, tenantId);
+    if (url.pathname === '/api/portability/backups' && request.method === 'GET') return json({ ok: true, backups: await listTenantBackups(env, auth, tenantId) });
+    if (url.pathname === '/api/portability/backups' && request.method === 'POST') return json({ ok: true, backup: await createTenantBackup(env, config, auth, tenantId, 'manual') });
+    if (url.pathname === '/api/portability/backups/restore' && request.method === 'POST') {
+      const body = await request.json() as { backup_id?: string; confirmation?: string };
+      return json({ ok: true, ...(await restoreTenantBackup(env, config, auth, tenantId, body.backup_id ?? '', body.confirmation ?? '')) });
     }
-    if (p.endsWith('/backup') && request.method==='POST') {
-      const tenantId=tenantFrom(url); assertTenantAccess(auth,tenantId); return json(await createBackup(env,tenantId,'manual',auth.userId));
+    if (url.pathname === '/api/portability/deletion' && request.method === 'POST') {
+      const body = await request.json() as { reason?: 'contract_end'|'manual' };
+      return json({ ok: true, ...(await requestTenantDeletion(env, config, auth, tenantId, body.reason ?? 'manual')) });
     }
-    if (p.endsWith('/restore') && request.method==='POST') {
-      requirePlatformAdmin(auth); const {backupId}=await request.json() as {backupId:string}; await restoreBackup(env,backupId,auth.userId); return json({ok:true});
+    if (url.pathname === '/api/portability/deletion/cancel' && request.method === 'POST') {
+      const body = await request.json() as { request_id?: string };
+      await cancelTenantDeletion(env, auth, tenantId, body.request_id ?? ''); return json({ ok: true });
     }
-    if (p.endsWith('/delete/request') && request.method==='POST') {
-      const tenantId=tenantFrom(url); assertTenantAccess(auth,tenantId); return json(await requestTenantDeletion(env,tenantId,auth.userId));
+    if (url.pathname === '/api/portability/deletion/finalize' && request.method === 'POST') {
+      const body = await request.json() as { request_id?: string; confirmation?: string };
+      return json({ ok: true, ...(await finalizeTenantDeletion(env, config, auth, tenantId, body.request_id ?? '', body.confirmation ?? '')) });
     }
-    if (p.endsWith('/delete/confirm') && request.method==='POST') {
-      requirePlatformAdmin(auth); const {requestId}=await request.json() as {requestId:string}; await confirmTenantDeletion(env,requestId,auth.userId); return json({ok:true});
-    }
-    if (p.endsWith('/delete/execute') && request.method==='POST') {
-      requirePlatformAdmin(auth); const {requestId}=await request.json() as {requestId:string}; await executeDueTenantDeletion(env,requestId,auth.userId); return json({ok:true});
-    }
-    return json({error:'NOT_FOUND'},404);
-  } catch (e) {
-    const msg=e instanceof Error?e.message:String(e); const status=msg.includes('FORBIDDEN')||msg.includes('ADMIN_REQUIRED')?403:msg.includes('NOT_FOUND')?404:400; return json({error:msg},status);
-  }
+    return json({ ok: false, error: 'NOT_FOUND' }, 404);
+  } catch (e) { return errorResponse(e); }
 }
