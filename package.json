@@ -5,7 +5,9 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "test": "npm run build && node tests/run.mjs"
+    "test": "npm run build && node tests/run.mjs",
+    "db:migrate": "wrangler d1 migrations apply DB --remote",
+    "deploy": "npm run db:migrate && wrangler deploy"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
