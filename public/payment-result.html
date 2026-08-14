@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Zahlung · Klassenportal</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>body{background:#f8fafc}.payment-shell{max-width:720px;margin:70px auto;padding:0 18px}.payment-card{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:28px}.payment-card h1{margin-top:0}.payment-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}</style>
+</head>
+<body>
+  <main class="payment-shell"><section class="payment-card" id="payment-result"><h1>Zahlungsstatus wird geladen …</h1></section></main>
+  <script type="module">
+    const box=document.querySelector('#payment-result');
+    const success=location.pathname==='/zahlung/erfolg';
+    if(success){
+      box.innerHTML=`<h1>Zahlung wurde übermittelt</h1><p>Danke. Die Freischaltung erfolgt automatisch, sobald der Zahlungsdienst die Zahlung bestätigt hat.</p><p class="muted">Kartenzahlungen werden üblicherweise direkt bestätigt. Bei SEPA kann die endgültige Bestätigung später eintreffen. Das Portal behandelt den Auftrag bis dahin nicht als bezahlt.</p><div class="payment-actions"><a class="btn" href="/">Portal öffnen</a></div>`;
+    }else{
+      box.innerHTML=`<h1>Zahlung nicht abgeschlossen</h1><p>Der Zahlungsvorgang wurde abgebrochen. Eine noch nicht bestätigte Buchung wird dadurch nicht freigeschaltet.</p><p class="muted">Du kannst im Portal später erneut zur Zahlung wechseln.</p><div class="payment-actions"><a class="btn" href="/">Zurück zum Portal</a></div>`;
+    }
+  </script>
+</body>
+</html>
