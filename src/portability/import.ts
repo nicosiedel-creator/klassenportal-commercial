@@ -1,59 +1,12 @@
-import type { ImportIssue, ImportPreview, PortabilityEnv, ResourceDefinition } from './types.js';
-import { portabilityConfig, resourceByKey } from './config.js';
+import type { AuthContext, ImportIssue, ImportPreview, PortabilityConfig, PortabilityEnv, ResourceDefinition } from './types.js';
 import { parseCsv } from './csv.js';
 import { parseXlsx } from './xlsx.js';
-import { asIso, normalizeHeader, parseBoolean, randomId } from './utils.js';
-import { audit, insertRows } from './db.js';
-
-function mapColumns(resource: ResourceDefinition, headers: string[]): Map<string,string> {
-  const map=new Map<string,string>(); const normalized=headers.map(h=>normalizeHeader(h));
-  for(const [target,def] of Object.entries(resource.columns)) {
-    const aliases=[target,...(def.sourceAliases??[])].map(normalizeHeader);
-    const idx=normalized.findIndex(h=>aliases.includes(h)); if(idx>=0) map.set(target,headers[idx]);
-  }
-  return map;
-}
-function coerce(value:unknown, type:string|undefined):unknown {
-  if(value===null||value===undefined||value==='') return null;
-  if(type==='number'){const n=Number(value);return Number.isFinite(n)?n:null;}
-  if(type==='boolean') return parseBoolean(value);
-  if(type==='date') return asIso(value);
-  return String(value).trim();
-}
-function validate(resource:ResourceDefinition, source:Record<string,unknown>, mapping:Map<string,string>, rowNo:number):{data:Record<string,unknown>;issues:ImportIssue[]} {
-  const data:Record<string,unknown>={}; const issues:ImportIssue[]=[];
-  for(const [target,def] of Object.entries(resource.columns)) {
-    const src=mapping.get(target); const raw=src?source[src]:undefined; const val=coerce(raw,def.type);
-    if(def.required&&(val===null||val===undefined||val==='')) issues.push({row:rowNo,field:target,message:'Pflichtfeld fehlt',value:raw});
-    if(def.maxLength&&typeof val==='string'&&val.length>def.maxLength) issues.push({row:rowNo,field:target,message:`Maximal ${def.maxLength} Zeichen`,value:raw});
-    if(raw!==undefined&&raw!==''&&def.type==='date'&&val===null) issues.push({row:rowNo,field:target,message:'Ungültiges Datum',value:raw});
-    if(raw!==undefined&&raw!==''&&def.type==='number'&&val===null) issues.push({row:rowNo,field:target,message:'Ungültige Zahl',value:raw});
-    if(raw!==undefined&&raw!==''&&def.type==='boolean'&&val===null) issues.push({row:rowNo,field:target,message:'Ungültiger Wahrheitswert',value:raw});
-    if(val!==null&&val!==undefined) data[target]=val;
-  }
-  return {data,issues};
-}
-
-export async function previewImport(env:PortabilityEnv,tenantId:string,resourceKey:string,sourceType:'csv'|'xlsx',sourceName:string,buffer:ArrayBuffer,actor:string):Promise<ImportPreview&{jobId:string}> {
-  const resource=resourceByKey(resourceKey); const parsed=sourceType==='csv'?parseCsv(new TextDecoder().decode(buffer)):await parseXlsx(buffer);
-  if(parsed.rows.length>portabilityConfig.maxImportRows) throw new Error('IMPORT_TOO_MANY_ROWS');
-  const mapping=mapColumns(resource,parsed.headers); const issues:ImportIssue[]=[]; const staged:Array<{row:number;data:Record<string,unknown>}>=[];
-  parsed.rows.forEach((row,i)=>{const x=validate(resource,row,mapping,i+2);issues.push(...x.issues);if(!x.issues.length)staged.push({row:i+2,data:x.data});});
-  const jobId=randomId('imp_');
-  await env.DB.prepare('INSERT INTO portability_import_jobs(id,tenant_id,resource_key,source_type,source_name,status,rows_seen,rows_valid,rows_invalid,issues_json,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(jobId,tenantId,resourceKey,sourceType,sourceName,'previewed',parsed.rows.length,staged.length,parsed.rows.length-staged.length,JSON.stringify(issues.slice(0,1000)),actor).run();
-  if(staged.length){const stmts=staged.map(x=>env.DB.prepare('INSERT INTO portability_import_stage(job_id,row_no,payload_json) VALUES(?,?,?)').bind(jobId,x.row,JSON.stringify(x.data)));await env.DB.batch(stmts);}
-  await audit(env.DB,tenantId,actor,'import_previewed',{jobId,resourceKey,sourceType,rowsSeen:parsed.rows.length,rowsValid:staged.length,rowsInvalid:parsed.rows.length-staged.length});
-  return {jobId,resource:resourceKey,rowsSeen:parsed.rows.length,rowsValid:staged.length,rowsInvalid:parsed.rows.length-staged.length,headers:parsed.headers,sample:staged.slice(0,10).map(x=>x.data),issues};
-}
-
-export async function commitImport(env:PortabilityEnv,tenantId:string,jobId:string,actor:string):Promise<void> {
-  const job=await env.DB.prepare('SELECT tenant_id,resource_key,status,rows_invalid FROM portability_import_jobs WHERE id=?').bind(jobId).first<{tenant_id:string;resource_key:string;status:string;rows_invalid:number}>();
-  if(!job||job.tenant_id!==tenantId) throw new Error('IMPORT_JOB_NOT_FOUND'); if(job.status!=='previewed') throw new Error('IMPORT_JOB_NOT_PREVIEWED'); if(job.rows_invalid>0) throw new Error('IMPORT_HAS_INVALID_ROWS');
-  const staged=await env.DB.prepare('SELECT payload_json FROM portability_import_stage WHERE job_id=? ORDER BY row_no').bind(jobId).all<{payload_json:string}>(); const rows=(staged.results??[]).map(x=>JSON.parse(x.payload_json)); const resource=resourceByKey(job.resource_key);
-  if(rows.length) await insertRows(env.DB,resource,tenantId,rows,false);
-  await env.DB.batch([
-    env.DB.prepare("UPDATE portability_import_jobs SET status='completed',completed_at=CURRENT_TIMESTAMP WHERE id=? AND status='previewed'").bind(jobId),
-    env.DB.prepare('DELETE FROM portability_import_stage WHERE job_id=?').bind(jobId),
-  ]);
-  await audit(env.DB,tenantId,actor,'import_committed',{jobId,resourceKey:job.resource_key,rows:rows.length});
-}
+import { assertTenantAdmin, asIso, normalizeHeader, parseBoolean, randomId } from './utils.js';
+import { resourceByKey, tenantExists } from './db.js';
+import { storePdf } from './files.js';
+function sourceMap(resource:ResourceDefinition):Map<string,string>{const map=new Map<string,string>();for(const [column,def] of Object.entries(resource.columns)){map.set(normalizeHeader(column),column);for(const alias of def.sourceAliases??[])map.set(normalizeHeader(alias),column);}return map;}
+function normalizeRows(resource:ResourceDefinition,rawRows:Record<string,unknown>[]):{rows:Record<string,unknown>[];issues:ImportIssue[]}{const aliases=sourceMap(resource),issues:ImportIssue[]=[],rows:Record<string,unknown>[]=[];rawRows.forEach((raw,idx)=>{const mapped:Record<string,unknown>={};for(const [source,value] of Object.entries(raw)){const target=aliases.get(normalizeHeader(source));if(target)mapped[target]=value;}for(const [field,def] of Object.entries(resource.columns)){let value=mapped[field];if(typeof value==='string')value=value.trim();if(def.required&&(value===''||value===null||value===undefined)){issues.push({row:idx+2,field,message:'Pflichtfeld fehlt',value});continue;}if(value===''||value===null||value===undefined){mapped[field]=null;continue;}if(def.type==='number'){const n=typeof value==='number'?value:Number(String(value).replace(',','.'));if(!Number.isFinite(n))issues.push({row:idx+2,field,message:'Ungültige Zahl',value});else mapped[field]=n;}else if(def.type==='boolean'){const b=parseBoolean(value);if(b===null)issues.push({row:idx+2,field,message:'Ungültiger Wahr/Falsch-Wert',value});else mapped[field]=b?1:0;}else if(def.type==='date'){const iso=asIso(value);if(!iso)issues.push({row:idx+2,field,message:'Ungültiges Datum',value});else mapped[field]=iso;}else{const s=String(value);if(def.maxLength&&s.length>def.maxLength)issues.push({row:idx+2,field,message:`Maximal ${def.maxLength} Zeichen`,value:s.slice(0,200)});else mapped[field]=s;}}mapped._id=randomId();rows.push(mapped);});return{rows,issues};}
+async function parseStructuredFile(file:File):Promise<{headers:string[];rows:Record<string,unknown>[]}>{const name=file.name.toLowerCase();if(file.type==='text/csv'||name.endsWith('.csv'))return parseCsv(await file.text());if(file.type==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'||name.endsWith('.xlsx'))return parseXlsx(await file.arrayBuffer());throw new Error('UNSUPPORTED_IMPORT_FILE');}
+export async function previewImport(env:PortabilityEnv,config:PortabilityConfig,auth:AuthContext,tenantId:string,resourceKey:string,file:File):Promise<ImportPreview>{assertTenantAdmin(auth,tenantId);if(!await tenantExists(env.DB,config.tenantTable,config.tenantIdColumn,tenantId))throw new Error('TENANT_NOT_FOUND');const resource=resourceByKey(config.resources,resourceKey),parsed=await parseStructuredFile(file);if(parsed.rows.length>config.maxImportRows)throw new Error('IMPORT_TOO_MANY_ROWS');const normalized=normalizeRows(resource,parsed.rows),invalidRows=new Set(normalized.issues.map(i=>i.row));return{resource:resourceKey,rowsSeen:parsed.rows.length,rowsValid:parsed.rows.length-invalidRows.size,rowsInvalid:invalidRows.size,headers:parsed.headers,sample:normalized.rows.slice(0,10).map(({_id,...rest})=>rest),issues:normalized.issues.slice(0,200)};}
+export async function executeImport(env:PortabilityEnv,config:PortabilityConfig,auth:AuthContext,tenantId:string,resourceKey:string,file:File,mode:'append'|'replace'='append'):Promise<{runId:string;imported:number}>{assertTenantAdmin(auth,tenantId);if(!await tenantExists(env.DB,config.tenantTable,config.tenantIdColumn,tenantId))throw new Error('TENANT_NOT_FOUND');const resource=resourceByKey(config.resources,resourceKey),parsed=await parseStructuredFile(file);if(parsed.rows.length>config.maxImportRows)throw new Error('IMPORT_TOO_MANY_ROWS');const normalized=normalizeRows(resource,parsed.rows);if(normalized.issues.length){const err=new Error('IMPORT_VALIDATION_FAILED');(err as Error&{issues?:ImportIssue[]}).issues=normalized.issues.slice(0,500);throw err;}const runId=randomId('imp_'),now=new Date().toISOString();await env.DB.prepare("INSERT INTO portability_import_runs (id, tenant_id, resource_key, mode, original_name, row_count, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, 'staging', ?, ?)").bind(runId,tenantId,resourceKey,mode,file.name,normalized.rows.length,auth.userId,now).run();for(let i=0;i<normalized.rows.length;i+=80){const statements=normalized.rows.slice(i,i+80).map((row,j)=>env.DB.prepare('INSERT INTO portability_import_rows (run_id, row_no, row_json) VALUES (?, ?, ?)').bind(runId,i+j+1,JSON.stringify(row)));if(statements.length)await env.DB.batch(statements);}const businessCols=Object.keys(resource.columns),targetCols=[resource.idColumn,resource.tenantColumn,...businessCols],selectCols=[`json_extract(row_json, '$._id')`,'?',...businessCols.map(c=>`json_extract(row_json, '$.${c}')`)],insertSql=`INSERT INTO ${resource.table} (${targetCols.join(', ')}) SELECT ${selectCols.join(', ')} FROM portability_import_rows WHERE run_id = ? ORDER BY row_no`,commit=[];if(mode==='replace')commit.push(env.DB.prepare(`DELETE FROM ${resource.table} WHERE ${resource.tenantColumn} = ?`).bind(tenantId));commit.push(env.DB.prepare(insertSql).bind(tenantId,runId));commit.push(env.DB.prepare("UPDATE portability_import_runs SET status = 'completed', completed_at = ? WHERE id = ?").bind(new Date().toISOString(),runId));commit.push(env.DB.prepare('DELETE FROM portability_import_rows WHERE run_id = ?').bind(runId));await env.DB.batch(commit);return{runId,imported:normalized.rows.length};}
+export async function importPdf(env:PortabilityEnv,config:PortabilityConfig,auth:AuthContext,tenantId:string,file:File):Promise<{id:string;key:string}>{assertTenantAdmin(auth,tenantId);if(file.size>config.maxPdfBytes)throw new Error('PDF_TOO_LARGE');if(!await tenantExists(env.DB,config.tenantTable,config.tenantIdColumn,tenantId))throw new Error('TENANT_NOT_FOUND');return storePdf(env,tenantId,file,auth.userId);}
