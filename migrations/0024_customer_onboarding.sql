@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS onboarding_invitations (
   token_hash TEXT NOT NULL UNIQUE,
   customer_email TEXT NOT NULL,
   plan_id TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','completed','revoked','expired')),
+  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','processing','completed','revoked','expired')),
   expires_at TEXT NOT NULL,
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL,
