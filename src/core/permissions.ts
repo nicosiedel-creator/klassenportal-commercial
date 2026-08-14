@@ -5,3 +5,7 @@ export function requireRole(auth: CoreAuthContext, minimum: 'tenant_admin'|'clas
   if((ranks[auth.role]??0)<ranks[minimum]) throw new Error('FORBIDDEN_ROLE');
 }
 export function requirePlatform(auth: CoreAuthContext): void { if(!auth.isPlatformAdmin) throw new Error('PLATFORM_ADMIN_REQUIRED'); }
+export function requireCourseAccess(auth: CoreAuthContext, courseId: string): void {
+  if(auth.isPlatformAdmin || auth.role==='tenant_admin') return;
+  if(!auth.courseIds.includes(courseId)) throw new Error('FORBIDDEN_COURSE');
+}
