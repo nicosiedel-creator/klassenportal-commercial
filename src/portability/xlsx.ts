@@ -1,7 +1,7 @@
-import { normalizeHeader, textDecoder } from './utils.js';
+import { normalizeHeader, textDecoder, toArrayBuffer } from './utils.js';
 
 function u16(d:DataView,o:number):number{return d.getUint16(o,true);} function u32(d:DataView,o:number):number{return d.getUint32(o,true);}
-async function inflateRaw(bytes:Uint8Array):Promise<Uint8Array>{const ds=new DecompressionStream('deflate-raw');const stream=new Blob([bytes]).stream().pipeThrough(ds);const ab=await new Response(stream).arrayBuffer();return new Uint8Array(ab);}
+async function inflateRaw(bytes:Uint8Array):Promise<Uint8Array>{const ds=new DecompressionStream('deflate-raw');const stream=new Blob([toArrayBuffer(bytes)]).stream().pipeThrough(ds);const ab=await new Response(stream).arrayBuffer();return new Uint8Array(ab);}
 async function unzipSelected(buffer:ArrayBuffer,wanted:(name:string)=>boolean):Promise<Map<string,Uint8Array>>{
   const bytes=new Uint8Array(buffer);const view=new DataView(buffer);let eocd=-1;for(let p=Math.max(0,bytes.length-65557);p<=bytes.length-22;p++){if(u32(view,p)===0x06054b50)eocd=p;}if(eocd<0)throw new Error('XLSX_ZIP_EOCD_MISSING');
   const entryCount=u16(view,eocd+10);let p=u32(view,eocd+16);const out=new Map<string,Uint8Array>();
