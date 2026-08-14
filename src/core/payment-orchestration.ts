@@ -2,7 +2,8 @@ import type { CoreAuthContext, Env } from './types.js';
 import { billingSummary, quoteExpansion, requestExpansion } from './commerce.js';
 import { createPaidBooking } from './commerce-offers.js';
 import { requireRole } from './permissions.js';
-import { createStripeCheckout, ensureStripeCatalog, previewStripeExpansion, syncStripeProviderState } from './stripe.js';
+import { syncStripeProviderState } from './stripe.js';
+import { createTaxStripeCheckout, ensureTaxStripeCatalog } from './stripe-tax-billing.js';
 import { nowIso } from './utils.js';
 
 const STRIPE_API='https://api.stripe.com/v1';
@@ -14,17 +15,26 @@ async function stripeCall(env:Env,method:'GET'|'POST',path:string,entries:Array<
   const r=await fetch(url,{method,headers,body:method==='POST'?p:undefined});let d:any={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(`STRIPE_${String(d?.error?.code||d?.error?.type||'API_ERROR').toUpperCase().replace(/[^A-Z0-9]+/g,'_')}`);return d;
 }
 function stripeId(v:any):string|null{return typeof v==='string'?v:v&&typeof v.id==='string'?v.id:null;}
+function subscriptionPreviewItems(sub:Record<string,any>,target:any,extraCourses:number,prefix='subscription_details[items]'):Array<[string,unknown]>{
+  const items=Array.isArray(sub?.items?.data)?sub.items.data:[],base=items.find((x:any)=>x?.price?.metadata?.klassenportal_component==='base')??items[0],extra=items.find((x:any)=>x?.price?.metadata?.klassenportal_component==='extra')??items.find((x:any)=>x!==base),e:Array<[string,unknown]>=[];let i=0;
+  if(base?.id)e.push([`${prefix}[${i}][id]`,base.id]);e.push([`${prefix}[${i}][price]`,target.base_price_id],[`${prefix}[${i}][quantity]`,1]);i++;
+  if(extraCourses>0&&target.extra_price_id){if(extra?.id)e.push([`${prefix}[${i}][id]`,extra.id]);e.push([`${prefix}[${i}][price]`,target.extra_price_id],[`${prefix}[${i}][quantity]`,extraCourses]);}
+  else if(extra?.id)e.push([`${prefix}[${i}][id]`,extra.id],[`${prefix}[${i}][deleted]`,'true']);
+  return e;
+}
+async function previewSafeStripeExpansion(env:Env,tenantId:string,targetPrice:any):Promise<{providerConnected:boolean;immediateChargeCents:number|null;prorationDate:number|null;billingCycle:'monthly'|'annual'|null}>{
+  const state=await syncStripeProviderState(env),account=await env.DB.prepare('SELECT stripe_subscription_id,billing_cycle FROM tenant_payment_accounts WHERE tenant_id=?').bind(tenantId).first<{stripe_subscription_id:string|null;billing_cycle:string|null}>();
+  if(!state.configured||!account?.stripe_subscription_id)return{providerConnected:false,immediateChargeCents:null,prorationDate:null,billingCycle:account?.billing_cycle==='annual'?'annual':account?.billing_cycle==='monthly'?'monthly':null};
+  const cycle=account.billing_cycle==='annual'?'annual':'monthly',target=await ensureTaxStripeCatalog(env,targetPrice,cycle),sub=await stripeCall(env,'GET',`/subscriptions/${encodeURIComponent(account.stripe_subscription_id)}`,[['expand[]','items.data.price']]),prorationDate=Math.floor(Date.now()/1000);
+  const preview=await stripeCall(env,'POST','/invoices/create_preview',[['subscription',account.stripe_subscription_id],['subscription_details[proration_behavior]','always_invoice'],['subscription_details[proration_date]',prorationDate],...subscriptionPreviewItems(sub,target,targetPrice.extraCourses)]);
+  const lines=Array.isArray(preview?.lines?.data)?preview.lines.data:[],prorations=lines.filter((l:any)=>l?.parent?.subscription_item_details?.proration===true||l?.proration===true),amount=prorations.length?prorations.reduce((s:number,l:any)=>s+Number(l.amount||0),0):Number(preview.amount_due??0);
+  return{providerConnected:true,immediateChargeCents:Math.max(0,amount),prorationDate,billingCycle:cycle};
+}
 async function applySafeStripeExpansion(env:Env,args:{tenantId:string;changeId:string;invoiceId:string;targetPrice:any;prorationDate?:number|null}):Promise<{externalInvoiceId:string|null;paymentUrl:string|null;stripeStatus:string}>{
   const account=await env.DB.prepare('SELECT stripe_subscription_id,billing_cycle FROM tenant_payment_accounts WHERE tenant_id=?').bind(args.tenantId).first<{stripe_subscription_id:string|null;billing_cycle:string|null}>();
   if(!account?.stripe_subscription_id)throw new Error('STRIPE_SUBSCRIPTION_NOT_FOUND');
-  const cycle=account.billing_cycle==='annual'?'annual':'monthly',target=await ensureStripeCatalog(env,args.targetPrice,cycle);
-  const sub=await stripeCall(env,'GET',`/subscriptions/${encodeURIComponent(account.stripe_subscription_id)}`,[['expand[]','items.data.price']]);
-  const items=Array.isArray(sub?.items?.data)?sub.items.data:[],base=items.find((x:any)=>x?.price?.metadata?.klassenportal_component==='base')??items[0],extra=items.find((x:any)=>x?.price?.metadata?.klassenportal_component==='extra')??items.find((x:any)=>x!==base);
-  const e:Array<[string,unknown]>=[];let i=0;
-  if(base?.id)e.push([`items[${i}][id]`,base.id]);e.push([`items[${i}][price]`,target.base_price_id],[`items[${i}][quantity]`,1]);i++;
-  if(args.targetPrice.extraCourses>0&&target.extra_price_id){if(extra?.id)e.push([`items[${i}][id]`,extra.id]);e.push([`items[${i}][price]`,target.extra_price_id],[`items[${i}][quantity]`,args.targetPrice.extraCourses]);}
-  else if(extra?.id)e.push([`items[${i}][id]`,extra.id],[`items[${i}][deleted]`,'true']);
-  e.push(['proration_behavior','always_invoice'],['payment_behavior','pending_if_incomplete'],['expand[]','latest_invoice']);if(args.prorationDate)e.push(['proration_date',args.prorationDate]);
+  const cycle=account.billing_cycle==='annual'?'annual':'monthly',target=await ensureTaxStripeCatalog(env,args.targetPrice,cycle),sub=await stripeCall(env,'GET',`/subscriptions/${encodeURIComponent(account.stripe_subscription_id)}`,[['expand[]','items.data.price']]);
+  const e:Array<[string,unknown]>=[...subscriptionPreviewItems(sub,target,args.targetPrice.extraCourses,'items'),['proration_behavior','always_invoice'],['payment_behavior','pending_if_incomplete'],['expand[]','latest_invoice']];if(args.prorationDate)e.push(['proration_date',args.prorationDate]);
   const updated=await stripeCall(env,'POST',`/subscriptions/${encodeURIComponent(account.stripe_subscription_id)}`,e,`upgrade:${args.changeId}`),invoice=updated.latest_invoice&&typeof updated.latest_invoice==='object'?updated.latest_invoice:null,externalInvoiceId=stripeId(updated.latest_invoice),paymentUrl=invoice?.hosted_invoice_url?String(invoice.hosted_invoice_url):null;
   await env.DB.batch([
     env.DB.prepare('UPDATE subscription_changes SET external_invoice_id=? WHERE id=? AND tenant_id=?').bind(externalInvoiceId,args.changeId,args.tenantId),
@@ -38,7 +48,7 @@ export async function createPaidBookingWithStripe(env:Env,args:Parameters<typeof
   const orderId=String(booking.orderId||''),invoiceId=String(booking.invoiceId||'');
   if(!orderId||!invoiceId||!booking.offer)throw new Error('PAYMENT_BOOKING_INVALID');
   try{
-    const checkout=await createStripeCheckout(env,{tenantId:args.tenantId,orderId,invoiceId,offer:booking.offer,request:args.request});
+    const checkout=await createTaxStripeCheckout(env,{tenantId:args.tenantId,orderId,invoiceId,offer:booking.offer,request:args.request});
     return{...booking,...checkout,paymentProvider:'stripe'};
   }catch(e){
     await env.DB.batch([
@@ -72,7 +82,7 @@ export async function retryInitialCheckout(env:Env,auth:CoreAuthContext,tenantId
     env.DB.prepare("UPDATE commercial_invoices SET status='pending_provider',external_provider='stripe' WHERE id=? AND tenant_id=?").bind(row.invoice_id,tenantId),
   ]);
   try{
-    const checkout=await createStripeCheckout(env,{tenantId,orderId:row.order_id,invoiceId:row.invoice_id,offer,request});
+    const checkout=await createTaxStripeCheckout(env,{tenantId,orderId:row.order_id,invoiceId:row.invoice_id,offer,request});
     return{orderId:row.order_id,invoiceId:row.invoice_id,...checkout,paymentProvider:'stripe'};
   }catch(e){
     await env.DB.batch([
@@ -85,16 +95,9 @@ export async function retryInitialCheckout(env:Env,auth:CoreAuthContext,tenantId
 
 export async function quoteExpansionWithStripe(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>):Promise<Record<string,unknown>>{
   const local=await quoteExpansion(env,auth,tenantId,input) as Record<string,any>;
-  const stripe=await previewStripeExpansion(env,tenantId,local.price);
+  const stripe=await previewSafeStripeExpansion(env,tenantId,local.price);
   const immediate=stripe.immediateChargeCents;
-  return{
-    ...local,
-    providerConnected:stripe.providerConnected,
-    billingCycle:stripe.billingCycle,
-    prorationDate:stripe.prorationDate,
-    immediateChargeCents:immediate,
-    immediateChargeEstimated:immediate===null,
-  };
+  return{...local,providerConnected:stripe.providerConnected,billingCycle:stripe.billingCycle,prorationDate:stripe.prorationDate,immediateChargeCents:immediate,immediateChargeEstimated:immediate===null};
 }
 
 export async function requestExpansionWithStripe(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>):Promise<Record<string,unknown>>{
