@@ -6,8 +6,9 @@ export interface Env {
   DB: D1DatabaseLike;
   FILES: R2BucketLike;
   ASSETS: AssetBindingLike;
-  BOOTSTRAP_SECRET?: string;
   APP_ORIGIN?: string;
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
 }
 
 export type Role = 'platform_admin' | 'tenant_admin' | 'class_admin' | 'participant' | 'guest';
