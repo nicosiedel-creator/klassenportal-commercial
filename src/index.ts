@@ -1,6 +1,7 @@
 import { handleCoreApi, handlePublicApi } from './core/router.js';
 import { resolvePortabilityAuth } from './core/auth.js';
 import { serveTenantLogo } from './core/branding.js';
+import { refreshTrialStates } from './core/commerce-offers.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
@@ -21,6 +22,7 @@ export default {
     return env.ASSETS.fetch(request);
   },
   async scheduled(_controller: unknown, env: Env): Promise<void> {
+    await refreshTrialStates(env);
     await runScheduledTenantBackups(env, portabilityConfig, 'system:backup', 3);
     await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(new Date().toISOString()).run();
     await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(new Date().toISOString()).run();
