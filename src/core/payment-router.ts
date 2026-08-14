@@ -2,7 +2,7 @@ import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { calculateCommercialOffer, getCommercePolicy, listManagedSetupOptions, tenantTrialSummary } from './commerce-offers.js';
 import { billingSummaryWithStripe, createPaidBookingWithStripe, quoteExpansionWithStripe, requestExpansionWithStripe, retryInitialCheckout } from './payment-orchestration.js';
-import { createStripePortalSession, handleStripeWebhook } from './stripe.js';
+import { createStripePortalSessionModeSafe, handleStripeWebhookModeSafe } from './stripe-mode-safe.js';
 import { createTaxStripeCheckout } from './stripe-tax-billing.js';
 import { ensureTenantCommerceState } from './commerce-state.js';
 import { assertSameOrigin, nowIso } from './utils.js';
@@ -18,7 +18,7 @@ function error(e:unknown):Response{
 export async function handlePaymentApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url);
   if(u.pathname==='/api/payments/stripe/webhook'&&request.method==='POST'){
-    try{return await handleStripeWebhook(env,request);}catch(e){return error(e);}
+    try{return await handleStripeWebhookModeSafe(env,request);}catch(e){return error(e);}
   }
   if(!u.pathname.startsWith('/api/billing/'))return null;
   const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)return out({ok:false,error:'TENANT_ID_REQUIRED'},400);
@@ -39,7 +39,7 @@ export async function handlePaymentApi(request:Request,env:Env):Promise<Response
       return out({ok:true,...booked},201);
     }
     if(u.pathname==='/api/billing/retry-checkout'&&request.method==='POST')return out({ok:true,...await retryInitialCheckout(env,auth,tenantId,request)});
-    if(u.pathname==='/api/billing/stripe-portal'&&request.method==='POST')return out({ok:true,...await createStripePortalSession(env,auth,tenantId,request)});
+    if(u.pathname==='/api/billing/stripe-portal'&&request.method==='POST')return out({ok:true,...await createStripePortalSessionModeSafe(env,auth,tenantId,request)});
     if(u.pathname==='/api/billing/trial-quote'&&request.method==='POST'){
       const b=await body(request),trial=await tenantTrialSummary(env,auth,tenantId) as Record<string,any>|null;if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');
       const quote=await calculateCommercialOffer(env,{planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id||'self_service',purpose:'paid'});
