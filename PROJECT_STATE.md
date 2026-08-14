@@ -12,8 +12,8 @@ Das produktive VFA13-Portal gehört nicht zu diesem Repository und wird durch di
 - kommerzielle eigenständige Cloudflare-Plattform
 - Mandantentrennung über `tenant_id`
 - vollständige Klassentrennung über `course_id`
-- Plattform-Admin, Mandanten-Admin, Klassen-Admin, Teilnehmer, Gast
-- serverseitige Klassen-/Kursberechtigungen; Klassen-Admins sehen und verändern nur zugewiesene Klassen
+- Plattform-Admin, Mandanten-Admin, Klassenverantwortliche/Klassensprecher (technisch `class_admin`), Teilnehmer, Gast
+- serverseitige Klassen-/Kursberechtigungen; Klassenverantwortliche sehen und verändern nur zugewiesene Klassen
 - Login/Sessions und serverseitige Autorisierung
 - Zugriffsarten öffentlich / Link-Code / Login / Hybrid
 - Zugriffscodes gehasht gespeichert
@@ -36,12 +36,44 @@ Das produktive VFA13-Portal gehört nicht zu diesem Repository und wird durch di
 - D1-Datenmodell und Basis-Migration
 - responsive Admin-Oberfläche für Mandanten, Kurse, Benutzer, Branding, Module, Inhalte und Datenverwaltung
 
+## Verbindlicher Betriebsmodus für Klassen
+- Der Bildungsträger/Kunden-Admin richtet Mandant, Klassen und zentrale Einstellungen ein.
+- Die laufende Klassenpflege soll möglichst dezentral durch eine Klassenverantwortliche/einen Klassenverantwortlichen erfolgen, z. B. Klassensprecher.
+- Diese Rolle darf nur die zugewiesene Klasse bearbeiten: Stundenplan, Inhalte, Aufgaben, Termine, Meldungen, Links und Prüfungen sowie Teilnehmer/Gäste der eigenen Klasse.
+- Keine Mandanten-, Branding-, Modul-, Tarif-, Backup- oder klassenübergreifende Verwaltung für Klassenverantwortliche.
+- Technischer Rollenwert bleibt aus Kompatibilitätsgründen `class_admin`; sichtbar wird die Rolle deutsch bezeichnet.
+- Die Kundenoberfläche ist grundsätzlich deutsch. Englische Begriffe bleiben nur dort, wo sie fachlich/produktseitig sinnvoll oder etablierte Eigennamen sind.
+
+## Branding-Automatik
+- Logo-Upload direkt im Branding
+- PNG/JPG/WebP/SVG bis 5 MB
+- automatische Farberkennung im Browser
+- Vorschläge: Originalgetreu, Modern, Kontrastreich
+- Primär-, Sekundär- und Hintergrundfarbe mit Live-Vorschau
+- manuelle Nachbearbeitung bleibt möglich
+- Logo wird in R2 gespeichert und über `portability_files` in Backup/Voll-Export einbezogen
+- echter Cloudflare-Praxistest am 14.08.2026 erfolgreich
+
+## Automatischer Stundenplan-Import
+- Excel/XLSX und CSV
+- PDF-Upload ist Teil desselben Assistenten
+- PDF.js wird lokal aus dem eigenen Deployment geladen, keine externe CDN-Laufzeitabhängigkeit
+- Text-/Tabellen-PDFs werden im Browser strukturiert ausgelesen und danach durch dieselbe Vorschau/Validierung geschickt
+- reine Scan-/Bild-PDFs werden nicht mit erfundenen Daten übernommen; fehlende Textschicht wird klar gemeldet
+- automatische Spaltenerkennung für Datum, Beginn, Ende, Fach/Modul, Dozent/Lehrkraft, Raum/Ort, Hinweise, Klasse/Kurs und Unterrichtsart
+- Vorschau und korrigierbare Spaltenzuordnung vor der Übernahme
+- Dublettenerkennung
+- Modus „Abgleichen“ ersetzt nur frühere automatisch importierte Unterrichtseinträge im betroffenen Zeitraum; manuelle Einträge bleiben bestehen
+- Klassenverantwortliche dürfen den Stundenplan ihrer eigenen Klasse importieren
+- Originaldatei (PDF/XLSX/CSV) wird nach erfolgreicher Übernahme in R2 archiviert und in `portability_files` registriert, damit sie in Backup/Voll-Export enthalten ist
+
 ## Punkt 22 – Import, Export und Backups
 - CSV-Import
 - XLSX-Import
 - PDF-Originalimport nach R2
 - Import-Vorschau / Validierung / Staging
-- Import nur für Mandanten-Admin bzw. Plattform-Admin
+- mandantenweite Import-/Export-/Backup-Funktionen nur für Mandanten-Admin bzw. Plattform-Admin
+- klassenbezogene Uploads/Imports dürfen zusätzlich durch die jeweils berechtigte Klassenverantwortung erfolgen
 - CSV-/XLSX-/PDF-Export
 - vollständiger Kundenexport als streamendes ZIP mit Originaldateien
 - manuelle und automatische Mandantenbackups
@@ -57,16 +89,15 @@ Branch: `main`
 Seit dem Neuaufbau werden Änderungen direkt versioniert; der Projektstand liegt nicht mehr nur im Chat.
 
 ## Prüfstand
-Die Import-/Export-Dateifunktionen und Migrationen wurden im Aufbau bereits lokal geprüft. Danach wurden zusätzliche Sicherheits- und D1-Kompatibilitätskorrekturen vorgenommen. Deshalb gilt für den **aktuellen finalen Commit**: vor Produktivfreigabe nochmals TypeScript-Build/Tests sowie ein echter Cloudflare-D1/R2-Smoke-Test ausführen. Erst danach wird der Stand als produktiv verifiziert markiert.
+Cloudflare D1, R2, Login, Rollen-/Mandantentrennung, erzwungener Erstpasswortwechsel und Branding-Logo/Farben wurden im echten Deployment praktisch getestet. Der neue automatische Stundenplan-Import inklusive PDF-Pfad und Klassenverantwortlichen-Workflow muss nach dem aktuellen Build noch im echten Worker mit Testdateien verifiziert werden.
 
-## Vor echtem Produktiv-Deploy noch erforderlich
-- Cloudflare D1-Datenbank und R2-Bucket im Account erzeugen/zuordnen
-- echte D1-ID in `wrangler.jsonc` eintragen
-- `BOOTSTRAP_SECRET` als Cloudflare-Secret setzen
-- Migrationen auf die echte D1-Datenbank anwenden
-- Cloudflare-GitHub-Deployment verbinden
-- TypeScript-/Dateitests des finalen GitHub-Stands ausführen
-- Smoke-Test im Cloudflare-Preview/Produktivruntime
+## Noch zu verifizieren
+- aktueller Cloudflare-Build nach Stundenplan-/PDF-Erweiterung
+- XLSX/CSV-Stundenplan in echter Runtime
+- Text-/Tabellen-PDF in echter Runtime
+- Scan-PDF-Fehlermeldung
+- Login als Klassenverantwortliche/r und Nachweis der reinen Klassensicht
+- Originaldatei in R2/Backup-Zuordnung
 
 ## Nicht behauptet
-Ohne echten Cloudflare-Runtime-Deploy ist noch keine 100%-Aussage über das Verhalten im produktiven Worker möglich. Produktivfreigabe erfolgt erst nach erfolgreichem D1/R2- und Login/Rollen-Smoke-Test.
+Der Stundenplan-/PDF-Pfad gilt erst nach diesen echten Smoke-Tests als produktiv verifiziert.
