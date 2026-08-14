@@ -1,0 +1,29 @@
+import type { CoreAuthContext, Env } from './types.js';
+import { hashPassword } from './auth.js';
+import { audit } from './audit.js';
+import { b64, id, normalizeEmail, nowIso, randomBytes, safeString, slugify } from './utils.js';
+import { requirePlatform } from './permissions.js';
+
+const defaultFeatures=['schedule','homework','appointments','announcements','links','files','calendar','reminders','weekly_overview','exams_progress','personal_grades'];
+const optionalFeatures=['microsoft_teams','microsoft_365','statistics','learning_materials','surveys','substitution_updates','custom_domain','white_label'];
+
+export async function provisionTenant(env:Env,auth:CoreAuthContext,input:{name?:string;slug?:string;admin_email?:string;admin_name?:string;admin_password?:string;portal_name?:string;course_name?:string;course_code?:string;access_mode?:string;plan_id?:string;}):Promise<{tenantId:string;adminUserId:string;temporaryPassword?:string;courseId?:string}>{
+  requirePlatform(auth); const name=safeString(input.name,200); if(!name) throw new Error('TENANT_NAME_REQUIRED');
+  const slug=slugify(input.slug||name); if(!slug) throw new Error('TENANT_SLUG_REQUIRED');
+  const email=normalizeEmail(input.admin_email); const adminName=safeString(input.admin_name,200); if(!email||!adminName) throw new Error('ADMIN_REQUIRED');
+  const tenantId=id('ten_'), adminUserId=id('usr_'), ts=nowIso(); const generated=input.admin_password?undefined:b64(randomBytes(12)).replace(/[+/=]/g,'').slice(0,16)+'Aa1!'; const password=input.admin_password||generated!;
+  const existing=await env.DB.prepare('SELECT id FROM users WHERE email=? COLLATE NOCASE').bind(email).first<{id:string}>(); const effectiveUserId=existing?.id??adminUserId;
+  const statements=[];
+  statements.push(env.DB.prepare('INSERT INTO tenants(id,name,slug,status,created_at,updated_at) VALUES(?,?,?,\'active\',?,?)').bind(tenantId,name,slug,ts,ts));
+  statements.push(env.DB.prepare('INSERT INTO tenant_settings(tenant_id,portal_name,welcome_text,updated_at) VALUES(?,?,?,?)').bind(tenantId,safeString(input.portal_name||name,200),`Willkommen bei ${name}`,ts));
+  if(!existing) statements.push(env.DB.prepare('INSERT INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at) VALUES(?,?,?,?,1,0,\'active\',?,?)').bind(effectiveUserId,email,adminName,await hashPassword(password),ts,ts));
+  statements.push(env.DB.prepare('INSERT INTO memberships(id,tenant_id,course_id,user_id,role,created_at) VALUES(?,?,?,?,\'tenant_admin\',?)').bind(id('mem_'),tenantId,null,effectiveUserId,ts));
+  statements.push(env.DB.prepare('INSERT INTO subscriptions(tenant_id,plan_id,status,starts_at) VALUES(?,?,\'trial\',?)').bind(tenantId,input.plan_id||'provider',ts));
+  for(const f of defaultFeatures) statements.push(env.DB.prepare('INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at) VALUES(?,?,1,\'plan\',?)').bind(tenantId,f,ts));
+  for(const f of optionalFeatures) statements.push(env.DB.prepare('INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at) VALUES(?,?,0,\'plan\',?)').bind(tenantId,f,ts));
+  let courseId:string|undefined;
+  if(input.course_name){ courseId=id('crs_'); statements.push(env.DB.prepare('INSERT INTO courses(id,tenant_id,name,code,access_mode,is_active,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?)').bind(courseId,tenantId,safeString(input.course_name,200),slugify(input.course_code||input.course_name).slice(0,40),['public','link_code','login','hybrid'].includes(input.access_mode||'')?input.access_mode:'login',ts,ts)); }
+  statements.push(env.DB.prepare('INSERT INTO provisioning_log(id,tenant_id,action,status,detail_json,created_at) VALUES(?,?,\'tenant_created\',\'completed\',?,?)').bind(id('prv_'),tenantId,JSON.stringify({adminEmail:email,courseId}),ts));
+  await env.DB.batch(statements); await audit(env.DB,auth.userId,'tenant.provisioned',tenantId,courseId,'tenant',tenantId,{adminEmail:email});
+  return {tenantId,adminUserId:effectiveUserId,temporaryPassword:existing?undefined:generated,courseId};
+}
