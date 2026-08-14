@@ -1,6 +1,6 @@
 import type { AuthContext as PortabilityAuth } from '../portability/types.js';
 import type { CoreAuthContext, Env, SessionUser } from './types.js';
-import { b64, cookie, fromB64, id, json, noCookie, normalizeEmail, nowIso, parseCookie, randomBytes, sha256Text, toArrayBuffer } from './utils.js';
+import { b64, cookie, fromB64, json, noCookie, normalizeEmail, nowIso, parseCookie, randomBytes, sha256Text, toArrayBuffer } from './utils.js';
 
 const ITERATIONS = 100_000;
 const SESSION_DAYS = 7;
@@ -16,7 +16,7 @@ export async function hashPassword(password: string): Promise<string> {
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [kind, iterText, saltText, hashText] = stored.split('$');
   if (kind !== 'pbkdf2' || !iterText || !saltText || !hashText) return false;
-  const iterations = Number(iterText); if (!Number.isFinite(iterations) || iterations < 100_000 || iterations > 100_000) return false;
+  const iterations = Number(iterText); if (!Number.isFinite(iterations) || iterations !== ITERATIONS) return false;
   const salt = fromB64(saltText); const expected = fromB64(hashText);
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
   const actual = new Uint8Array(await crypto.subtle.deriveBits({ name:'PBKDF2', hash:'SHA-256', salt:toArrayBuffer(salt), iterations }, key, expected.length*8));
@@ -102,33 +102,4 @@ export async function resolveCoreAuth(env: Env, request: Request, tenantId?: str
 export async function resolvePortabilityAuth(env: Env, request: Request): Promise<PortabilityAuth> {
   const url=new URL(request.url); const tenantId=url.searchParams.get('tenant_id')??undefined; const a=await resolveCoreAuth(env,request,tenantId);
   return {userId:a.userId,role:a.role,tenantIds:a.tenantIds,isPlatformAdmin:a.isPlatformAdmin};
-}
-
-export interface InitialPlatformAdminInput {
-  email?: string;
-  password?: string;
-  display_name?: string;
-}
-
-export async function createInitialPlatformAdmin(env: Env, suppliedSecret: string, input: InitialPlatformAdminInput): Promise<{user_id:string}> {
-  if(!env.BOOTSTRAP_SECRET || suppliedSecret!==env.BOOTSTRAP_SECRET) throw new Error('BOOTSTRAP_FORBIDDEN');
-  const existing=await env.DB.prepare('SELECT COUNT(*) AS n FROM users WHERE is_platform_admin=1').first<{n:number}>();
-  if((existing?.n??0)>0) throw new Error('PLATFORM_ADMIN_ALREADY_EXISTS');
-  const email=normalizeEmail(input.email); const name=String(input.display_name??'').trim(); const password=String(input.password??'');
-  if(!email||!name||!password) throw new Error('FIELDS_REQUIRED');
-  const userId=id('usr_'); const ts=nowIso();
-  await env.DB.prepare("INSERT INTO users(id,email,display_name,password_hash,is_platform_admin,status,created_at,updated_at) VALUES(?,?,?,?,1,'active',?,?)").bind(userId,email,name,await hashPassword(password),ts,ts).run();
-  return {user_id:userId};
-}
-
-export async function bootstrapPlatformAdmin(env: Env, request: Request): Promise<Response> {
-  try {
-    const supplied=request.headers.get('x-bootstrap-secret')??'';
-    const body=await request.json() as InitialPlatformAdminInput;
-    return json({ok:true,...await createInitialPlatformAdmin(env,supplied,body)},201);
-  } catch (e) {
-    const code=(e as Error)?.message||'BOOTSTRAP_FAILED';
-    const status=code==='BOOTSTRAP_FORBIDDEN'?403:code==='PLATFORM_ADMIN_ALREADY_EXISTS'?409:400;
-    return json({ok:false,error:code},status);
-  }
 }
