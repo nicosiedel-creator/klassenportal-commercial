@@ -14,37 +14,78 @@ Das produktive VFA13-Portal gehört nicht zu diesem Repository und wird durch di
 - Bildungsträger/Kunden-Admins dürfen dieselben Pflegeaufgaben weiterhin zentral und auch für mehrere Klassen durchführen.
 - Technische Rollen- und Feature-Schlüssel bleiben intern stabil; sichtbar werden verständliche deutsche Bezeichnungen verwendet.
 - **Plattformbetrieb und Kundenbetrieb sind getrennt:** Der Plattform-Admin soll keine laufende Stundenplan-, Inhalts-, Prüfungs- oder Brandingpflege für Kunden übernehmen.
+- **Verkauf und Abrechnung sollen weitgehend selbsttätig laufen:** Angebot, Buchung, gebuchter Umfang, spätere Erweiterung und Abrechnungsstatus werden systemseitig geführt.
 
 ## Plattform-Admin / Kunden-Onboarding
 Verbindlicher Zielablauf:
-1. Plattform-Admin startet eine Kunden-Einrichtung und wählt nur Kunden-E-Mail, gebuchtes Paket und Gültigkeit des Einrichtungslinks.
+1. Plattform-Admin startet eine Kunden-Einrichtung und wählt nur Kunden-E-Mail, vorgesehenes Paket und Gültigkeit des Einrichtungslinks.
 2. Das System erzeugt einen einmaligen, zeitlich begrenzten Einrichtungslink.
-3. Der Kunde trägt seine Stammdaten selbst ein.
-4. Das System provisioniert daraus automatisch Mandant, Kunden-Admin, Tarif/Feature-Grundlage und optional die erste Klasse.
-5. Danach übernimmt der Kunden-Admin die Einrichtung seines Bildungsträgers; laufende Klassenpflege kann an Klassenverantwortliche delegiert werden.
+3. Der Kunde trägt seine Stammdaten und die gewünschte **Anzahl Klassen/Kurse** selbst ein.
+4. Wenn der Tarif preislich freigegeben ist, berechnet das System daraus automatisch das konkrete Angebot und zeigt es vor der Buchung an.
+5. Der Kunde bestätigt das Angebot; das System erzeugt Buchungs-/Abrechnungsdatensätze und provisioniert Mandant, Kunden-Admin, Kontingent und optional die erste Klasse.
+6. Danach übernimmt der Kunden-Admin die Einrichtung seines Bildungsträgers; laufende Klassenpflege kann an Klassenverantwortliche delegiert werden.
 
 Der Plattform-Admin sieht im normalen Betrieb nur noch:
 - Plattformübersicht / Kundenbestand
 - Kunden/Mandanten und Vertrags-/Statusbezug
 - Kunden-Einrichtungen / Einrichtungslinks
-- später erforderliche Abrechnungs-/Systemfunktionen
+- Tarife & Abrechnung / eigene Rechnungsdaten
+- später erforderliche System- und Zahlungsproviderfunktionen
 
 Operative Bereiche wie Klassen/Kurse, Benutzerpflege innerhalb des Kunden, Inhalte, Prüfungen, Branding, Module und Datenpflege werden in der Plattform-Admin-Oberfläche ausgeblendet. Die zugrunde liegenden Kundenfunktionen bleiben für Kunden-Admins und berechtigte Klassenverantwortliche erhalten.
 
 Kundenformular – Pflichtangaben:
 - Name des Bildungsträgers
+- **Anzahl der zunächst benötigten Klassen/Kurse**
 - Ansprechpartner/in und E-Mail
 - Geschäftsanschrift (Straße, PLZ, Ort, Land)
 - erster Portal-Administrator (standardmäßig identisch mit Ansprechpartner)
 - eigenes Passwort für den ersten Kunden-Admin
+- Angebotsannahme, sobald automatische Tarifpreise freigeschaltet sind
 
 Kundenformular – optionale Angaben:
 - eigener Portalname
 - Webseite / Telefon
 - abweichende Rechnungs-E-Mail
+- USt-IdNr.
 - erste Klasse / erster Kurs und Kürzel
 
-Das gebuchte Paket wird vom Plattform-Admin vorgegeben und kann im öffentlichen Einrichtungsformular nicht vom Kunden hochgestuft werden.
+Bewusst **nicht** im Verkaufsformular abgefragt werden einzelne Namen aller Klassen, Fächer, Dozenten oder Stundenplandaten. Diese Informationen werden später importiert bzw. im Kundenbetrieb gepflegt.
+
+## Kommerzielle Automatisierung
+### Tarifregeln
+Der Plattform-Admin kann je Paket zentral konfigurieren:
+- monatlichen Grundpreis
+- einmaligen Einrichtungspreis
+- enthaltene Klassen/Kurse
+- optional maximale Klassen/Kurse
+- Preis je zusätzlicher Klasse/Kurs pro Monat
+- Angebotsgültigkeit
+- Freigabe automatischer Preisberechnung
+- Freigabe von Self-Service-Erweiterungen
+
+Die bisher im Datenbestand vorhandenen Preise gelten nicht automatisch als final bestätigte Verkaufspreise. `pricing_enabled` muss bewusst freigegeben werden.
+
+### Angebot / Buchung / Kontingent
+- gewünschte Klassenanzahl wird im Onboarding erfasst
+- Live-Preisberechnung im Einrichtungsformular
+- keine erfundenen Preise, wenn eine Tarifregel noch nicht freigegeben ist
+- angenommenes Preisangebot wird als nachvollziehbarer Angebotsdatensatz gespeichert
+- Buchungsdatensatz und Abrechnungsentwurf werden automatisch erzeugt
+- das gebuchte Klassenkontingent wird als `tenant_entitlements.course_limit` gespeichert
+- neue Klassen können nicht über das gebuchte Kontingent hinaus angelegt werden
+
+### Self-Service-Erweiterung
+Kunden-Admins erhalten **„Paket & Abrechnung“**:
+- aktuelles Paket und Klassenkontingent sehen
+- größeren Klassenumfang wählen
+- auf einen preislich höheren/freigegebenen Tarif wechseln
+- Mehrpreis vor Bestätigung sehen
+- keine spontane Self-Service-Verkleinerung; Reduzierungen werden getrennt behandelt
+- Erweiterungs-, Abrechnungs- und Auditdatensätze werden automatisch angelegt
+
+### Zahlungsdienstleister
+Die Plattform enthält eine anbieterneutrale Zahlungs-/Abrechnungsstatusschicht. Echte automatische Karten-/SEPA-Abbuchung und steuerlich finale Rechnungsstellung werden **erst nach Verbindung eines externen Zahlungs-/Abrechnungsdienstleisters** freigeschaltet. Bis dahin werden keine erfolgreichen Zahlungen behauptet und keine ungeprüfte Steuerlogik hardcodiert.
 
 ## Kernplattform
 - eigenständige kommerzielle Cloudflare-Plattform
@@ -141,6 +182,9 @@ Produktiv bereits praktisch bestätigt:
 Noch praktisch zu bestätigen nach dem jeweils aktuellen Deployment:
 - neue schlanke Plattform-Admin-Oberfläche
 - Einrichtungslink und Kunden-Selbstregistrierung Ende-zu-Ende
+- Anzahl Klassen/Kurse + Live-Angebot im Kunden-Onboarding
+- Tarife-&-Abrechnung-Konfiguration im Plattform-Admin
+- Kundenbereich „Paket & Abrechnung“ / Self-Service-Erweiterung
 - Stundenplan-Einzelimport PDF/XLSX/CSV
 - Stundenplan-Massenupload
 - automatisches Einlesen von Fachbezeichnungen/Fachkürzeln/Dozenten
