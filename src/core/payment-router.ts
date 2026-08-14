@@ -3,13 +3,13 @@ import { resolveCoreAuth } from './auth.js';
 import { calculateCommercialOffer, tenantTrialSummary } from './commerce-offers.js';
 import { billingSummaryWithStripe, createPaidBookingWithStripe, quoteExpansionWithStripe, requestExpansionWithStripe } from './payment-orchestration.js';
 import { createStripeCheckout, createStripePortalSession, handleStripeWebhook } from './stripe.js';
-import { nowIso } from './utils.js';
+import { assertSameOrigin, nowIso } from './utils.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function error(e:unknown):Response{
   const code=(e as Error)?.message||'INTERNAL_ERROR';
-  const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code==='STRIPE_NOT_CONFIGURED'?503:code.includes('NOT_FOUND')?404:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('CONFIRMATION')?400:code==='SELF_SERVICE_DOWNGRADE_NOT_ALLOWED'||code==='NO_CHANGE'?409:500;
+  const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code==='ORIGIN_MISMATCH'?403:code==='STRIPE_NOT_CONFIGURED'?503:code.includes('NOT_FOUND')?404:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('CONFIRMATION')?400:code==='SELF_SERVICE_DOWNGRADE_NOT_ALLOWED'||code==='NO_CHANGE'?409:500;
   return out({ok:false,error:code},status);
 }
 
@@ -21,6 +21,7 @@ export async function handlePaymentApi(request:Request,env:Env):Promise<Response
   if(!u.pathname.startsWith('/api/billing/'))return null;
   const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)return out({ok:false,error:'TENANT_ID_REQUIRED'},400);
   try{
+    assertSameOrigin(request,env.APP_ORIGIN);
     const auth=await resolveCoreAuth(env,request,tenantId,u.searchParams.get('course_id')||undefined);
     if(u.pathname==='/api/billing/summary'&&request.method==='GET')return out({ok:true,...await billingSummaryWithStripe(env,auth,tenantId)});
     if(u.pathname==='/api/billing/change-quote'&&request.method==='POST')return out({ok:true,quote:await quoteExpansionWithStripe(env,auth,tenantId,await body(request))});
