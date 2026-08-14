@@ -1,10 +1,17 @@
 import { handleCoreApi, handlePublicApi } from './core/router.js';
 import { resolvePortabilityAuth } from './core/auth.js';
 import { serveTenantLogo } from './core/branding.js';
-import { assertTenantWriteAllowed, refreshTrialStates } from './core/commerce-offers.js';
+import { refreshTrialStates } from './core/commerce-offers.js';
+import { assertPaymentWriteAccess } from './core/payment-access.js';
 import { augmentPaidOnboardingResponse, handlePaymentApi } from './core/payment-router.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
+
+function accessError(e:unknown):Response{
+  const code=(e as Error)?.message||'PAYMENT_REQUIRED';
+  const status=code==='TRIAL_EXPIRED'?410:code==='TRIAL_READ_ONLY'?423:402;
+  return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -24,16 +31,13 @@ export default {
 
     const payment=await handlePaymentApi(request,env);if(payment)return payment;
 
-    if(url.pathname.startsWith('/api/portability/')&&request.method!=='GET'&&url.pathname!=='/api/portability/import/preview'){
-      const tenantId=url.searchParams.get('tenant_id');
-      if(tenantId){
-        try{await assertTenantWriteAllowed(env,tenantId);}catch(e){
-          const code=(e as Error)?.message||'TRIAL_READ_ONLY';
-          const status=code==='TRIAL_EXPIRED'?410:423;
-          return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
-        }
-      }
+    const tenantId=url.searchParams.get('tenant_id');
+    const mutating=request.method!=='GET'&&request.method!=='HEAD';
+    const exemptMutation=url.pathname==='/api/timetable/preview'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/onboarding/')||url.pathname.startsWith('/api/platform/');
+    if(tenantId&&mutating&&!exemptMutation){
+      try{await assertPaymentWriteAccess(env,tenantId);}catch(e){return accessError(e);}
     }
+
     const portability = await handlePortabilityRequest(request, env, portabilityConfig, (r) => resolvePortabilityAuth(env, r));
     if (portability) return portability;
     const api = await handleCoreApi(request, env);
