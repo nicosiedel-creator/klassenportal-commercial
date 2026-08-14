@@ -1,6 +1,7 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { billingSummary, quoteExpansion, requestExpansion } from './commerce.js';
 import { createPaidBooking } from './commerce-offers.js';
+import { requireRole } from './permissions.js';
 import { applyStripeExpansion, createStripeCheckout, previewStripeExpansion, syncStripeProviderState } from './stripe.js';
 import { nowIso } from './utils.js';
 
@@ -23,7 +24,35 @@ export async function createPaidBookingWithStripe(env:Env,args:Parameters<typeof
 export async function billingSummaryWithStripe(env:Env,auth:CoreAuthContext,tenantId:string):Promise<Record<string,unknown>>{
   const provider=await syncStripeProviderState(env);
   const result=await billingSummary(env,auth,tenantId);
-  return{...result,billingProvider:provider};
+  const paymentAccount=await env.DB.prepare(`SELECT provider,stripe_customer_id,stripe_subscription_id,stripe_checkout_session_id,stripe_subscription_status,billing_cycle,current_plan_id,current_course_limit,current_period_end,cancel_at_period_end,last_invoice_id,updated_at
+    FROM tenant_payment_accounts WHERE tenant_id=?`).bind(tenantId).first<Record<string,unknown>>();
+  return{...result,billingProvider:provider,paymentAccount:paymentAccount??null};
+}
+
+export async function retryInitialCheckout(env:Env,auth:CoreAuthContext,tenantId:string,request:Request):Promise<Record<string,unknown>>{
+  requireRole(auth,'tenant_admin');
+  const row=await env.DB.prepare(`SELECT o.id AS order_id,o.status AS order_status,i.id AS invoice_id,i.status AS invoice_status,i.snapshot_json
+    FROM commercial_orders o JOIN commercial_invoices i ON i.order_id=o.id
+    WHERE o.tenant_id=? AND i.type='initial' AND o.status IN ('pending_payment','cancelled') AND i.status IN ('pending_provider','failed','open','void')
+    ORDER BY o.booked_at DESC,i.created_at DESC LIMIT 1`).bind(tenantId).first<{order_id:string;order_status:string;invoice_id:string;invoice_status:string;snapshot_json:string}>();
+  if(!row)throw new Error('PAYMENT_RETRY_NOT_FOUND');
+  let offer:any;try{offer=JSON.parse(row.snapshot_json);}catch{throw new Error('PAYMENT_SNAPSHOT_INVALID');}
+  if(!offer?.planId||!offer?.courseCount||!offer?.billingCycle)throw new Error('PAYMENT_SNAPSHOT_INVALID');
+  const ts=nowIso();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE commercial_orders SET status='pending_payment',cancelled_at=NULL WHERE id=? AND tenant_id=?").bind(row.order_id,tenantId),
+    env.DB.prepare("UPDATE commercial_invoices SET status='pending_provider',external_provider='stripe' WHERE id=? AND tenant_id=?").bind(row.invoice_id,tenantId),
+  ]);
+  try{
+    const checkout=await createStripeCheckout(env,{tenantId,orderId:row.order_id,invoiceId:row.invoice_id,offer,request});
+    return{orderId:row.order_id,invoiceId:row.invoice_id,...checkout,paymentProvider:'stripe'};
+  }catch(e){
+    await env.DB.batch([
+      env.DB.prepare("UPDATE commercial_orders SET status='cancelled',cancelled_at=? WHERE id=? AND tenant_id=?").bind(ts,row.order_id,tenantId),
+      env.DB.prepare("UPDATE commercial_invoices SET status='failed' WHERE id=? AND tenant_id=?").bind(row.invoice_id,tenantId),
+    ]);
+    throw e;
+  }
 }
 
 export async function quoteExpansionWithStripe(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>):Promise<Record<string,unknown>>{
