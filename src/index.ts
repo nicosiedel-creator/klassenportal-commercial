@@ -17,7 +17,13 @@ export default {
     }
     if(url.pathname.startsWith('/api/portability/')&&request.method!=='GET'&&url.pathname!=='/api/portability/import/preview'){
       const tenantId=url.searchParams.get('tenant_id');
-      if(tenantId)await assertTenantWriteAllowed(env,tenantId);
+      if(tenantId){
+        try{await assertTenantWriteAllowed(env,tenantId);}catch(e){
+          const code=(e as Error)?.message||'TRIAL_READ_ONLY';
+          const status=code==='TRIAL_EXPIRED'?410:423;
+          return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
+        }
+      }
     }
     const portability = await handlePortabilityRequest(request, env, portabilityConfig, (r) => resolvePortabilityAuth(env, r));
     if (portability) return portability;
