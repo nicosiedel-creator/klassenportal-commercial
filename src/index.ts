@@ -7,7 +7,7 @@ import { setupPage } from './setup.js';
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === '/setup' || url.pathname === '/setup.html') return setupPage();
+    if (url.pathname === '/setup' || url.pathname === '/setup.html') return setupPage(request, env);
     const portability = await handlePortabilityRequest(request, env, portabilityConfig, (r) => resolvePortabilityAuth(env, r));
     if (portability) return portability;
     const api = await handleCoreApi(request, env); if (api) return api;
