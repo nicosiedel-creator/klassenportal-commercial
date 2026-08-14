@@ -13,6 +13,38 @@ Das produktive VFA13-Portal gehört nicht zu diesem Repository und wird durch di
 - Laufende Klassenpflege kann an **Klassenverantwortliche (z. B. Klassensprecher)** delegiert werden.
 - Bildungsträger/Kunden-Admins dürfen dieselben Pflegeaufgaben weiterhin zentral und auch für mehrere Klassen durchführen.
 - Technische Rollen- und Feature-Schlüssel bleiben intern stabil; sichtbar werden verständliche deutsche Bezeichnungen verwendet.
+- **Plattformbetrieb und Kundenbetrieb sind getrennt:** Der Plattform-Admin soll keine laufende Stundenplan-, Inhalts-, Prüfungs- oder Brandingpflege für Kunden übernehmen.
+
+## Plattform-Admin / Kunden-Onboarding
+Verbindlicher Zielablauf:
+1. Plattform-Admin startet eine Kunden-Einrichtung und wählt nur Kunden-E-Mail, gebuchtes Paket und Gültigkeit des Einrichtungslinks.
+2. Das System erzeugt einen einmaligen, zeitlich begrenzten Einrichtungslink.
+3. Der Kunde trägt seine Stammdaten selbst ein.
+4. Das System provisioniert daraus automatisch Mandant, Kunden-Admin, Tarif/Feature-Grundlage und optional die erste Klasse.
+5. Danach übernimmt der Kunden-Admin die Einrichtung seines Bildungsträgers; laufende Klassenpflege kann an Klassenverantwortliche delegiert werden.
+
+Der Plattform-Admin sieht im normalen Betrieb nur noch:
+- Plattformübersicht / Kundenbestand
+- Kunden/Mandanten und Vertrags-/Statusbezug
+- Kunden-Einrichtungen / Einrichtungslinks
+- später erforderliche Abrechnungs-/Systemfunktionen
+
+Operative Bereiche wie Klassen/Kurse, Benutzerpflege innerhalb des Kunden, Inhalte, Prüfungen, Branding, Module und Datenpflege werden in der Plattform-Admin-Oberfläche ausgeblendet. Die zugrunde liegenden Kundenfunktionen bleiben für Kunden-Admins und berechtigte Klassenverantwortliche erhalten.
+
+Kundenformular – Pflichtangaben:
+- Name des Bildungsträgers
+- Ansprechpartner/in und E-Mail
+- Geschäftsanschrift (Straße, PLZ, Ort, Land)
+- erster Portal-Administrator (standardmäßig identisch mit Ansprechpartner)
+- eigenes Passwort für den ersten Kunden-Admin
+
+Kundenformular – optionale Angaben:
+- eigener Portalname
+- Webseite / Telefon
+- abweichende Rechnungs-E-Mail
+- erste Klasse / erster Kurs und Kürzel
+
+Das gebuchte Paket wird vom Plattform-Admin vorgegeben und kann im öffentlichen Einrichtungsformular nicht vom Kunden hochgestuft werden.
 
 ## Kernplattform
 - eigenständige kommerzielle Cloudflare-Plattform
@@ -48,6 +80,7 @@ Produktiv getestet:
 - Klassenverantwortliche können dieselbe Funktion ausschließlich innerhalb ihrer zugewiesenen Klassen nutzen
 - Klasse/Kurs wird soweit möglich automatisch aus Dateiname oder Dateiinhalten erkannt
 - bei nur einer verfügbaren Klasse wird diese automatisch gewählt
+- fremde Klassenbezeichnungen in Quelldateien sind kein Abbruchgrund, wenn eine eindeutige Zielklasse vorgegeben ist
 - nur unsichere Dateien erfordern eine manuelle Auswahl oder Einzelprüfung
 
 ### Automatische Stammdatenerkennung
@@ -70,6 +103,7 @@ Fächer und Dozenten werden beim Import vorhandenen Stammdaten zugeordnet oder b
 - textbasierte/tabellarische PDFs werden lokal im Browser strukturiert ausgelesen
 - die Originaldatei wird nach erfolgreicher Übernahme in R2 archiviert
 - Scan-/Bild-PDFs ohne Textschicht werden nicht geraten; sie werden als nicht automatisch auslesbar gekennzeichnet
+- reale Stundenpläne mit Doppelstunden-Matrix, Fach/Raum-Zeile und separater Dozenten-Zeile werden als eigener Erkennungsfall berücksichtigt
 
 ### Sicherer Abgleich
 - Vorschau und Validierung vor der Übernahme
@@ -105,6 +139,8 @@ Produktiv bereits praktisch bestätigt:
 - Branding-/Logo-Automatik inklusive Speicherung
 
 Noch praktisch zu bestätigen nach dem jeweils aktuellen Deployment:
+- neue schlanke Plattform-Admin-Oberfläche
+- Einrichtungslink und Kunden-Selbstregistrierung Ende-zu-Ende
 - Stundenplan-Einzelimport PDF/XLSX/CSV
 - Stundenplan-Massenupload
 - automatisches Einlesen von Fachbezeichnungen/Fachkürzeln/Dozenten
