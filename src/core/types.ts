@@ -17,6 +17,7 @@ export interface SessionUser {
   email: string;
   displayName: string;
   isPlatformAdmin: boolean;
+  mustChangePassword: boolean;
   tenantRoles: Array<{ tenantId: string; courseId: string | null; role: Exclude<Role,'platform_admin'> }>;
 }
 
