@@ -4,6 +4,7 @@ import { calculateCommercialOffer, getCommercePolicy, listManagedSetupOptions, t
 import { billingSummaryWithStripe, createPaidBookingWithStripe, quoteExpansionWithStripe, requestExpansionWithStripe, retryInitialCheckout } from './payment-orchestration.js';
 import { createStripePortalSession, handleStripeWebhook } from './stripe.js';
 import { createTaxStripeCheckout } from './stripe-tax-billing.js';
+import { ensureTenantCommerceState } from './commerce-state.js';
 import { assertSameOrigin, nowIso } from './utils.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status});}
@@ -24,6 +25,7 @@ export async function handlePaymentApi(request:Request,env:Env):Promise<Response
   try{
     assertSameOrigin(request,env.APP_ORIGIN);
     const auth=await resolveCoreAuth(env,request,tenantId,u.searchParams.get('course_id')||undefined);
+    await ensureTenantCommerceState(env,tenantId);
     if(u.pathname==='/api/billing/summary'&&request.method==='GET')return out({ok:true,...await billingSummaryWithStripe(env,auth,tenantId),trial:await tenantTrialSummary(env,auth,tenantId),commercePolicy:await getCommercePolicy(env),setupOptions:await listManagedSetupOptions(env)});
     if(u.pathname==='/api/billing/change-quote'&&request.method==='POST')return out({ok:true,quote:await quoteExpansionWithStripe(env,auth,tenantId,await body(request))});
     if(u.pathname==='/api/billing/expand'&&request.method==='POST'){
