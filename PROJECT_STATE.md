@@ -2,47 +2,67 @@
 
 Stand: 2026-08-14
 
-## Projekt
-Kommerzielle Klassenportal-Plattform für Bildungsträger, Kurse und Klassen.
+## Warum dieser Stand neu aufgebaut wurde
+Der kommerzielle Codebestand des Vortags war nicht dauerhaft als vollständiger Quellbaum verfügbar. Deshalb wurde die Plattform aus den verbindlich festgelegten Anforderungen neu aufgebaut und ab jetzt direkt im privaten GitHub-Repository versioniert.
 
 ## Schutzregel
-Das VFA13-Liveportal gehört nicht zu diesem Repository und wird durch diese Arbeiten nicht verändert.
+Das produktive VFA13-Portal gehört nicht zu diesem Repository und wird durch dieses Projekt nicht verändert.
 
-## Fortschritt
-Punkte 1–21: laut Projektverlauf bereits bearbeitet.
-Punkt 22: Import, Export und Backups – Kernmodul vorhanden.
+## Neu aufgebauter Kern (rekonstruierte Punkte vor 22)
+- kommerzielle eigenständige Cloudflare-Plattform
+- Mandantentrennung über `tenant_id`
+- vollständige Klassentrennung über `course_id`
+- Plattform-Admin, Mandanten-Admin, Klassen-Admin, Teilnehmer, Gast
+- Login/Sessions und serverseitige Autorisierung
+- Zugriffsarten öffentlich / Link-Code / Login / Hybrid
+- automatisiertes Kunden-Provisioning
+- Kunden können eigene Klassen/Kurse verwalten
+- eigene Admin-/Rollenstrukturen je Kunde/Klasse
+- Branding und White-Label-Vorbereitung
+- Module/Feature Flags, Paket-/Upsell-Grundlage
+- Stundenplan
+- Hausaufgaben/Aufgaben
+- Termine
+- Informationen/Meldungen
+- Links
+- Dateispeicherung über R2
+- Prüfungen & Lernfortschritt
+- `visible_to_students` je Prüfung
+- persönliche, private, selbst eingetragene Noten
+- Integrationsschema für Microsoft Teams / Microsoft 365 ohne eigene Office-Suite
+- Audit- und Provisionierungsprotokoll
+- D1-Datenmodell und Basis-Migration
+- statische Admin-Oberfläche für Mandanten, Kurse, Benutzer, Branding, Module, Inhalte und Datenverwaltung
 
-## Punkt 22 – enthalten
-- CSV-Import mit Vorschau, Feldzuordnung, Validierung und Staging
-- XLSX-Import ohne externen XLSX-Runtime-Zwang
-- PDF-Originaldatei-Upload nach R2 mit Signatur-/Größenprüfung
-- manuelle Eingabe bleibt Bestandteil der regulären CRUD-Funktionen der Plattform
-- CSV-, XLSX- und PDF-Export pro Ressource
-- vollständiger Mandantenexport als streamendes ZIP
-- Originaldateien/PDFs im Vollständigen Kundenexport
-- Mandantenbackups nach R2
-- automatische Backups mit rotierendem Tenant-Cursor
+## Punkt 22 – Import, Export und Backups
+- CSV-Import
+- XLSX-Import
+- PDF-Originalimport nach R2
+- Import-Vorschau / Validierung / Staging
+- CSV-/XLSX-/PDF-Export
+- vollständiger Kundenexport als streamendes ZIP mit Originaldateien
+- manuelle und automatische Mandantenbackups
 - Restore mit Pre-Restore-Sicherheitsbackup
-- Vertragsende-Backup
-- Löschanforderung, Karenz, Plattform-Admin-Bestätigung und endgültige Mandantenlöschung
-- Audit-Protokoll
-- D1-Migration für Importjobs, Staging, Backups, Dateien, Löschworkflow und Audit
+- Vertragsende-Backup und Export
+- Löschantrag, Karenz, Abbruch und endgültige Löschung
+- Audit-Ereignisse
 
-## Noch an den existierenden Gesamtcode anzuschließen
-- tatsächliches bestehendes Auth-/RBAC-System an `AuthContext`
-- tatsächliche Tabellen- und Spaltennamen der kommerziellen Plattform in `src/portability/config.ts`
-- D1/R2-Bindings im produktiven Wrangler-Setup
-- UI des Verkaufsportals für Import-/Export-/Backup-Buttons
-- produktive Migration erst nach Abgleich mit dem echten Schema ausführen
+## Technisch verifiziert in dieser Sitzung
+- TypeScript Strict Typecheck: erfolgreich
+- TypeScript Build: erfolgreich
+- CSV Parser Test: erfolgreich
+- XLSX Export→Import Roundtrip: erfolgreich
+- PDF-Erzeugungstest: erfolgreich
+- ZIP-Streamtest: erfolgreich
+- D1/SQLite-Syntax beider Migrationen (`0001_core.sql` und `0022_data_portability.sql`) in SQLite ausgeführt: erfolgreich
 
-## Datenhaltung
-D1: strukturierte Mandantendaten und Metadaten
-R2: PDFs, Originaldateien, Backup-Objekte und Exportbestandteile
+## Vor echtem Produktiv-Deploy noch erforderlich
+- Cloudflare D1-Datenbank und R2-Bucket im Account erzeugen/zuordnen
+- echte D1-ID in `wrangler.jsonc` eintragen
+- `BOOTSTRAP_SECRET` als Cloudflare-Secret setzen
+- Migrationen auf die echte D1-Datenbank anwenden
+- Cloudflare-GitHub-Deployment verbinden
+- Smoke-Test im Cloudflare-Preview/Produktivruntime
 
-## Sicherheitsprinzipien
-- jede Operation tenant-gebunden
-- Restore nur Plattform-Admin
-- endgültige Löschung nur nach separater Bestätigung und Karenz
-- Sicherheitsbackup vor Restore
-- Abschlussbackup vor Vertragsende/Löschung
-- Originaldateien nicht stillschweigend umwandeln
+## Nicht behauptet
+Ohne echten Cloudflare-Runtime-Deploy ist noch keine 100%-Aussage über das Verhalten im produktiven Worker möglich. Der Quellcode wurde lokal statisch und auf Format-/Dateifunktionen geprüft; die produktive D1/R2-Integration wird nach dem Cloudflare-Setup verifiziert.
