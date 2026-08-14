@@ -10,7 +10,8 @@
     "run_worker_first": [
       "/api/*",
       "/public/*",
-      "/brand/*"
+      "/brand/*",
+      "/einrichtung/*"
     ]
   },
   "d1_databases": [
