@@ -35,6 +35,11 @@ export function fromB64(s: string): Uint8Array {
   for (let i=0;i<raw.length;i++) out[i] = raw.charCodeAt(i); return out;
 }
 export function randomBytes(n: number): Uint8Array { const x = new Uint8Array(n); crypto.getRandomValues(x); return x; }
+export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
 export async function sha256Text(value: string): Promise<string> {
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value)));
   return b64(hash);
