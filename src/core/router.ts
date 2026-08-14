@@ -1,6 +1,6 @@
 import type { Env } from './types.js';
 import { assertSameOrigin, json } from './utils.js';
-import { bootstrapPlatformAdmin, getSession, login, logout, resolveCoreAuth } from './auth.js';
+import { getSession, login, logout, resolveCoreAuth } from './auth.js';
 import { provisionTenant } from './provision.js';
 import { createContent, createCourse, getModules, getSettings, listContent, listCourses, listPersonalGrades, listTenants, savePersonalGrade, setExamVisibility, setModule, updateSettings } from './data.js';
 import { publicOverview } from './public.js';
@@ -15,7 +15,6 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
   try{
     assertSameOrigin(request,env.APP_ORIGIN);
     if(u.pathname==='/api/health')return json({ok:true,service:'klassenportal-commercial'});
-    if(u.pathname==='/api/bootstrap'&&request.method==='POST')return bootstrapPlatformAdmin(env,request);
     if(u.pathname==='/api/auth/login'&&request.method==='POST')return login(env,request);
     if(u.pathname==='/api/auth/logout'&&request.method==='POST')return logout(env,request);
     if(u.pathname==='/api/auth/me'&&request.method==='GET')return json({ok:true,user:await getSession(env,request)});
