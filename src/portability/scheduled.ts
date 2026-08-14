@@ -1,22 +1,11 @@
-import type { PortabilityEnv } from './types.js';
-import { createBackup } from './backup.js';
-
-export async function runAutomaticBackups(env: PortabilityEnv, tenantsPerRun = 25): Promise<{ backedUp: string[]; failed: Array<{tenantId:string; error:string}> }> {
-  const cursorRow = await env.DB.prepare("SELECT details_json FROM portability_audit WHERE tenant_id='__system__' AND action='automatic_backup_cursor' ORDER BY created_at DESC LIMIT 1").first<{details_json:string}>();
-  let cursor = '';
-  try { cursor = cursorRow?.details_json ? JSON.parse(cursorRow.details_json).cursor ?? '' : ''; } catch {}
-  const rows = await env.DB.prepare('SELECT id FROM tenants WHERE id > ? ORDER BY id LIMIT ?').bind(cursor, tenantsPerRun).all<{id:string}>();
-  let tenantRows = rows.results ?? [];
-  if (!tenantRows.length) {
-    const wrap = await env.DB.prepare('SELECT id FROM tenants ORDER BY id LIMIT ?').bind(tenantsPerRun).all<{id:string}>();
-    tenantRows = wrap.results ?? [];
-  }
-  const backedUp: string[] = []; const failed: Array<{tenantId:string;error:string}> = [];
-  for (const row of tenantRows) {
-    try { await createBackup(env, row.id, 'automatic', 'system'); backedUp.push(row.id); }
-    catch (e) { failed.push({tenantId:row.id,error:e instanceof Error?e.message:String(e)}); }
-  }
-  const last = tenantRows.at(-1)?.id ?? '';
-  await env.DB.prepare('INSERT INTO portability_audit(id, tenant_id, actor_user_id, action, details_json) VALUES(?,?,?,?,?)').bind(crypto.randomUUID(),'__system__','system','automatic_backup_cursor',JSON.stringify({cursor:last,backedUp,failed})).run();
-  return { backedUp, failed };
+import type { AuthContext, PortabilityConfig, PortabilityEnv } from './types.js';
+import { createTenantBackup } from './backup.js';
+export async function runScheduledTenantBackups(env:PortabilityEnv,config:PortabilityConfig,systemUserId='system:backup',tenantsPerRun=3):Promise<{backedUp:string[];nextCursor:string|null}>{
+  const state=await env.DB.prepare("SELECT value FROM portability_scheduler_state WHERE key = 'backup_cursor'").first<Record<string,unknown>>(),cursor=String(state?.value??'');
+  let res=await env.DB.prepare(`SELECT ${config.tenantIdColumn} AS id FROM ${config.tenantTable} WHERE ${config.tenantIdColumn} > ? ORDER BY ${config.tenantIdColumn} ASC LIMIT ?`).bind(cursor,tenantsPerRun).all<{id:string}>();
+  if(!res.results.length&&cursor)res=await env.DB.prepare(`SELECT ${config.tenantIdColumn} AS id FROM ${config.tenantTable} ORDER BY ${config.tenantIdColumn} ASC LIMIT ?`).bind(tenantsPerRun).all<{id:string}>();
+  const backedUp:string[]=[];let last:string|null=null;
+  for(const row of res.results){const tenantId=String(row.id);last=tenantId;const auth:AuthContext={userId:systemUserId,role:'system',isPlatformAdmin:true};await createTenantBackup(env,config,auth,tenantId,'automatic');backedUp.push(tenantId);}
+  if(last)await env.DB.prepare("INSERT INTO portability_scheduler_state (key, value, updated_at) VALUES ('backup_cursor', ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").bind(last,new Date().toISOString()).run();
+  return {backedUp,nextCursor:last};
 }
