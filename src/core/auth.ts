@@ -1,6 +1,6 @@
 import type { AuthContext as PortabilityAuth } from '../portability/types.js';
 import type { CoreAuthContext, Env, SessionUser } from './types.js';
-import { b64, cookie, fromB64, id, json, noCookie, normalizeEmail, nowIso, parseCookie, randomBytes, sha256Text } from './utils.js';
+import { b64, cookie, fromB64, id, json, noCookie, normalizeEmail, nowIso, parseCookie, randomBytes, sha256Text, toArrayBuffer } from './utils.js';
 
 const ITERATIONS = 210_000;
 const SESSION_DAYS = 7;
@@ -9,7 +9,7 @@ export async function hashPassword(password: string): Promise<string> {
   if (password.length < 10 || password.length > 256) throw new Error('PASSWORD_LENGTH_INVALID');
   const salt = randomBytes(16);
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', hash:'SHA-256', salt, iterations:ITERATIONS }, key, 256);
+  const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', hash:'SHA-256', salt:toArrayBuffer(salt), iterations:ITERATIONS }, key, 256);
   return `pbkdf2$${ITERATIONS}$${b64(salt)}$${b64(new Uint8Array(bits))}`;
 }
 
@@ -19,7 +19,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const iterations = Number(iterText); if (!Number.isFinite(iterations) || iterations < 100_000) return false;
   const salt = fromB64(saltText); const expected = fromB64(hashText);
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
-  const actual = new Uint8Array(await crypto.subtle.deriveBits({ name:'PBKDF2', hash:'SHA-256', salt, iterations }, key, expected.length*8));
+  const actual = new Uint8Array(await crypto.subtle.deriveBits({ name:'PBKDF2', hash:'SHA-256', salt:toArrayBuffer(salt), iterations }, key, expected.length*8));
   if (actual.length !== expected.length) return false;
   let diff=0; for(let i=0;i<actual.length;i++) diff |= actual[i]^expected[i]; return diff===0;
 }
