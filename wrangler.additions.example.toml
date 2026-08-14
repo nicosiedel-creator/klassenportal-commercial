@@ -1,0 +1,14 @@
+# Merge these bindings into the commercial portal's existing wrangler config.
+# Do NOT apply this to VFA13.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "<EXISTING_COMMERCIAL_PORTAL_D1_NAME>"
+database_id = "<EXISTING_COMMERCIAL_PORTAL_D1_ID>"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "<COMMERCIAL_PORTAL_FILES_BUCKET>"
+
+[triggers]
+crons = ["17 */6 * * *"]
