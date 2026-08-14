@@ -2,8 +2,36 @@ import type { CoreAuthContext, Env } from './types.js';
 import { billingSummary, quoteExpansion, requestExpansion } from './commerce.js';
 import { createPaidBooking } from './commerce-offers.js';
 import { requireRole } from './permissions.js';
-import { applyStripeExpansion, createStripeCheckout, previewStripeExpansion, syncStripeProviderState } from './stripe.js';
+import { createStripeCheckout, ensureStripeCatalog, previewStripeExpansion, syncStripeProviderState } from './stripe.js';
 import { nowIso } from './utils.js';
+
+const STRIPE_API='https://api.stripe.com/v1';
+async function stripeCall(env:Env,method:'GET'|'POST',path:string,entries:Array<[string,unknown]>=[],idempotency?:string):Promise<Record<string,any>>{
+  if(!env.STRIPE_SECRET_KEY)throw new Error('STRIPE_NOT_CONFIGURED');
+  const p=new URLSearchParams();for(const [k,v] of entries)if(v!==null&&v!==undefined)p.append(k,String(v));
+  let url=`${STRIPE_API}${path}`;if(method==='GET'&&p.toString())url+=`?${p}`;
+  const headers:Record<string,string>={Authorization:`Bearer ${env.STRIPE_SECRET_KEY}`};if(method==='POST')headers['content-type']='application/x-www-form-urlencoded';if(idempotency)headers['Idempotency-Key']=idempotency.slice(0,255);
+  const r=await fetch(url,{method,headers,body:method==='POST'?p:undefined});let d:any={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(`STRIPE_${String(d?.error?.code||d?.error?.type||'API_ERROR').toUpperCase().replace(/[^A-Z0-9]+/g,'_')}`);return d;
+}
+function stripeId(v:any):string|null{return typeof v==='string'?v:v&&typeof v.id==='string'?v.id:null;}
+async function applySafeStripeExpansion(env:Env,args:{tenantId:string;changeId:string;invoiceId:string;targetPrice:any;prorationDate?:number|null}):Promise<{externalInvoiceId:string|null;paymentUrl:string|null;stripeStatus:string}>{
+  const account=await env.DB.prepare('SELECT stripe_subscription_id,billing_cycle FROM tenant_payment_accounts WHERE tenant_id=?').bind(args.tenantId).first<{stripe_subscription_id:string|null;billing_cycle:string|null}>();
+  if(!account?.stripe_subscription_id)throw new Error('STRIPE_SUBSCRIPTION_NOT_FOUND');
+  const cycle=account.billing_cycle==='annual'?'annual':'monthly',target=await ensureStripeCatalog(env,args.targetPrice,cycle);
+  const sub=await stripeCall(env,'GET',`/subscriptions/${encodeURIComponent(account.stripe_subscription_id)}`,[['expand[]','items.data.price']]);
+  const items=Array.isArray(sub?.items?.data)?sub.items.data:[],base=items.find((x:any)=>x?.price?.metadata?.klassenportal_component==='base')??items[0],extra=items.find((x:any)=>x?.price?.metadata?.klassenportal_component==='extra')??items.find((x:any)=>x!==base);
+  const e:Array<[string,unknown]>=[];let i=0;
+  if(base?.id)e.push([`items[${i}][id]`,base.id]);e.push([`items[${i}][price]`,target.base_price_id],[`items[${i}][quantity]`,1]);i++;
+  if(args.targetPrice.extraCourses>0&&target.extra_price_id){if(extra?.id)e.push([`items[${i}][id]`,extra.id]);e.push([`items[${i}][price]`,target.extra_price_id],[`items[${i}][quantity]`,args.targetPrice.extraCourses]);}
+  else if(extra?.id)e.push([`items[${i}][id]`,extra.id],[`items[${i}][deleted]`,'true']);
+  e.push(['proration_behavior','always_invoice'],['payment_behavior','pending_if_incomplete'],['expand[]','latest_invoice']);if(args.prorationDate)e.push(['proration_date',args.prorationDate]);
+  const updated=await stripeCall(env,'POST',`/subscriptions/${encodeURIComponent(account.stripe_subscription_id)}`,e,`upgrade:${args.changeId}`),invoice=updated.latest_invoice&&typeof updated.latest_invoice==='object'?updated.latest_invoice:null,externalInvoiceId=stripeId(updated.latest_invoice),paymentUrl=invoice?.hosted_invoice_url?String(invoice.hosted_invoice_url):null;
+  await env.DB.batch([
+    env.DB.prepare('UPDATE subscription_changes SET external_invoice_id=? WHERE id=? AND tenant_id=?').bind(externalInvoiceId,args.changeId,args.tenantId),
+    env.DB.prepare("UPDATE commercial_invoices SET external_provider='stripe',external_invoice_id=?,external_invoice_url=? WHERE id=? AND tenant_id=?").bind(externalInvoiceId,paymentUrl,args.invoiceId,args.tenantId),
+  ]);
+  return{externalInvoiceId,paymentUrl,stripeStatus:String(updated.status||'unknown')};
+}
 
 export async function createPaidBookingWithStripe(env:Env,args:Parameters<typeof createPaidBooking>[1]):Promise<Record<string,unknown>>{
   const booking=await createPaidBooking(env,args) as Record<string,any>;
@@ -81,7 +109,7 @@ export async function requestExpansionWithStripe(env:Env,auth:CoreAuthContext,te
     env.DB.prepare('UPDATE commercial_invoices SET net_cents=?,gross_cents=?,snapshot_json=? WHERE id=? AND tenant_id=?').bind(immediate,immediate,JSON.stringify(preview),invoiceId,tenantId),
   ]);
   try{
-    const stripe=await applyStripeExpansion(env,{tenantId,changeId,invoiceId,targetPrice:preview.price,prorationDate:Number(preview.prorationDate)||null});
+    const stripe=await applySafeStripeExpansion(env,{tenantId,changeId,invoiceId,targetPrice:preview.price,prorationDate:Number(preview.prorationDate)||null});
     return{...local,quote:preview,...stripe,paymentProviderConnected:true};
   }catch(e){
     await env.DB.batch([
