@@ -9,6 +9,11 @@ export default {
     const url = new URL(request.url);
     const logo = url.pathname.match(/^\/brand\/logo\/([^/]+)$/);
     if (logo) return serveTenantLogo(env, decodeURIComponent(logo[1]));
+    if (url.pathname.startsWith('/einrichtung/')) {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Methode nicht erlaubt',{status:405});
+      const assetUrl=new URL('/onboarding.html',request.url);
+      return env.ASSETS.fetch(new Request(assetUrl,{method:request.method,headers:request.headers}));
+    }
     const portability = await handlePortabilityRequest(request, env, portabilityConfig, (r) => resolvePortabilityAuth(env, r));
     if (portability) return portability;
     const api = await handleCoreApi(request, env); if (api) return api;
@@ -18,5 +23,6 @@ export default {
   async scheduled(_controller: unknown, env: Env): Promise<void> {
     await runScheduledTenantBackups(env, portabilityConfig, 'system:backup', 3);
     await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(new Date().toISOString()).run();
+    await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(new Date().toISOString()).run();
   },
 };
