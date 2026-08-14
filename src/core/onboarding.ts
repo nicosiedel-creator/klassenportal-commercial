@@ -1,12 +1,12 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { requirePlatform } from './permissions.js';
 import { audit } from './audit.js';
-import { b64, id, normalizeEmail, nowIso, randomBytes, safeString, sha256Text, slugify } from './utils.js';
+import { b64, id, normalizeEmail, nowIso, randomBytes, safeString, sha256Text } from './utils.js';
 import { provisionTenantFromOnboarding } from './provision.js';
 
 type InvitationRow={
   id:string;token_hash:string;customer_email:string;plan_id:string;status:string;expires_at:string;
-  created_by:string;created_at:string;processing_nonce:string|null;completed_at:string|null;tenant_id:string|null;form_json:string|null;
+  created_by:string;created_at:string;completed_at:string|null;tenant_id:string|null;form_json:string|null;
 };
 
 type OnboardingInput={
@@ -45,9 +45,10 @@ export async function listOnboardingInvitations(env:Env,auth:CoreAuthContext):Pr
 
 export async function revokeOnboardingInvitation(env:Env,auth:CoreAuthContext,invitationId:string):Promise<void>{
   requirePlatform(auth);
-  const row=await env.DB.prepare("SELECT id,status FROM onboarding_invitations WHERE id=?").bind(invitationId).first<{id:string;status:string}>();if(!row)throw new Error('ONBOARDING_NOT_FOUND');
+  const row=await env.DB.prepare('SELECT id,status FROM onboarding_invitations WHERE id=?').bind(invitationId).first<{id:string;status:string}>();if(!row)throw new Error('ONBOARDING_NOT_FOUND');
   if(row.status==='completed')throw new Error('ONBOARDING_ALREADY_COMPLETED');
-  await env.DB.prepare("UPDATE onboarding_invitations SET status='revoked',processing_nonce=NULL WHERE id=? AND status IN ('open','processing')").bind(invitationId).run();
+  const claim=await env.DB.prepare('SELECT invitation_id FROM onboarding_claims WHERE invitation_id=?').bind(invitationId).first();if(claim)throw new Error('ONBOARDING_ALREADY_IN_PROGRESS');
+  await env.DB.prepare("UPDATE onboarding_invitations SET status='revoked' WHERE id=? AND status='open'").bind(invitationId).run();
   await audit(env.DB,auth.userId,'onboarding.invitation.revoked',undefined,undefined,'onboarding_invitation',invitationId);
 }
 
@@ -62,39 +63,49 @@ export async function getPublicOnboarding(env:Env,token:string):Promise<Record<s
 }
 
 export async function submitPublicOnboarding(env:Env,token:string,request:Request):Promise<Record<string,unknown>>{
-  const before=await invitationByToken(env,token);if(!before)throw new Error('ONBOARDING_NOT_FOUND');
-  if(before.status==='completed')return{ok:true,already_completed:true,tenant_id:before.tenant_id};
-  if(before.status!=='open')throw new Error(before.status==='expired'?'ONBOARDING_EXPIRED':'ONBOARDING_UNAVAILABLE');
-  if(before.expires_at<=nowIso()){await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE id=? AND status='open'").bind(before.id).run();throw new Error('ONBOARDING_EXPIRED');}
+  const invitation=await invitationByToken(env,token);if(!invitation)throw new Error('ONBOARDING_NOT_FOUND');
+  if(invitation.status==='completed')return{ok:true,already_completed:true,tenant_id:invitation.tenant_id};
+  if(invitation.status!=='open')throw new Error(invitation.status==='expired'?'ONBOARDING_EXPIRED':'ONBOARDING_UNAVAILABLE');
+  if(invitation.expires_at<=nowIso()){await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE id=? AND status='open'").bind(invitation.id).run();throw new Error('ONBOARDING_EXPIRED');}
+
   const raw=safeJson(await request.json().catch(()=>({}))) as OnboardingInput;
-  const legalName=safeString(raw.legal_name,200),portalName=safeString(raw.portal_name||legalName,200),contactName=safeString(raw.contact_name,200),contactEmail=normalizeEmail(raw.contact_email||before.customer_email);
+  const legalName=safeString(raw.legal_name,200),portalName=safeString(raw.portal_name||legalName,200),contactName=safeString(raw.contact_name,200),contactEmail=normalizeEmail(raw.contact_email||invitation.customer_email);
   const adminName=safeString(raw.admin_name||contactName,200),adminEmail=normalizeEmail(raw.admin_email||contactEmail),password=safeString(raw.admin_password,256),confirm=safeString(raw.admin_password_confirm,256);
   const street=safeString(raw.street,250),postal=safeString(raw.postal_code,30),city=safeString(raw.city,120),country=safeString(raw.country||'Deutschland',120);
   if(!legalName||!contactName||!validEmail(contactEmail)||!adminName||!validEmail(adminEmail)||!street||!postal||!city)throw new Error('ONBOARDING_REQUIRED_FIELDS');
   if(password.length<10||password.length>256)throw new Error('PASSWORD_LENGTH');if(password!==confirm)throw new Error('PASSWORD_CONFIRMATION_MISMATCH');
-  const firstCourse=safeString(raw.first_course_name,200),firstCourseCode=safeString(raw.first_course_code,80),accessMode=['public','link_code','login','hybrid'].includes(String(raw.access_mode||''))?String(raw.access_mode):'login';
-  if(accessMode==='link_code'||accessMode==='hybrid')throw new Error('ONBOARDING_ACCESS_MODE_REQUIRES_LATER_CODE');
-  const nonce=id('claim_');const hash=await sha256Text(token);
-  await env.DB.prepare("UPDATE onboarding_invitations SET status='processing',processing_nonce=? WHERE token_hash=? AND status='open' AND expires_at>?").bind(nonce,hash,nowIso()).run();
-  const claimed=await env.DB.prepare('SELECT * FROM onboarding_invitations WHERE token_hash=?').bind(hash).first<InvitationRow>();
-  if(!claimed||claimed.status!=='processing'||claimed.processing_nonce!==nonce)throw new Error('ONBOARDING_ALREADY_IN_PROGRESS');
+  const firstCourse=safeString(raw.first_course_name,200),firstCourseCode=safeString(raw.first_course_code,80),accessMode=['public','login'].includes(String(raw.access_mode||''))?String(raw.access_mode):'login';
+
+  const nonce=id('claim_');
+  try{await env.DB.prepare('INSERT INTO onboarding_claims(invitation_id,nonce,claimed_at) VALUES(?,?,?)').bind(invitation.id,nonce,nowIso()).run();}
+  catch{throw new Error('ONBOARDING_ALREADY_IN_PROGRESS');}
+
+  let provisioned:Awaited<ReturnType<typeof provisionTenantFromOnboarding>>|undefined;
   try{
-    const provisioned=await provisionTenantFromOnboarding(env,`onboarding:${claimed.id}`,{
-      name:legalName,slug:slugify(legalName),portal_name:portalName,admin_name:adminName,admin_email:adminEmail,admin_password:password,
-      course_name:firstCourse||undefined,course_code:firstCourseCode||undefined,access_mode:accessMode,plan_id:claimed.plan_id,
+    const stillOpen=await env.DB.prepare("SELECT id FROM onboarding_invitations WHERE id=? AND status='open' AND expires_at>?").bind(invitation.id,nowIso()).first();if(!stillOpen)throw new Error('ONBOARDING_UNAVAILABLE');
+    provisioned=await provisionTenantFromOnboarding(env,`onboarding:${invitation.id}`,{
+      name:legalName,portal_name:portalName,admin_name:adminName,admin_email:adminEmail,admin_password:password,
+      course_name:firstCourse||undefined,course_code:firstCourseCode||undefined,access_mode:accessMode,plan_id:invitation.plan_id,
     });
     const profile={legal_name:legalName,portal_name:portalName,contact_name:contactName,contact_email:contactEmail,phone:safeString(raw.phone,80),website:safeString(raw.website,250),street,postal_code:postal,city,country,billing_email:normalizeEmail(raw.billing_email||contactEmail),admin_name:adminName,admin_email:adminEmail,first_course_name:firstCourse||null,first_course_code:firstCourseCode||null};
     const ts=nowIso();
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO tenant_profiles(tenant_id,legal_name,contact_name,contact_email,phone,website,street,postal_code,city,country,billing_email,onboarding_invitation_id,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(provisioned.tenantId,legalName,contactName,contactEmail,safeString(raw.phone,80)||null,safeString(raw.website,250)||null,street,postal,city,country,normalizeEmail(raw.billing_email||contactEmail),claimed.id,ts),
-      env.DB.prepare("UPDATE onboarding_invitations SET status='completed',processing_nonce=NULL,completed_at=?,tenant_id=?,form_json=? WHERE id=? AND processing_nonce=?")
-        .bind(ts,provisioned.tenantId,JSON.stringify(profile),claimed.id,nonce),
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(provisioned.tenantId,legalName,contactName,contactEmail,safeString(raw.phone,80)||null,safeString(raw.website,250)||null,street,postal,city,country,normalizeEmail(raw.billing_email||contactEmail),invitation.id,ts),
+      env.DB.prepare("UPDATE onboarding_invitations SET status='completed',completed_at=?,tenant_id=?,form_json=? WHERE id=? AND status='open'")
+        .bind(ts,provisioned.tenantId,JSON.stringify(profile),invitation.id),
+      env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce),
     ]);
-    await audit(env.DB,`onboarding:${claimed.id}`,'onboarding.completed',provisioned.tenantId,provisioned.courseId,'onboarding_invitation',claimed.id,{customerEmail:claimed.customer_email});
+    await audit(env.DB,`onboarding:${invitation.id}`,'onboarding.completed',provisioned.tenantId,provisioned.courseId,'onboarding_invitation',invitation.id,{customerEmail:invitation.customer_email});
     return{ok:true,tenant_id:provisioned.tenantId,login_email:adminEmail};
   }catch(e){
-    await env.DB.prepare("UPDATE onboarding_invitations SET status='open',processing_nonce=NULL WHERE id=? AND processing_nonce=?").bind(claimed.id,nonce).run();
+    if(!provisioned)await env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce).run();
+    else{
+      await env.DB.batch([
+        env.DB.prepare("UPDATE onboarding_invitations SET status='completed',completed_at=?,tenant_id=? WHERE id=? AND status='open'").bind(nowIso(),provisioned.tenantId,invitation.id),
+        env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce),
+      ]);
+    }
     throw e;
   }
 }
