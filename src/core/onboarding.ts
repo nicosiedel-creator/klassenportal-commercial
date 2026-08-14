@@ -3,6 +3,7 @@ import { requirePlatform } from './permissions.js';
 import { audit } from './audit.js';
 import { b64, id, normalizeEmail, nowIso, randomBytes, safeString, sha256Text } from './utils.js';
 import { provisionTenantFromOnboarding } from './provision.js';
+import { calculatePlanPrice, createInitialCommerceBooking } from './commerce.js';
 
 type InvitationRow={
   id:string;token_hash:string;customer_email:string;plan_id:string;status:string;expires_at:string;
@@ -11,14 +12,16 @@ type InvitationRow={
 
 type OnboardingInput={
   legal_name?:unknown;portal_name?:unknown;contact_name?:unknown;contact_email?:unknown;phone?:unknown;website?:unknown;
-  street?:unknown;postal_code?:unknown;city?:unknown;country?:unknown;billing_email?:unknown;
+  street?:unknown;postal_code?:unknown;city?:unknown;country?:unknown;billing_email?:unknown;vat_id?:unknown;
   admin_name?:unknown;admin_email?:unknown;admin_password?:unknown;admin_password_confirm?:unknown;
-  first_course_name?:unknown;first_course_code?:unknown;access_mode?:unknown;
+  desired_course_count?:unknown;first_course_name?:unknown;first_course_code?:unknown;access_mode?:unknown;
+  commercial_acceptance?:unknown;
 };
 
 function validEmail(value:string):boolean{return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);}
 function publicInvitation(row:InvitationRow){return{customer_email:row.customer_email,plan_id:row.plan_id,status:row.status,expires_at:row.expires_at};}
 function safeJson(value:unknown):Record<string,unknown>{return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};}
+function courseCount(v:unknown):number{const n=Number(v);if(!Number.isFinite(n)||n<1||n>10000)throw new Error('COURSE_COUNT_INVALID');return Math.round(n);}
 
 export async function createOnboardingInvitation(env:Env,auth:CoreAuthContext,request:Request):Promise<Record<string,unknown>>{
   requirePlatform(auth);
@@ -62,6 +65,12 @@ export async function getPublicOnboarding(env:Env,token:string):Promise<Record<s
   return publicInvitation(row);
 }
 
+export async function getPublicOnboardingQuote(env:Env,token:string,requestedCourses:unknown):Promise<Record<string,unknown>>{
+  const row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
+  if(row.status!=='open'||row.expires_at<=nowIso())throw new Error(row.expires_at<=nowIso()?'ONBOARDING_EXPIRED':'ONBOARDING_UNAVAILABLE');
+  return calculatePlanPrice(env,row.plan_id,courseCount(requestedCourses));
+}
+
 export async function submitPublicOnboarding(env:Env,token:string,request:Request):Promise<Record<string,unknown>>{
   const invitation=await invitationByToken(env,token);if(!invitation)throw new Error('ONBOARDING_NOT_FOUND');
   if(invitation.status==='completed')return{ok:true,already_completed:true,tenant_id:invitation.tenant_id};
@@ -71,9 +80,11 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
   const raw=safeJson(await request.json().catch(()=>({}))) as OnboardingInput;
   const legalName=safeString(raw.legal_name,200),portalName=safeString(raw.portal_name||legalName,200),contactName=safeString(raw.contact_name,200),contactEmail=normalizeEmail(raw.contact_email||invitation.customer_email);
   const adminName=safeString(raw.admin_name||contactName,200),adminEmail=normalizeEmail(raw.admin_email||contactEmail),password=safeString(raw.admin_password,256),confirm=safeString(raw.admin_password_confirm,256);
-  const street=safeString(raw.street,250),postal=safeString(raw.postal_code,30),city=safeString(raw.city,120),country=safeString(raw.country||'Deutschland',120);
+  const street=safeString(raw.street,250),postal=safeString(raw.postal_code,30),city=safeString(raw.city,120),country=safeString(raw.country||'Deutschland',120),requestedCourses=courseCount(raw.desired_course_count??1);
   if(!legalName||!contactName||!validEmail(contactEmail)||!adminName||!validEmail(adminEmail)||!street||!postal||!city)throw new Error('ONBOARDING_REQUIRED_FIELDS');
   if(password.length<10||password.length>256)throw new Error('PASSWORD_LENGTH');if(password!==confirm)throw new Error('PASSWORD_CONFIRMATION_MISMATCH');
+  const price=await calculatePlanPrice(env,invitation.plan_id,requestedCourses),accepted=String(raw.commercial_acceptance??'')==='1';
+  if(price.pricingReady&&!accepted)throw new Error('OFFER_ACCEPTANCE_REQUIRED');
   const firstCourse=safeString(raw.first_course_name,200),firstCourseCode=safeString(raw.first_course_code,80),accessMode=['public','login'].includes(String(raw.access_mode||''))?String(raw.access_mode):'login';
 
   const nonce=id('claim_');
@@ -87,7 +98,8 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
       name:legalName,portal_name:portalName,admin_name:adminName,admin_email:adminEmail,admin_password:password,
       course_name:firstCourse||undefined,course_code:firstCourseCode||undefined,access_mode:accessMode,plan_id:invitation.plan_id,
     });
-    const profile={legal_name:legalName,portal_name:portalName,contact_name:contactName,contact_email:contactEmail,phone:safeString(raw.phone,80),website:safeString(raw.website,250),street,postal_code:postal,city,country,billing_email:normalizeEmail(raw.billing_email||contactEmail),admin_name:adminName,admin_email:adminEmail,first_course_name:firstCourse||null,first_course_code:firstCourseCode||null};
+    const commercial=await createInitialCommerceBooking(env,{tenantId:provisioned.tenantId,invitationId:invitation.id,planId:invitation.plan_id,courseCount:requestedCourses,accepted,request,actorId:`onboarding:${invitation.id}`});
+    const profile={legal_name:legalName,portal_name:portalName,contact_name:contactName,contact_email:contactEmail,phone:safeString(raw.phone,80),website:safeString(raw.website,250),street,postal_code:postal,city,country,billing_email:normalizeEmail(raw.billing_email||contactEmail),vat_id:safeString(raw.vat_id,80)||null,admin_name:adminName,admin_email:adminEmail,desired_course_count:requestedCourses,first_course_name:firstCourse||null,first_course_code:firstCourseCode||null,commercial_pricing_ready:commercial.price.pricingReady};
     const ts=nowIso();
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO tenant_profiles(tenant_id,legal_name,contact_name,contact_email,phone,website,street,postal_code,city,country,billing_email,onboarding_invitation_id,updated_at)
@@ -96,8 +108,8 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
         .bind(ts,provisioned.tenantId,JSON.stringify(profile),invitation.id),
       env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce),
     ]);
-    await audit(env.DB,`onboarding:${invitation.id}`,'onboarding.completed',provisioned.tenantId,provisioned.courseId,'onboarding_invitation',invitation.id,{customerEmail:invitation.customer_email});
-    return{ok:true,tenant_id:provisioned.tenantId,login_email:adminEmail};
+    await audit(env.DB,`onboarding:${invitation.id}`,'onboarding.completed',provisioned.tenantId,provisioned.courseId,'onboarding_invitation',invitation.id,{customerEmail:invitation.customer_email,requestedCourses,commercial:!!commercial.orderId});
+    return{ok:true,tenant_id:provisioned.tenantId,login_email:adminEmail,pricing_ready:commercial.price.pricingReady,order_id:commercial.orderId??null,payment_pending:!!commercial.orderId};
   }catch(e){
     if(!provisioned)await env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce).run();
     else{
