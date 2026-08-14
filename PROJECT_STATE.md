@@ -2,102 +2,113 @@
 
 Stand: 2026-08-14
 
-## Warum dieser Stand neu aufgebaut wurde
-Der kommerzielle Codebestand des Vortags war nicht dauerhaft als vollständiger Quellbaum verfügbar. Deshalb wurde die Plattform aus den verbindlich festgelegten Anforderungen neu aufgebaut und ab jetzt direkt im privaten GitHub-Repository versioniert.
-
 ## Schutzregel
 Das produktive VFA13-Portal gehört nicht zu diesem Repository und wird durch dieses Projekt nicht verändert.
 
-## Neu aufgebauter Kern (rekonstruierte Punkte vor 22)
-- kommerzielle eigenständige Cloudflare-Plattform
+## Verbindliche Produktprinzipien
+- Oberfläche grundsätzlich **Deutsch**; englische Begriffe nur dort, wo sie fachlich üblich oder technisch sinnvoll sind.
+- **Automation first:** Hochladen statt Nachbauen, erkennen statt konfigurieren, prüfen statt erneut eingeben.
+- Der Normalfall muss mit möglichst wenigen Klicks funktionieren. Erweiterte Zuordnungen und technische Optionen werden nur bei Sonderfällen gezeigt.
+- Kunden sollen das Portal weitgehend selbst bedienen können, ohne dass für jeden Bildungsträger individuelle Codeänderungen nötig sind.
+- Laufende Klassenpflege kann an **Klassenverantwortliche (z. B. Klassensprecher)** delegiert werden.
+- Bildungsträger/Kunden-Admins dürfen dieselben Pflegeaufgaben weiterhin zentral und auch für mehrere Klassen durchführen.
+- Technische Rollen- und Feature-Schlüssel bleiben intern stabil; sichtbar werden verständliche deutsche Bezeichnungen verwendet.
+
+## Kernplattform
+- eigenständige kommerzielle Cloudflare-Plattform
 - Mandantentrennung über `tenant_id`
-- vollständige Klassentrennung über `course_id`
-- Plattform-Admin, Mandanten-Admin, Klassenverantwortliche/Klassensprecher (technisch `class_admin`), Teilnehmer, Gast
-- serverseitige Klassen-/Kursberechtigungen; Klassenverantwortliche sehen und verändern nur zugewiesene Klassen
+- Klassentrennung über `course_id`
+- Rollen: Plattform-Admin, Kunden-Admin, Klassenverantwortliche/r, Teilnehmer/in, Gast
+- Klassenverantwortliche dürfen nur zugewiesene Klassen bearbeiten
+- Kunden-Admins verwalten den eigenen Bildungsträger und alle zugehörigen Klassen
 - Login/Sessions und serverseitige Autorisierung
-- Zugriffsarten öffentlich / Link-Code / Login / Hybrid
+- Zugriff öffentlich / Link-Zugangscode / Anmeldung / Hybrid
 - Zugriffscodes gehasht gespeichert
 - automatisiertes Kunden-Provisioning
-- Kunden können eigene Klassen/Kurse verwalten
-- eigene Admin-/Rollenstrukturen je Kunde/Klasse
-- Branding und White-Label-Vorbereitung
-- Module/Feature Flags, Paket-/Upsell-Grundlage
-- Stundenplan
-- Hausaufgaben/Aufgaben
-- Termine
-- Informationen/Meldungen
-- Links
-- Dateispeicherung über R2
-- Prüfungen & Lernfortschritt
-- `visible_to_students` je Prüfung
-- persönliche, private, selbst eingetragene Noten
-- Integrationsschema für Microsoft Teams / Microsoft 365 ohne eigene Office-Suite
+- Klassen/Kurse, Benutzer/Rollen, Inhalte, Prüfungen und private persönliche Noten
+- Microsoft-Teams-/Microsoft-365-Integrationsschema, keine eigene Office-Suite, kein eigener Chat und keine eigene Videokonferenz
 - Audit- und Provisionierungsprotokoll
-- D1-Datenmodell und Basis-Migration
-- responsive Admin-Oberfläche für Mandanten, Kurse, Benutzer, Branding, Module, Inhalte und Datenverwaltung
-
-## Verbindlicher Betriebsmodus für Klassen
-- Der Bildungsträger/Kunden-Admin richtet Mandant, Klassen und zentrale Einstellungen ein.
-- Die laufende Klassenpflege soll möglichst dezentral durch eine Klassenverantwortliche/einen Klassenverantwortlichen erfolgen, z. B. Klassensprecher.
-- Diese Rolle darf nur die zugewiesene Klasse bearbeiten: Stundenplan, Inhalte, Aufgaben, Termine, Meldungen, Links und Prüfungen sowie Teilnehmer/Gäste der eigenen Klasse.
-- Keine Mandanten-, Branding-, Modul-, Tarif-, Backup- oder klassenübergreifende Verwaltung für Klassenverantwortliche.
-- Technischer Rollenwert bleibt aus Kompatibilitätsgründen `class_admin`; sichtbar wird die Rolle deutsch bezeichnet.
-- Die Kundenoberfläche ist grundsätzlich deutsch. Englische Begriffe bleiben nur dort, wo sie fachlich/produktseitig sinnvoll oder etablierte Eigennamen sind.
 
 ## Branding-Automatik
-- Logo-Upload direkt im Branding
-- PNG/JPG/WebP/SVG bis 5 MB
-- automatische Farberkennung im Browser
-- Vorschläge: Originalgetreu, Modern, Kontrastreich
-- Primär-, Sekundär- und Hintergrundfarbe mit Live-Vorschau
+Produktiv getestet:
+- Logo-Upload nach R2
+- automatische Farberkennung aus dem Logo
+- Varianten Originalgetreu / Modern / Kontrastreich
+- Live-Vorschau
 - manuelle Nachbearbeitung bleibt möglich
-- Logo wird in R2 gespeichert und über `portability_files` in Backup/Voll-Export einbezogen
-- echter Cloudflare-Praxistest am 14.08.2026 erfolgreich
+- Logo und Branding werden mandantenbezogen gespeichert
+- Branding-Dateien sind Bestandteil von Backup/Voll-Export
 
-## Automatischer Stundenplan-Import
-- Excel/XLSX und CSV
-- PDF-Upload ist Teil desselben Assistenten
-- PDF.js wird lokal aus dem eigenen Deployment geladen, keine externe CDN-Laufzeitabhängigkeit
-- Text-/Tabellen-PDFs werden im Browser strukturiert ausgelesen und danach durch dieselbe Vorschau/Validierung geschickt
-- reine Scan-/Bild-PDFs werden nicht mit erfundenen Daten übernommen; fehlende Textschicht wird klar gemeldet
-- automatische Spaltenerkennung für Datum, Beginn, Ende, Fach/Modul, Dozent/Lehrkraft, Raum/Ort, Hinweise, Klasse/Kurs und Unterrichtsart
-- Vorschau und korrigierbare Spaltenzuordnung vor der Übernahme
-- Dublettenerkennung
-- Modus „Abgleichen“ ersetzt nur frühere automatisch importierte Unterrichtseinträge im betroffenen Zeitraum; manuelle Einträge bleiben bestehen
-- Klassenverantwortliche dürfen den Stundenplan ihrer eigenen Klasse importieren
-- Originaldatei (PDF/XLSX/CSV) wird nach erfolgreicher Übernahme in R2 archiviert und in `portability_files` registriert, damit sie in Backup/Voll-Export enthalten ist
+## Automatischer Stundenplan
+### Einzel- und Massenupload
+- PDF, XLSX und CSV
+- bis zu 100 Dateien in einem Auswahl-/Drag-and-drop-Vorgang in der Oberfläche
+- Dateien werden nacheinander verarbeitet, damit auch größere Uploads übersichtlich bleiben
+- Bildungsträger/Kunden-Admins können Dateien für mehrere Klassen gemeinsam hochladen
+- Klassenverantwortliche können dieselbe Funktion ausschließlich innerhalb ihrer zugewiesenen Klassen nutzen
+- Klasse/Kurs wird soweit möglich automatisch aus Dateiname oder Dateiinhalten erkannt
+- bei nur einer verfügbaren Klasse wird diese automatisch gewählt
+- nur unsichere Dateien erfordern eine manuelle Auswahl oder Einzelprüfung
+
+### Automatische Stammdatenerkennung
+Erkannt bzw. zugeordnet werden insbesondere:
+- Datum
+- Beginn und Ende
+- Klasse/Kurs
+- Fach
+- Fachbezeichnung / Fachname
+- Fachkürzel / Kurzbezeichnung / Fachcode
+- Dozent/in / Lehrkraft / Trainer/in / Referent/in
+- Raum / Ort
+- Unterrichtsart / Format
+- Hinweise / Informationen
+
+Fächer und Dozenten werden beim Import vorhandenen Stammdaten zugeordnet oder bei Bedarf automatisch angelegt. Fachbezeichnungen und Fachkürzel werden gemeinsam in den Fachstammdaten gepflegt.
+
+### PDF
+- PDF.js wird lokal aus dem Portal ausgeliefert; keine externe CDN-Abhängigkeit für die PDF-Erkennung
+- textbasierte/tabellarische PDFs werden lokal im Browser strukturiert ausgelesen
+- die Originaldatei wird nach erfolgreicher Übernahme in R2 archiviert
+- Scan-/Bild-PDFs ohne Textschicht werden nicht geraten; sie werden als nicht automatisch auslesbar gekennzeichnet
+
+### Sicherer Abgleich
+- Vorschau und Validierung vor der Übernahme
+- Dubletten werden erkannt
+- Modus „Abgleichen“ ersetzt im betroffenen Zeitraum nur zuvor automatisch importierte Stundenplanzeilen
+- manuell angelegte Unterrichtseinträge bleiben unangetastet
+- Originaldateien werden archiviert und in Backup/Voll-Export aufgenommen
 
 ## Punkt 22 – Import, Export und Backups
 - CSV-Import
 - XLSX-Import
 - PDF-Originalimport nach R2
 - Import-Vorschau / Validierung / Staging
-- mandantenweite Import-/Export-/Backup-Funktionen nur für Mandanten-Admin bzw. Plattform-Admin
-- klassenbezogene Uploads/Imports dürfen zusätzlich durch die jeweils berechtigte Klassenverantwortung erfolgen
 - CSV-/XLSX-/PDF-Export
-- vollständiger Kundenexport als streamendes ZIP mit Originaldateien
+- vollständiger Kundenexport als ZIP mit Originaldateien
 - manuelle und automatische Mandantenbackups
 - Restore mit Pre-Restore-Sicherheitsbackup
-- Pflicht-/Systemspalten und Zeitstempel werden bei Import/Restore berücksichtigt
 - Vertragsende-Backup und Export
-- Löschantrag, Karenz, Abbruch und endgültige Löschung
+- Löschworkflow mit Karenz, Abbruch und endgültiger Löschung
 - Audit-Ereignisse
 
-## GitHub-Sicherung
+## GitHub / Produktion
 Repository: `nicosiedel-creator/klassenportal-commercial` (privat)
 Branch: `main`
-Seit dem Neuaufbau werden Änderungen direkt versioniert; der Projektstand liegt nicht mehr nur im Chat.
+Produktiver Worker: `klassenportal-commercial.nicosiedel.workers.dev`
+D1 und R2 sind eingerichtet und die Kernmigrationen wurden produktiv angewendet.
 
-## Prüfstand
-Cloudflare D1, R2, Login, Rollen-/Mandantentrennung, erzwungener Erstpasswortwechsel und Branding-Logo/Farben wurden im echten Deployment praktisch getestet. Der neue automatische Stundenplan-Import inklusive PDF-Pfad und Klassenverantwortlichen-Workflow muss nach dem aktuellen Build noch im echten Worker mit Testdateien verifiziert werden.
+Produktiv bereits praktisch bestätigt:
+- Plattform-Admin-Login
+- automatisches Kunden-Provisioning
+- Mandanten-/Klassentrennung im Kunden-Login
+- erzwungener Passwortwechsel beim ersten Login
+- Branding-/Logo-Automatik inklusive Speicherung
 
-## Noch zu verifizieren
-- aktueller Cloudflare-Build nach Stundenplan-/PDF-Erweiterung
-- XLSX/CSV-Stundenplan in echter Runtime
-- Text-/Tabellen-PDF in echter Runtime
-- Scan-PDF-Fehlermeldung
-- Login als Klassenverantwortliche/r und Nachweis der reinen Klassensicht
-- Originaldatei in R2/Backup-Zuordnung
+Noch praktisch zu bestätigen nach dem jeweils aktuellen Deployment:
+- Stundenplan-Einzelimport PDF/XLSX/CSV
+- Stundenplan-Massenupload
+- automatisches Einlesen von Fachbezeichnungen/Fachkürzeln/Dozenten
+- Punkt-22-Import/Export/Backup/Restore als kompletter End-to-End-Smoke-Test
 
-## Nicht behauptet
-Der Stundenplan-/PDF-Pfad gilt erst nach diesen echten Smoke-Tests als produktiv verifiziert.
+## Sicherheitsstand
+Der öffentliche Bootstrap-/Setup-Endpunkt wurde nach der Ersteinrichtung aus dem Code entfernt. Das Cloudflare-Secret `BOOTSTRAP_SECRET` wird vom laufenden Code nicht mehr benötigt und soll im Worker gelöscht sein, sobald die Ersteinrichtung abgeschlossen ist.
