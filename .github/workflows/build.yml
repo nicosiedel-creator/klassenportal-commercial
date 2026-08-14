@@ -19,5 +19,9 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Build
+      - name: TypeScript build
         run: npm run build
+      - name: Browser JavaScript syntax
+        run: find public -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: D1 migrations locally
+        run: npx wrangler d1 migrations apply DB --local
