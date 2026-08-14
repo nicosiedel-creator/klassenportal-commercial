@@ -52,10 +52,10 @@ async function clearLoginRate(env: Env, request: Request, email: string): Promis
 }
 
 async function sessionUser(env: Env, userId: string): Promise<SessionUser | null> {
-  const u = await env.DB.prepare('SELECT id,email,display_name,is_platform_admin,status FROM users WHERE id=?').bind(userId).first<{id:string;email:string;display_name:string;is_platform_admin:number;status:string}>();
+  const u = await env.DB.prepare('SELECT id,email,display_name,is_platform_admin,force_password_change,status FROM users WHERE id=?').bind(userId).first<{id:string;email:string;display_name:string;is_platform_admin:number;force_password_change:number;status:string}>();
   if (!u || u.status !== 'active') return null;
   const m = await env.DB.prepare('SELECT tenant_id,course_id,role FROM memberships WHERE user_id=?').bind(userId).all<{tenant_id:string;course_id:string|null;role:SessionUser['tenantRoles'][number]['role']}>();
-  return { userId:u.id,email:u.email,displayName:u.display_name,isPlatformAdmin:!!u.is_platform_admin,tenantRoles:(m.results??[]).map(x=>({tenantId:x.tenant_id,courseId:x.course_id,role:x.role})) };
+  return { userId:u.id,email:u.email,displayName:u.display_name,isPlatformAdmin:!!u.is_platform_admin,mustChangePassword:!!u.force_password_change,tenantRoles:(m.results??[]).map(x=>({tenantId:x.tenant_id,courseId:x.course_id,role:x.role})) };
 }
 
 export async function login(env: Env, request: Request): Promise<Response> {
@@ -86,6 +86,20 @@ export async function getSession(env: Env, request: Request): Promise<SessionUse
   return sessionUser(env,row.user_id);
 }
 
+export async function changePassword(env: Env, request: Request): Promise<Response> {
+  const session = await getSession(env, request);
+  if (!session) return json({ok:false,error:'UNAUTHENTICATED'},401);
+  const body = await request.json() as {current_password?:string;new_password?:string};
+  const currentPassword=String(body.current_password??''),newPassword=String(body.new_password??'');
+  if(!currentPassword||!newPassword) return json({ok:false,error:'PASSWORD_FIELDS_REQUIRED'},400);
+  if(currentPassword===newPassword) return json({ok:false,error:'PASSWORD_MUST_CHANGE'},400);
+  const u=await env.DB.prepare('SELECT password_hash FROM users WHERE id=? AND status=\'active\'').bind(session.userId).first<{password_hash:string}>();
+  if(!u||!(await verifyPassword(currentPassword,u.password_hash))) return json({ok:false,error:'CURRENT_PASSWORD_INVALID'},403);
+  const nextHash=await hashPassword(newPassword);
+  await env.DB.prepare('UPDATE users SET password_hash=?,force_password_change=0,updated_at=? WHERE id=?').bind(nextHash,nowIso(),session.userId).run();
+  return json({ok:true});
+}
+
 export function authForTenant(session: SessionUser, tenantId?: string, courseId?: string): CoreAuthContext {
   if (session.isPlatformAdmin) return {userId:session.userId,role:'platform_admin',tenantIds:tenantId?[tenantId]:session.tenantRoles.map(x=>x.tenantId),courseIds:courseId?[courseId]:[],isPlatformAdmin:true,session};
   const rows = session.tenantRoles.filter(x=>(!tenantId||x.tenantId===tenantId)&&(!courseId||x.courseId===null||x.courseId===courseId));
@@ -96,7 +110,9 @@ export function authForTenant(session: SessionUser, tenantId?: string, courseId?
 }
 
 export async function resolveCoreAuth(env: Env, request: Request, tenantId?: string, courseId?: string): Promise<CoreAuthContext> {
-  const s=await getSession(env,request); if(!s) throw new Error('UNAUTHENTICATED'); return authForTenant(s,tenantId,courseId);
+  const s=await getSession(env,request); if(!s) throw new Error('UNAUTHENTICATED');
+  if(s.mustChangePassword) throw new Error('PASSWORD_CHANGE_REQUIRED');
+  return authForTenant(s,tenantId,courseId);
 }
 
 export async function resolvePortabilityAuth(env: Env, request: Request): Promise<PortabilityAuth> {
