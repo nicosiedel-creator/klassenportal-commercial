@@ -15,7 +15,7 @@ type OnboardingInput={
   street?:unknown;postal_code?:unknown;city?:unknown;country?:unknown;billing_email?:unknown;vat_id?:unknown;
   admin_name?:unknown;admin_email?:unknown;admin_password?:unknown;admin_password_confirm?:unknown;
   desired_course_count?:unknown;first_course_name?:unknown;first_course_code?:unknown;access_mode?:unknown;
-  commercial_acceptance?:unknown;
+  commercial_acceptance?:unknown;commercial_cost_confirmation?:unknown;
 };
 
 function validEmail(value:string):boolean{return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);}
@@ -83,8 +83,11 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
   const street=safeString(raw.street,250),postal=safeString(raw.postal_code,30),city=safeString(raw.city,120),country=safeString(raw.country||'Deutschland',120),requestedCourses=courseCount(raw.desired_course_count??1);
   if(!legalName||!contactName||!validEmail(contactEmail)||!adminName||!validEmail(adminEmail)||!street||!postal||!city)throw new Error('ONBOARDING_REQUIRED_FIELDS');
   if(password.length<10||password.length>256)throw new Error('PASSWORD_LENGTH');if(password!==confirm)throw new Error('PASSWORD_CONFIRMATION_MISMATCH');
-  const price=await calculatePlanPrice(env,invitation.plan_id,requestedCourses),accepted=String(raw.commercial_acceptance??'')==='1';
-  if(price.pricingReady&&!accepted)throw new Error('OFFER_ACCEPTANCE_REQUIRED');
+  const price=await calculatePlanPrice(env,invitation.plan_id,requestedCourses);
+  const acceptedOffer=String(raw.commercial_acceptance??'')==='1';
+  const acceptedCosts=String(raw.commercial_cost_confirmation??'')==='1';
+  if(price.pricingReady&&(!acceptedOffer||!acceptedCosts))throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');
+  const accepted=acceptedOffer&&acceptedCosts;
   const firstCourse=safeString(raw.first_course_name,200),firstCourseCode=safeString(raw.first_course_code,80),accessMode=['public','login'].includes(String(raw.access_mode||''))?String(raw.access_mode):'login';
 
   const nonce=id('claim_');
@@ -99,7 +102,7 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
       course_name:firstCourse||undefined,course_code:firstCourseCode||undefined,access_mode:accessMode,plan_id:invitation.plan_id,
     });
     const commercial=await createInitialCommerceBooking(env,{tenantId:provisioned.tenantId,invitationId:invitation.id,planId:invitation.plan_id,courseCount:requestedCourses,accepted,request,actorId:`onboarding:${invitation.id}`});
-    const profile={legal_name:legalName,portal_name:portalName,contact_name:contactName,contact_email:contactEmail,phone:safeString(raw.phone,80),website:safeString(raw.website,250),street,postal_code:postal,city,country,billing_email:normalizeEmail(raw.billing_email||contactEmail),vat_id:safeString(raw.vat_id,80)||null,admin_name:adminName,admin_email:adminEmail,desired_course_count:requestedCourses,first_course_name:firstCourse||null,first_course_code:firstCourseCode||null,commercial_pricing_ready:commercial.price.pricingReady};
+    const profile={legal_name:legalName,portal_name:portalName,contact_name:contactName,contact_email:contactEmail,phone:safeString(raw.phone,80),website:safeString(raw.website,250),street,postal_code:postal,city,country,billing_email:normalizeEmail(raw.billing_email||contactEmail),vat_id:safeString(raw.vat_id,80)||null,admin_name:adminName,admin_email:adminEmail,desired_course_count:requestedCourses,first_course_name:firstCourse||null,first_course_code:firstCourseCode||null,commercial_pricing_ready:commercial.price.pricingReady,double_cost_confirmation:accepted};
     const ts=nowIso();
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO tenant_profiles(tenant_id,legal_name,contact_name,contact_email,phone,website,street,postal_code,city,country,billing_email,onboarding_invitation_id,updated_at)
@@ -108,7 +111,7 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
         .bind(ts,provisioned.tenantId,JSON.stringify(profile),invitation.id),
       env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce),
     ]);
-    await audit(env.DB,`onboarding:${invitation.id}`,'onboarding.completed',provisioned.tenantId,provisioned.courseId,'onboarding_invitation',invitation.id,{customerEmail:invitation.customer_email,requestedCourses,commercial:!!commercial.orderId});
+    await audit(env.DB,`onboarding:${invitation.id}`,'onboarding.completed',provisioned.tenantId,provisioned.courseId,'onboarding_invitation',invitation.id,{customerEmail:invitation.customer_email,requestedCourses,commercial:!!commercial.orderId,doubleCostConfirmation:accepted});
     return{ok:true,tenant_id:provisioned.tenantId,login_email:adminEmail,pricing_ready:commercial.price.pricingReady,order_id:commercial.orderId??null,payment_pending:!!commercial.orderId};
   }catch(e){
     if(!provisioned)await env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce).run();
