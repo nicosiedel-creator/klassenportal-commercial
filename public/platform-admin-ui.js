@@ -3,6 +3,7 @@ let platformUser=null;
 async function paJson(url,opt={}){const r=await fetch(url,{credentials:'same-origin',...opt,headers:{'content-type':'application/json',...(opt.headers||{})}});let d={};try{d=await r.json()}catch{}if(!r.ok){const e=new Error(d.error||`HTTP_${r.status}`);e.data=d;throw e;}return d;}
 const planName=x=>({starter:'Starter',provider:'Bildungsträger',white_label:'White-Label'})[x]||x;
 const statusName=x=>({open:'Offen',processing:'Wird eingerichtet',completed:'Eingerichtet',revoked:'Widerrufen',expired:'Abgelaufen'})[x]||x;
+const setText=(el,text)=>{if(el&&el.textContent!==text)el.textContent=text;};
 
 function copyText(text,button){navigator.clipboard?.writeText(text).then(()=>{const old=button.textContent;button.textContent='Kopiert';setTimeout(()=>button.textContent=old,1300)}).catch(()=>{prompt('Einrichtungslink kopieren:',text)});}
 
@@ -22,18 +23,21 @@ async function openInvitations(){
 let summaryBusy=false;
 async function refreshPlatformOverview(){
   if(summaryBusy)return;const title=[...document.querySelectorAll('.content h2')].find(x=>x.textContent?.trim()==='Übersicht');if(!title)return;summaryBusy=true;
-  try{const [ts,is]=await Promise.all([paJson('/api/platform/tenants'),paJson('/api/platform/onboarding-invitations')]);const tenants=ts.tenants||[],inv=is.invitations||[];const grid=title.closest('.content')?.querySelector('.grid');if(grid){grid.innerHTML=`<div class="card"><div class="muted">Aktive Kunden</div><div class="stat">${tenants.filter(x=>x.status==='active').length}</div></div><div class="card"><div class="muted">Offene Einrichtungen</div><div class="stat">${inv.filter(x=>x.status==='open'||x.status==='processing').length}</div></div><div class="card"><div class="muted">Insgesamt eingerichtet</div><div class="stat">${tenants.length}</div></div>`;}title.textContent='Plattformübersicht';}catch{}finally{summaryBusy=false;}
+  try{const [ts,is]=await Promise.all([paJson('/api/platform/tenants'),paJson('/api/platform/onboarding-invitations')]);const tenants=ts.tenants||[],inv=is.invitations||[];const grid=title.closest('.content')?.querySelector('.grid');if(grid){grid.innerHTML=`<div class="card"><div class="muted">Aktive Kunden</div><div class="stat">${tenants.filter(x=>x.status==='active').length}</div></div><div class="card"><div class="muted">Offene Einrichtungen</div><div class="stat">${inv.filter(x=>x.status==='open'||x.status==='processing').length}</div></div><div class="card"><div class="muted">Insgesamt eingerichtet</div><div class="stat">${tenants.length}</div></div>`;}setText(title,'Plattformübersicht');}catch{}finally{summaryBusy=false;}
 }
 
 function applyPlatformUi(){
   if(!platformUser?.isPlatformAdmin)return;
-  document.querySelectorAll('[data-v]').forEach(b=>{const key=b.dataset.v;if(['overview','tenants'].includes(key))b.style.display='';else b.style.display='none';});
-  const tenants=document.querySelector('[data-v="tenants"]');if(tenants)tenants.textContent='Kunden';
-  const side=document.querySelector('.side');if(side){const h=side.querySelector('h1');if(h)h.textContent='Klassenportal · Plattform';if(!side.querySelector('#pa-onboarding-nav')){const b=document.createElement('button');b.className='nav';b.id='pa-onboarding-nav';b.textContent='Kunden-Einrichtung';b.onclick=openInvitations;tenants?.after(b);}}
+  document.querySelectorAll('[data-v]').forEach(b=>{const key=b.dataset.v;const display=['overview','tenants'].includes(key)?'':'none';if(b.style.display!==display)b.style.display=display;});
+  const tenants=document.querySelector('[data-v="tenants"]');setText(tenants,'Kunden');
+  const side=document.querySelector('.side');if(side){const heading=side.querySelector('h1');setText(heading,'Klassenportal · Plattform');if(!side.querySelector('#pa-onboarding-nav')){const b=document.createElement('button');b.className='nav';b.id='pa-onboarding-nav';b.textContent='Kunden-Einrichtung';b.onclick=openInvitations;tenants?.after(b);}}
   document.querySelector('#tenantPick')?.remove();
   const newTenant=document.querySelector('#newTenant');if(newTenant){newTenant.style.display='none';const bar=newTenant.parentElement;if(bar&&!bar.querySelector('#pa-new-customer')){const b=document.createElement('button');b.className='btn';b.id='pa-new-customer';b.textContent='+ Kunden-Einrichtung starten';b.onclick=openInvitations;bar.prepend(b);}}
-  const title=[...document.querySelectorAll('.content h2')].find(x=>x.textContent?.trim()==='Mandanten'||x.textContent?.trim()==='Kunden');if(title)title.textContent='Kunden';
+  const title=[...document.querySelectorAll('.content h2')].find(x=>x.textContent?.trim()==='Mandanten'||x.textContent?.trim()==='Kunden');setText(title,'Kunden');
   refreshPlatformOverview();
 }
 
-(async()=>{try{platformUser=(await paJson('/api/auth/me')).user;if(!platformUser?.isPlatformAdmin)return;new MutationObserver(applyPlatformUi).observe(document.documentElement,{subtree:true,childList:true});document.addEventListener('click',e=>{if(e.target?.matches?.('[data-v="overview"],[data-v="tenants"]'))setTimeout(applyPlatformUi,0)});applyPlatformUi();}catch{}})();
+let uiScheduled=false;
+function schedulePlatformUi(){if(uiScheduled)return;uiScheduled=true;queueMicrotask(()=>{uiScheduled=false;applyPlatformUi();});}
+
+(async()=>{try{platformUser=(await paJson('/api/auth/me')).user;if(!platformUser?.isPlatformAdmin)return;const target=document.querySelector('#app')||document.body;new MutationObserver(schedulePlatformUi).observe(target,{subtree:true,childList:true});document.addEventListener('click',e=>{if(e.target?.matches?.('[data-v="overview"],[data-v="tenants"]'))setTimeout(schedulePlatformUi,0)});applyPlatformUi();}catch{}})();
