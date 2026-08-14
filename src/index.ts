@@ -2,15 +2,9 @@ import { handleCoreApi, handlePublicApi } from './core/router.js';
 import { resolvePortabilityAuth } from './core/auth.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
-import { setupPage } from './setup.js';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    if (url.pathname === '/setup-v2-20260814') return setupPage(request, env);
-    if (url.pathname === '/setup' || url.pathname === '/setup.html') {
-      return Response.redirect(new URL('/setup-v2-20260814', request.url).toString(), 302);
-    }
     const portability = await handlePortabilityRequest(request, env, portabilityConfig, (r) => resolvePortabilityAuth(env, r));
     if (portability) return portability;
     const api = await handleCoreApi(request, env); if (api) return api;
