@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS onboarding_invitations (
   expires_at TEXT NOT NULL,
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  processing_nonce TEXT,
   completed_at TEXT,
   tenant_id TEXT,
   form_json TEXT,
