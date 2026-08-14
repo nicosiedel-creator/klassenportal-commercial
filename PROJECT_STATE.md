@@ -13,8 +13,10 @@ Das produktive VFA13-Portal gehört nicht zu diesem Repository und wird durch di
 - Mandantentrennung über `tenant_id`
 - vollständige Klassentrennung über `course_id`
 - Plattform-Admin, Mandanten-Admin, Klassen-Admin, Teilnehmer, Gast
+- serverseitige Klassen-/Kursberechtigungen; Klassen-Admins sehen und verändern nur zugewiesene Klassen
 - Login/Sessions und serverseitige Autorisierung
 - Zugriffsarten öffentlich / Link-Code / Login / Hybrid
+- Zugriffscodes gehasht gespeichert
 - automatisiertes Kunden-Provisioning
 - Kunden können eigene Klassen/Kurse verwalten
 - eigene Admin-/Rollenstrukturen je Kunde/Klasse
@@ -32,29 +34,30 @@ Das produktive VFA13-Portal gehört nicht zu diesem Repository und wird durch di
 - Integrationsschema für Microsoft Teams / Microsoft 365 ohne eigene Office-Suite
 - Audit- und Provisionierungsprotokoll
 - D1-Datenmodell und Basis-Migration
-- statische Admin-Oberfläche für Mandanten, Kurse, Benutzer, Branding, Module, Inhalte und Datenverwaltung
+- responsive Admin-Oberfläche für Mandanten, Kurse, Benutzer, Branding, Module, Inhalte und Datenverwaltung
 
 ## Punkt 22 – Import, Export und Backups
 - CSV-Import
 - XLSX-Import
 - PDF-Originalimport nach R2
 - Import-Vorschau / Validierung / Staging
+- Import nur für Mandanten-Admin bzw. Plattform-Admin
 - CSV-/XLSX-/PDF-Export
 - vollständiger Kundenexport als streamendes ZIP mit Originaldateien
 - manuelle und automatische Mandantenbackups
 - Restore mit Pre-Restore-Sicherheitsbackup
+- Pflicht-/Systemspalten und Zeitstempel werden bei Import/Restore berücksichtigt
 - Vertragsende-Backup und Export
 - Löschantrag, Karenz, Abbruch und endgültige Löschung
 - Audit-Ereignisse
 
-## Technisch verifiziert in dieser Sitzung
-- TypeScript Strict Typecheck: erfolgreich
-- TypeScript Build: erfolgreich
-- CSV Parser Test: erfolgreich
-- XLSX Export→Import Roundtrip: erfolgreich
-- PDF-Erzeugungstest: erfolgreich
-- ZIP-Streamtest: erfolgreich
-- D1/SQLite-Syntax beider Migrationen (`0001_core.sql` und `0022_data_portability.sql`) in SQLite ausgeführt: erfolgreich
+## GitHub-Sicherung
+Repository: `nicosiedel-creator/klassenportal-commercial` (privat)
+Branch: `main`
+Seit dem Neuaufbau werden Änderungen direkt versioniert; der Projektstand liegt nicht mehr nur im Chat.
+
+## Prüfstand
+Die Import-/Export-Dateifunktionen und Migrationen wurden im Aufbau bereits lokal geprüft. Danach wurden zusätzliche Sicherheits- und D1-Kompatibilitätskorrekturen vorgenommen. Deshalb gilt für den **aktuellen finalen Commit**: vor Produktivfreigabe nochmals TypeScript-Build/Tests sowie ein echter Cloudflare-D1/R2-Smoke-Test ausführen. Erst danach wird der Stand als produktiv verifiziert markiert.
 
 ## Vor echtem Produktiv-Deploy noch erforderlich
 - Cloudflare D1-Datenbank und R2-Bucket im Account erzeugen/zuordnen
@@ -62,7 +65,8 @@ Das produktive VFA13-Portal gehört nicht zu diesem Repository und wird durch di
 - `BOOTSTRAP_SECRET` als Cloudflare-Secret setzen
 - Migrationen auf die echte D1-Datenbank anwenden
 - Cloudflare-GitHub-Deployment verbinden
+- TypeScript-/Dateitests des finalen GitHub-Stands ausführen
 - Smoke-Test im Cloudflare-Preview/Produktivruntime
 
 ## Nicht behauptet
-Ohne echten Cloudflare-Runtime-Deploy ist noch keine 100%-Aussage über das Verhalten im produktiven Worker möglich. Der Quellcode wurde lokal statisch und auf Format-/Dateifunktionen geprüft; die produktive D1/R2-Integration wird nach dem Cloudflare-Setup verifiziert.
+Ohne echten Cloudflare-Runtime-Deploy ist noch keine 100%-Aussage über das Verhalten im produktiven Worker möglich. Produktivfreigabe erfolgt erst nach erfolgreichem D1/R2- und Login/Rollen-Smoke-Test.
