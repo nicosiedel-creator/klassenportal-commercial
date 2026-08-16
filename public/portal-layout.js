@@ -2,22 +2,57 @@ const portalRoot=document.querySelector('#class-portal');
 const portalPath=location.pathname.split('/').filter(Boolean);
 const layoutTenant=decodeURIComponent(portalPath[1]||'');
 const layoutCourse=decodeURIComponent(portalPath[2]||'');
-const layoutStorageKey=`kp_layout_v1_${layoutTenant}_${layoutCourse}`;
+const accessStoreKey=`kp_access_${layoutTenant}_${layoutCourse}`;
+let layoutIdentity='browser',serverContext=null,serverOrder=null,customized=false,contextReady=false;
 
+function storageKey(){return `kp_layout_v2_${layoutTenant}_${layoutCourse}_${layoutIdentity}`;}
+function legacyStorageKey(){return `kp_layout_v1_${layoutTenant}_${layoutCourse}`;}
 function safeLoadOrder(){
-  try{const parsed=JSON.parse(localStorage.getItem(layoutStorageKey)||'[]');return Array.isArray(parsed)?parsed.map(String):[];}catch{return[];}
+  try{
+    const current=localStorage.getItem(storageKey());
+    if(current){const parsed=JSON.parse(current);return Array.isArray(parsed)?parsed.map(String):[];}
+    const legacy=localStorage.getItem(legacyStorageKey());if(!legacy)return[];
+    const parsed=JSON.parse(legacy);if(Array.isArray(parsed)){localStorage.setItem(storageKey(),JSON.stringify(parsed));return parsed.map(String);}return[];
+  }catch{return[];}
 }
-function saveOrder(ids){try{localStorage.setItem(layoutStorageKey,JSON.stringify(ids));}catch{}}
-function clearOrder(){try{localStorage.removeItem(layoutStorageKey);}catch{}}
+function saveOrderLocal(ids){try{localStorage.setItem(storageKey(),JSON.stringify(ids));}catch{}}
+function clearOrderLocal(){try{localStorage.removeItem(storageKey());}catch{}}
 function sectionIds(grid){return [...grid.querySelectorAll(':scope > .portal-section[id]')].map(x=>x.id);}
-function orderFromSaved(current){const saved=safeLoadOrder().filter(id=>current.includes(id));return [...saved,...current.filter(id=>!saved.includes(id))];}
+function combinedSavedOrder(current){const source=(serverOrder?.length?serverOrder:safeLoadOrder()).filter(id=>current.includes(id));return [...source,...current.filter(id=>!source.includes(id))];}
+async function apiJson(url,opt={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt,headers:{...(opt.body?{'content-type':'application/json'}:{}),...(opt.headers||{})}});let d={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(d.error||`HTTP_${r.status}`);return d;}
+async function resolveContext(){
+  if(contextReady)return;contextReady=true;
+  try{
+    const code=sessionStorage.getItem(accessStoreKey)||'';
+    const [me,overview]=await Promise.all([
+      apiJson('/api/auth/me').catch(()=>({user:null})),
+      apiJson(`/public/${encodeURIComponent(layoutTenant)}/${encodeURIComponent(layoutCourse)}/overview`,{headers:code?{'X-Klassenportal-Access-Code':code}:{}}).catch(()=>null),
+    ]);
+    if(me?.user?.userId)layoutIdentity=String(me.user.userId);
+    const tenantId=overview?.viewer?.authenticated?String(overview.viewer.tenantId||''):'';
+    const courseId=String(overview?.course?.id||'');
+    if(tenantId&&courseId&&me?.user?.userId){
+      serverContext={tenantId,courseId};
+      try{const r=await apiJson(`/api/personal/portal-layout?tenant_id=${encodeURIComponent(tenantId)}&course_id=${encodeURIComponent(courseId)}`);serverOrder=Array.isArray(r.order)?r.order.map(String):[];}catch{serverOrder=null;}
+    }
+  }catch{}
+  customized=(serverOrder?.length||safeLoadOrder().length)>0;
+}
+async function saveOrderServer(ids){
+  if(!serverContext)return;
+  try{const r=await apiJson(`/api/personal/portal-layout?tenant_id=${encodeURIComponent(serverContext.tenantId)}&course_id=${encodeURIComponent(serverContext.courseId)}`,{method:'PUT',body:JSON.stringify({order:ids})});serverOrder=Array.isArray(r.order)?r.order.map(String):ids;}catch{}
+}
+async function resetOrderServer(){
+  if(!serverContext)return;
+  try{await apiJson(`/api/personal/portal-layout?tenant_id=${encodeURIComponent(serverContext.tenantId)}&course_id=${encodeURIComponent(serverContext.courseId)}`,{method:'DELETE'});serverOrder=[];}catch{}
+}
 function reorderNav(order){
   const nav=portalRoot?.querySelector('.portal-nav');if(!nav)return;
   const links=[...nav.querySelectorAll('a[href^="#"]')],byId=new Map(links.map(a=>[decodeURIComponent(a.hash.slice(1)),a]));
   for(const id of order){const a=byId.get(id);if(a)nav.append(a);}
   for(const a of links)if(!order.includes(decodeURIComponent(a.hash.slice(1))))nav.append(a);
 }
-function persistGrid(grid){const ids=sectionIds(grid);saveOrder(ids);reorderNav(ids);updateResetButton();}
+function persistGrid(grid){const ids=sectionIds(grid);saveOrderLocal(ids);serverOrder=ids;customized=true;reorderNav(ids);updateResetButton();void saveOrderServer(ids);}
 function moveSection(section,direction){
   const grid=section.parentElement;if(!grid)return;
   const sections=[...grid.querySelectorAll(':scope > .portal-section[id]')],index=sections.indexOf(section),next=index+direction;
@@ -25,14 +60,11 @@ function moveSection(section,direction){
   if(direction<0)grid.insertBefore(section,sections[next]);else grid.insertBefore(sections[next],section);
   persistGrid(grid);section.focus({preventScroll:true});
 }
-function updateResetButton(){
-  const button=portalRoot?.querySelector('#portal-layout-reset');if(!button)return;
-  button.hidden=safeLoadOrder().length===0;
-}
+function updateResetButton(){const button=portalRoot?.querySelector('#portal-layout-reset');if(button)button.hidden=!customized;}
 function addResetButton(defaultOrder,grid){
   const actions=portalRoot?.querySelector('.portal-header-actions');if(!actions||actions.querySelector('#portal-layout-reset'))return;
   const button=document.createElement('button');button.type='button';button.id='portal-layout-reset';button.className='portal-btn secondary portal-layout-reset';button.textContent='Anordnung zurücksetzen';
-  button.addEventListener('click',()=>{clearOrder();for(const id of defaultOrder){const section=grid.querySelector(`#${CSS.escape(id)}`);if(section)grid.append(section);}reorderNav(sectionIds(grid));updateResetButton();});
+  button.addEventListener('click',()=>{clearOrderLocal();serverOrder=[];customized=false;for(const id of defaultOrder){const section=grid.querySelector(`#${CSS.escape(id)}`);if(section)grid.append(section);}reorderNav(sectionIds(grid));updateResetButton();void resetOrderServer();});
   actions.prepend(button);updateResetButton();
 }
 function addControls(section){
@@ -51,10 +83,8 @@ function installDropTargets(grid){
   if(grid.dataset.layoutDropReady==='1')return;grid.dataset.layoutDropReady='1';
   grid.addEventListener('dragover',e=>{
     const dragged=grid.querySelector('.portal-layout-dragging'),target=e.target.closest('.portal-section');if(!dragged||!target||dragged===target)return;
-    e.preventDefault();e.dataTransfer.dropEffect='move';
-    grid.querySelectorAll('.portal-layout-drop-before,.portal-layout-drop-after').forEach(x=>x.classList.remove('portal-layout-drop-before','portal-layout-drop-after'));
-    const rect=target.getBoundingClientRect(),sameRow=Math.abs(e.clientY-(rect.top+rect.height/2))<rect.height*.32;
-    const before=sameRow?e.clientX<rect.left+rect.width/2:e.clientY<rect.top+rect.height/2;
+    e.preventDefault();e.dataTransfer.dropEffect='move';grid.querySelectorAll('.portal-layout-drop-before,.portal-layout-drop-after').forEach(x=>x.classList.remove('portal-layout-drop-before','portal-layout-drop-after'));
+    const rect=target.getBoundingClientRect(),sameRow=Math.abs(e.clientY-(rect.top+rect.height/2))<rect.height*.32,before=sameRow?e.clientX<rect.left+rect.width/2:e.clientY<rect.top+rect.height/2;
     target.classList.add(before?'portal-layout-drop-before':'portal-layout-drop-after');
   });
   grid.addEventListener('drop',e=>{
@@ -63,14 +93,13 @@ function installDropTargets(grid){
     grid.querySelectorAll('.portal-layout-drop-before,.portal-layout-drop-after').forEach(x=>x.classList.remove('portal-layout-drop-before','portal-layout-drop-after'));
   });
 }
-function enhanceLayout(){
+async function enhanceLayout(){
   const grid=portalRoot?.querySelector('.portal-grid');if(!grid||grid.dataset.layoutEnhanced==='1')return;
-  grid.dataset.layoutEnhanced='1';const defaultOrder=sectionIds(grid),wanted=orderFromSaved(defaultOrder);
+  await resolveContext();if(!grid.isConnected||grid.dataset.layoutEnhanced==='1')return;
+  grid.dataset.layoutEnhanced='1';const defaultOrder=sectionIds(grid),wanted=combinedSavedOrder(defaultOrder);
   for(const id of wanted){const section=grid.querySelector(`#${CSS.escape(id)}`);if(section)grid.append(section);}
   for(const section of grid.querySelectorAll(':scope > .portal-section[id]'))addControls(section);
   installDropTargets(grid);reorderNav(sectionIds(grid));addResetButton(defaultOrder,grid);
 }
 
-if(portalRoot){
-  const observer=new MutationObserver(()=>queueMicrotask(enhanceLayout));observer.observe(portalRoot,{childList:true,subtree:true});enhanceLayout();
-}
+if(portalRoot){const observer=new MutationObserver(()=>queueMicrotask(()=>void enhanceLayout()));observer.observe(portalRoot,{childList:true,subtree:true});void enhanceLayout();}
