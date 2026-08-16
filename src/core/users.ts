@@ -2,7 +2,9 @@ import type { CoreAuthContext, Env } from './types.js';
 import { hashPassword } from './auth.js';
 import { audit } from './audit.js';
 import { requireRole } from './permissions.js';
-import { b64, id, normalizeEmail, nowIso, randomBytes, safeString } from './utils.js';
+import { id, normalizeEmail, nowIso, randomBytes, b64, safeString } from './utils.js';
+import { createActivationForUser, createAdminPasswordReset } from './account-recovery.js';
+import { mailConfigured } from './mail.js';
 
 export async function listTenantUsers(env:Env,auth:CoreAuthContext,tenantId:string){
   requireRole(auth,'class_admin');
@@ -27,13 +29,18 @@ export async function createTenantUser(env:Env,auth:CoreAuthContext,tenantId:str
   if(!['tenant_admin','class_admin','participant','guest'].includes(role))throw new Error('ROLE_INVALID');
   if(role!=='tenant_admin'&&!courseId)throw new Error('COURSE_ID_REQUIRED');
   if(courseId){const c=await env.DB.prepare('SELECT id FROM courses WHERE id=? AND tenant_id=?').bind(courseId,tenantId).first();if(!c)throw new Error('COURSE_NOT_FOUND');}
-  let user=await env.DB.prepare('SELECT id FROM users WHERE email=? COLLATE NOCASE').bind(email).first<{id:string}>(); let temporaryPassword:string|undefined;
-  if(!user){temporaryPassword=b64(randomBytes(12)).replace(/[+/=]/g,'').slice(0,16)+'Aa1!'; const uid=id('usr_'),ts=nowIso(); await env.DB.prepare("INSERT INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at) VALUES(?,?,?,?,1,0,'active',?,?)").bind(uid,email,name,await hashPassword(temporaryPassword),ts,ts).run(); user={id:uid};}
+  let user=await env.DB.prepare('SELECT id FROM users WHERE email=? COLLATE NOCASE').bind(email).first<{id:string}>();let created=false;
+  if(!user){
+    if(!mailConfigured(env))throw new Error('MAIL_PROVIDER_NOT_CONFIGURED');
+    const unreachablePassword=b64(randomBytes(32)).replace(/[+/=]/g,'').slice(0,38)+'Aa1!',uid=id('usr_'),ts=nowIso();
+    await env.DB.prepare("INSERT INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at) VALUES(?,?,?,?,1,0,'active',?,?)").bind(uid,email,name,await hashPassword(unreachablePassword),ts,ts).run();user={id:uid};created=true;
+  }
   const existing=await env.DB.prepare('SELECT id FROM memberships WHERE tenant_id=? AND user_id=? AND role=? AND ((course_id IS NULL AND ? IS NULL) OR course_id=?)').bind(tenantId,user.id,role,courseId,courseId).first<{id:string}>();
-  if(existing)return{user_id:user.id,membership_id:existing.id,temporary_password:temporaryPassword};
-  const membershipId=id('mem_'); await env.DB.prepare('INSERT INTO memberships(id,tenant_id,course_id,user_id,role,created_at) VALUES(?,?,?,?,?,?)').bind(membershipId,tenantId,role==='tenant_admin'?null:courseId,user.id,role,nowIso()).run();
+  if(existing){if(created)await createActivationForUser(env,auth,user.id);return{user_id:user.id,membership_id:existing.id,invitation_sent:created};}
+  const membershipId=id('mem_');await env.DB.prepare('INSERT INTO memberships(id,tenant_id,course_id,user_id,role,created_at) VALUES(?,?,?,?,?,?)').bind(membershipId,tenantId,role==='tenant_admin'?null:courseId,user.id,role,nowIso()).run();
   await audit(env.DB,auth.userId,'membership.created',tenantId,courseId??undefined,'membership',membershipId,{email,role});
-  return {user_id:user.id,membership_id:membershipId,temporary_password:temporaryPassword};
+  if(created)await createActivationForUser(env,auth,user.id);
+  return{user_id:user.id,membership_id:membershipId,invitation_sent:created};
 }
 
 async function membershipRow(env:Env,tenantId:string,membershipId:string){
@@ -62,19 +69,8 @@ export async function deleteTenantMembership(env:Env,auth:CoreAuthContext,tenant
 
 export async function resetTenantUserPassword(env:Env,auth:CoreAuthContext,tenantId:string,userId:string){
   requireRole(auth,'tenant_admin');
-  const target=await env.DB.prepare(`SELECT u.id,u.email,u.display_name,u.is_platform_admin
-    FROM users u WHERE u.id=?`).bind(userId).first<Record<string,unknown>>();
-  if(!target)throw new Error('USER_NOT_FOUND');
-  if(Number(target.is_platform_admin)===1)throw new Error('PLATFORM_ADMIN_RESET_FORBIDDEN');
-  const memberships=(await env.DB.prepare('SELECT tenant_id,course_id,role FROM memberships WHERE user_id=?').bind(userId).all<Record<string,unknown>>()).results??[];
-  const tenantMemberships=memberships.filter(m=>String(m.tenant_id)===tenantId);
-  if(!tenantMemberships.length)throw new Error('USER_NOT_FOUND');
-  if(!auth.isPlatformAdmin&&new Set(memberships.map(m=>String(m.tenant_id))).size>1)throw new Error('SHARED_USER_RESET_PLATFORM_REQUIRED');
-  const temporaryPassword=b64(randomBytes(15)).replace(/[+/=]/g,'').slice(0,18)+'Aa1!',ts=nowIso();
-  await env.DB.batch([
-    env.DB.prepare('UPDATE users SET password_hash=?,force_password_change=1,updated_at=? WHERE id=?').bind(await hashPassword(temporaryPassword),ts,userId),
-    env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId),
-  ]);
-  await audit(env.DB,auth.userId,'user.password_reset',tenantId,undefined,'user',userId,{email:target.email,sessionsRevoked:true});
-  return {user_id:userId,display_name:target.display_name,email:target.email,temporary_password:temporaryPassword,force_password_change:true,sessions_revoked:true};
+  const target=await env.DB.prepare(`SELECT u.id,u.email,u.display_name,u.is_platform_admin FROM users u WHERE u.id=?`).bind(userId).first<Record<string,unknown>>();
+  if(!target)throw new Error('USER_NOT_FOUND');if(Number(target.is_platform_admin)===1)throw new Error('PLATFORM_ADMIN_RESET_FORBIDDEN');
+  const memberships=(await env.DB.prepare('SELECT tenant_id,course_id,role FROM memberships WHERE user_id=?').bind(userId).all<Record<string,unknown>>()).results??[],tenantMemberships=memberships.filter(m=>String(m.tenant_id)===tenantId);if(!tenantMemberships.length)throw new Error('USER_NOT_FOUND');if(!auth.isPlatformAdmin&&new Set(memberships.map(m=>String(m.tenant_id))).size>1)throw new Error('SHARED_USER_RESET_PLATFORM_REQUIRED');
+  const sent=await createAdminPasswordReset(env,auth,userId);return{user_id:userId,display_name:target.display_name,email:target.email,password_reset_link_sent:sent.sent,sessions_revoked:true};
 }
