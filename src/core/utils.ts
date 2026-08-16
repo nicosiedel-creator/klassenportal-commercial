@@ -10,6 +10,11 @@ export function json(data: unknown, status = 200, headers: HeadersInit = {}): Re
   });
 }
 
+export function errorCode(error: unknown, fallback = 'INTERNAL_ERROR'): string {
+  const raw = String((error as Error)?.message ?? '');
+  return /^[A-Z][A-Z0-9_]{2,80}$/.test(raw) ? raw : fallback;
+}
+
 export function normalizeEmail(value: unknown): string {
   return String(value ?? '').trim().toLowerCase();
 }
