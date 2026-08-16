@@ -6,13 +6,18 @@ const wrangler=await text('wrangler.jsonc');
 const index=await text('src/index.ts');
 const router=await text('src/core/router.ts');
 const publicApi=await text('src/core/public.ts');
+const classPortalHtml=await text('public/class-portal.html');
 const classAdminHtml=await text('public/class-admin.html');
 const classAdminPortal=await text('public/class-admin-portal.js');
+const customerAdminHtml=await text('public/customer-admin.html');
+const compactUi=await text('public/portal-compact.js');
+const compactCss=await text('public/portal-compact.css');
+const customerCompactCss=await text('public/customer-compact.css');
 const users=await text('src/core/users.ts');
 
 assert.match(wrangler,/"\/portal\/\*"/,'/portal/* must run worker-first');
 for(const route of ['/api/*','/public/*','/brand/*','/calendar/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/klassen-admin*','/zahlung/*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
-for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/customer-admin.html','public/platform-admin.html','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/payment-result.html'])await readFile(asset);
+for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/customer-admin.html','public/customer-compact.css','public/platform-admin.html','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/payment-result.html'])await readFile(asset);
 assert.ok(index.includes("adminPath==='/klassen-admin'?'/class-admin.html'"),'class admin route must serve class-admin.html');
 
 for(const header of ['x-content-type-options','x-frame-options','referrer-policy','permissions-policy','strict-transport-security','content-security-policy'])assert.ok(index.includes(`'${header}'`),`missing production header ${header}`);
@@ -24,10 +29,18 @@ assert.ok(!router.includes('/api/bootstrap'),'public bootstrap route must stay r
 assert.ok(!index.includes('BOOTSTRAP_SECRET'),'runtime must not use BOOTSTRAP_SECRET');
 assert.ok(!publicApi.includes('access_code_hash:row.access_code_hash'),'access code hash must never be serialized deliberately');
 
+assert.ok(classPortalHtml.includes('/portal-compact.css'),'participant portal must use compact visual system');
+assert.ok(classPortalHtml.includes('/portal-compact.js'),'participant portal must collapse detail-heavy cards by default');
 assert.ok(classAdminHtml.includes('/class-portal.css'),'Klassen-Admin must share the participant portal visual system');
+assert.ok(classAdminHtml.includes('/portal-compact.css')&&classAdminHtml.includes('/portal-compact.js'),'Klassen-Admin must use the same compact tile behavior as participant portal');
 assert.ok(classAdminHtml.includes('/class-admin-portal.js'),'Klassen-Admin must use its dedicated portal controller');
 assert.ok(!classAdminHtml.includes('/boot.js'),'Klassen-Admin must not fall back to the generic admin SPA');
 assert.ok(!classAdminHtml.includes('/app.js'),'Klassen-Admin must not load the generic admin SPA directly');
+assert.ok(customerAdminHtml.includes('customer-portal-admin')&&customerAdminHtml.includes('/customer-compact.css'),'customer admin must use the compact portal-style shell');
+assert.ok(compactUi.includes("section.id==='uebersicht'"),'Klassenbereich quick-access card must stay expanded');
+assert.ok(compactUi.includes('portal-compact-toggle'),'compact portal cards must remain expandable');
+assert.ok(compactCss.includes('.portal-stats,.portal-nav{display:none!important}'),'duplicate portal navigation and stat strips must stay removed');
+assert.ok(customerCompactCss.includes('.customer-portal-admin .side{position:sticky'),'customer admin navigation must stay compact and horizontal');
 assert.ok(classAdminPortal.includes("payload.role='participant'"),'Klassen-Admin UI must only create participants');
 assert.ok(classAdminPortal.includes('exactRows'),'Klassen-Admin must keep displayed class data inside one exact course scope');
 assert.ok(classAdminPortal.includes("payload.course_id=state.course.id"),'Klassen-Admin writes must be pinned to its selected course');
