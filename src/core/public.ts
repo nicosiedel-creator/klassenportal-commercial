@@ -97,7 +97,7 @@ export async function publicOverview(env:Env,tenantSlug:string,courseCode:string
   const materialsEnabled=modules.files!==false||modules.learning_materials===true;
   return {
     course:safeCourse(row),modules,accessGrantedBy:access.accessGrantedBy,
-    viewer:{authenticated:access.hasLogin,role:access.role,displayName:access.hasLogin?session?.displayName??null:null},
+    viewer:{authenticated:access.hasLogin,role:access.role,displayName:access.hasLogin?session?.displayName??null:null,tenantId:access.hasLogin?tenantId:null},
     homework:homework.results??[],appointments:appointments.results??[],announcements:announcements.results??[],
     links:links.results??[],exams:exams.results??[],lessons:lessons.results??[],materials:materialsEnabled?(materials.results??[]):[],notifications,
   };
