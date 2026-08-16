@@ -109,5 +109,20 @@ export interface BackupManifest {
   createdAt: string;
   reason: 'manual' | 'pre_restore' | 'contract_end' | 'automatic';
   resources: Array<{ key: string; objectKey: string; rowCount: number }>;
-  files: Array<{ id: string; originalKey: string; backupKey: string; originalName: string; size: number; contentType?: string; uploadedBy?: string; createdAt?: string }>;
+  files: Array<{
+    id: string;
+    originalKey: string;
+    backupKey: string;
+    originalName: string;
+    size: number;
+    contentType?: string;
+    uploadedBy?: string;
+    createdAt?: string;
+    purpose?: string;
+    courseId?: string;
+    title?: string;
+    description?: string;
+    visible?: boolean;
+    updatedAt?: string;
+  }>;
 }
