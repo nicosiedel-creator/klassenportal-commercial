@@ -54,7 +54,7 @@ export async function uploadLearningMaterial(env:Env,auth:CoreAuthContext,tenant
   try{
     await env.DB.prepare(`INSERT INTO portability_files
       (id,tenant_id,object_key,original_name,content_type,size_bytes,uploaded_by,created_at,purpose,course_id,title,description,visible,updated_at)
-      VALUES(?,?,?,?,?,?,?,?, 'learning_material',?,?,?,?,?,?)`)
+      VALUES(?,?,?,?,?,?,?,?,'learning_material',?,?,?,?,?)`)
       .bind(materialId,tenantId,key,file.name,contentType,file.size,auth.userId,ts,requestedCourse,title,description,visible,ts).run();
   }catch(e){await env.FILES.delete(key);throw e;}
   await audit(env.DB,auth.userId,'learning_material.created',tenantId,requestedCourse||undefined,'learning_material',materialId,{title,size:file.size,visible:!!visible});
