@@ -6,6 +6,7 @@ import { createStripePortalSessionModeSafe, handleStripeWebhookModeSafe } from '
 import { createTaxStripeCheckout } from './stripe-tax-billing.js';
 import { ensureTenantCommerceState } from './commerce-state.js';
 import { listManagedSetupJobs, updateManagedSetupJob } from './managed-setup.js';
+import { customerSetupProgress } from './setup-progress.js';
 import { assertSameOrigin, nowIso, safeString } from './utils.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status,headers:{'cache-control':'no-store'}});}
@@ -53,6 +54,7 @@ export async function handlePaymentApi(request:Request,env:Env):Promise<Response
     const auth=await resolveCoreAuth(env,request,tenantId,u.searchParams.get('course_id')||undefined);
     await ensureTenantCommerceState(env,tenantId);
     if(u.pathname==='/api/billing/summary'&&request.method==='GET')return out({ok:true,...await billingSummaryWithStripe(env,auth,tenantId),trial:await tenantTrialSummary(env,auth,tenantId),commercePolicy:await getCommercePolicy(env),setupOptions:await listManagedSetupOptions(env)});
+    if(u.pathname==='/api/billing/setup-progress'&&request.method==='GET')return out({ok:true,...await customerSetupProgress(env,auth,tenantId)});
     if(u.pathname==='/api/billing/change-quote'&&request.method==='POST')return out({ok:true,quote:await quoteExpansionWithStripe(env,auth,tenantId,await body(request))});
     if(u.pathname==='/api/billing/expand'&&request.method==='POST'){
       const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');
