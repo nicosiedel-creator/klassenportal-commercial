@@ -2,10 +2,10 @@ import type { Env } from './types.js';
 import { assertSameOrigin, json } from './utils.js';
 import { changePassword, getSession, login, logout, resolveCoreAuth } from './auth.js';
 import { provisionTenant } from './provision.js';
-import { createContent, createCourse, getModules, getSettings, listContent, listCourses, listPersonalGrades, listTenants, savePersonalGrade, setExamVisibility, setModule, updateSettings } from './data.js';
+import { createContent, createCourse, deleteContent, deletePersonalGrade, getModules, getSettings, listContent, listCourses, listPersonalGrades, listTenants, savePersonalGrade, setExamVisibility, setModule, updateContent, updateCourse, updatePersonalGrade, updateSettings } from './data.js';
 import { publicOverview } from './public.js';
 import { requirePlatform } from './permissions.js';
-import { createTenantUser, listTenantUsers } from './users.js';
+import { createTenantUser, deleteTenantMembership, listTenantUsers, updateTenantMembership } from './users.js';
 import { uploadTenantLogo } from './branding.js';
 import { applyTimetable, getTimetableUpdatePreference, previewTimetable, setTimetableUpdatePreference } from './timetable-v2.js';
 import { storeTimetableSource } from './timetable-source.js';
@@ -22,7 +22,7 @@ function err(e:unknown):Response{
     :code==='TRIAL_EXPIRED'||code==='ONBOARDING_EXPIRED'||code==='ONBOARDING_UNAVAILABLE'?410
     :code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'?403
     :code.includes('NOT_FOUND')?404
-    :['ONBOARDING_ALREADY_IN_PROGRESS','ONBOARDING_ALREADY_COMPLETED','COURSE_LIMIT_REACHED','PRICING_NOT_CONFIGURED','SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','TIMETABLE_BATCH_CONFIRMATION_REQUIRED','TIMETABLE_INDIVIDUAL_CONFIRMATION_INVALID'].includes(code)?409
+    :['ONBOARDING_ALREADY_IN_PROGRESS','ONBOARDING_ALREADY_COMPLETED','COURSE_LIMIT_REACHED','PRICING_NOT_CONFIGURED','SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','TIMETABLE_BATCH_CONFIRMATION_REQUIRED','TIMETABLE_INDIVIDUAL_CONFIRMATION_INVALID','CANNOT_REMOVE_OWN_TENANT_ADMIN'].includes(code)?409
     :code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413
     :code==='LOGIN_RATE_LIMITED'?429
     :code==='INTERNAL_ERROR'?500:400;
@@ -87,10 +87,17 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(u.pathname==='/api/tenant/settings'&&request.method==='PUT')return json({ok:true,settings:await updateSettings(env,a,tenantId,await body(request))});
     if(u.pathname==='/api/tenant/modules'&&request.method==='GET')return json({ok:true,modules:await getModules(env,a,tenantId)});
     if(u.pathname==='/api/tenant/modules'&&request.method==='PUT'){const b=await body(request);await setModule(env,a,tenantId,String(b.feature_key||''),!!b.enabled);return json({ok:true});}
+
     if(u.pathname==='/api/courses'&&request.method==='GET')return json({ok:true,courses:await listCourses(env,a,tenantId)});
     if(u.pathname==='/api/courses'&&request.method==='POST'){await enforceCourseEntitlement(env,tenantId);return json({ok:true,course:await createCourse(env,a,tenantId,await body(request))},201);}
+    const courseRoute=u.pathname.match(/^\/api\/courses\/([^/]+)$/);
+    if(courseRoute&&request.method==='PATCH')return json({ok:true,course:await updateCourse(env,a,tenantId,decodeURIComponent(courseRoute[1]),await body(request))});
+
     if(u.pathname==='/api/tenant/users'&&request.method==='GET')return json({ok:true,users:await listTenantUsers(env,a,tenantId)});
     if(u.pathname==='/api/tenant/users'&&request.method==='POST')return json({ok:true,...await createTenantUser(env,a,tenantId,await body(request))},201);
+    const membership=u.pathname.match(/^\/api\/tenant\/memberships\/([^/]+)$/);
+    if(membership&&request.method==='PATCH')return json({ok:true,membership:await updateTenantMembership(env,a,tenantId,decodeURIComponent(membership[1]),await body(request))});
+    if(membership&&request.method==='DELETE'){await deleteTenantMembership(env,a,tenantId,decodeURIComponent(membership[1]));return json({ok:true});}
 
     if(u.pathname==='/api/materials'&&request.method==='GET')return json({ok:true,materials:await listLearningMaterials(env,a,tenantId,courseId)});
     if(u.pathname==='/api/materials'&&request.method==='POST')return json({ok:true,material:await uploadLearningMaterial(env,a,tenantId,request,courseId)},201);
@@ -100,10 +107,17 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(material&&request.method==='PATCH')return json({ok:true,material:await updateLearningMaterial(env,a,tenantId,decodeURIComponent(material[1]),await body(request))});
     if(material&&request.method==='DELETE'){await deleteLearningMaterial(env,a,tenantId,decodeURIComponent(material[1]));return json({ok:true});}
 
+    const contentRow=u.pathname.match(/^\/api\/content\/([^/]+)\/([^/]+)$/);
+    if(contentRow&&request.method==='PATCH')return json({ok:true,item:await updateContent(env,a,tenantId,decodeURIComponent(contentRow[1]),decodeURIComponent(contentRow[2]),await body(request))});
+    if(contentRow&&request.method==='DELETE'){await deleteContent(env,a,tenantId,decodeURIComponent(contentRow[1]),decodeURIComponent(contentRow[2]));return json({ok:true});}
     if(u.pathname.startsWith('/api/content/')){const type=u.pathname.split('/')[3]||'';if(request.method==='GET')return json({ok:true,items:await listContent(env,a,tenantId,type,courseId)});if(request.method==='POST')return json({ok:true,item:await createContent(env,a,tenantId,type,await body(request))},201);}
     if(u.pathname.match(/^\/api\/exams\/[^/]+\/visibility$/)&&request.method==='PATCH'){const examId=u.pathname.split('/')[3];const b=await body(request);await setExamVisibility(env,a,tenantId,examId,!!b.visible);return json({ok:true});}
+
     if(u.pathname==='/api/personal/grades'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,grades:await listPersonalGrades(env,a,tenantId,courseId)});}
     if(u.pathname==='/api/personal/grades'&&request.method==='POST'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,grade:await savePersonalGrade(env,a,tenantId,courseId,await body(request))},201);}
+    const gradeRoute=u.pathname.match(/^\/api\/personal\/grades\/([^/]+)$/);
+    if(gradeRoute&&request.method==='PATCH'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,grade:await updatePersonalGrade(env,a,tenantId,courseId,decodeURIComponent(gradeRoute[1]),await body(request))});}
+    if(gradeRoute&&request.method==='DELETE'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');await deletePersonalGrade(env,a,tenantId,courseId,decodeURIComponent(gradeRoute[1]));return json({ok:true});}
     return json({ok:false,error:'NOT_FOUND'},404);
   }catch(e){return err(e);}
 }
