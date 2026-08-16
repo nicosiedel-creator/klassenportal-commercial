@@ -8,8 +8,10 @@ const router=await readFile('src/core/launch-readiness-router.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
 const ui=await readFile('public/launch-readiness-ui.js','utf8');
 const wrangler=await readFile('wrangler.jsonc','utf8');
+const migration=await readFile('migrations/0042_production_release_gate.sql','utf8');
 
 assert.match(wrangler,/"version_metadata"\s*:\s*\{[\s\S]*"binding"\s*:\s*"CF_VERSION_METADATA"/,'Cloudflare Worker version metadata must be bound');
+assert.match(migration,/CREATE TABLE IF NOT EXISTS production_release_approvals/,'production release approval migration must exist');
 assert.match(state,/version_id TEXT PRIMARY KEY/,'release approval must be bound to one Worker version');
 assert.match(state,/revoked_at TEXT/,'release approval must support emergency revocation');
 assert.match(state,/requestLooksLikePreview/,'preview URLs must remain independently usable for acceptance work');
