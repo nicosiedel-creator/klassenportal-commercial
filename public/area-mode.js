@@ -10,6 +10,7 @@ if(AREA){
     if(tenantNav)tenantNav.style.display='none';
     side.querySelector('#pa-onboarding-nav')?.remove();
     side.querySelector('#kp-commerce-platform')?.remove();
+    side.querySelector('#kp-area-switch')?.remove();
     document.querySelector('#pa-new-customer')?.remove();
     const newTenant=document.querySelector('#newTenant');if(newTenant)newTenant.style.display='none';
     const platformTitle=[...document.querySelectorAll('.content h2')].find(x=>x.textContent?.trim()==='Plattformübersicht');
@@ -29,13 +30,6 @@ if(AREA){
     const side=document.querySelector('.side');
     if(!side)return;
     if(AREA==='customer')applyCustomerMode(side);else setText(side.querySelector('h1'),'Klassenportal · Plattform');
-    let switcher=side.querySelector('#kp-area-switch');
-    if(isPlatformOwner()&&!switcher){
-      switcher=document.createElement('button');switcher.className='nav';switcher.id='kp-area-switch';
-      switcher.textContent=AREA==='platform'?'Zur Kunden-Adminseite':'Zur Plattform-Adminseite';
-      switcher.onclick=()=>location.assign(AREA==='platform'?'/kunden-admin':'/plattform-admin');
-      const logout=side.querySelector('#logout');logout?.before(switcher);
-    }
   }
   function schedule(){if(scheduled)return;scheduled=true;queueMicrotask(()=>{scheduled=false;apply();});}
   await loadMe();
