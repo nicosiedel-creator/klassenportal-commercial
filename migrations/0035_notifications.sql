@@ -22,6 +22,21 @@ BEGIN
   ) x;
 END;
 
+CREATE TRIGGER IF NOT EXISTS trg_notify_announcement_after_publish
+AFTER UPDATE OF visible ON announcements
+WHEN OLD.visible=0 AND NEW.visible=1
+BEGIN
+  INSERT INTO notifications(id,tenant_id,course_id,user_id,type,title,body,created_at)
+  SELECT 'ntf_' || lower(hex(randomblob(16))),NEW.tenant_id,NEW.course_id,x.user_id,
+         'announcement','Neue Meldung: ' || NEW.title,NEW.body,CURRENT_TIMESTAMP
+  FROM (
+    SELECT DISTINCT user_id FROM memberships
+    WHERE tenant_id=NEW.tenant_id
+      AND role IN ('participant','guest')
+      AND (NEW.course_id IS NULL OR course_id=NEW.course_id)
+  ) x;
+END;
+
 CREATE TRIGGER IF NOT EXISTS trg_notify_homework_after_insert
 AFTER INSERT ON homework
 BEGIN
@@ -55,6 +70,21 @@ END;
 CREATE TRIGGER IF NOT EXISTS trg_notify_exam_after_insert
 AFTER INSERT ON exams
 WHEN NEW.visible_to_students=1
+BEGIN
+  INSERT INTO notifications(id,tenant_id,course_id,user_id,type,title,body,created_at)
+  SELECT 'ntf_' || lower(hex(randomblob(16))),NEW.tenant_id,NEW.course_id,x.user_id,
+         'exam','Neue Prüfung: ' || NEW.title,
+         'Termin: ' || NEW.starts_at || CASE WHEN NEW.room IS NULL OR NEW.room='' THEN '' ELSE char(10) || 'Raum: ' || NEW.room END,
+         CURRENT_TIMESTAMP
+  FROM (
+    SELECT DISTINCT user_id FROM memberships
+    WHERE tenant_id=NEW.tenant_id AND course_id=NEW.course_id AND role IN ('participant','guest')
+  ) x;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_notify_exam_after_publish
+AFTER UPDATE OF visible_to_students ON exams
+WHEN OLD.visible_to_students=0 AND NEW.visible_to_students=1
 BEGIN
   INSERT INTO notifications(id,tenant_id,course_id,user_id,type,title,body,created_at)
   SELECT 'ntf_' || lower(hex(randomblob(16))),NEW.tenant_id,NEW.course_id,x.user_id,
