@@ -23,8 +23,9 @@ export async function releaseSchemaStatus(env:Env,auth:CoreAuthContext){
   const material=await columns(env,'portability_files');
   const missingMaterial=materialColumns.filter(x=>!material.has(x));
   const managed=await tableExists(env,'managed_setup_jobs');
+  const portalLayouts=await tableExists(env,'user_portal_layouts');
   const notificationTrigger=await triggerExists(env,'trg_notify_announcement_after_insert');
-  return {ready:managed&&missingMaterial.length===0&&notificationTrigger,managedSetupTable:managed,missingMaterialColumns:missingMaterial,notificationTriggers:notificationTrigger};
+  return {ready:managed&&missingMaterial.length===0&&notificationTrigger&&portalLayouts,managedSetupTable:managed,missingMaterialColumns:missingMaterial,notificationTriggers:notificationTrigger,userPortalLayoutsTable:portalLayouts};
 }
 
 async function ensureManagedSetup(env:Env){
@@ -78,10 +79,20 @@ async function ensureNotifications(env:Env){
   for(const [name,sql] of triggers)if(!(await triggerExists(env,name)))await env.DB.prepare(sql).run();
 }
 
+async function ensurePortalLayouts(env:Env){
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS user_portal_layouts (
+    user_id TEXT NOT NULL,tenant_id TEXT NOT NULL,course_id TEXT NOT NULL,layout_json TEXT NOT NULL,updated_at TEXT NOT NULL,
+    PRIMARY KEY(user_id,tenant_id,course_id),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE)`).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_user_portal_layouts_course ON user_portal_layouts(tenant_id,course_id,updated_at DESC)').run();
+}
+
 export async function applyReleaseSchema(env:Env,auth:CoreAuthContext){
   requirePlatform(auth);
   const before=await releaseSchemaStatus(env,auth);
-  await ensureManagedSetup(env);await ensureMaterials(env);await ensureNotifications(env);
+  await ensureManagedSetup(env);await ensureMaterials(env);await ensureNotifications(env);await ensurePortalLayouts(env);
   const after=await releaseSchemaStatus(env,auth);
   await audit(env.DB,auth.userId,'platform.schema_upgraded',undefined,undefined,'platform_schema','commercial_v1',{before,after,at:nowIso()});
   return after;
