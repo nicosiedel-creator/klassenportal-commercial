@@ -5,11 +5,17 @@ const text=async path=>readFile(path,'utf8');
 const wrangler=await text('wrangler.jsonc');
 const index=await text('src/index.ts');
 const router=await text('src/core/router.ts');
+const runtimeRouter=await text('src/core/runtime-schema-router.ts');
 const publicApi=await text('src/core/public.ts');
+const platformOwner=await text('src/core/platform-owner.ts');
 const classPortalHtml=await text('public/class-portal.html');
 const classAdminHtml=await text('public/class-admin.html');
 const classAdminPortal=await text('public/class-admin-portal.js');
+const classWorkspace=await text('public/class-admin-workspace.js');
 const customerAdminHtml=await text('public/customer-admin.html');
+const platformAdminHtml=await text('public/platform-admin.html');
+const platformOwnerUi=await text('public/platform-owner-ui.js');
+const areaMode=await text('public/area-mode.js');
 const compactUi=await text('public/portal-compact.js');
 const compactCss=await text('public/portal-compact.css');
 const customerCompactCss=await text('public/customer-compact.css');
@@ -17,8 +23,9 @@ const users=await text('src/core/users.ts');
 
 assert.match(wrangler,/"\/portal\/\*"/,'/portal/* must run worker-first');
 for(const route of ['/api/*','/public/*','/brand/*','/calendar/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/klassen-admin*','/zahlung/*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
-for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/customer-admin.html','public/customer-compact.css','public/platform-admin.html','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/payment-result.html'])await readFile(asset);
+for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/customer-admin.html','public/customer-compact.css','public/platform-admin.html','public/platform-owner-ui.js','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/class-admin-workspace.js','public/payment-result.html'])await readFile(asset);
 assert.ok(index.includes("adminPath==='/klassen-admin'?'/class-admin.html'"),'class admin route must serve class-admin.html');
+assert.ok(index.includes("if(adminPath==='/plattform-admin')")&&index.includes("if(!session?.isPlatformAdmin)return new Response('Nicht gefunden'"),'platform admin HTML must be owner-gated server-side');
 
 for(const header of ['x-content-type-options','x-frame-options','referrer-policy','permissions-policy','strict-transport-security','content-security-policy'])assert.ok(index.includes(`'${header}'`),`missing production header ${header}`);
 assert.ok(index.includes("headers.set('cache-control','no-store')"),'HTML must be no-store');
@@ -33,6 +40,7 @@ assert.ok(classPortalHtml.includes('/portal-compact.css'),'participant portal mu
 assert.ok(classPortalHtml.includes('/portal-compact.js'),'participant portal must collapse detail-heavy cards by default');
 assert.ok(classAdminHtml.includes('/class-portal.css'),'Klassen-Admin must share the participant portal visual system');
 assert.ok(classAdminHtml.includes('/portal-compact.css')&&classAdminHtml.includes('/portal-compact.js'),'Klassen-Admin must use the same compact tile behavior as participant portal');
+assert.ok(classAdminHtml.includes('/class-admin-workspace.js'),'Klassen-Admin must load the scoped timetable/account policy');
 assert.ok(classAdminHtml.includes('/class-admin-portal.js'),'Klassen-Admin must use its dedicated portal controller');
 assert.ok(!classAdminHtml.includes('/boot.js'),'Klassen-Admin must not fall back to the generic admin SPA');
 assert.ok(!classAdminHtml.includes('/app.js'),'Klassen-Admin must not load the generic admin SPA directly');
@@ -40,14 +48,24 @@ assert.ok(customerAdminHtml.includes('customer-portal-admin')&&customerAdminHtml
 assert.ok(compactUi.includes("section.id==='uebersicht'"),'Klassenbereich quick-access card must stay expanded');
 assert.ok(compactUi.includes('portal-compact-toggle'),'compact portal cards must remain expandable');
 assert.ok(compactCss.includes('.portal-stats,.portal-nav{display:none!important}'),'duplicate portal navigation and stat strips must stay removed');
-assert.ok(customerCompactCss.includes('.customer-portal-admin .side{position:sticky'),'customer admin navigation must stay compact and horizontal');
-assert.ok(classAdminPortal.includes("payload.role='participant'"),'Klassen-Admin UI must only create participants');
+assert.ok(customerCompactCss.includes('flex-wrap:wrap')&&!customerCompactCss.includes('overflow-x:auto;white-space:nowrap'),'customer admin navigation must wrap instead of forcing one long row');
+assert.ok(!areaMode.includes('Zur Plattform-Adminseite'),'no customer/class/student UI may advertise the owner platform route');
+
 assert.ok(classAdminPortal.includes('exactRows'),'Klassen-Admin must keep displayed class data inside one exact course scope');
-assert.ok(classAdminPortal.includes("payload.course_id=state.course.id"),'Klassen-Admin writes must be pinned to its selected course');
 assert.ok(classAdminPortal.includes('Noch nicht aktiv'),'Klassen-Admin extensions must include benefit teasers');
 assert.ok(!classAdminPortal.includes('newCourse'),'Klassen-Admin must never expose course creation');
-assert.ok(users.includes("m.role='participant'"),'class-admin user listing must exclude privileged and guest roles');
-assert.ok(users.includes("if(role!=='participant')throw new Error('FORBIDDEN_ROLE_ASSIGNMENT')"),'class-admin backend must only assign participant role');
+assert.ok(classWorkspace.includes('[data-action="add-participant"]')&&classWorkspace.includes('[data-user-reset]')&&classWorkspace.includes('[data-member-remove]'),'Klassen-Admin must remove participant account mutation controls');
+assert.ok(classWorkspace.includes('/api/timetable/preview')&&classWorkspace.includes('/api/timetable/apply'),'Klassen-Admin must support scoped timetable upload and apply');
+assert.ok(classWorkspace.includes('/api/content/lessons/'),'Klassen-Admin must support editing existing timetable entries');
+assert.ok(users.includes("requireRole(auth,'tenant_admin')"),'participant account mutations must require customer-admin or platform owner');
+assert.ok(users.includes("m.role='participant'"),'class-admin user listing must remain participant-only');
+
+assert.ok(platformAdminHtml.includes('/platform-owner-ui.js'),'platform owner UI must be loaded only in platform admin');
+assert.ok(runtimeRouter.includes('/api/platform/owner/demo-fixture')&&runtimeRouter.includes('platformTenantDetail')&&runtimeRouter.includes('updatePlatformTenant'),'owner APIs must expose tenant editing and demo fixture creation');
+assert.ok(platformOwnerUi.includes('owner-edit')&&platformOwnerUi.includes('data-demo-build'),'owner UI must provide customer editing and demo generation');
+assert.equal((platformOwner.match(/\['VFA 26\/|\['Kaufleute Büromanagement|\['Fachinformatik Systemintegration|\['Sozialverwaltung/g)||[]).length,20,'demo fixture must define exactly 20 classes');
+assert.ok(platformOwner.includes('j<20'),'demo fixture must create 20 participants per class');
+assert.ok(platformOwner.includes('week<6'),'demo fixture timetable must cover six weeks');
 
 const migrations=(await readdir('migrations')).filter(x=>/^\d+_.*\.sql$/.test(x)).sort();
 assert.ok(migrations.includes('0035_notifications.sql'),'Block 7 notification migration missing');
