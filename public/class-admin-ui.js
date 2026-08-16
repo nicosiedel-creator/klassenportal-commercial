@@ -56,10 +56,11 @@ if(CLASS_ADMIN_PATH){
   }
   function ensureNotice(){
     const content=document.querySelector('.content');if(!content)return;let n=content.querySelector('#kp-class-admin-notice');if(!n){n=document.createElement('div');n.id='kp-class-admin-notice';n.className='notice ok';content.querySelector(':scope > .top')?.after(n);}
-    n.innerHTML=mayPreview()?`<strong>Klassen-Admin · Supportvorschau</strong> · Sichtbar und bearbeitbar ist ausschließlich ${esc(scopeCourseName||'die ausgewählte Klasse')}. Andere Klassen, andere Kunden, Tarife und kundenweite Einstellungen gehören nicht in diesen Arbeitsbereich.`:`<strong>Klassen-Admin</strong> · Du arbeitest ausschließlich in ${esc(scopeCourseName||'deiner freigegebenen Klasse')}. Du kannst Teilnehmer und Klasseninhalte verwalten, aber die Klasse selbst, andere Klassen oder kundenweite Einstellungen nicht ändern.`;
+    const html=mayPreview()?`<strong>Klassen-Admin · Supportvorschau</strong> · Sichtbar und bearbeitbar ist ausschließlich ${esc(scopeCourseName||'die ausgewählte Klasse')}. Andere Klassen, andere Kunden, Tarife und kundenweite Einstellungen gehören nicht in diesen Arbeitsbereich.`:`<strong>Klassen-Admin</strong> · Du arbeitest ausschließlich in ${esc(scopeCourseName||'deiner freigegebenen Klasse')}. Du kannst Teilnehmer und Klasseninhalte verwalten, aber die Klasse selbst, andere Klassen oder kundenweite Einstellungen nicht ändern.`;
+    if(n.innerHTML!==html)n.innerHTML=html;
   }
   function ensureExtensionsNav(side){
-    let b=side.querySelector('#kp-advanced-nav');if(!b){b=document.createElement('button');b.className='nav';b.id='kp-advanced-nav';const anchor=side.querySelector('[data-v="exams"]');anchor?.after(b);}b.textContent='Erweiterungen';b.onclick=()=>void openExtensions();
+    let b=side.querySelector('#kp-advanced-nav');if(!b){b=document.createElement('button');b.className='nav';b.id='kp-advanced-nav';const anchor=side.querySelector('[data-v="exams"]');anchor?.after(b);}setText(b,'Erweiterungen');b.onclick=()=>void openExtensions();
   }
   async function openExtensions(){
     const tenant=tenantId(),content=document.querySelector('.content');if(!tenant||!content)return;
