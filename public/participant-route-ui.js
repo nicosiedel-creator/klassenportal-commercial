@@ -2,12 +2,9 @@ const PRU=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 let pruBusy=false,pruParticipantMode=false,pruSignature='';
 async function pruJson(url){const r=await fetch(url,{credentials:'same-origin',cache:'no-store'});let d={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(d.error||`HTTP_${r.status}`);return d;}
 function participantOnly(user){if(!user||user.isPlatformAdmin)return false;const roles=user.tenantRoles||[];return roles.length>0&&!roles.some(x=>x.role==='tenant_admin'||x.role==='class_admin')&&roles.some(x=>x.role==='participant'||x.role==='guest');}
-async function participantDestinations(user){
+async function participantDestinations(){
   const tenants=(await pruJson('/api/platform/tenants')).tenants||[],out=[];
-  for(const tenant of tenants){
-    let courses=[];try{courses=(await pruJson(`/api/courses?tenant_id=${encodeURIComponent(tenant.id)}`)).courses||[];}catch{}
-    for(const course of courses)out.push({tenant,course,href:`/portal/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(course.code)}`});
-  }
+  for(const tenant of tenants){let courses=[];try{courses=(await pruJson(`/api/courses?tenant_id=${encodeURIComponent(tenant.id)}`)).courses||[];}catch{}for(const course of courses)out.push({tenant,course,href:`/portal/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(course.code)}`});}
   return out;
 }
 function renderHub(user,rows){
@@ -18,10 +15,12 @@ function renderHub(user,rows){
 async function routeParticipant(){
   if(pruBusy)return;pruBusy=true;
   try{
-    const user=(await pruJson('/api/auth/me')).user||null;if(!participantOnly(user)){pruParticipantMode=false;return;}
+    const user=(await pruJson('/api/auth/me')).user||null;
+    if(user?.mustChangePassword){if(!document.querySelector('#password-change'))location.reload();return;}
+    if(!participantOnly(user)){pruParticipantMode=false;return;}
     const sig=`${user.userId}:${(user.tenantRoles||[]).map(x=>`${x.tenantId}:${x.courseId}:${x.role}`).sort().join('|')}`;
     if(pruParticipantMode&&sig===pruSignature&&document.querySelector('#pru-logout'))return;
-    pruSignature=sig;const rows=await participantDestinations(user);
+    pruSignature=sig;const rows=await participantDestinations();
     if(rows.length===1){const target=new URL(rows[0].href,location.origin);if(location.pathname!==target.pathname)location.replace(target.pathname);return;}
     renderHub(user,rows);
   }catch{}finally{pruBusy=false;}
