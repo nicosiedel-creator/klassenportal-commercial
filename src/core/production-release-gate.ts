@@ -7,6 +7,8 @@ import { productionReadiness } from './launch-readiness.js';
 import { currentWorkerVersion, ensureProductionReleaseSchema, productionOriginStatus } from './production-release-state.js';
 import { nowIso } from './utils.js';
 
+type ApprovalRow={approved_at:string;approved_by:string;revoked_at:string|null;revoked_by:string|null};
+
 async function ownerStepUp(env:Env,auth:CoreAuthContext,password:unknown,mfaCode:unknown):Promise<void>{
   requirePlatform(auth);
   const current=String(password??'');if(!current)throw new Error('CURRENT_PASSWORD_REQUIRED');
@@ -18,9 +20,8 @@ async function ownerStepUp(env:Env,auth:CoreAuthContext,password:unknown,mfaCode
 
 export async function releaseStateForOwner(env:Env,auth:CoreAuthContext){
   requirePlatform(auth);await ensureProductionReleaseSchema(env);
-  const origin=productionOriginStatus(env),version=currentWorkerVersion(env);
-  let approval:null|{approved_at:string;approved_by:string;revoked_at:string|null;revoked_by:string|null}=null;
-  if(version&&origin.origin){approval=await env.DB.prepare('SELECT approved_at,approved_by,revoked_at,revoked_by FROM production_release_approvals WHERE version_id=? AND app_origin=?').bind(version.id,origin.origin).first<typeof approval extends infer _T ? any : never>() as typeof approval;}
+  const origin=productionOriginStatus(env),version=currentWorkerVersion(env);let approval:ApprovalRow|null=null;
+  if(version&&origin.origin)approval=await env.DB.prepare('SELECT approved_at,approved_by,revoked_at,revoked_by FROM production_release_approvals WHERE version_id=? AND app_origin=?').bind(version.id,origin.origin).first<ApprovalRow>();
   return{production:origin.ok,origin,version,approved:!!approval&&!approval.revoked_at,approval};
 }
 
