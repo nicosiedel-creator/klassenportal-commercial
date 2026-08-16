@@ -16,26 +16,29 @@ async function requireOwnerStepUp(env:Env,auth:CoreAuthContext,password:unknown,
 async function activeBilling(env:Env,tenantId:string):Promise<boolean>{
   const row=await env.DB.prepare('SELECT stripe_subscription_id,stripe_subscription_status FROM tenant_payment_accounts WHERE tenant_id=?').bind(tenantId).first<{stripe_subscription_id:string|null;stripe_subscription_status:string|null}>();if(!row?.stripe_subscription_id)return false;const s=String(row.stripe_subscription_status||'').toLowerCase();return !['canceled','cancelled','ended','incomplete_expired'].includes(s);
 }
+async function safe<T>(work:Promise<T>,fallback:T):Promise<T>{try{return await work;}catch{return fallback;}}
 
 export async function ownerSystemHealth(env:Env,auth:CoreAuthContext){
   requirePlatform(auth);let db=false,r2=false;try{db=Number(await env.DB.prepare('SELECT 1 AS ok').first<number>('ok'))===1;}catch{}try{await env.FILES.list({prefix:'health/',limit:1});r2=true;}catch{}
-  const [mfa,counts,auditRows,providerRows,backupRows,deletions,cancellationErrors]=await Promise.all([
+  const [mfa,counts,auditRows,providerRows,backupRows,deletions,cancellationErrors,essentialTables]=await Promise.all([
     ownerMfaStatus(env,auth.userId),
-    env.DB.prepare(`SELECT
+    safe(env.DB.prepare(`SELECT
       (SELECT COUNT(*) FROM tenants WHERE status='active') AS active_tenants,
       (SELECT COUNT(*) FROM courses WHERE is_active=1) AS active_courses,
       (SELECT COUNT(*) FROM users WHERE status='active') AS active_users,
-      (SELECT COUNT(*) FROM managed_setup_jobs WHERE status<>'completed') AS open_managed_setups`).first<Record<string,unknown>>(),
-    env.DB.prepare(`SELECT a.id,a.tenant_id,t.name AS tenant_name,a.course_id,a.actor_user_id,u.display_name AS actor_name,a.action,a.entity_type,a.entity_id,a.created_at
-      FROM audit_log a LEFT JOIN tenants t ON t.id=a.tenant_id LEFT JOIN users u ON u.id=a.actor_user_id ORDER BY a.created_at DESC LIMIT 100`).all<Record<string,unknown>>(),
-    env.DB.prepare('SELECT event_id,event_type,status,received_at,processed_at,error_message FROM payment_provider_events ORDER BY received_at DESC LIMIT 30').all<Record<string,unknown>>(),
-    env.DB.prepare('SELECT id,tenant_id,reason,status,size_bytes,created_at,completed_at,error_message FROM portability_backups ORDER BY created_at DESC LIMIT 30').all<Record<string,unknown>>(),
-    env.DB.prepare("SELECT d.id,d.tenant_id,t.name AS tenant_name,d.reason,d.status,d.final_backup_id,d.final_export_key,d.scheduled_for,d.created_at FROM portability_deletion_requests d LEFT JOIN tenants t ON t.id=d.tenant_id WHERE d.status='pending' ORDER BY d.scheduled_for").all<Record<string,unknown>>(),
-    env.DB.prepare("SELECT COUNT(*) AS n FROM module_cancellations WHERE status='error'").first<number>('n').catch(()=>0),
+      (SELECT COUNT(*) FROM managed_setup_jobs WHERE status<>'completed') AS open_managed_setups`).first<Record<string,unknown>>(),{}),
+    safe(env.DB.prepare(`SELECT a.id,a.tenant_id,t.name AS tenant_name,a.course_id,a.actor_user_id,u.display_name AS actor_name,a.action,a.entity_type,a.entity_id,a.created_at
+      FROM audit_log a LEFT JOIN tenants t ON t.id=a.tenant_id LEFT JOIN users u ON u.id=a.actor_user_id ORDER BY a.created_at DESC LIMIT 100`).all<Record<string,unknown>>(),{success:false,results:[]}),
+    safe(env.DB.prepare('SELECT event_id,event_type,status,received_at,processed_at,error_message FROM payment_provider_events ORDER BY received_at DESC LIMIT 30').all<Record<string,unknown>>(),{success:false,results:[]}),
+    safe(env.DB.prepare('SELECT id,tenant_id,reason,status,size_bytes,created_at,completed_at,error_message FROM portability_backups ORDER BY created_at DESC LIMIT 30').all<Record<string,unknown>>(),{success:false,results:[]}),
+    safe(env.DB.prepare("SELECT d.id,d.tenant_id,t.name AS tenant_name,d.reason,d.status,d.final_backup_id,d.final_export_key,d.scheduled_for,d.created_at FROM portability_deletion_requests d LEFT JOIN tenants t ON t.id=d.tenant_id WHERE d.status='pending' ORDER BY d.scheduled_for").all<Record<string,unknown>>(),{success:false,results:[]}),
+    safe(env.DB.prepare("SELECT COUNT(*) AS n FROM module_cancellations WHERE status='error'").first<number>('n'),0),
+    safe(env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('managed_setup_jobs','module_cancellations','platform_mfa','payment_provider_events','portability_backups','audit_log')").all<{name:string}>(),{success:false,results:[]}),
   ]);
+  const tableSet=new Set((essentialTables.results??[]).map(x=>x.name)),missingTables=['managed_setup_jobs','module_cancellations','platform_mfa','payment_provider_events','portability_backups','audit_log'].filter(x=>!tableSet.has(x));
   const failedProvider=(providerRows.results??[]).filter(x=>x.status==='failed').length,failedBackups=(backupRows.results??[]).filter(x=>x.status==='failed').length;
-  const blockers:string[]=[];if(!db)blockers.push('Datenbank nicht erreichbar');if(!r2)blockers.push('Dateispeicher nicht erreichbar');if(!mfa.encryptionReady)blockers.push('OWNER_MFA_ENCRYPTION_KEY fehlt/ungültig');if(!mfa.enabled)blockers.push('Eigentümer-MFA ist nicht aktiviert');if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)blockers.push('Stripe-Konfiguration unvollständig');if(failedProvider)blockers.push(`${failedProvider} fehlgeschlagene Stripe-Ereignisse in der aktuellen Übersicht`);if(failedBackups)blockers.push(`${failedBackups} fehlgeschlagene Backups in der aktuellen Übersicht`);if(Number(cancellationErrors||0)>0)blockers.push(`${cancellationErrors} fehlgeschlagene Modul-Kündigungen werden erneut versucht`);
-  return{ready:blockers.length===0,blockers,services:{database:db,fileStorage:r2,stripeConfigured:!!env.STRIPE_SECRET_KEY&&!!env.STRIPE_WEBHOOK_SECRET},mfa,counts:counts??{},recentAudit:auditRows.results??[],recentProviderEvents:providerRows.results??[],recentBackups:backupRows.results??[],pendingDeletions:deletions.results??[],moduleCancellationErrors:Number(cancellationErrors||0),checkedAt:nowIso()};
+  const blockers:string[]=[];if(!db)blockers.push('Datenbank nicht erreichbar');if(!r2)blockers.push('Dateispeicher nicht erreichbar');if(missingTables.length)blockers.push(`Datenbankschema unvollständig: ${missingTables.join(', ')}`);if(!mfa.encryptionReady)blockers.push('OWNER_MFA_ENCRYPTION_KEY fehlt/ungültig');if(!mfa.enabled)blockers.push('Eigentümer-MFA ist nicht aktiviert');if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)blockers.push('Stripe-Konfiguration unvollständig');if(failedProvider)blockers.push(`${failedProvider} fehlgeschlagene Stripe-Ereignisse in der aktuellen Übersicht`);if(failedBackups)blockers.push(`${failedBackups} fehlgeschlagene Backups in der aktuellen Übersicht`);if(Number(cancellationErrors||0)>0)blockers.push(`${cancellationErrors} fehlgeschlagene Modul-Kündigungen werden erneut versucht`);
+  return{ready:blockers.length===0,blockers,services:{database:db,fileStorage:r2,stripeConfigured:!!env.STRIPE_SECRET_KEY&&!!env.STRIPE_WEBHOOK_SECRET,schemaComplete:missingTables.length===0},mfa,counts:counts??{},recentAudit:auditRows.results??[],recentProviderEvents:providerRows.results??[],recentBackups:backupRows.results??[],pendingDeletions:deletions.results??[],moduleCancellationErrors:Number(cancellationErrors||0),checkedAt:nowIso()};
 }
 
 export async function startOwnerMfaSetup(env:Env,auth:CoreAuthContext,input:Record<string,unknown>){
