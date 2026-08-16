@@ -19,11 +19,12 @@ const areaMode=await text('public/area-mode.js');
 const compactUi=await text('public/portal-compact.js');
 const compactCss=await text('public/portal-compact.css');
 const customerCompactCss=await text('public/customer-compact.css');
+const vfaReferenceCss=await text('public/vfa13-reference.css');
 const users=await text('src/core/users.ts');
 
 assert.match(wrangler,/"\/portal\/\*"/,'/portal/* must run worker-first');
 for(const route of ['/api/*','/public/*','/brand/*','/calendar/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/klassen-admin*','/zahlung/*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
-for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/customer-admin.html','public/customer-compact.css','public/platform-admin.html','public/platform-owner-ui.js','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/class-admin-workspace.js','public/payment-result.html'])await readFile(asset);
+for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/vfa13-reference.css','public/customer-admin.html','public/customer-compact.css','public/platform-admin.html','public/platform-owner-ui.js','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/class-admin-workspace.js','public/payment-result.html'])await readFile(asset);
 assert.ok(index.includes("adminPath==='/klassen-admin'?'/class-admin.html'"),'class admin route must serve class-admin.html');
 assert.ok(index.includes("if(adminPath==='/plattform-admin')")&&index.includes("if(!session?.isPlatformAdmin)return new Response('Nicht gefunden'"),'platform admin HTML must be owner-gated server-side');
 
@@ -38,13 +39,18 @@ assert.ok(!publicApi.includes('access_code_hash:row.access_code_hash'),'access c
 
 assert.ok(classPortalHtml.includes('/portal-compact.css'),'participant portal must use compact visual system');
 assert.ok(classPortalHtml.includes('/portal-compact.js'),'participant portal must collapse detail-heavy cards by default');
+assert.ok(classPortalHtml.includes('/vfa13-reference.css'),'participant portal must load VFA13 reference styling');
 assert.ok(classAdminHtml.includes('/class-portal.css'),'Klassen-Admin must share the participant portal visual system');
 assert.ok(classAdminHtml.includes('/portal-compact.css')&&classAdminHtml.includes('/portal-compact.js'),'Klassen-Admin must use the same compact tile behavior as participant portal');
+assert.ok(classAdminHtml.includes('/vfa13-reference.css'),'Klassen-Admin must load the same VFA13 reference styling');
 assert.ok(classAdminHtml.includes('/class-admin-workspace.js'),'Klassen-Admin must load the scoped timetable/account policy');
 assert.ok(classAdminHtml.includes('/class-admin-portal.js'),'Klassen-Admin must use its dedicated portal controller');
 assert.ok(!classAdminHtml.includes('/boot.js'),'Klassen-Admin must not fall back to the generic admin SPA');
 assert.ok(!classAdminHtml.includes('/app.js'),'Klassen-Admin must not load the generic admin SPA directly');
 assert.ok(customerAdminHtml.includes('customer-portal-admin')&&customerAdminHtml.includes('/customer-compact.css'),'customer admin must use the compact portal-style shell');
+assert.ok(customerAdminHtml.includes('/vfa13-reference.css'),'customer admin must share the VFA13 visual language');
+assert.ok(vfaReferenceCss.includes('#stundenplan,#aufgaben'),'VFA13 priority cards must emphasize timetable and homework');
+assert.ok(vfaReferenceCss.includes('flex-wrap:wrap'),'VFA13 customer navigation must wrap safely');
 assert.ok(compactUi.includes("section.id==='uebersicht'"),'Klassenbereich quick-access card must stay expanded');
 assert.ok(compactUi.includes('portal-compact-toggle'),'compact portal cards must remain expandable');
 assert.ok(compactCss.includes('.portal-stats,.portal-nav{display:none!important}'),'duplicate portal navigation and stat strips must stay removed');
