@@ -29,6 +29,7 @@ function fakePortalEnv(courseRow,fixtures={}){
         if(sql.includes('FROM announcements'))return {results:fixtures.announcements||[]};
         if(sql.includes('FROM links'))return {results:fixtures.links||[]};
         if(sql.includes('FROM exams'))return {results:fixtures.exams||[]};
+        if(sql.includes('FROM notifications'))return {results:fixtures.notifications||[]};
         if(sql.includes("purpose='learning_material'"))return {results:fixtures.materials||[]};
         return {results:[]};
       }
@@ -39,19 +40,19 @@ function fakePortalEnv(courseRow,fixtures={}){
   };
 }
 const portalBase={id:'crs_1',tenant_id:'ten_1',name:'VFA 13',code:'vfa13',start_date:null,end_date:null,access_mode:'public',access_code_hash:'must-never-leak',tenant_name:'Bildungsträger',slug:'bildungstraeger',portal_name:'Mein Portal',welcome_text:'Willkommen',logo_url:'/brand/logo/ten_1',primary_color:'#123456',secondary_color:'#234567',background_color:'#f8fafc',white_label:0,locale:'de-DE',timezone:'Europe/Berlin'};
-const publicEnv=fakePortalEnv(portalBase,{lessons:[{id:'l1',starts_at:'2099-01-01T08:00:00Z',ends_at:'2099-01-01T09:00:00Z',subject_name:'Verwaltungsrecht',teacher_name:'Frau Test'}],materials:[{id:'mat_1',course_id:'crs_1',title:'Lernblatt',description:'Kapitel 1',original_name:'lernblatt.pdf',content_type:'application/pdf',size_bytes:1234,created_at:'2026-08-16T10:00:00Z'}]});
+const publicEnv=fakePortalEnv(portalBase,{lessons:[{id:'l1',starts_at:'2099-01-01T08:00:00Z',ends_at:'2099-01-01T09:00:00Z',subject_name:'Verwaltungsrecht',teacher_name:'Frau Test'}],materials:[{id:'mat_1',course_id:'crs_1',title:'Lernblatt',description:'Kapitel 1',original_name:'lernblatt.pdf',content_type:'application/pdf',size_bytes:1234,created_at:'2026-08-16T10:00:00Z'}],notifications:[{id:'ntf_private',course_id:'crs_1',type:'homework',title:'Privat',body:'Nur mit Login',read_at:null,created_at:'2026-08-16T10:00:00Z'}]});
 const meta=await publicPortalMetadata(publicEnv,'bildungstraeger','vfa13');
 assert.equal(meta.course.name,'VFA 13'); assert.equal('access_code_hash' in meta.course,false);
 const publicData=await publicOverview(publicEnv,'bildungstraeger','vfa13',null);
 assert.equal(publicData.accessGrantedBy,'public'); assert.equal(publicData.viewer.authenticated,false); assert.equal('access_code_hash' in publicData.course,false); assert.equal(publicData.lessons[0].teacher_name,'Frau Test');
 assert.equal(publicData.materials[0].title,'Lernblatt'); assert.equal('object_key' in publicData.materials[0],false);
-assert.equal(publicData.modules.calendar,true); assert.equal(publicData.modules.reminders,true); assert.equal(publicData.modules.weekly_overview,true);
+assert.equal(publicData.modules.calendar,true); assert.equal(publicData.modules.reminders,true); assert.equal(publicData.modules.weekly_overview,true);assert.equal(publicData.notifications.length,0);assert.equal(publicData.viewer.tenantId,null);
 
-const loginEnv=fakePortalEnv({...portalBase,access_mode:'login'});
-await assert.rejects(()=>publicOverview(loginEnv,'bildungstraeger','vfa13',null),/LOGIN_REQUIRED/);
 const participant={userId:'usr_1',email:'teilnehmer@example.de',displayName:'Teilnehmer',isPlatformAdmin:false,mustChangePassword:false,tenantRoles:[{tenantId:'ten_1',courseId:'crs_1',role:'participant'}]};
+const loginEnv=fakePortalEnv({...portalBase,access_mode:'login'},{notifications:[{id:'ntf_1',course_id:'crs_1',type:'homework',title:'Neue Aufgabe',body:'Bis Freitag',read_at:null,created_at:'2026-08-16T10:00:00Z'}]});
+await assert.rejects(()=>publicOverview(loginEnv,'bildungstraeger','vfa13',null),/LOGIN_REQUIRED/);
 const loginData=await publicOverview(loginEnv,'bildungstraeger','vfa13',participant);
-assert.equal(loginData.viewer.role,'participant'); assert.equal(loginData.accessGrantedBy,'login');
+assert.equal(loginData.viewer.role,'participant'); assert.equal(loginData.accessGrantedBy,'login');assert.equal(loginData.viewer.tenantId,'ten_1');assert.equal(loginData.notifications.length,1);assert.equal(loginData.notifications[0].id,'ntf_1');
 const forced={...participant,mustChangePassword:true};
 await assert.rejects(()=>publicOverview(loginEnv,'bildungstraeger','vfa13',forced),/LOGIN_REQUIRED/);
 
@@ -59,7 +60,7 @@ const accessHash=await hashPassword('Klasse-1234');
 const codeEnv=fakePortalEnv({...portalBase,access_mode:'link_code',access_code_hash:accessHash});
 await assert.rejects(()=>publicOverview(codeEnv,'bildungstraeger','vfa13',null,'falsch'),/ACCESS_CODE_REQUIRED/);
 const codeData=await publicOverview(codeEnv,'bildungstraeger','vfa13',null,'Klasse-1234');
-assert.equal(codeData.accessGrantedBy,'code'); assert.equal(codeData.viewer.authenticated,false);
+assert.equal(codeData.accessGrantedBy,'code'); assert.equal(codeData.viewer.authenticated,false);assert.equal(codeData.notifications.length,0);
 const tenantAdmin={userId:'usr_admin',email:'admin@example.de',displayName:'Admin',isPlatformAdmin:false,mustChangePassword:false,tenantRoles:[{tenantId:'ten_1',courseId:null,role:'tenant_admin'}]};
 const adminPreview=await publicOverview(codeEnv,'bildungstraeger','vfa13',tenantAdmin);
 assert.equal(adminPreview.viewer.role,'tenant_admin'); assert.equal(adminPreview.accessGrantedBy,'login');
@@ -72,4 +73,4 @@ await assert.rejects(()=>publicMaterialDownload(materialEnv,'bildungstraeger','v
 const materialResponse=await publicMaterialDownload(materialEnv,'bildungstraeger','vfa13','mat_1',null,'Klasse-1234');
 assert.equal(materialResponse.status,200);assert.equal(await materialResponse.text(),'Lernstoff');assert.match(materialResponse.headers.get('content-disposition')||'',/lernblatt\.pdf/);
 
-console.log('Core portability + class portal + learning material tests: OK');
+console.log('Core portability + class portal + materials + notification isolation tests: OK');

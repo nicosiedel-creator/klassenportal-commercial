@@ -5,7 +5,7 @@ import { provisionTenant } from './provision.js';
 import { createContent, createCourse, deleteContent, deletePersonalGrade, getModules, getSettings, listContent, listCourses, listPersonalGrades, listTenants, savePersonalGrade, setExamVisibility, setModule, updateContent, updateCourse, updatePersonalGrade, updateSettings } from './data.js';
 import { publicOverview } from './public.js';
 import { requirePlatform } from './permissions.js';
-import { createTenantUser, deleteTenantMembership, listTenantUsers, updateTenantMembership } from './users.js';
+import { createTenantUser, deleteTenantMembership, listTenantUsers, resetTenantUserPassword, updateTenantMembership } from './users.js';
 import { uploadTenantLogo } from './branding.js';
 import { applyTimetable, getTimetableUpdatePreference, previewTimetable, setTimetableUpdatePreference } from './timetable-v2.js';
 import { storeTimetableSource } from './timetable-source.js';
@@ -13,6 +13,7 @@ import { createOnboardingInvitation, getPublicOnboarding, getPublicOnboardingQuo
 import { billingSummary, enforceCourseEntitlement, getSellerProfile, listCommercePlans, quoteExpansion, requestExpansion, updateCommercePlan, updateSellerProfile } from './commerce.js';
 import { assertTenantWriteAllowed, calculateCommercialOffer, createPaidBooking, getCommercePolicy, listManagedSetupOptions, tenantTrialSummary } from './commerce-offers.js';
 import { deleteLearningMaterial, downloadLearningMaterial, listLearningMaterials, updateLearningMaterial, uploadLearningMaterial } from './materials.js';
+import { listTenantAudit, listUserNotifications, markAllNotificationsRead, markNotificationRead } from './support.js';
 
 function err(e:unknown):Response{
   const ex=e as Error&{issues?:unknown};const code=ex?.message||'INTERNAL_ERROR';
@@ -20,7 +21,7 @@ function err(e:unknown):Response{
     :code==='PASSWORD_CHANGE_REQUIRED'?428
     :code==='TRIAL_READ_ONLY'?423
     :code==='TRIAL_EXPIRED'||code==='ONBOARDING_EXPIRED'||code==='ONBOARDING_UNAVAILABLE'?410
-    :code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'?403
+    :code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'||code==='PLATFORM_ADMIN_RESET_FORBIDDEN'?403
     :code.includes('NOT_FOUND')?404
     :['ONBOARDING_ALREADY_IN_PROGRESS','ONBOARDING_ALREADY_COMPLETED','COURSE_LIMIT_REACHED','PRICING_NOT_CONFIGURED','SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','TIMETABLE_BATCH_CONFIRMATION_REQUIRED','TIMETABLE_INDIVIDUAL_CONFIRMATION_INVALID','CANNOT_REMOVE_OWN_TENANT_ADMIN'].includes(code)?409
     :code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413
@@ -63,6 +64,12 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(!tenantId)throw new Error('TENANT_ID_REQUIRED');
     const a=await resolveCoreAuth(env,request,tenantId,courseId);
 
+    if(u.pathname==='/api/tenant/audit'&&request.method==='GET')return json({ok:true,events:await listTenantAudit(env,a,tenantId,Number(u.searchParams.get('limit')||100))});
+    if(u.pathname==='/api/notifications'&&request.method==='GET')return json({ok:true,notifications:await listUserNotifications(env,a,tenantId,courseId,Number(u.searchParams.get('limit')||80))});
+    const notification=u.pathname.match(/^\/api\/notifications\/([^/]+)\/read$/);
+    if(notification&&request.method==='PATCH')return json({ok:true,notification:await markNotificationRead(env,a,tenantId,decodeURIComponent(notification[1]))});
+    if(u.pathname==='/api/notifications/read-all'&&request.method==='POST')return json({ok:true,...await markAllNotificationsRead(env,a,tenantId,courseId)});
+
     if(u.pathname==='/api/billing/summary'&&request.method==='GET')return json({ok:true,...await billingSummary(env,a,tenantId),trial:await tenantTrialSummary(env,a,tenantId),commercePolicy:await getCommercePolicy(env),setupOptions:await listManagedSetupOptions(env)});
     if(u.pathname==='/api/billing/trial-quote'&&request.method==='POST'){
       const b=await body(request);const trial=await tenantTrialSummary(env,a,tenantId);if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');
@@ -95,6 +102,8 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
 
     if(u.pathname==='/api/tenant/users'&&request.method==='GET')return json({ok:true,users:await listTenantUsers(env,a,tenantId)});
     if(u.pathname==='/api/tenant/users'&&request.method==='POST')return json({ok:true,...await createTenantUser(env,a,tenantId,await body(request))},201);
+    const passwordReset=u.pathname.match(/^\/api\/tenant\/users\/([^/]+)\/reset-password$/);
+    if(passwordReset&&request.method==='POST')return json({ok:true,...await resetTenantUserPassword(env,a,tenantId,decodeURIComponent(passwordReset[1]))});
     const membership=u.pathname.match(/^\/api\/tenant\/memberships\/([^/]+)$/);
     if(membership&&request.method==='PATCH')return json({ok:true,membership:await updateTenantMembership(env,a,tenantId,decodeURIComponent(membership[1]),await body(request))});
     if(membership&&request.method==='DELETE'){await deleteTenantMembership(env,a,tenantId,decodeURIComponent(membership[1]));return json({ok:true});}
