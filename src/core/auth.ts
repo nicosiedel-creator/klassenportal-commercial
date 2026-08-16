@@ -1,5 +1,6 @@
 import type { AuthContext as PortabilityAuth } from '../portability/types.js';
 import type { CoreAuthContext, Env, SessionUser } from './types.js';
+import { createMfaChallenge, ownerMfaEnabled } from './mfa.js';
 import { b64, cookie, fromB64, json, noCookie, normalizeEmail, nowIso, parseCookie, randomBytes, sha256Text, toArrayBuffer } from './utils.js';
 
 const CURRENT_ITERATIONS = 600_000;
@@ -67,6 +68,12 @@ async function sessionUser(env: Env, userId: string): Promise<SessionUser | null
   return { userId:u.id,email:u.email,displayName:u.display_name,isPlatformAdmin:!!u.is_platform_admin,mustChangePassword:!!u.force_password_change,tenantRoles:(m.results??[]).map(x=>({tenantId:x.tenant_id,courseId:x.course_id,role:x.role})) };
 }
 
+export async function issueSession(env:Env,userId:string,platform:boolean):Promise<Response>{
+  const raw=b64(randomBytes(32)),tokenHash=await sha256Text(raw),created=nowIso(),maxAge=platform?PLATFORM_SESSION_HOURS*3600:SESSION_DAYS*86400,expires=new Date(Date.now()+maxAge*1000).toISOString();
+  await env.DB.prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen_at) VALUES(?,?,?,?,?)').bind(tokenHash,userId,expires,created,created).run();
+  const me=await sessionUser(env,userId);if(!me)throw new Error('USER_NOT_FOUND');return json({ok:true,user:me},200,{'set-cookie':cookie('kp_session',raw,maxAge)});
+}
+
 export async function login(env: Env, request: Request): Promise<Response> {
   const body = await request.json() as {email?:string;password?:string}; const email=normalizeEmail(body.email); const password=String(body.password??'');
   if (!email || !password) return json({ok:false,error:'EMAIL_PASSWORD_REQUIRED'},400);
@@ -79,11 +86,10 @@ export async function login(env: Env, request: Request): Promise<Response> {
   if(passwordIterations(u.password_hash)<CURRENT_ITERATIONS){
     const upgraded=await hashPassword(password);await env.DB.prepare('UPDATE users SET password_hash=?,updated_at=? WHERE id=?').bind(upgraded,nowIso(),u.id).run();
   }
-  const raw=b64(randomBytes(32)),tokenHash=await sha256Text(raw),created=nowIso(),platform=!!u.is_platform_admin;
-  const maxAge=platform?PLATFORM_SESSION_HOURS*3600:SESSION_DAYS*86400,expires=new Date(Date.now()+maxAge*1000).toISOString();
-  await env.DB.prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen_at) VALUES(?,?,?,?,?)').bind(tokenHash,u.id,expires,created,created).run();
-  const me = await sessionUser(env,u.id);
-  return json({ok:true,user:me},200,{'set-cookie':cookie('kp_session',raw,maxAge)});
+  if(!!u.is_platform_admin&&await ownerMfaEnabled(env,u.id)){
+    const challengeToken=await createMfaChallenge(env,u.id);return json({ok:true,mfaRequired:true,challengeToken});
+  }
+  return issueSession(env,u.id,!!u.is_platform_admin);
 }
 
 export async function logout(env: Env, request: Request): Promise<Response> {
