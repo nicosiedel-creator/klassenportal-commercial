@@ -31,9 +31,11 @@ export async function publicOverview(env:Env,tenantSlug:string,courseCode:string
 
   const past=new Date(Date.now()-14*86400000).toISOString();
   const [homework,appointments,announcements,links,exams,lessons,features]=await Promise.all([
-    env.DB.prepare(`SELECT id,course_id,subject_id,title,description,due_at,submission_info,created_at,updated_at
-      FROM homework WHERE tenant_id=? AND course_id=? AND (due_at IS NULL OR due_at>=?)
-      ORDER BY CASE WHEN due_at IS NULL THEN 1 ELSE 0 END,due_at ASC LIMIT 200`).bind(tenantId,courseId,past).all(),
+    env.DB.prepare(`SELECT h.id,h.course_id,h.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
+        h.title,h.description,h.due_at,h.submission_info,h.created_at,h.updated_at
+      FROM homework h LEFT JOIN subjects s ON s.id=h.subject_id AND s.tenant_id=h.tenant_id
+      WHERE h.tenant_id=? AND h.course_id=? AND (h.due_at IS NULL OR h.due_at>=?)
+      ORDER BY CASE WHEN h.due_at IS NULL THEN 1 ELSE 0 END,h.due_at ASC LIMIT 200`).bind(tenantId,courseId,past).all(),
     env.DB.prepare(`SELECT id,course_id,title,starts_at,ends_at,location,description,created_at
       FROM appointments WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) AND starts_at>=?
       ORDER BY starts_at ASC LIMIT 200`).bind(tenantId,courseId,past).all(),
@@ -43,12 +45,18 @@ export async function publicOverview(env:Env,tenantSlug:string,courseCode:string
     env.DB.prepare(`SELECT id,course_id,title,url,category,created_at
       FROM links WHERE tenant_id=? AND (course_id=? OR course_id IS NULL)
       ORDER BY title ASC LIMIT 200`).bind(tenantId,courseId).all(),
-    env.DB.prepare(`SELECT id,course_id,subject_id,title,starts_at,ends_at,room,notes,allowed_aids,created_at,updated_at
-      FROM exams WHERE tenant_id=? AND course_id=? AND visible_to_students=1 AND starts_at>=?
-      ORDER BY starts_at ASC LIMIT 200`).bind(tenantId,courseId,past).all(),
-    env.DB.prepare(`SELECT id,course_id,subject_id,teacher_id,starts_at,ends_at,room,notes,created_at
-      FROM lessons WHERE tenant_id=? AND course_id=? AND ends_at>=?
-      ORDER BY starts_at ASC LIMIT 500`).bind(tenantId,courseId,past).all(),
+    env.DB.prepare(`SELECT e.id,e.course_id,e.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
+        e.title,e.starts_at,e.ends_at,e.room,e.notes,e.allowed_aids,e.created_at,e.updated_at
+      FROM exams e LEFT JOIN subjects s ON s.id=e.subject_id AND s.tenant_id=e.tenant_id
+      WHERE e.tenant_id=? AND e.course_id=? AND e.visible_to_students=1 AND e.starts_at>=?
+      ORDER BY e.starts_at ASC LIMIT 200`).bind(tenantId,courseId,past).all(),
+    env.DB.prepare(`SELECT l.id,l.course_id,l.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
+        l.teacher_id,t.name AS teacher_name,l.starts_at,l.ends_at,l.room,l.notes,l.created_at
+      FROM lessons l
+      LEFT JOIN subjects s ON s.id=l.subject_id AND s.tenant_id=l.tenant_id
+      LEFT JOIN teachers t ON t.id=l.teacher_id AND t.tenant_id=l.tenant_id
+      WHERE l.tenant_id=? AND l.course_id=? AND l.ends_at>=?
+      ORDER BY l.starts_at ASC LIMIT 500`).bind(tenantId,courseId,past).all(),
     env.DB.prepare('SELECT feature_key,enabled FROM feature_flags WHERE tenant_id=?').bind(tenantId).all<Record<string,unknown>>(),
   ]);
 
