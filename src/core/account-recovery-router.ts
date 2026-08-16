@@ -12,7 +12,11 @@ export async function handleAccountRecoveryApi(request:Request,env:Env):Promise<
     if(u.pathname==='/api/auth/password-reset/request'&&request.method==='POST'){assertSameOrigin(request,env.APP_ORIGIN);const b=await body(request);return json({ok:true,...await requestPasswordReset(env,request,b.email)});}
     if(u.pathname==='/api/auth/account-token'&&request.method==='GET'){const type=u.searchParams.get('type');if(type!=='activation'&&type!=='password_reset')throw new Error('ACCOUNT_TOKEN_TYPE_INVALID');return json({ok:true,...await inspectAccountToken(env,u.searchParams.get('token'),type)});}
     if(u.pathname==='/api/auth/account-token/consume'&&request.method==='POST'){assertSameOrigin(request,env.APP_ORIGIN);const b=await body(request),type=String(b.type);if(type!=='activation'&&type!=='password_reset')throw new Error('ACCOUNT_TOKEN_TYPE_INVALID');return json({ok:true,...await consumeAccountToken(env,b.token,type,b.new_password)});}
-    const invite=u.pathname.match(/^\/api\/tenant\/users\/([^/]+)\/invite$/);if(invite&&request.method==='POST'){assertSameOrigin(request,env.APP_ORIGIN);const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)throw new Error('TENANT_ID_REQUIRED');const auth=await resolveCoreAuth(env,request,tenantId);requireRole(auth,'tenant_admin');return json({ok:true,...await createActivationForUser(env,auth,decodeURIComponent(invite[1]))});}
+    const invite=u.pathname.match(/^\/api\/tenant\/users\/([^/]+)\/invite$/);if(invite&&request.method==='POST'){
+      assertSameOrigin(request,env.APP_ORIGIN);const tenantId=u.searchParams.get('tenant_id')||'',userId=decodeURIComponent(invite[1]);if(!tenantId)throw new Error('TENANT_ID_REQUIRED');const auth=await resolveCoreAuth(env,request,tenantId);requireRole(auth,'tenant_admin');
+      if(!auth.isPlatformAdmin){const member=await env.DB.prepare('SELECT id FROM memberships WHERE tenant_id=? AND user_id=? LIMIT 1').bind(tenantId,userId).first();if(!member)throw new Error('USER_NOT_FOUND');}
+      return json({ok:true,...await createActivationForUser(env,auth,userId)});
+    }
     return null;
   }catch(e){return fail(e);}
 }
