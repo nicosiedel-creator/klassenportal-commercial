@@ -5,6 +5,11 @@ async function loadSession(){
   try{const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});if(r.ok)sessionUser=(await r.json()).user||null;}catch{}
 }
 function selectedTenant(){return document.querySelector('#tenantPick')?.value||'';}
+function classAdminOnly(user){
+  if(!user||user.isPlatformAdmin)return false;
+  const roles=user.tenantRoles||[];
+  return roles.some(x=>x.role==='class_admin')&&!roles.some(x=>x.role==='tenant_admin');
+}
 function tenantRole(tenantId){
   if(sessionUser?.isPlatformAdmin)return 'platform_admin';
   const rows=(sessionUser?.tenantRoles||[]).filter(x=>x.tenantId===tenantId);
@@ -27,7 +32,9 @@ function applyClassScope(){
 function scheduleClassScope(){if(classUiScheduled)return;classUiScheduled=true;queueMicrotask(()=>{classUiScheduled=false;applyClassScope();});}
 
 await loadSession();
-if(sessionUser&&!sessionUser.isPlatformAdmin){
+const adminShell=['/','/kunden-admin','/kunden-admin/','/plattform-admin','/plattform-admin/'];
+if(classAdminOnly(sessionUser)&&adminShell.includes(location.pathname))location.replace('/klassen-admin');
+else if(sessionUser&&!sessionUser.isPlatformAdmin){
   const target=document.querySelector('#app')||document.body;
   new MutationObserver(scheduleClassScope).observe(target,{subtree:true,childList:true});
   document.addEventListener('change',e=>{if(e.target?.id==='tenantPick')setTimeout(scheduleClassScope,0)});

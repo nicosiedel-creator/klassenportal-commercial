@@ -46,10 +46,11 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   const url = new URL(request.url);
   const logo = url.pathname.match(/^\/brand\/logo\/([^/]+)$/);
   if (logo) return serveTenantLogo(env, decodeURIComponent(logo[1]));
-  if (url.pathname==='/plattform-admin' || url.pathname==='/plattform-admin/' || url.pathname==='/kunden-admin' || url.pathname==='/kunden-admin/') {
+  const adminPath=url.pathname.replace(/\/$/,'');
+  if (['/plattform-admin','/kunden-admin','/klassen-admin'].includes(adminPath)) {
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Methode nicht erlaubt',{status:405});
-    const isCustomer=url.pathname.startsWith('/kunden-admin');
-    const assetUrl=new URL(isCustomer?'/customer-admin.html':'/platform-admin.html',request.url);
+    const asset=adminPath==='/kunden-admin'?'/customer-admin.html':adminPath==='/klassen-admin'?'/class-admin.html':'/platform-admin.html';
+    const assetUrl=new URL(asset,request.url);
     return env.ASSETS.fetch(new Request(assetUrl,{method:request.method,headers:request.headers}));
   }
   if (/^\/portal\/[^/]+\/[^/]+\/?$/.test(url.pathname)) {
