@@ -50,56 +50,61 @@ export async function publicPortalMetadata(env:Env,tenantSlug:string,courseCode:
   return {course:safeCourse(row)};
 }
 
+async function optionalRows<T>(label:string,query:()=>Promise<{results?:T[]}>):Promise<T[]>{
+  try{return (await query()).results??[];}
+  catch(error){console.error('Participant portal optional query failed',{label,error:String((error as Error)?.message||error)});return [];}
+}
+
 export async function publicOverview(env:Env,tenantSlug:string,courseCode:string,session:SessionUser|null,accessCode?:string){
   const access=await authorizePortal(env,tenantSlug,courseCode,session,accessCode),{row,tenantId,courseId}=access;
   const past=new Date(Date.now()-14*86400000).toISOString();
+
   const [homework,appointments,announcements,links,exams,lessons,features,materials]=await Promise.all([
-    env.DB.prepare(`SELECT h.id,h.course_id,h.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
+    optionalRows<Record<string,unknown>>('homework',()=>env.DB.prepare(`SELECT h.id,h.course_id,h.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
         h.title,h.description,h.due_at,h.submission_info,h.created_at,h.updated_at
       FROM homework h LEFT JOIN subjects s ON s.id=h.subject_id AND s.tenant_id=h.tenant_id
       WHERE h.tenant_id=? AND h.course_id=? AND (h.due_at IS NULL OR h.due_at>=?)
-      ORDER BY CASE WHEN h.due_at IS NULL THEN 1 ELSE 0 END,h.due_at ASC LIMIT 200`).bind(tenantId,courseId,past).all(),
-    env.DB.prepare(`SELECT id,course_id,title,starts_at,ends_at,location,description,created_at
+      ORDER BY CASE WHEN h.due_at IS NULL THEN 1 ELSE 0 END,h.due_at ASC LIMIT 200`).bind(tenantId,courseId,past).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('appointments',()=>env.DB.prepare(`SELECT id,course_id,title,starts_at,ends_at,location,description,created_at
       FROM appointments WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) AND starts_at>=?
-      ORDER BY starts_at ASC LIMIT 200`).bind(tenantId,courseId,past).all(),
-    env.DB.prepare(`SELECT id,course_id,title,body,published_at,created_at
+      ORDER BY starts_at ASC LIMIT 200`).bind(tenantId,courseId,past).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('announcements',()=>env.DB.prepare(`SELECT id,course_id,title,body,published_at,created_at
       FROM announcements WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) AND visible=1
-      ORDER BY published_at DESC LIMIT 50`).bind(tenantId,courseId).all(),
-    env.DB.prepare(`SELECT id,course_id,title,url,category,created_at
+      ORDER BY published_at DESC LIMIT 50`).bind(tenantId,courseId).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('links',()=>env.DB.prepare(`SELECT id,course_id,title,url,category,created_at
       FROM links WHERE tenant_id=? AND (course_id=? OR course_id IS NULL)
-      ORDER BY title ASC LIMIT 200`).bind(tenantId,courseId).all(),
-    env.DB.prepare(`SELECT e.id,e.course_id,e.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
+      ORDER BY title ASC LIMIT 200`).bind(tenantId,courseId).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('exams',()=>env.DB.prepare(`SELECT e.id,e.course_id,e.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
         e.title,e.starts_at,e.ends_at,e.room,e.notes,e.allowed_aids,e.created_at,e.updated_at
       FROM exams e LEFT JOIN subjects s ON s.id=e.subject_id AND s.tenant_id=e.tenant_id
       WHERE e.tenant_id=? AND e.course_id=? AND e.visible_to_students=1 AND e.starts_at>=?
-      ORDER BY e.starts_at ASC LIMIT 200`).bind(tenantId,courseId,past).all(),
-    env.DB.prepare(`SELECT l.id,l.course_id,l.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
+      ORDER BY e.starts_at ASC LIMIT 200`).bind(tenantId,courseId,past).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('lessons',()=>env.DB.prepare(`SELECT l.id,l.course_id,l.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
         l.teacher_id,t.name AS teacher_name,l.starts_at,l.ends_at,l.room,l.notes,l.created_at
       FROM lessons l
       LEFT JOIN subjects s ON s.id=l.subject_id AND s.tenant_id=l.tenant_id
       LEFT JOIN teachers t ON t.id=l.teacher_id AND t.tenant_id=l.tenant_id
       WHERE l.tenant_id=? AND l.course_id=? AND l.ends_at>=?
-      ORDER BY l.starts_at ASC LIMIT 500`).bind(tenantId,courseId,past).all(),
-    env.DB.prepare('SELECT feature_key,enabled FROM feature_flags WHERE tenant_id=?').bind(tenantId).all<Record<string,unknown>>(),
-    env.DB.prepare(`SELECT id,course_id,title,description,original_name,content_type,size_bytes,created_at,updated_at
+      ORDER BY l.starts_at ASC LIMIT 500`).bind(tenantId,courseId,past).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('feature_flags',()=>env.DB.prepare('SELECT feature_key,enabled FROM feature_flags WHERE tenant_id=?').bind(tenantId).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('materials',()=>env.DB.prepare(`SELECT id,course_id,title,description,original_name,content_type,size_bytes,created_at,updated_at
       FROM portability_files WHERE tenant_id=? AND purpose='learning_material' AND visible=1 AND (course_id=? OR course_id IS NULL)
-      ORDER BY created_at DESC LIMIT 200`).bind(tenantId,courseId).all<Record<string,unknown>>(),
+      ORDER BY created_at DESC LIMIT 200`).bind(tenantId,courseId).all<Record<string,unknown>>()),
   ]);
+
   let notifications:Record<string,unknown>[]=[];
   if(access.hasLogin&&session?.userId){
-    const n=await env.DB.prepare(`SELECT id,course_id,type,title,body,read_at,created_at FROM notifications
+    notifications=await optionalRows<Record<string,unknown>>('notifications',()=>env.DB.prepare(`SELECT id,course_id,type,title,body,read_at,created_at FROM notifications
       WHERE tenant_id=? AND user_id=? AND (course_id=? OR course_id IS NULL)
-      ORDER BY created_at DESC LIMIT 60`).bind(tenantId,session.userId,courseId).all<Record<string,unknown>>();
-    notifications=n.results??[];
+      ORDER BY created_at DESC LIMIT 60`).bind(tenantId,session.userId,courseId).all<Record<string,unknown>>());
   }
 
-  const modules:Record<string,boolean>={};for(const f of features.results??[])modules[String(f.feature_key)]=Number(f.enabled)===1;
+  const modules:Record<string,boolean>={};for(const f of features)modules[String(f.feature_key)]=Number(f.enabled)===1;
   const materialsEnabled=modules.files!==false||modules.learning_materials===true;
   return {
     course:safeCourse(row),modules,accessGrantedBy:access.accessGrantedBy,
     viewer:{authenticated:access.hasLogin,role:access.role,displayName:access.hasLogin?session?.displayName??null:null,tenantId:access.hasLogin?tenantId:null},
-    homework:homework.results??[],appointments:appointments.results??[],announcements:announcements.results??[],
-    links:links.results??[],exams:exams.results??[],lessons:lessons.results??[],materials:materialsEnabled?(materials.results??[]):[],notifications,
+    homework,appointments,announcements,links,exams,lessons,materials:materialsEnabled?materials:[],notifications,
   };
 }
 
