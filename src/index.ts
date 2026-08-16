@@ -48,7 +48,8 @@ export default {
     }
 
     const classOverview=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);
-    if(classOverview&&request.method==='GET'){
+    if(classOverview){
+      if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});
       try{
         const accessCode=request.headers.get('X-Klassenportal-Access-Code')||url.searchParams.get('access_code')||undefined;
         const data=await publicOverview(env,decodeURIComponent(classOverview[1]),decodeURIComponent(classOverview[2]),await getSession(env,request),accessCode);
