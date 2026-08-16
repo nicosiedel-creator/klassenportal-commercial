@@ -10,6 +10,11 @@ import { handleOwnerSecurityApi } from './core/owner-security-router.js';
 import { handleCustomDomainApi } from './core/custom-domain-router.js';
 import { reconcilePendingCustomDomains } from './core/custom-domains.js';
 import { ensureCustomDomainGuards } from './core/custom-domain-guards.js';
+import { handleAccountRecoveryApi } from './core/account-recovery-router.js';
+import { cleanupAccountActions } from './core/account-recovery.js';
+import { handleLaunchReadinessApi } from './core/launch-readiness-router.js';
+import { publicLegal } from './core/legal.js';
+import { verifyPendingBackups } from './core/backup-verification.js';
 import { publicMaterialDownload, publicOverview, publicPortalMetadata } from './core/public.js';
 import { publicAdvancedBySlug } from './core/public-advanced.js';
 import { calendarFeedResponse } from './core/advanced-modules.js';
@@ -18,142 +23,50 @@ import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
 const SECURITY_HEADERS:Record<string,string>={
-  'x-content-type-options':'nosniff',
-  'x-frame-options':'DENY',
-  'referrer-policy':'strict-origin-when-cross-origin',
-  'permissions-policy':'camera=(), microphone=(), geolocation=()',
-  'cross-origin-opener-policy':'same-origin',
-  'strict-transport-security':'max-age=31536000; includeSubDomains',
-  'content-security-policy':"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://checkout.stripe.com",
+  'x-content-type-options':'nosniff','x-frame-options':'DENY','referrer-policy':'strict-origin-when-cross-origin','permissions-policy':'camera=(), microphone=(), geolocation=()','cross-origin-opener-policy':'same-origin','strict-transport-security':'max-age=31536000; includeSubDomains',
+  'content-security-policy':"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://checkout.stripe.com https://api.resend.com",
 };
-
-function harden(response:Response):Response{
-  const headers=new Headers(response.headers);
-  for(const [key,value] of Object.entries(SECURITY_HEADERS))if(!headers.has(key))headers.set(key,value);
-  headers.set('x-request-id',crypto.randomUUID());
-  const type=headers.get('content-type')||'';
-  if(type.includes('text/html'))headers.set('cache-control','no-store');
-  return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
-}
-function accessError(e:unknown):Response{
-  const raw=String((e as Error)?.message||'PAYMENT_REQUIRED');
-  const code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PAYMENT_REQUIRED';
-  const status=code==='TRIAL_EXPIRED'?410:code==='TRIAL_READ_ONLY'?423:402;
-  return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
-}
+function harden(response:Response):Response{const headers=new Headers(response.headers);for(const [k,v] of Object.entries(SECURITY_HEADERS))if(!headers.has(k))headers.set(k,v);headers.set('x-request-id',crypto.randomUUID());if((headers.get('content-type')||'').includes('text/html'))headers.set('cache-control','no-store');return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}
+function accessError(e:unknown):Response{const raw=String((e as Error)?.message||'PAYMENT_REQUIRED'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PAYMENT_REQUIRED',status=code==='TRIAL_EXPIRED'?410:code==='TRIAL_READ_ONLY'?423:402;return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 function jsonError(code:string,status:number):Response{return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
-function publicError(e:unknown):Response{
-  const raw=String((e as Error)?.message||'PUBLIC_PORTAL_ERROR');
-  const code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PUBLIC_PORTAL_ERROR';
-  const status=code.includes('NOT_FOUND')?404:['LOGIN_REQUIRED','ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(code)?401:code==='PUBLIC_PORTAL_ERROR'?500:400;
-  return jsonError(code,status);
-}
+function publicError(e:unknown):Response{const raw=String((e as Error)?.message||'PUBLIC_PORTAL_ERROR'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PUBLIC_PORTAL_ERROR',status=code.includes('NOT_FOUND')?404:['LOGIN_REQUIRED','ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(code)?401:code==='PUBLIC_PORTAL_ERROR'?500:400;return jsonError(code,status);}
 function jsonOk(data:unknown):Response{return new Response(JSON.stringify({ok:true,...(data as Record<string,unknown>)}),{status:200,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 
 async function routeRequest(request:Request,env:Env):Promise<Response>{
-  const url=new URL(request.url);
-  const logo=url.pathname.match(/^\/brand\/logo\/([^/]+)$/);
-  if(logo)return serveTenantLogo(env,decodeURIComponent(logo[1]));
-  const calendarFeed=url.pathname.match(/^\/calendar\/([A-Za-z0-9]+)\.ics$/);
-  if(calendarFeed){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return calendarFeedResponse(env,calendarFeed[1]);}
-  const adminPath=url.pathname.replace(/\/$/,'');
-  if(['/plattform-admin','/kunden-admin','/klassen-admin'].includes(adminPath)){
-    if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});
-    if(adminPath==='/plattform-admin'){
-      const session=await getSession(env,request);
-      if(!session?.isPlatformAdmin)return new Response('Nicht gefunden',{status:404,headers:{'cache-control':'no-store'}});
-    }
-    const asset=adminPath==='/kunden-admin'?'/customer-admin.html':adminPath==='/klassen-admin'?'/class-admin.html':'/platform-admin.html';
-    const assetUrl=new URL(asset,request.url);
-    return env.ASSETS.fetch(new Request(assetUrl,{method:request.method,headers:request.headers}));
-  }
-  if(/^\/portal\/[^/]+\/[^/]+\/?$/.test(url.pathname)){
-    if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});
-    const assetUrl=new URL('/class-portal.html',request.url);
-    return env.ASSETS.fetch(new Request(assetUrl,{method:request.method,headers:request.headers}));
-  }
-  if(url.pathname.startsWith('/einrichtung/')){
-    if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});
-    const assetUrl=new URL('/onboarding.html',request.url);
-    return env.ASSETS.fetch(new Request(assetUrl,{method:request.method,headers:request.headers}));
-  }
-  if(url.pathname==='/zahlung/erfolg'||url.pathname==='/zahlung/abgebrochen'){
-    if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});
-    const assetUrl=new URL('/payment-result.html',request.url);
-    return env.ASSETS.fetch(new Request(assetUrl,{method:request.method,headers:request.headers}));
-  }
+  const url=new URL(request.url),clean=url.pathname.replace(/\/$/,'');
+  const logo=url.pathname.match(/^\/brand\/logo\/([^/]+)$/);if(logo)return serveTenantLogo(env,decodeURIComponent(logo[1]));
+  const calendarFeed=url.pathname.match(/^\/calendar\/([A-Za-z0-9]+)\.ics$/);if(calendarFeed){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return calendarFeedResponse(env,calendarFeed[1]);}
+  if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren'].includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/account-action.html',request.url),{method:request.method,headers:request.headers}));}
+  if(['/impressum','/datenschutz','/agb','/avv'].includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});const legal=await publicLegal(env),target=clean==='/impressum'?legal.legalNoticeUrl:clean==='/datenschutz'?legal.privacyUrl:clean==='/agb'?legal.termsUrl:legal.dpaUrl;if(target)return new Response(null,{status:302,headers:{location:String(target),'cache-control':'no-store'}});return new Response('Rechtlicher Verweis ist noch nicht veröffentlicht.',{status:503,headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store'}});}
+  if(['/plattform-admin','/kunden-admin','/klassen-admin'].includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});if(clean==='/plattform-admin'){const session=await getSession(env,request);if(!session?.isPlatformAdmin)return new Response('Nicht gefunden',{status:404,headers:{'cache-control':'no-store'}});}const asset=clean==='/kunden-admin'?'/customer-admin.html':clean==='/klassen-admin'?'/class-admin.html':'/platform-admin.html';return env.ASSETS.fetch(new Request(new URL(asset,request.url),{method:request.method,headers:request.headers}));}
+  if(/^\/portal\/[^/]+\/[^/]+\/?$/.test(url.pathname)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/class-portal.html',request.url),{method:request.method,headers:request.headers}));}
+  if(url.pathname.startsWith('/einrichtung/')){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/onboarding.html',request.url),{method:request.method,headers:request.headers}));}
+  if(clean==='/zahlung/erfolg'||clean==='/zahlung/abgebrochen'){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/payment-result.html',request.url),{method:request.method,headers:request.headers}));}
 
-  const classMeta=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/meta$/);
-  if(classMeta){
-    if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});
-    try{return jsonOk(await publicPortalMetadata(env,decodeURIComponent(classMeta[1]),decodeURIComponent(classMeta[2])));}catch(e){return publicError(e);}
-  }
-  const classMaterial=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/materials\/([^/]+)$/);
-  if(classMaterial){
-    if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});
-    try{
-      const accessCode=request.headers.get('X-Klassenportal-Access-Code')||undefined;
-      return await publicMaterialDownload(env,decodeURIComponent(classMaterial[1]),decodeURIComponent(classMaterial[2]),decodeURIComponent(classMaterial[3]),await getSession(env,request),accessCode);
-    }catch(e){return publicError(e);}
-  }
-  const classOverview=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);
-  if(classOverview){
-    if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});
-    try{
-      const tenantSlug=decodeURIComponent(classOverview[1]),courseCode=decodeURIComponent(classOverview[2]),session=await getSession(env,request),accessCode=request.headers.get('X-Klassenportal-Access-Code')||url.searchParams.get('access_code')||undefined;
-      const base=await publicOverview(env,tenantSlug,courseCode,session,accessCode),advanced=await publicAdvancedBySlug(env,tenantSlug,courseCode,session,env.APP_ORIGIN||url.origin);
-      return jsonOk({...base,...advanced});
-    }catch(e){return publicError(e);}
-  }
+  const classMeta=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/meta$/);if(classMeta){if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});try{return jsonOk(await publicPortalMetadata(env,decodeURIComponent(classMeta[1]),decodeURIComponent(classMeta[2])));}catch(e){return publicError(e);}}
+  const classMaterial=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/materials\/([^/]+)$/);if(classMaterial){if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});try{return await publicMaterialDownload(env,decodeURIComponent(classMaterial[1]),decodeURIComponent(classMaterial[2]),decodeURIComponent(classMaterial[3]),await getSession(env,request),request.headers.get('X-Klassenportal-Access-Code')||undefined);}catch(e){return publicError(e);}}
+  const classOverview=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);if(classOverview){if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});try{const tenantSlug=decodeURIComponent(classOverview[1]),courseCode=decodeURIComponent(classOverview[2]),session=await getSession(env,request),accessCode=request.headers.get('X-Klassenportal-Access-Code')||url.searchParams.get('access_code')||undefined,base=await publicOverview(env,tenantSlug,courseCode,session,accessCode),advanced=await publicAdvancedBySlug(env,tenantSlug,courseCode,session,env.APP_ORIGIN||url.origin);return jsonOk({...base,...advanced});}catch(e){return publicError(e);}}
 
+  const accountRecovery=await handleAccountRecoveryApi(request,env);if(accountRecovery)return accountRecovery;
+  const launch=await handleLaunchReadinessApi(request,env);if(launch)return launch;
   const ownerSecurity=await handleOwnerSecurityApi(request,env);if(ownerSecurity)return ownerSecurity;
   const customDomain=await handleCustomDomainApi(request,env);if(customDomain)return customDomain;
   const schemaApi=await handleRuntimeSchemaApi(request,env);if(schemaApi)return schemaApi;
   const lifecycle=await handleBillingLifecycleApi(request,env);if(lifecycle)return lifecycle;
   const payment=await handlePaymentApi(request,env);if(payment)return payment;
 
-  const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);
-  if(onboardingPost){
-    const payload=await request.clone().json().catch(()=>({})) as Record<string,unknown>;
-    if(String(payload.commercial_action||'trial')==='book'&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);
-  }
-
-  const tenantId=url.searchParams.get('tenant_id');
-  const mutating=request.method!=='GET'&&request.method!=='HEAD';
-  const exemptMutation=url.pathname==='/api/timetable/preview'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/onboarding/')||url.pathname.startsWith('/api/platform/');
-  if(tenantId&&mutating&&!exemptMutation){
-    try{await assertPaymentWriteAccess(env,tenantId);}catch(e){return accessError(e);}
-  }
-
-  const portability=await handlePortabilityRequest(request,env,portabilityConfig,(r)=>resolvePortabilityAuth(env,r));
-  if(portability)return portability;
-  const api=await handleCoreApi(request,env);
-  if(api){
-    if(onboardingPost)return augmentPaidOnboardingResponse(env,request,api);
-    return api;
-  }
+  const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);if(onboardingPost){const payload=await request.clone().json().catch(()=>({})) as Record<string,unknown>;if(String(payload.commercial_action||'trial')==='book'&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);}
+  const tenantId=url.searchParams.get('tenant_id'),mutating=request.method!=='GET'&&request.method!=='HEAD',exemptMutation=url.pathname==='/api/timetable/preview'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/onboarding/')||url.pathname.startsWith('/api/platform/');if(tenantId&&mutating&&!exemptMutation){try{await assertPaymentWriteAccess(env,tenantId);}catch(e){return accessError(e);}}
+  const portability=await handlePortabilityRequest(request,env,portabilityConfig,(r)=>resolvePortabilityAuth(env,r));if(portability)return portability;
+  const api=await handleCoreApi(request,env);if(api){if(onboardingPost)return augmentPaidOnboardingResponse(env,request,api);return api;}
   const pub=await handlePublicApi(request,env);if(pub)return pub;
   return env.ASSETS.fetch(request);
 }
 
 export default{
-  async fetch(request:Request,env:Env):Promise<Response>{
-    try{return harden(await routeRequest(request,env));}
-    catch(error){
-      console.error('Unhandled request error',{path:new URL(request.url).pathname,error:String((error as Error)?.message||error)});
-      return harden(jsonError('INTERNAL_ERROR',500));
-    }
-  },
+  async fetch(request:Request,env:Env):Promise<Response>{try{return harden(await routeRequest(request,env));}catch(error){console.error('Unhandled request error',{path:new URL(request.url).pathname,error:String((error as Error)?.message||error)});return harden(jsonError('INTERNAL_ERROR',500));}},
   async scheduled(_controller:unknown,env:Env):Promise<void>{
-    await refreshTrialStates(env);
-    await processScheduledModuleCancellations(env,25);
-    await ensureCustomDomainGuards(env).catch(()=>undefined);
-    await reconcilePendingCustomDomains(env,25).catch(e=>console.error('Custom domain reconciliation failed',{error:String((e as Error)?.message||e)}));
-    await runScheduledTenantBackups(env,portabilityConfig,'system:backup',3);
-    const now=new Date();
-    await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now.toISOString()).run();
-    await env.DB.prepare('DELETE FROM platform_mfa_challenges WHERE expires_at <= ?').bind(now.toISOString()).run().catch(()=>undefined);
-    await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(now.toISOString()).run();
-    await env.DB.prepare('DELETE FROM login_attempts WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60*1000).toISOString()).run();
+    await refreshTrialStates(env);await processScheduledModuleCancellations(env,25);await ensureCustomDomainGuards(env).catch(()=>undefined);await reconcilePendingCustomDomains(env,25).catch(e=>console.error('Custom domain reconciliation failed',{error:String((e as Error)?.message||e)}));await runScheduledTenantBackups(env,portabilityConfig,'system:backup',3);await verifyPendingBackups(env,2).catch(e=>console.error('Backup verification failed',{error:String((e as Error)?.message||e)}));await cleanupAccountActions(env).catch(()=>undefined);
+    const now=new Date();await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now.toISOString()).run();await env.DB.prepare('DELETE FROM platform_mfa_challenges WHERE expires_at <= ?').bind(now.toISOString()).run().catch(()=>undefined);await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(now.toISOString()).run();await env.DB.prepare('DELETE FROM login_attempts WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60*1000).toISOString()).run();
   },
 };
