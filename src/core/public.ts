@@ -42,9 +42,10 @@ export async function publicOverview(env:Env,tenantSlug:string,courseCode:string
   const row=await coursePortalRow(env,tenantSlug,courseCode);
   const mode=String(row.access_mode),tenantId=String(row.tenant_id),courseId=String(row.id);
   const role=viewerRole(session,tenantId,courseId),hasLogin=!!role;
+  const adminPreview=['platform_admin','tenant_admin','class_admin'].includes(String(role||''));
   const codeOk=!!accessCode&&!!row.access_code_hash&&await verifyPassword(accessCode,String(row.access_code_hash));
   if(mode==='login'&&!hasLogin)throw new Error('LOGIN_REQUIRED');
-  if(mode==='link_code'&&!codeOk)throw new Error('ACCESS_CODE_REQUIRED');
+  if(mode==='link_code'&&!codeOk&&!adminPreview)throw new Error('ACCESS_CODE_REQUIRED');
   if(mode==='hybrid'&&!hasLogin&&!codeOk)throw new Error('LOGIN_OR_CODE_REQUIRED');
 
   const past=new Date(Date.now()-14*86400000).toISOString();
