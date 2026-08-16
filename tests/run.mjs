@@ -49,6 +49,9 @@ const codeEnv=fakePortalEnv({...portalBase,access_mode:'link_code',access_code_h
 await assert.rejects(()=>publicOverview(codeEnv,'bildungstraeger','vfa13',null,'falsch'),/ACCESS_CODE_REQUIRED/);
 const codeData=await publicOverview(codeEnv,'bildungstraeger','vfa13',null,'Klasse-1234');
 assert.equal(codeData.accessGrantedBy,'code'); assert.equal(codeData.viewer.authenticated,false);
+const tenantAdmin={userId:'usr_admin',email:'admin@example.de',displayName:'Admin',isPlatformAdmin:false,mustChangePassword:false,tenantRoles:[{tenantId:'ten_1',courseId:null,role:'tenant_admin'}]};
+const adminPreview=await publicOverview(codeEnv,'bildungstraeger','vfa13',tenantAdmin);
+assert.equal(adminPreview.viewer.role,'tenant_admin'); assert.equal(adminPreview.accessGrantedBy,'login');
 const hybridEnv=fakePortalEnv({...portalBase,access_mode:'hybrid',access_code_hash:accessHash});
 assert.equal((await publicOverview(hybridEnv,'bildungstraeger','vfa13',participant)).accessGrantedBy,'login');
 assert.equal((await publicOverview(hybridEnv,'bildungstraeger','vfa13',null,'Klasse-1234')).accessGrantedBy,'code');
