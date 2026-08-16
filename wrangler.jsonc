@@ -17,7 +17,14 @@
       "/plattform-admin*",
       "/kunden-admin*",
       "/klassen-admin*",
-      "/zahlung/*"
+      "/zahlung/*",
+      "/passwort-vergessen*",
+      "/passwort-zuruecksetzen*",
+      "/konto-aktivieren*",
+      "/impressum*",
+      "/datenschutz*",
+      "/agb*",
+      "/avv*"
     ]
   },
   "d1_databases": [
