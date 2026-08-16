@@ -5,7 +5,7 @@ const courseCode=decodeURIComponent(path[2]||'');
 const codeStoreKey=`kp_access_${tenantSlug}_${courseCode}`;
 const legacyCode=new URLSearchParams(location.search).get('code')||'';
 if(legacyCode){sessionStorage.setItem(codeStoreKey,legacyCode);history.replaceState(null,'',location.pathname);}
-let lastData=null;
+let lastData=null,lastCourse=null;
 
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeColor=(v,fallback)=>/^#[0-9a-f]{6}$/i.test(String(v||''))?String(v):fallback;
@@ -25,6 +25,7 @@ async function fetchJson(url,opt={}){
   let d={};try{d=await r.json();}catch{}
   if(!r.ok){const e=new Error(d.error||`HTTP_${r.status}`);e.status=r.status;e.data=d;throw e;}return d;
 }
+async function metadata(){return fetchJson(`/public/${encodeURIComponent(tenantSlug)}/${encodeURIComponent(courseCode)}/meta`);}
 async function overview(accessCode=''){
   return fetchJson(`/public/${encodeURIComponent(tenantSlug)}/${encodeURIComponent(courseCode)}/overview`,{headers:accessCode?{'X-Klassenportal-Access-Code':accessCode}:{}});
 }
@@ -66,7 +67,7 @@ function empty(text){return `<div class="portal-empty">${esc(text)}</div>`;}
 function section(id,title,content,count,wide=false){return `<section class="portal-section${wide?' wide':''}" id="${id}"><div class="portal-section-head"><h2>${esc(title)}</h2><span>${count}</span></div>${content}</section>`;}
 
 function renderPortal(d){
-  lastData=d;const c=d.course||{},m=d.modules||{},tz=textOr(c.timezone,'Europe/Berlin');applyBrand(c);
+  lastData=d;const c=d.course||{},m=d.modules||{},tz=textOr(c.timezone,'Europe/Berlin');lastCourse=c;applyBrand(c);
   const now=new Date(),today=dateKey(now,tz),futureLessons=(d.lessons||[]).filter(x=>isFuture(x.ends_at||x.starts_at)),todayLessons=(d.lessons||[]).filter(x=>dateKey(dateObj(x.starts_at),tz)===today),futureHomework=(d.homework||[]).filter(x=>!x.due_at||isFuture(x.due_at)),futureAppointments=(d.appointments||[]).filter(x=>isFuture(x.starts_at)),futureExams=(d.exams||[]).filter(x=>isFuture(x.starts_at));
   const nav=[],sections=[];
   if(sectionEnabled(m,'announcements')){nav.push(['meldungen','Meldungen']);const rows=(d.announcements||[]).slice(0,8).map(x=>item(x.title,fmtDateTime(x.published_at,tz),x.body)).join('');sections.push(section('meldungen','Meldungen',`<div class="portal-list">${rows||empty('Aktuell gibt es keine Meldungen.')}</div>`,`${(d.announcements||[]).length}`));}
@@ -88,7 +89,7 @@ function renderFatal(message){root.className='';root.innerHTML=`<div class="port
 async function load(){
   if(!tenantSlug||!courseCode){renderFatal('Der Portal-Link ist unvollständig.');return;}
   root.className='portal-loading';root.textContent='Klassenportal wird geladen …';const stored=sessionStorage.getItem(codeStoreKey)||'';
-  try{renderPortal(await overview(stored));}
-  catch(e){if(stored&&['ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(e.message))sessionStorage.removeItem(codeStoreKey);if(['LOGIN_REQUIRED','ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(e.message)){renderGate(e.message,lastData?.course||{},!!stored);return;}if(e.message==='COURSE_NOT_FOUND'){renderFatal('Diese Klasse oder dieser Kurs wurde nicht gefunden oder ist nicht mehr aktiv.');return;}renderFatal('Das Portal konnte gerade nicht geladen werden.');}
+  try{if(!lastCourse){const meta=await metadata();lastCourse=meta.course||null;if(lastCourse)applyBrand(lastCourse);}renderPortal(await overview(stored));}
+  catch(e){if(e.message==='COURSE_NOT_FOUND'){renderFatal('Diese Klasse oder dieser Kurs wurde nicht gefunden oder ist nicht mehr aktiv.');return;}if(stored&&['ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(e.message))sessionStorage.removeItem(codeStoreKey);if(['LOGIN_REQUIRED','ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(e.message)){renderGate(e.message,lastCourse||{},!!stored);return;}renderFatal('Das Portal konnte gerade nicht geladen werden.');}
 }
 await load();
