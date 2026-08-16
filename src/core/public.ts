@@ -1,22 +1,70 @@
 import type { Env, SessionUser } from './types.js';
 import { verifyPassword } from './auth.js';
 
+function viewerRole(session:SessionUser|null,tenantId:string,courseId:string):string|null{
+  if(!session)return null;
+  if(session.isPlatformAdmin)return 'platform_admin';
+  const rank:Record<string,number>={tenant_admin:4,class_admin:3,participant:2,guest:1};
+  const matches=session.tenantRoles.filter(x=>x.tenantId===tenantId&&(x.courseId===null||x.courseId===courseId));
+  return [...matches].sort((a,b)=>(rank[b.role]||0)-(rank[a.role]||0))[0]?.role||null;
+}
+
 export async function publicOverview(env:Env,tenantSlug:string,courseCode:string,session:SessionUser|null,accessCode?:string){
-  const c=await env.DB.prepare(`SELECT c.*,t.name AS tenant_name,t.slug,s.portal_name,s.welcome_text,s.logo_url,s.primary_color,s.secondary_color,s.background_color,s.white_label
-    FROM courses c JOIN tenants t ON t.id=c.tenant_id JOIN tenant_settings s ON s.tenant_id=t.id WHERE t.slug=? AND c.code=? AND t.status='active' AND c.is_active=1`).bind(tenantSlug,courseCode).first<Record<string,unknown>>();
-  if(!c)throw new Error('COURSE_NOT_FOUND'); const mode=String(c.access_mode); const tenantId=String(c.tenant_id),courseId=String(c.id);
-  const hasLogin=!!session&&(session.isPlatformAdmin||session.tenantRoles.some(x=>x.tenantId===tenantId&&(x.courseId===null||x.courseId===courseId)));
-  const codeOk=!!accessCode&&!!c.access_code_hash&&await verifyPassword(accessCode,String(c.access_code_hash));
+  const row=await env.DB.prepare(`SELECT
+      c.id,c.tenant_id,c.name,c.code,c.start_date,c.end_date,c.access_mode,c.access_code_hash,
+      t.name AS tenant_name,t.slug,
+      s.portal_name,s.welcome_text,s.logo_url,s.primary_color,s.secondary_color,s.background_color,
+      s.white_label,s.locale,s.timezone
+    FROM courses c
+    JOIN tenants t ON t.id=c.tenant_id
+    JOIN tenant_settings s ON s.tenant_id=t.id
+    WHERE t.slug=? AND c.code=? AND t.status='active' AND c.is_active=1`)
+    .bind(tenantSlug,courseCode).first<Record<string,unknown>>();
+  if(!row)throw new Error('COURSE_NOT_FOUND');
+
+  const mode=String(row.access_mode),tenantId=String(row.tenant_id),courseId=String(row.id);
+  const role=viewerRole(session,tenantId,courseId),hasLogin=!!role;
+  const codeOk=!!accessCode&&!!row.access_code_hash&&await verifyPassword(accessCode,String(row.access_code_hash));
   if(mode==='login'&&!hasLogin)throw new Error('LOGIN_REQUIRED');
   if(mode==='link_code'&&!codeOk)throw new Error('ACCESS_CODE_REQUIRED');
   if(mode==='hybrid'&&!hasLogin&&!codeOk)throw new Error('LOGIN_OR_CODE_REQUIRED');
-  const [homework,appointments,announcements,links,exams,lessons]=await Promise.all([
-    env.DB.prepare('SELECT * FROM homework WHERE tenant_id=? AND course_id=? ORDER BY due_at ASC').bind(tenantId,courseId).all(),
-    env.DB.prepare('SELECT * FROM appointments WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) ORDER BY starts_at ASC').bind(tenantId,courseId).all(),
-    env.DB.prepare('SELECT * FROM announcements WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) AND visible=1 ORDER BY published_at DESC').bind(tenantId,courseId).all(),
-    env.DB.prepare('SELECT * FROM links WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) ORDER BY title ASC').bind(tenantId,courseId).all(),
-    env.DB.prepare('SELECT * FROM exams WHERE tenant_id=? AND course_id=? AND visible_to_students=1 ORDER BY starts_at ASC').bind(tenantId,courseId).all(),
-    env.DB.prepare('SELECT * FROM lessons WHERE tenant_id=? AND course_id=? ORDER BY starts_at ASC').bind(tenantId,courseId).all(),
+
+  const past=new Date(Date.now()-14*86400000).toISOString();
+  const [homework,appointments,announcements,links,exams,lessons,features]=await Promise.all([
+    env.DB.prepare(`SELECT id,course_id,subject_id,title,description,due_at,submission_info,created_at,updated_at
+      FROM homework WHERE tenant_id=? AND course_id=? AND (due_at IS NULL OR due_at>=?)
+      ORDER BY CASE WHEN due_at IS NULL THEN 1 ELSE 0 END,due_at ASC LIMIT 200`).bind(tenantId,courseId,past).all(),
+    env.DB.prepare(`SELECT id,course_id,title,starts_at,ends_at,location,description,created_at
+      FROM appointments WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) AND starts_at>=?
+      ORDER BY starts_at ASC LIMIT 200`).bind(tenantId,courseId,past).all(),
+    env.DB.prepare(`SELECT id,course_id,title,body,published_at,created_at
+      FROM announcements WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) AND visible=1
+      ORDER BY published_at DESC LIMIT 50`).bind(tenantId,courseId).all(),
+    env.DB.prepare(`SELECT id,course_id,title,url,category,created_at
+      FROM links WHERE tenant_id=? AND (course_id=? OR course_id IS NULL)
+      ORDER BY title ASC LIMIT 200`).bind(tenantId,courseId).all(),
+    env.DB.prepare(`SELECT id,course_id,subject_id,title,starts_at,ends_at,room,notes,allowed_aids,created_at,updated_at
+      FROM exams WHERE tenant_id=? AND course_id=? AND visible_to_students=1 AND starts_at>=?
+      ORDER BY starts_at ASC LIMIT 200`).bind(tenantId,courseId,past).all(),
+    env.DB.prepare(`SELECT id,course_id,subject_id,teacher_id,starts_at,ends_at,room,notes,created_at
+      FROM lessons WHERE tenant_id=? AND course_id=? AND ends_at>=?
+      ORDER BY starts_at ASC LIMIT 500`).bind(tenantId,courseId,past).all(),
+    env.DB.prepare('SELECT feature_key,enabled FROM feature_flags WHERE tenant_id=?').bind(tenantId).all<Record<string,unknown>>(),
   ]);
-  return {course:c,authenticated:hasLogin,homework:homework.results??[],appointments:appointments.results??[],announcements:announcements.results??[],links:links.results??[],exams:exams.results??[],lessons:lessons.results??[]};
+
+  const modules:Record<string,boolean>={};
+  for(const f of features.results??[])modules[String(f.feature_key)]=Number(f.enabled)===1;
+  const course={
+    id:row.id,name:row.name,code:row.code,start_date:row.start_date,end_date:row.end_date,access_mode:row.access_mode,
+    tenant_name:row.tenant_name,slug:row.slug,portal_name:row.portal_name,welcome_text:row.welcome_text,logo_url:row.logo_url,
+    primary_color:row.primary_color,secondary_color:row.secondary_color,background_color:row.background_color,
+    white_label:row.white_label,locale:row.locale,timezone:row.timezone,
+  };
+  const accessGrantedBy=hasLogin?'login':codeOk?'code':'public';
+  return {
+    course,modules,accessGrantedBy,
+    viewer:{authenticated:hasLogin,role,displayName:hasLogin?session?.displayName??null:null},
+    homework:homework.results??[],appointments:appointments.results??[],announcements:announcements.results??[],
+    links:links.results??[],exams:exams.results??[],lessons:lessons.results??[],
+  };
 }
