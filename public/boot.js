@@ -1,6 +1,7 @@
 const root=document.querySelector('#app');
 
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function safeContinuation(){const value=new URLSearchParams(location.search).get('continue')||'';return /^\/portal\/[^/]+\/[^/?#]+\/?$/.test(value)?value:'';}
 
 async function getMe(){
   const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});
@@ -21,6 +22,8 @@ function passwordChange(user){
       const r=await fetch('/api/auth/change-password',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({current_password:current,new_password:next})});
       const d=await r.json();
       if(!r.ok)throw new Error(d.error||`HTTP_${r.status}`);
+      const continuation=safeContinuation();
+      if(continuation){location.replace(continuation);return;}
       await import(`/app.js?v=${Date.now()}`);
     }catch(x){
       const messages={CURRENT_PASSWORD_INVALID:'Das temporäre Passwort ist nicht korrekt.',PASSWORD_LENGTH_INVALID:'Das neue Passwort muss mindestens 10 Zeichen lang sein.',PASSWORD_MUST_CHANGE:'Das neue Passwort muss sich vom temporären Passwort unterscheiden.',PASSWORD_FIELDS_REQUIRED:'Bitte alle Felder ausfüllen.'};
@@ -32,7 +35,11 @@ function passwordChange(user){
 try{
   const me=await getMe();
   if(me?.mustChangePassword) passwordChange(me);
-  else await import(`/app.js?v=${Date.now()}`);
+  else {
+    const continuation=safeContinuation();
+    if(me&&continuation){location.replace(continuation);}
+    else await import(`/app.js?v=${Date.now()}`);
+  }
 }catch(e){
   root.innerHTML=`<main class="center"><div class="login"><h2>Fehler</h2><p class="error">${esc(e?.message||'START_FAILED')}</p><button class="btn" onclick="location.reload()">Neu laden</button></div></main>`;
 }
