@@ -51,7 +51,7 @@ function assertManageable(auth:CoreAuthContext,row:Record<string,unknown>):void{
 }
 export async function updateTenantMembership(env:Env,auth:CoreAuthContext,tenantId:string,membershipId:string,input:Record<string,unknown>){
   const current=await membershipRow(env,tenantId,membershipId);assertManageable(auth,current);
-  const role=String(input.role??current.role),courseId=role==='tenant_admin'?null:String(input.course_id??current.course_id||'')||null;
+  const role=String(input.role??current.role),courseId=role==='tenant_admin'?null:String(input.course_id??current.course_id??'')||null;
   if(!['tenant_admin','class_admin','participant','guest'].includes(role))throw new Error('ROLE_INVALID');
   if(role!=='tenant_admin'&&!courseId)throw new Error('COURSE_ID_REQUIRED');
   if(!auth.isPlatformAdmin&&auth.userId===String(current.user_id)&&String(current.role)==='tenant_admin'&&(role!=='tenant_admin'||courseId))throw new Error('CANNOT_REMOVE_OWN_TENANT_ADMIN');
