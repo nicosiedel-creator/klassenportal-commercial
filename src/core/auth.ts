@@ -1,7 +1,8 @@
+import { pbkdf2 as nodePbkdf2 } from 'node:crypto';
 import type { AuthContext as PortabilityAuth } from '../portability/types.js';
 import type { CoreAuthContext, Env, SessionUser } from './types.js';
 import { createMfaChallenge, ownerMfaEnabled } from './mfa.js';
-import { b64, cookie, fromB64, json, noCookie, normalizeEmail, nowIso, parseCookie, randomBytes, sha256Text, toArrayBuffer } from './utils.js';
+import { b64, cookie, fromB64, json, noCookie, normalizeEmail, nowIso, parseCookie, randomBytes, sha256Text } from './utils.js';
 
 const CURRENT_ITERATIONS = 600_000;
 const MIN_ACCEPTED_ITERATIONS = 100_000;
@@ -11,8 +12,8 @@ const PLATFORM_SESSION_HOURS = 12;
 const PLATFORM_IDLE_MINUTES = 30;
 
 async function derivePassword(password:string,salt:Uint8Array,iterations:number,bits=256):Promise<Uint8Array>{
-  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
-  return new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:toArrayBuffer(salt),iterations},key,bits));
+  if(bits<256||bits%8!==0)throw new Error('PASSWORD_DERIVATION_SIZE_INVALID');
+  return new Promise((resolve,reject)=>nodePbkdf2(password,salt,iterations,bits/8,'sha256',(error,derived)=>error?reject(error):resolve(Uint8Array.from(derived))));
 }
 function passwordIterations(stored:string):number{
   const [kind,iterText]=stored.split('$');if(kind!=='pbkdf2')return 0;const n=Number(iterText);return Number.isInteger(n)?n:0;
@@ -30,7 +31,8 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const iterations=Number(iterText);if(!Number.isInteger(iterations)||iterations<MIN_ACCEPTED_ITERATIONS||iterations>MAX_ACCEPTED_ITERATIONS)return false;
   let salt:Uint8Array,expected:Uint8Array;try{salt=fromB64(saltText);expected=fromB64(hashText);}catch{return false;}
   if(salt.length<16||expected.length<32)return false;
-  const actual=await derivePassword(password,salt,iterations,expected.length*8);if(actual.length!==expected.length)return false;
+  let actual:Uint8Array;try{actual=await derivePassword(password,salt,iterations,expected.length*8);}catch{return false;}
+  if(actual.length!==expected.length)return false;
   let diff=0;for(let i=0;i<actual.length;i++)diff|=actual[i]^expected[i];return diff===0;
 }
 
