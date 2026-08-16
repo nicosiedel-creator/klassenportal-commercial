@@ -5,6 +5,7 @@ import { requireRole } from './permissions.js';
 import { syncStripeProviderState } from './stripe.js';
 import { createTaxStripeCheckout, ensureTaxStripeCatalog } from './stripe-tax-billing.js';
 import { stripeMode } from './stripe-mode.js';
+import { prepareStripeModeState, stripeModeStateSummary } from './stripe-mode-state.js';
 import { nowIso } from './utils.js';
 
 const STRIPE_API='https://api.stripe.com/v1';
@@ -24,7 +25,7 @@ function subscriptionPreviewItems(sub:Record<string,any>,target:any,extraCourses
   return e;
 }
 async function previewSafeStripeExpansion(env:Env,tenantId:string,targetPrice:any):Promise<{providerConnected:boolean;immediateChargeCents:number|null;prorationDate:number|null;billingCycle:'monthly'|'annual'|null}>{
-  const mode=stripeMode(env),state=await syncStripeProviderState(env),account=await env.DB.prepare('SELECT stripe_subscription_id,billing_cycle FROM tenant_payment_accounts WHERE tenant_id=? AND stripe_mode=?').bind(tenantId,mode).first<{stripe_subscription_id:string|null;billing_cycle:string|null}>();
+  const mode=await prepareStripeModeState(env),state=await syncStripeProviderState(env),account=await env.DB.prepare('SELECT stripe_subscription_id,billing_cycle FROM tenant_payment_accounts WHERE tenant_id=? AND stripe_mode=?').bind(tenantId,mode).first<{stripe_subscription_id:string|null;billing_cycle:string|null}>();
   if(!state.configured||!account?.stripe_subscription_id)return{providerConnected:false,immediateChargeCents:null,prorationDate:null,billingCycle:account?.billing_cycle==='annual'?'annual':account?.billing_cycle==='monthly'?'monthly':null};
   const cycle=account.billing_cycle==='annual'?'annual':'monthly',target=await ensureTaxStripeCatalog(env,targetPrice,cycle),sub=await stripeCall(env,'GET',`/subscriptions/${encodeURIComponent(account.stripe_subscription_id)}`,[['expand[]','items.data.price']]),prorationDate=Math.floor(Date.now()/1000);
   const preview=await stripeCall(env,'POST','/invoices/create_preview',[['subscription',account.stripe_subscription_id],['subscription_details[proration_behavior]','always_invoice'],['subscription_details[proration_date]',prorationDate],...subscriptionPreviewItems(sub,target,targetPrice.extraCourses)]);
@@ -32,7 +33,7 @@ async function previewSafeStripeExpansion(env:Env,tenantId:string,targetPrice:an
   return{providerConnected:true,immediateChargeCents:Math.max(0,amount),prorationDate,billingCycle:cycle};
 }
 async function applySafeStripeExpansion(env:Env,args:{tenantId:string;changeId:string;invoiceId:string;targetPrice:any;prorationDate?:number|null}):Promise<{externalInvoiceId:string|null;paymentUrl:string|null;stripeStatus:string}>{
-  const mode=stripeMode(env),account=await env.DB.prepare('SELECT stripe_subscription_id,billing_cycle FROM tenant_payment_accounts WHERE tenant_id=? AND stripe_mode=?').bind(args.tenantId,mode).first<{stripe_subscription_id:string|null;billing_cycle:string|null}>();
+  const mode=await prepareStripeModeState(env),account=await env.DB.prepare('SELECT stripe_subscription_id,billing_cycle FROM tenant_payment_accounts WHERE tenant_id=? AND stripe_mode=?').bind(args.tenantId,mode).first<{stripe_subscription_id:string|null;billing_cycle:string|null}>();
   if(!account?.stripe_subscription_id)throw new Error('STRIPE_SUBSCRIPTION_NOT_FOUND');
   const cycle=account.billing_cycle==='annual'?'annual':'monthly',target=await ensureTaxStripeCatalog(env,args.targetPrice,cycle),sub=await stripeCall(env,'GET',`/subscriptions/${encodeURIComponent(account.stripe_subscription_id)}`,[['expand[]','items.data.price']]);
   const e:Array<[string,unknown]>=[...subscriptionPreviewItems(sub,target,args.targetPrice.extraCourses,'items'),['proration_behavior','always_invoice'],['payment_behavior','pending_if_incomplete'],['metadata[klassenportal_mode]',mode],['expand[]','latest_invoice']];if(args.prorationDate)e.push(['proration_date',args.prorationDate]);
@@ -53,10 +54,13 @@ export async function createPaidBookingWithStripe(env:Env,args:Parameters<typeof
 }
 
 export async function billingSummaryWithStripe(env:Env,auth:CoreAuthContext,tenantId:string):Promise<Record<string,unknown>>{
-  const mode=stripeMode(env),provider=await syncStripeProviderState(env),result=await billingSummary(env,auth,tenantId);
-  const paymentAccount=await env.DB.prepare(`SELECT provider,stripe_customer_id,stripe_subscription_id,stripe_checkout_session_id,stripe_subscription_status,billing_cycle,current_plan_id,current_course_limit,current_period_end,cancel_at_period_end,last_invoice_id,updated_at
-    FROM tenant_payment_accounts WHERE tenant_id=? AND stripe_mode=?`).bind(tenantId,mode).first<Record<string,unknown>>();
-  return{...result,billingProvider:{...provider,stripeMode:mode},paymentAccount:paymentAccount??null};
+  const mode=await prepareStripeModeState(env),provider=await syncStripeProviderState(env),result=await billingSummary(env,auth,tenantId),modeState=await stripeModeStateSummary(env);
+  const [paymentAccount,modeInfo]=await Promise.all([
+    env.DB.prepare(`SELECT provider,stripe_customer_id,stripe_subscription_id,stripe_checkout_session_id,stripe_subscription_status,billing_cycle,current_plan_id,current_course_limit,current_period_end,cancel_at_period_end,last_invoice_id,updated_at
+      FROM tenant_payment_accounts WHERE tenant_id=? AND stripe_mode=?`).bind(tenantId,mode).first<Record<string,unknown>>(),
+    env.DB.prepare('SELECT last_verified_webhook_at,external_config_id,updated_at FROM stripe_provider_modes WHERE stripe_mode=?').bind(mode).first<Record<string,unknown>>(),
+  ]);
+  return{...result,billingProvider:{...provider,stripeMode:mode,webhookVerifiedAt:modeInfo?.last_verified_webhook_at??null,modeState},paymentAccount:paymentAccount??null};
 }
 
 export async function retryInitialCheckout(env:Env,auth:CoreAuthContext,tenantId:string,request:Request):Promise<Record<string,unknown>>{
