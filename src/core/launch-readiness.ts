@@ -1,7 +1,7 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { requirePlatform } from './permissions.js';
 import { backupReadiness } from './backup-verification.js';
-import { legalComplete, ownerLegal } from './legal.js';
+import { ownerLegal } from './legal.js';
 import { mailConfigured } from './mail.js';
 import { ownerMfaStatus } from './mfa.js';
 import { stripeModeIfConfigured } from './stripe-mode.js';
@@ -13,7 +13,7 @@ export async function productionReadiness(env:Env,auth:CoreAuthContext){
   if(!origin.ok)blockers.push(origin.reason!);if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)blockers.push('Stripe Live-Konfiguration fehlt');else if(stripeMode!=='live')blockers.push('Stripe läuft noch nicht mit Live-Schlüssel');
   if(!mfa.encryptionReady)blockers.push('OWNER_MFA_ENCRYPTION_KEY fehlt oder ist ungültig');if(!mfa.enabled)blockers.push('Eigentümer-MFA ist nicht aktiviert');
   if(!mailConfigured(env))blockers.push('Transaktions-E-Mail ist nicht vollständig konfiguriert (RESEND_API_KEY, MAIL_FROM, APP_ORIGIN)');
-  if(!legalComplete({provider_name:legal.providerName,legal_notice_url:legal.legalNoticeUrl,privacy_url:legal.privacyUrl,terms_url:legal.termsUrl,dpa_url:legal.dpaUrl,support_email:legal.supportEmail,updated_by:null,updated_at:legal.updatedAt} as any))blockers.push('Impressum, Datenschutz, AGB, AVV oder Supportkontakt fehlen');
+  if(!legal.complete)blockers.push('Rechtliche Unterlagen fehlen oder sind unvollständig: Impressum, Datenschutz, AGB, AVV und Supportkontakt sind Pflicht für die Freigabe');
   if(!backups.ready)blockers.push(`Backup-Sicherheit nicht erfüllt: ${backups.issues.length} aktive Kunden ohne aktuelles vollständig verifiziertes Backup`);if(missingSchema.length)blockers.push(`Datenbankschema unvollständig: ${missingSchema.join(', ')}`);
   const customOffer=await env.DB.prepare("SELECT pricing_enabled,customer_self_service,is_active FROM module_commerce_rules WHERE feature_key='custom_domain'").first<{pricing_enabled:number;customer_self_service:number;is_active:number}>().catch(()=>null),customNeeded=!!customOffer&&Number(customOffer.is_active)===1&&Number(customOffer.pricing_enabled)===1;
   if(customNeeded&&(!env.CLOUDFLARE_ZONE_ID||!env.CLOUDFLARE_API_TOKEN||!env.CLOUDFLARE_SAAS_CNAME_TARGET))blockers.push('Eigene Domains werden angeboten, aber Cloudflare for SaaS ist nicht vollständig konfiguriert');
