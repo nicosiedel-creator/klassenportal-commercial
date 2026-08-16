@@ -23,5 +23,7 @@ jobs:
         run: npm run build
       - name: Browser JavaScript syntax
         run: find public -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Automated tests
+        run: node tests/run.mjs
       - name: D1 migrations locally
         run: npx wrangler d1 migrations apply DB --local
