@@ -5,20 +5,30 @@ const backup=await readFile('src/portability/backup.ts','utf8');
 const preflight=await readFile('src/portability/backup-preflight.ts','utf8');
 const deletion=await readFile('src/portability/delete.ts','utf8');
 const exports=await readFile('src/portability/export.ts','utf8');
+const config=await readFile('src/portability/config.ts','utf8');
 
 assert.match(backup,/tenant_users\.json/,'backup must contain tenant-scoped user identities required for a real restore');
+assert.match(config,/key:'memberships'/,'backup configuration must preserve tenant memberships');
 assert.match(backup,/preflightTenantBackup/,'restore must fully preflight a backup before any destructive work');
-assert.ok(backup.indexOf("createTenantBackup(env,cfg,tenantId,'pre_restore'")<backup.indexOf("UPDATE tenants SET status='suspended'"),'safety backup must finish before the tenant is suspended/mutated');
+const safetyIndex=backup.indexOf("createTenantBackup(env,config,auth,tenantId,'pre_restore')");
+const suspendIndex=backup.indexOf("UPDATE tenants SET status='suspended'");
+assert.ok(safetyIndex>=0&&suspendIndex>safetyIndex,'safety backup must finish before the tenant is suspended/mutated');
 assert.match(backup,/status='suspended'/,'tenant must be unavailable while restore is in progress');
 assert.match(backup,/INSERT OR IGNORE INTO users/,'restore must recreate missing tenant users without overwriting shared identities');
 assert.match(backup,/await env\.DB\.batch\(stmts\)/,'scoped DB restoration must use one D1 batch transaction boundary');
-assert.ok(backup.indexOf('await env.DB.batch(stmts)')<backup.indexOf('for(const f of manifest.files)'),'backup files must be promoted only after the DB transaction while tenant remains suspended');
+const dbRestoreIndex=backup.indexOf('await env.DB.batch(stmts)');
+const filePromotionIndex=backup.indexOf('for(const f of checked.manifest.files)');
+assert.ok(dbRestoreIndex>=0&&filePromotionIndex>dbRestoreIndex,'backup files must be promoted only after the DB transaction while tenant remains suspended');
 assert.match(backup,/tenant left suspended until explicit recovery/,'failed restore must fail closed instead of reopening a partially restored tenant');
+assert.ok(backup.indexOf("UPDATE tenants SET status=?,updated_at=?")>filePromotionIndex,'tenant must only reopen after file promotion and cleanup succeed');
 
 assert.match(preflight,/PRAGMA table_info/,'preflight must validate backup columns against the live schema');
+assert.match(preflight,/BACKUP_RESOURCE_REQUIRED_MISSING/,'preflight must reject incomplete backups after the restore schema evolves');
 assert.match(preflight,/BACKUP_RESOURCE_TENANT_SCOPE_INVALID/,'preflight must reject rows escaping the tenant scope');
 assert.match(preflight,/BACKUP_RESOURCE_PRIMARY_KEY_INVALID/,'preflight must reject invalid or duplicate primary keys');
-assert.match(preflight,/BACKUP_USER_EMAIL_CONFLICT/,'preflight must reject user identity collisions');
+assert.match(preflight,/BACKUP_USER_EMAIL_CONFLICT/,'preflight must reject user email collisions');
+assert.match(preflight,/BACKUP_USER_ID_CONFLICT/,'preflight must reject user ID collisions');
+assert.match(preflight,/BACKUP_MEMBERSHIP_USER_MISSING/,'preflight must ensure every restored membership has a backed-up identity');
 assert.match(preflight,/BACKUP_FILE_SIZE_MISMATCH/,'preflight must verify restored file sizes');
 
 assert.match(deletion,/JOIN memberships m ON m\.user_id=u\.id WHERE m\.tenant_id=\?/,'deletion must snapshot user IDs before memberships disappear');
