@@ -12,6 +12,7 @@ import { storeTimetableSource } from './timetable-source.js';
 import { createOnboardingInvitation, getPublicOnboarding, getPublicOnboardingQuote, listOnboardingInvitations, revokeOnboardingInvitation, submitPublicOnboarding } from './onboarding.js';
 import { billingSummary, enforceCourseEntitlement, getSellerProfile, listCommercePlans, quoteExpansion, requestExpansion, updateCommercePlan, updateSellerProfile } from './commerce.js';
 import { assertTenantWriteAllowed, calculateCommercialOffer, createPaidBooking, getCommercePolicy, listManagedSetupOptions, tenantTrialSummary } from './commerce-offers.js';
+import { deleteLearningMaterial, downloadLearningMaterial, listLearningMaterials, updateLearningMaterial, uploadLearningMaterial } from './materials.js';
 
 function err(e:unknown):Response{
   const ex=e as Error&{issues?:unknown};const code=ex?.message||'INTERNAL_ERROR';
@@ -90,6 +91,15 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(u.pathname==='/api/courses'&&request.method==='POST'){await enforceCourseEntitlement(env,tenantId);return json({ok:true,course:await createCourse(env,a,tenantId,await body(request))},201);}
     if(u.pathname==='/api/tenant/users'&&request.method==='GET')return json({ok:true,users:await listTenantUsers(env,a,tenantId)});
     if(u.pathname==='/api/tenant/users'&&request.method==='POST')return json({ok:true,...await createTenantUser(env,a,tenantId,await body(request))},201);
+
+    if(u.pathname==='/api/materials'&&request.method==='GET')return json({ok:true,materials:await listLearningMaterials(env,a,tenantId,courseId)});
+    if(u.pathname==='/api/materials'&&request.method==='POST')return json({ok:true,material:await uploadLearningMaterial(env,a,tenantId,request,courseId)},201);
+    const materialDownload=u.pathname.match(/^\/api\/materials\/([^/]+)\/download$/);
+    if(materialDownload&&request.method==='GET')return downloadLearningMaterial(env,a,tenantId,decodeURIComponent(materialDownload[1]));
+    const material=u.pathname.match(/^\/api\/materials\/([^/]+)$/);
+    if(material&&request.method==='PATCH')return json({ok:true,material:await updateLearningMaterial(env,a,tenantId,decodeURIComponent(material[1]),await body(request))});
+    if(material&&request.method==='DELETE'){await deleteLearningMaterial(env,a,tenantId,decodeURIComponent(material[1]));return json({ok:true});}
+
     if(u.pathname.startsWith('/api/content/')){const type=u.pathname.split('/')[3]||'';if(request.method==='GET')return json({ok:true,items:await listContent(env,a,tenantId,type,courseId)});if(request.method==='POST')return json({ok:true,item:await createContent(env,a,tenantId,type,await body(request))},201);}
     if(u.pathname.match(/^\/api\/exams\/[^/]+\/visibility$/)&&request.method==='PATCH'){const examId=u.pathname.split('/')[3];const b=await body(request);await setExamVisibility(env,a,tenantId,examId,!!b.visible);return json({ok:true});}
     if(u.pathname==='/api/personal/grades'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,grades:await listPersonalGrades(env,a,tenantId,courseId)});}
