@@ -7,13 +7,12 @@ const index=await text('src/index.ts');
 const router=await text('src/core/router.ts');
 const publicApi=await text('src/core/public.ts');
 const classAdminHtml=await text('public/class-admin.html');
-const classAdminUi=await text('public/class-admin-ui.js');
-const classScopeGuard=await text('public/class-admin-scope-guard.js');
+const classAdminPortal=await text('public/class-admin-portal.js');
 const users=await text('src/core/users.ts');
 
 assert.match(wrangler,/"\/portal\/\*"/,'/portal/* must run worker-first');
 for(const route of ['/api/*','/public/*','/brand/*','/calendar/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/klassen-admin*','/zahlung/*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
-for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/customer-admin.html','public/platform-admin.html','public/class-admin.html','public/class-admin-scope-guard.js','public/payment-result.html'])await readFile(asset);
+for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/customer-admin.html','public/platform-admin.html','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/payment-result.html'])await readFile(asset);
 assert.ok(index.includes("adminPath==='/klassen-admin'?'/class-admin.html'"),'class admin route must serve class-admin.html');
 
 for(const header of ['x-content-type-options','x-frame-options','referrer-policy','permissions-policy','strict-transport-security','content-security-policy'])assert.ok(index.includes(`'${header}'`),`missing production header ${header}`);
@@ -25,14 +24,15 @@ assert.ok(!router.includes('/api/bootstrap'),'public bootstrap route must stay r
 assert.ok(!index.includes('BOOTSTRAP_SECRET'),'runtime must not use BOOTSTRAP_SECRET');
 assert.ok(!publicApi.includes('access_code_hash:row.access_code_hash'),'access code hash must never be serialized deliberately');
 
-assert.ok(classAdminHtml.includes('[data-v="courses"]'),'class-admin shell must hide course administration');
-assert.ok(classAdminHtml.includes('class-admin-scope-guard.js'),'class-admin shell must load the scope guard before boot');
-assert.ok(classAdminUi.includes("for(const key of ['tenants','courses','branding','modules','data'])"),'class-admin navigation must exclude tenant/course/customer settings');
-assert.ok(classAdminUi.includes("if(o.value!=='participant')o.remove()"),'class-admin UI must only offer participant management');
-assert.ok(classAdminUi.includes('Noch nicht aktiv'),'class-admin extensions must include inactive teasers');
-assert.ok(classAdminUi.includes("setText(b,'Erweiterungen')"),'class-admin observer updates must be idempotent');
-assert.ok(classAdminUi.includes('if(n.innerHTML!==html)n.innerHTML=html'),'class-admin notice must not create a MutationObserver feedback loop');
-assert.ok(classScopeGuard.includes("'/api/surveys','/api/substitutions'"),'class-admin support preview must scope advanced class data');
+assert.ok(classAdminHtml.includes('/class-portal.css'),'Klassen-Admin must share the participant portal visual system');
+assert.ok(classAdminHtml.includes('/class-admin-portal.js'),'Klassen-Admin must use its dedicated portal controller');
+assert.ok(!classAdminHtml.includes('/boot.js'),'Klassen-Admin must not fall back to the generic admin SPA');
+assert.ok(!classAdminHtml.includes('/app.js'),'Klassen-Admin must not load the generic admin SPA directly');
+assert.ok(classAdminPortal.includes("payload.role='participant'"),'Klassen-Admin UI must only create participants');
+assert.ok(classAdminPortal.includes('exactRows'),'Klassen-Admin must keep displayed class data inside one exact course scope');
+assert.ok(classAdminPortal.includes("payload.course_id=state.course.id"),'Klassen-Admin writes must be pinned to its selected course');
+assert.ok(classAdminPortal.includes('Noch nicht aktiv'),'Klassen-Admin extensions must include benefit teasers');
+assert.ok(!classAdminPortal.includes('newCourse'),'Klassen-Admin must never expose course creation');
 assert.ok(users.includes("m.role='participant'"),'class-admin user listing must exclude privileged and guest roles');
 assert.ok(users.includes("if(role!=='participant')throw new Error('FORBIDDEN_ROLE_ASSIGNMENT')"),'class-admin backend must only assign participant role');
 
