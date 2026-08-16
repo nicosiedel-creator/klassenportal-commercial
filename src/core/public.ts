@@ -9,7 +9,7 @@ function viewerRole(session:SessionUser|null,tenantId:string,courseId:string):st
   return [...matches].sort((a,b)=>(rank[b.role]||0)-(rank[a.role]||0))[0]?.role||null;
 }
 
-export async function publicOverview(env:Env,tenantSlug:string,courseCode:string,session:SessionUser|null,accessCode?:string){
+async function coursePortalRow(env:Env,tenantSlug:string,courseCode:string){
   const row=await env.DB.prepare(`SELECT
       c.id,c.tenant_id,c.name,c.code,c.start_date,c.end_date,c.access_mode,c.access_code_hash,
       t.name AS tenant_name,t.slug,
@@ -21,7 +21,25 @@ export async function publicOverview(env:Env,tenantSlug:string,courseCode:string
     WHERE t.slug=? AND c.code=? AND t.status='active' AND c.is_active=1`)
     .bind(tenantSlug,courseCode).first<Record<string,unknown>>();
   if(!row)throw new Error('COURSE_NOT_FOUND');
+  return row;
+}
 
+function safeCourse(row:Record<string,unknown>){
+  return {
+    id:row.id,name:row.name,code:row.code,start_date:row.start_date,end_date:row.end_date,access_mode:row.access_mode,
+    tenant_name:row.tenant_name,slug:row.slug,portal_name:row.portal_name,welcome_text:row.welcome_text,logo_url:row.logo_url,
+    primary_color:row.primary_color,secondary_color:row.secondary_color,background_color:row.background_color,
+    white_label:row.white_label,locale:row.locale,timezone:row.timezone,
+  };
+}
+
+export async function publicPortalMetadata(env:Env,tenantSlug:string,courseCode:string){
+  const row=await coursePortalRow(env,tenantSlug,courseCode);
+  return {course:safeCourse(row)};
+}
+
+export async function publicOverview(env:Env,tenantSlug:string,courseCode:string,session:SessionUser|null,accessCode?:string){
+  const row=await coursePortalRow(env,tenantSlug,courseCode);
   const mode=String(row.access_mode),tenantId=String(row.tenant_id),courseId=String(row.id);
   const role=viewerRole(session,tenantId,courseId),hasLogin=!!role;
   const codeOk=!!accessCode&&!!row.access_code_hash&&await verifyPassword(accessCode,String(row.access_code_hash));
@@ -62,15 +80,9 @@ export async function publicOverview(env:Env,tenantSlug:string,courseCode:string
 
   const modules:Record<string,boolean>={};
   for(const f of features.results??[])modules[String(f.feature_key)]=Number(f.enabled)===1;
-  const course={
-    id:row.id,name:row.name,code:row.code,start_date:row.start_date,end_date:row.end_date,access_mode:row.access_mode,
-    tenant_name:row.tenant_name,slug:row.slug,portal_name:row.portal_name,welcome_text:row.welcome_text,logo_url:row.logo_url,
-    primary_color:row.primary_color,secondary_color:row.secondary_color,background_color:row.background_color,
-    white_label:row.white_label,locale:row.locale,timezone:row.timezone,
-  };
   const accessGrantedBy=hasLogin?'login':codeOk?'code':'public';
   return {
-    course,modules,accessGrantedBy,
+    course:safeCourse(row),modules,accessGrantedBy,
     viewer:{authenticated:hasLogin,role,displayName:hasLogin?session?.displayName??null:null},
     homework:homework.results??[],appointments:appointments.results??[],announcements:announcements.results??[],
     links:links.results??[],exams:exams.results??[],lessons:lessons.results??[],
