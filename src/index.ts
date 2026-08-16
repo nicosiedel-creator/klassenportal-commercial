@@ -4,6 +4,8 @@ import { serveTenantLogo } from './core/branding.js';
 import { refreshTrialStates } from './core/commerce-offers.js';
 import { assertPaymentWriteAccess } from './core/payment-access.js';
 import { augmentPaidOnboardingResponse, handlePaymentApi } from './core/payment-router.js';
+import { handleBillingLifecycleApi } from './core/billing-lifecycle-router.js';
+import { processScheduledModuleCancellations } from './core/module-cancellation.js';
 import { publicMaterialDownload, publicOverview, publicPortalMetadata } from './core/public.js';
 import { publicAdvancedBySlug } from './core/public-advanced.js';
 import { calendarFeedResponse } from './core/advanced-modules.js';
@@ -101,6 +103,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   }
 
   const schemaApi=await handleRuntimeSchemaApi(request,env);if(schemaApi)return schemaApi;
+  const lifecycle=await handleBillingLifecycleApi(request,env);if(lifecycle)return lifecycle;
   const payment=await handlePaymentApi(request,env);if(payment)return payment;
 
   const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);
@@ -137,6 +140,7 @@ export default{
   },
   async scheduled(_controller:unknown,env:Env):Promise<void>{
     await refreshTrialStates(env);
+    await processScheduledModuleCancellations(env,25);
     await runScheduledTenantBackups(env,portabilityConfig,'system:backup',3);
     const now=new Date();
     await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now.toISOString()).run();
