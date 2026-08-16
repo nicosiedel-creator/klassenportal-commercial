@@ -20,14 +20,13 @@ CREATE TABLE IF NOT EXISTS stripe_plan_prices_modes (
   FOREIGN KEY(plan_id) REFERENCES plans(id) ON DELETE CASCADE
 );
 
-INSERT INTO stripe_plan_prices_modes(
+INSERT OR IGNORE INTO stripe_plan_prices_modes(
   plan_id,billing_cycle,stripe_mode,currency,base_product_id,base_price_id,base_amount_cents,
   extra_product_id,extra_price_id,extra_amount_cents,tax_behavior,tax_code,updated_at
 )
 SELECT plan_id,billing_cycle,stripe_mode,currency,base_product_id,base_price_id,base_amount_cents,
        extra_product_id,extra_price_id,extra_amount_cents,tax_behavior,tax_code,updated_at
-FROM stripe_plan_prices
-ON CONFLICT(plan_id,billing_cycle,stripe_mode) DO NOTHING;
+FROM stripe_plan_prices;
 
 CREATE TABLE IF NOT EXISTS tenant_payment_accounts_modes (
   tenant_id TEXT NOT NULL,
@@ -57,7 +56,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_payment_modes_subscription
 ON tenant_payment_accounts_modes(stripe_mode,stripe_subscription_id)
 WHERE stripe_subscription_id IS NOT NULL;
 
-INSERT INTO tenant_payment_accounts_modes(
+INSERT OR IGNORE INTO tenant_payment_accounts_modes(
   tenant_id,stripe_mode,provider,stripe_customer_id,stripe_subscription_id,stripe_checkout_session_id,
   stripe_subscription_status,billing_cycle,current_plan_id,current_course_limit,current_period_end,
   cancel_at_period_end,last_invoice_id,updated_at
@@ -65,5 +64,4 @@ INSERT INTO tenant_payment_accounts_modes(
 SELECT tenant_id,stripe_mode,provider,stripe_customer_id,stripe_subscription_id,stripe_checkout_session_id,
        stripe_subscription_status,billing_cycle,current_plan_id,current_course_limit,current_period_end,
        cancel_at_period_end,last_invoice_id,updated_at
-FROM tenant_payment_accounts
-ON CONFLICT(tenant_id,stripe_mode) DO NOTHING;
+FROM tenant_payment_accounts;
