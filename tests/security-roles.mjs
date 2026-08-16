@@ -9,13 +9,15 @@ async function legacyHash(password,iterations=100000){
 }
 
 const modern=await hashPassword('Sicheres-Passwort-2026!');
-assert.match(modern,/^pbkdf2\$600000\$/,'new password hashes must use PBKDF2-SHA256 with 600k iterations');
+assert.match(modern,/^scrypt\$32768\$8\$3\$/,'new password hashes must use the runtime-verified OWASP scrypt profile');
 assert.equal(await verifyPassword('Sicheres-Passwort-2026!',modern),true);
 assert.equal(await verifyPassword('falsch',modern),false);
 const legacy=await legacyHash('Alt-Aber-Gültig-2026!',100000);
-assert.equal(await verifyPassword('Alt-Aber-Gültig-2026!',legacy),true,'legacy 100k hashes remain login-compatible for transparent upgrade');
+assert.equal(await verifyPassword('Alt-Aber-Gültig-2026!',legacy),true,'legacy 100k PBKDF2 hashes remain login-compatible for transparent upgrade');
 const weak=await legacyHash('Zu-Schwach-2026!',50000);
-assert.equal(await verifyPassword('Zu-Schwach-2026!',weak),false,'hashes below the accepted security floor must be rejected');
+assert.equal(await verifyPassword('Zu-Schwach-2026!',weak),false,'hashes below the accepted legacy security floor must be rejected');
+const unsupportedHigh=await legacyHash('Nicht-Lauffähig-2026!',600000);
+assert.equal(await verifyPassword('Nicht-Lauffähig-2026!',unsupportedHigh),false,'legacy PBKDF2 hashes above the Worker runtime limit must fail closed');
 
 const base={userId:'u1',email:'u@example.de',displayName:'U',isPlatformAdmin:false,mustChangePassword:false};
 const classAdmin={...base,tenantRoles:[{tenantId:'t1',courseId:'c1',role:'class_admin'}]};

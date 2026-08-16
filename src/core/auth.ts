@@ -1,39 +1,55 @@
-import { pbkdf2 as nodePbkdf2 } from 'node:crypto';
+import { pbkdf2 as nodePbkdf2, scrypt as nodeScrypt } from 'node:crypto';
 import type { AuthContext as PortabilityAuth } from '../portability/types.js';
 import type { CoreAuthContext, Env, SessionUser } from './types.js';
 import { createMfaChallenge, ownerMfaEnabled } from './mfa.js';
 import { b64, cookie, fromB64, json, noCookie, normalizeEmail, nowIso, parseCookie, randomBytes, sha256Text } from './utils.js';
 
-const CURRENT_ITERATIONS = 600_000;
-const MIN_ACCEPTED_ITERATIONS = 100_000;
-const MAX_ACCEPTED_ITERATIONS = 1_000_000;
+const SCRYPT_N=32_768;
+const SCRYPT_R=8;
+const SCRYPT_P=3;
+const SCRYPT_MAXMEM=64*1024*1024;
+const LEGACY_PBKDF2_MIN=100_000;
+const LEGACY_PBKDF2_MAX=100_000;
 const SESSION_DAYS = 7;
 const PLATFORM_SESSION_HOURS = 12;
 const PLATFORM_IDLE_MINUTES = 30;
 
-async function derivePassword(password:string,salt:Uint8Array,iterations:number,bits=256):Promise<Uint8Array>{
-  if(bits<256||bits%8!==0)throw new Error('PASSWORD_DERIVATION_SIZE_INVALID');
+async function deriveScrypt(password:string,salt:Uint8Array,length=32,N=SCRYPT_N,r=SCRYPT_R,p=SCRYPT_P):Promise<Uint8Array>{
+  if(length<32||length>64||N<16_384||N>131_072||(N&(N-1))!==0||r!==8||p<1||p>10)throw new Error('PASSWORD_DERIVATION_PARAMS_INVALID');
+  const maxmem=Math.max(SCRYPT_MAXMEM,128*N*r+1024*1024);
+  return new Promise((resolve,reject)=>nodeScrypt(password,salt,length,{N,r,p,maxmem},(error,derived)=>error?reject(error):resolve(Uint8Array.from(derived))));
+}
+async function deriveLegacyPbkdf2(password:string,salt:Uint8Array,iterations:number,bits=256):Promise<Uint8Array>{
+  if(iterations<LEGACY_PBKDF2_MIN||iterations>LEGACY_PBKDF2_MAX||bits<256||bits%8!==0)throw new Error('LEGACY_PASSWORD_PARAMS_INVALID');
   return new Promise((resolve,reject)=>nodePbkdf2(password,salt,iterations,bits/8,'sha256',(error,derived)=>error?reject(error):resolve(Uint8Array.from(derived))));
 }
-function passwordIterations(stored:string):number{
-  const [kind,iterText]=stored.split('$');if(kind!=='pbkdf2')return 0;const n=Number(iterText);return Number.isInteger(n)?n:0;
+function constantTimeEqual(actual:Uint8Array,expected:Uint8Array):boolean{if(actual.length!==expected.length)return false;let diff=0;for(let i=0;i<actual.length;i++)diff|=actual[i]^expected[i];return diff===0;}
+function passwordNeedsUpgrade(stored:string):boolean{
+  const parts=stored.split('$');if(parts[0]!=='scrypt')return true;
+  return Number(parts[1])!==SCRYPT_N||Number(parts[2])!==SCRYPT_R||Number(parts[3])!==SCRYPT_P;
 }
 
 export async function hashPassword(password: string): Promise<string> {
   if (password.length < 10 || password.length > 256) throw new Error('PASSWORD_LENGTH_INVALID');
-  const salt=randomBytes(16),actual=await derivePassword(password,salt,CURRENT_ITERATIONS);
-  return `pbkdf2$${CURRENT_ITERATIONS}$${b64(salt)}$${b64(actual)}`;
+  const salt=randomBytes(16),actual=await deriveScrypt(password,salt);
+  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${b64(salt)}$${b64(actual)}`;
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [kind,iterText,saltText,hashText]=stored.split('$');
-  if(kind!=='pbkdf2'||!iterText||!saltText||!hashText)return false;
-  const iterations=Number(iterText);if(!Number.isInteger(iterations)||iterations<MIN_ACCEPTED_ITERATIONS||iterations>MAX_ACCEPTED_ITERATIONS)return false;
-  let salt:Uint8Array,expected:Uint8Array;try{salt=fromB64(saltText);expected=fromB64(hashText);}catch{return false;}
-  if(salt.length<16||expected.length<32)return false;
-  let actual:Uint8Array;try{actual=await derivePassword(password,salt,iterations,expected.length*8);}catch{return false;}
-  if(actual.length!==expected.length)return false;
-  let diff=0;for(let i=0;i<actual.length;i++)diff|=actual[i]^expected[i];return diff===0;
+  const parts=stored.split('$');
+  if(parts[0]==='scrypt'){
+    const [,nText,rText,pText,saltText,hashText]=parts;if(!nText||!rText||!pText||!saltText||!hashText)return false;
+    const N=Number(nText),r=Number(rText),p=Number(pText);let salt:Uint8Array,expected:Uint8Array;try{salt=fromB64(saltText);expected=fromB64(hashText);}catch{return false;}
+    if(salt.length<16||expected.length<32)return false;
+    try{return constantTimeEqual(await deriveScrypt(password,salt,expected.length,N,r,p),expected);}catch{return false;}
+  }
+  if(parts[0]==='pbkdf2'){
+    const [,iterText,saltText,hashText]=parts;if(!iterText||!saltText||!hashText)return false;
+    const iterations=Number(iterText);let salt:Uint8Array,expected:Uint8Array;try{salt=fromB64(saltText);expected=fromB64(hashText);}catch{return false;}
+    if(salt.length<16||expected.length<32)return false;
+    try{return constantTimeEqual(await deriveLegacyPbkdf2(password,salt,iterations,expected.length*8),expected);}catch{return false;}
+  }
+  return false;
 }
 
 async function rateKey(request: Request, email: string): Promise<string> {
@@ -85,7 +101,7 @@ export async function login(env: Env, request: Request): Promise<Response> {
     await recordLoginFailure(env,request,email); return json({ok:false,error:'LOGIN_FAILED'},401);
   }
   await clearLoginRate(env,request,email);
-  if(passwordIterations(u.password_hash)<CURRENT_ITERATIONS){
+  if(passwordNeedsUpgrade(u.password_hash)){
     const upgraded=await hashPassword(password);await env.DB.prepare('UPDATE users SET password_hash=?,updated_at=? WHERE id=?').bind(upgraded,nowIso(),u.id).run();
   }
   if(!!u.is_platform_admin&&await ownerMfaEnabled(env,u.id)){
