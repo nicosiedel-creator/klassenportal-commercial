@@ -8,6 +8,9 @@ const router=await text('src/core/router.ts');
 const runtimeRouter=await text('src/core/runtime-schema-router.ts');
 const publicApi=await text('src/core/public.ts');
 const platformOwner=await text('src/core/platform-owner.ts');
+const ownerCockpit=await text('src/core/owner-cockpit.ts');
+const ownerSecurityRouter=await text('src/core/owner-security-router.ts');
+const mfa=await text('src/core/mfa.ts');
 const auth=await text('src/core/auth.ts');
 const utils=await text('src/core/utils.ts');
 const pkg=JSON.parse(await text('package.json'));
@@ -18,6 +21,8 @@ const classWorkspace=await text('public/class-admin-workspace.js');
 const customerAdminHtml=await text('public/customer-admin.html');
 const platformAdminHtml=await text('public/platform-admin.html');
 const platformOwnerUi=await text('public/platform-owner-ui.js');
+const ownerSecurityUi=await text('public/owner-security-ui.js');
+const authMfaUi=await text('public/auth-mfa-ui.js');
 const areaMode=await text('public/area-mode.js');
 const compactUi=await text('public/portal-compact.js');
 const compactCss=await text('public/portal-compact.css');
@@ -27,7 +32,7 @@ const users=await text('src/core/users.ts');
 
 assert.match(wrangler,/"\/portal\/\*"/,'/portal/* must run worker-first');
 for(const route of ['/api/*','/public/*','/brand/*','/calendar/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/klassen-admin*','/zahlung/*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
-for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/vfa13-reference.css','public/customer-admin.html','public/customer-compact.css','public/platform-admin.html','public/platform-owner-ui.js','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/class-admin-workspace.js','public/payment-result.html'])await readFile(asset);
+for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/vfa13-reference.css','public/customer-admin.html','public/customer-compact.css','public/platform-admin.html','public/platform-owner-ui.js','public/owner-security-ui.js','public/auth-mfa-ui.js','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/class-admin-workspace.js','public/payment-result.html'])await readFile(asset);
 assert.ok(index.includes("adminPath==='/klassen-admin'?'/class-admin.html'"),'class admin route must serve class-admin.html');
 assert.ok(index.includes("if(adminPath==='/plattform-admin')")&&index.includes("if(!session?.isPlatformAdmin)return new Response('Nicht gefunden'"),'platform admin HTML must be owner-gated server-side');
 
@@ -35,14 +40,24 @@ for(const header of ['x-content-type-options','x-frame-options','referrer-policy
 assert.ok(index.includes("headers.set('cache-control','no-store')"),'HTML must be no-store');
 assert.ok(index.includes("jsonError('INTERNAL_ERROR',500)"),'unhandled request errors must be sanitized');
 assert.ok(index.includes('DELETE FROM login_attempts'),'expired login throttling rows must be cleaned');
+assert.ok(index.includes('DELETE FROM platform_mfa_challenges'),'expired MFA challenges must be cleaned');
 
 assert.ok(auth.includes('CURRENT_ITERATIONS = 600_000'),'new passwords must use hardened PBKDF2 cost');
 assert.ok(auth.includes('MIN_ACCEPTED_ITERATIONS = 100_000'),'legacy hashes must have a strict lower security floor');
 assert.ok(auth.includes('PLATFORM_IDLE_MINUTES = 30')&&auth.includes('PLATFORM_SESSION_HOURS = 12'),'owner sessions must be short and idle-limited');
 assert.ok(auth.includes('passwordIterations(u.password_hash)<CURRENT_ITERATIONS'),'legacy password hashes must upgrade transparently on successful login');
 assert.ok(auth.includes("DELETE FROM sessions WHERE user_id=? AND token_hash<>?"),'password change must revoke other sessions');
+assert.ok(auth.includes('ownerMfaEnabled')&&auth.includes('mfaRequired:true'),'enabled owner MFA must block session creation until challenge completion');
+assert.ok(mfa.includes("AES-GCM")&&mfa.includes('OWNER_MFA_ENCRYPTION_KEY'),'owner TOTP seed must use dedicated encrypted-at-rest storage');
+assert.ok(mfa.includes('last_counter')&&mfa.includes('used_at IS NULL'),'TOTP/recovery verification must be replay resistant');
+assert.ok(ownerSecurityRouter.includes('/api/auth/mfa/verify'),'owner MFA verification endpoint must exist');
+assert.ok(ownerCockpit.includes('ACTIVE_BILLING_MUST_END_FIRST'),'tenant deletion must refuse active billing');
+assert.ok(ownerCockpit.includes('requestTenantDeletion')&&ownerCockpit.includes('MFA_REQUIRED_FOR_DESTRUCTIVE_ACTION'),'tenant deletion must reuse backup/grace workflow and require step-up MFA');
+assert.ok(ownerSecurityUi.includes('System & Sicherheit')&&ownerSecurityUi.includes('14-tägigen Schutzfrist'),'owner cockpit must expose protected security/deletion controls');
+assert.ok(authMfaUi.includes('challenge_token'),'login UI must finish owner MFA before the normal application continues');
 assert.ok(utils.includes("fetchSite && fetchSite!=='same-origin'"),'cross-site browser mutations must be rejected');
 assert.ok(String(pkg.scripts?.test||'').includes('tests/security-roles.mjs'),'security role tests must run in CI');
+assert.ok(String(pkg.scripts?.test||'').includes('tests/owner-security.mjs'),'owner security tests must run in CI');
 
 assert.ok(!router.includes('/api/bootstrap'),'public bootstrap route must stay removed');
 assert.ok(!index.includes('BOOTSTRAP_SECRET'),'runtime must not use BOOTSTRAP_SECRET');
@@ -77,7 +92,7 @@ assert.ok(classWorkspace.includes('/api/content/lessons/'),'Klassen-Admin must s
 assert.ok(users.includes("requireRole(auth,'tenant_admin')"),'participant account mutations must require customer-admin or platform owner');
 assert.ok(users.includes("m.role='participant'"),'class-admin user listing must remain participant-only');
 
-assert.ok(platformAdminHtml.includes('/platform-owner-ui.js'),'platform owner UI must be loaded only in platform admin');
+assert.ok(platformAdminHtml.includes('/platform-owner-ui.js')&&platformAdminHtml.includes('/owner-security-ui.js'),'owner administration/security UI must be loaded only in platform admin');
 assert.ok(runtimeRouter.includes('/api/platform/owner/demo-fixture')&&runtimeRouter.includes('platformTenantDetail')&&runtimeRouter.includes('updatePlatformTenant'),'owner APIs must expose tenant editing and demo fixture creation');
 assert.ok(platformOwnerUi.includes('owner-edit')&&platformOwnerUi.includes('data-demo-build'),'owner UI must provide customer editing and demo generation');
 assert.equal((platformOwner.match(/\['VFA 26\/|\['Kaufleute Büromanagement|\['Fachinformatik Systemintegration|\['Sozialverwaltung/g)||[]).length,20,'demo fixture must define exactly 20 classes');
@@ -85,7 +100,7 @@ assert.ok(platformOwner.includes('j<20'),'demo fixture must create 20 participan
 assert.ok(platformOwner.includes('week<6'),'demo fixture timetable must cover six weeks');
 
 const migrations=(await readdir('migrations')).filter(x=>/^\d+_.*\.sql$/.test(x)).sort();
-assert.ok(migrations.includes('0035_notifications.sql'),'Block 7 notification migration missing');
+for(const required of ['0035_notifications.sql','0038_module_cancellations.sql','0039_owner_security.sql'])assert.ok(migrations.includes(required),`required migration missing: ${required}`);
 for(let i=1;i<migrations.length;i++)assert.ok(migrations[i]>migrations[i-1],'migration order must be deterministic');
 
 console.log('Release readiness checks: OK');
