@@ -85,6 +85,13 @@ export async function publicOverview(env:Env,tenantSlug:string,courseCode:string
       FROM portability_files WHERE tenant_id=? AND purpose='learning_material' AND visible=1 AND (course_id=? OR course_id IS NULL)
       ORDER BY created_at DESC LIMIT 200`).bind(tenantId,courseId).all<Record<string,unknown>>(),
   ]);
+  let notifications:Record<string,unknown>[]=[];
+  if(access.hasLogin&&session?.userId){
+    const n=await env.DB.prepare(`SELECT id,course_id,type,title,body,read_at,created_at FROM notifications
+      WHERE tenant_id=? AND user_id=? AND (course_id=? OR course_id IS NULL)
+      ORDER BY created_at DESC LIMIT 60`).bind(tenantId,session.userId,courseId).all<Record<string,unknown>>();
+    notifications=n.results??[];
+  }
 
   const modules:Record<string,boolean>={};for(const f of features.results??[])modules[String(f.feature_key)]=Number(f.enabled)===1;
   const materialsEnabled=modules.files!==false||modules.learning_materials===true;
@@ -92,7 +99,7 @@ export async function publicOverview(env:Env,tenantSlug:string,courseCode:string
     course:safeCourse(row),modules,accessGrantedBy:access.accessGrantedBy,
     viewer:{authenticated:access.hasLogin,role:access.role,displayName:access.hasLogin?session?.displayName??null:null},
     homework:homework.results??[],appointments:appointments.results??[],announcements:announcements.results??[],
-    links:links.results??[],exams:exams.results??[],lessons:lessons.results??[],materials:materialsEnabled?(materials.results??[]):[],
+    links:links.results??[],exams:exams.results??[],lessons:lessons.results??[],materials:materialsEnabled?(materials.results??[]):[],notifications,
   };
 }
 
