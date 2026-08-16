@@ -2,7 +2,7 @@ import type { Env, SessionUser } from './types.js';
 import { verifyPassword } from './auth.js';
 
 function viewerRole(session:SessionUser|null,tenantId:string,courseId:string):string|null{
-  if(!session)return null;
+  if(!session||session.mustChangePassword)return null;
   if(session.isPlatformAdmin)return 'platform_admin';
   const rank:Record<string,number>={tenant_admin:4,class_admin:3,participant:2,guest:1};
   const matches=session.tenantRoles.filter(x=>x.tenantId===tenantId&&(x.courseId===null||x.courseId===courseId));
