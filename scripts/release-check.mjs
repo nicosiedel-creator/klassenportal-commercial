@@ -8,8 +8,9 @@ const router=await text('src/core/router.ts');
 const publicApi=await text('src/core/public.ts');
 
 assert.match(wrangler,/"\/portal\/\*"/,'/portal/* must run worker-first');
-for(const route of ['/api/*','/public/*','/brand/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/zahlung/*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
-for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/customer-admin.html','public/platform-admin.html','public/payment-result.html'])await readFile(asset);
+for(const route of ['/api/*','/public/*','/brand/*','/calendar/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/klassen-admin*','/zahlung/*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
+for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/customer-admin.html','public/platform-admin.html','public/class-admin.html','public/payment-result.html'])await readFile(asset);
+assert.ok(index.includes("adminPath==='/klassen-admin'?'/class-admin.html'"),'class admin route must serve class-admin.html');
 
 for(const header of ['x-content-type-options','x-frame-options','referrer-policy','permissions-policy','strict-transport-security','content-security-policy'])assert.ok(index.includes(`'${header}'`),`missing production header ${header}`);
 assert.ok(index.includes("headers.set('cache-control','no-store')"),'HTML must be no-store');
