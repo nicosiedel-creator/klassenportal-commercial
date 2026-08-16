@@ -1,12 +1,14 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { audit } from './audit.js';
 import { requirePlatform } from './permissions.js';
+import { ensureManagedSetupSchema } from './managed-setup-schema.js';
 import { nowIso, safeString } from './utils.js';
 
 type ManagedSetupStatus='ready'|'in_progress'|'completed';
 
 export async function listManagedSetupJobs(env:Env,auth:CoreAuthContext):Promise<Record<string,unknown>[]>{
   requirePlatform(auth);
+  await ensureManagedSetupSchema(env);
   const rows=await env.DB.prepare(`SELECT j.id,j.tenant_id,t.name AS tenant_name,j.order_id,o.order_number,
       j.setup_option_id,j.setup_name,j.course_count,j.status,j.paid_at,j.started_at,j.completed_at,
       j.internal_note,j.created_at,j.updated_at
@@ -27,6 +29,7 @@ function status(v:unknown):ManagedSetupStatus{
 
 export async function updateManagedSetupJob(env:Env,auth:CoreAuthContext,jobId:string,input:Record<string,unknown>):Promise<Record<string,unknown>>{
   requirePlatform(auth);
+  await ensureManagedSetupSchema(env);
   const current=await env.DB.prepare('SELECT id,tenant_id,status FROM managed_setup_jobs WHERE id=?').bind(jobId).first<{id:string;tenant_id:string;status:string}>();
   if(!current)throw new Error('MANAGED_SETUP_NOT_FOUND');
   const next=status(input.status??current.status),note=safeString(input.internal_note,2000)||null,ts=nowIso();

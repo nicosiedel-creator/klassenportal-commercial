@@ -1,5 +1,6 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { requireRole } from './permissions.js';
+import { ensureManagedSetupSchema } from './managed-setup-schema.js';
 
 type CountRow={n:number};
 
@@ -9,6 +10,7 @@ type ManagedSetupRow={
 
 export async function customerSetupProgress(env:Env,auth:CoreAuthContext,tenantId:string):Promise<Record<string,unknown>>{
   requireRole(auth,'tenant_admin');
+  await ensureManagedSetupSchema(env);
   const [settings,courses,lessons,imports,classAdmins,participants,managed]=await Promise.all([
     env.DB.prepare('SELECT portal_name,logo_url,welcome_text,primary_color,secondary_color FROM tenant_settings WHERE tenant_id=?').bind(tenantId).first<Record<string,unknown>>(),
     env.DB.prepare('SELECT COUNT(*) AS n FROM courses WHERE tenant_id=? AND is_active=1').bind(tenantId).first<CountRow>(),
