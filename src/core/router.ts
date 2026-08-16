@@ -14,6 +14,7 @@ import { billingSummary, enforceCourseEntitlement, getSellerProfile, listCommerc
 import { assertTenantWriteAllowed, calculateCommercialOffer, createPaidBooking, getCommercePolicy, listManagedSetupOptions, tenantTrialSummary } from './commerce-offers.js';
 import { deleteLearningMaterial, downloadLearningMaterial, listLearningMaterials, updateLearningMaterial, uploadLearningMaterial } from './materials.js';
 import { listTenantAudit, listUserNotifications, markAllNotificationsRead, markNotificationRead } from './support.js';
+import { closeSurvey, createOrRotateCalendarFeed, createSubstitutionUpdate, createSurvey, deleteSubstitutionUpdate, deleteSurvey, getTeamsIntegration, listCalendarFeeds, listSubstitutionUpdates, listSurveys, saveTeamsIntegration, statisticsSummary, testTeamsIntegration, voteSurvey } from './advanced-modules.js';
 
 function err(e:unknown):Response{
   const ex=e as Error&{issues?:unknown};const code=ex?.message||'INTERNAL_ERROR';
@@ -21,9 +22,9 @@ function err(e:unknown):Response{
     :code==='PASSWORD_CHANGE_REQUIRED'?428
     :code==='TRIAL_READ_ONLY'?423
     :code==='TRIAL_EXPIRED'||code==='ONBOARDING_EXPIRED'||code==='ONBOARDING_UNAVAILABLE'?410
-    :code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'||code==='PLATFORM_ADMIN_RESET_FORBIDDEN'?403
+    :code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'||code==='PLATFORM_ADMIN_RESET_FORBIDDEN'||code==='MODULE_NOT_ACTIVE'?403
     :code.includes('NOT_FOUND')?404
-    :['ONBOARDING_ALREADY_IN_PROGRESS','ONBOARDING_ALREADY_COMPLETED','COURSE_LIMIT_REACHED','PRICING_NOT_CONFIGURED','SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','TIMETABLE_BATCH_CONFIRMATION_REQUIRED','TIMETABLE_INDIVIDUAL_CONFIRMATION_INVALID','CANNOT_REMOVE_OWN_TENANT_ADMIN'].includes(code)?409
+    :['ONBOARDING_ALREADY_IN_PROGRESS','ONBOARDING_ALREADY_COMPLETED','COURSE_LIMIT_REACHED','PRICING_NOT_CONFIGURED','SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','TIMETABLE_BATCH_CONFIRMATION_REQUIRED','TIMETABLE_INDIVIDUAL_CONFIRMATION_INVALID','CANNOT_REMOVE_OWN_TENANT_ADMIN','SURVEY_ALREADY_VOTED','SURVEY_CLOSED'].includes(code)?409
     :code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413
     :code==='LOGIN_RATE_LIMITED'?429
     :code==='INTERNAL_ERROR'?500:400;
@@ -42,9 +43,7 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(u.pathname==='/api/auth/change-password'&&request.method==='POST')return changePassword(env,request);
 
     const publicQuote=u.pathname.match(/^\/api\/onboarding\/([^/]+)\/quote$/);
-    if(publicQuote&&request.method==='GET')return json({ok:true,quote:await getPublicOnboardingQuote(env,decodeURIComponent(publicQuote[1]),{
-      courses:u.searchParams.get('courses')||'1',billingCycle:u.searchParams.get('billing_cycle')||'monthly',setupOptionId:u.searchParams.get('setup')||'self_service',purpose:u.searchParams.get('purpose')||'paid',
-    })});
+    if(publicQuote&&request.method==='GET')return json({ok:true,quote:await getPublicOnboardingQuote(env,decodeURIComponent(publicQuote[1]),{courses:u.searchParams.get('courses')||'1',billingCycle:u.searchParams.get('billing_cycle')||'monthly',setupOptionId:u.searchParams.get('setup')||'self_service',purpose:u.searchParams.get('purpose')||'paid'})});
     const publicOnboarding=u.pathname.match(/^\/api\/onboarding\/([^/]+)$/);
     if(publicOnboarding){const token=decodeURIComponent(publicOnboarding[1]);if(request.method==='GET')return json({ok:true,invitation:await getPublicOnboarding(env,token)});if(request.method==='POST')return json(await submitPublicOnboarding(env,token,request));}
 
@@ -70,18 +69,30 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(notification&&request.method==='PATCH')return json({ok:true,notification:await markNotificationRead(env,a,tenantId,decodeURIComponent(notification[1]))});
     if(u.pathname==='/api/notifications/read-all'&&request.method==='POST')return json({ok:true,...await markAllNotificationsRead(env,a,tenantId,courseId)});
 
+    if(u.pathname==='/api/modules/statistics'&&request.method==='GET')return json({ok:true,statistics:await statisticsSummary(env,a,tenantId)});
+    if(u.pathname==='/api/surveys'&&request.method==='GET')return json({ok:true,surveys:await listSurveys(env,a,tenantId,courseId)});
+    if(u.pathname==='/api/surveys'&&request.method==='POST')return json({ok:true,survey:await createSurvey(env,a,tenantId,await body(request))},201);
+    const surveyClose=u.pathname.match(/^\/api\/surveys\/([^/]+)\/close$/);
+    if(surveyClose&&request.method==='POST'){await closeSurvey(env,a,tenantId,decodeURIComponent(surveyClose[1]));return json({ok:true});}
+    const surveyVote=u.pathname.match(/^\/api\/surveys\/([^/]+)\/vote$/);
+    if(surveyVote&&request.method==='POST'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');const b=await body(request);return json({ok:true,...await voteSurvey(env,a,tenantId,courseId,decodeURIComponent(surveyVote[1]),String(b.option_id||''))});}
+    const survey=u.pathname.match(/^\/api\/surveys\/([^/]+)$/);
+    if(survey&&request.method==='DELETE'){await deleteSurvey(env,a,tenantId,decodeURIComponent(survey[1]));return json({ok:true});}
+    if(u.pathname==='/api/substitutions'&&request.method==='GET')return json({ok:true,updates:await listSubstitutionUpdates(env,a,tenantId,courseId)});
+    if(u.pathname==='/api/substitutions'&&request.method==='POST')return json({ok:true,update:await createSubstitutionUpdate(env,a,tenantId,await body(request))},201);
+    const substitution=u.pathname.match(/^\/api\/substitutions\/([^/]+)$/);
+    if(substitution&&request.method==='DELETE'){await deleteSubstitutionUpdate(env,a,tenantId,decodeURIComponent(substitution[1]));return json({ok:true});}
+    if(u.pathname==='/api/integrations/teams'&&request.method==='GET')return json({ok:true,integration:await getTeamsIntegration(env,a,tenantId)});
+    if(u.pathname==='/api/integrations/teams'&&request.method==='PUT')return json({ok:true,integration:await saveTeamsIntegration(env,a,tenantId,await body(request))});
+    if(u.pathname==='/api/integrations/teams/test'&&request.method==='POST')return json({ok:true,...await testTeamsIntegration(env,a,tenantId)});
+    if(u.pathname==='/api/integrations/microsoft365/feeds'&&request.method==='GET')return json({ok:true,feeds:await listCalendarFeeds(env,a,tenantId,env.APP_ORIGIN||u.origin)});
+    if(u.pathname==='/api/integrations/microsoft365/feeds'&&request.method==='POST'){const b=await body(request),cid=String(b.course_id||courseId||'');if(!cid)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,feed:await createOrRotateCalendarFeed(env,a,tenantId,cid,env.APP_ORIGIN||u.origin)});}
+
     if(u.pathname==='/api/billing/summary'&&request.method==='GET')return json({ok:true,...await billingSummary(env,a,tenantId),trial:await tenantTrialSummary(env,a,tenantId),commercePolicy:await getCommercePolicy(env),setupOptions:await listManagedSetupOptions(env)});
-    if(u.pathname==='/api/billing/trial-quote'&&request.method==='POST'){
-      const b=await body(request);const trial=await tenantTrialSummary(env,a,tenantId);if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');
-      return json({ok:true,quote:await calculateCommercialOffer(env,{planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id||'self_service',purpose:'paid'})});
-    }
+    if(u.pathname==='/api/billing/trial-quote'&&request.method==='POST'){const b=await body(request);const trial=await tenantTrialSummary(env,a,tenantId);if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');return json({ok:true,quote:await calculateCommercialOffer(env,{planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id||'self_service',purpose:'paid'})});}
     if(u.pathname==='/api/billing/change-quote'&&request.method==='POST')return json({ok:true,quote:await quoteExpansion(env,a,tenantId,await body(request))});
     if(u.pathname==='/api/billing/expand'&&request.method==='POST'){const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');return json({ok:true,...await requestExpansion(env,a,tenantId,b)},201);}
-    if(u.pathname==='/api/billing/convert-trial'&&request.method==='POST'){
-      const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');
-      const trial=await tenantTrialSummary(env,a,tenantId);if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');
-      return json({ok:true,...await createPaidBooking(env,{tenantId,planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id,accepted:true,request,actorId:a.userId})},201);
-    }
+    if(u.pathname==='/api/billing/convert-trial'&&request.method==='POST'){const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');const trial=await tenantTrialSummary(env,a,tenantId);if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');return json({ok:true,...await createPaidBooking(env,{tenantId,planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id,accepted:true,request,actorId:a.userId})},201);}
 
     if(u.pathname==='/api/timetable/preferences'&&request.method==='GET')return json({ok:true,...await getTimetableUpdatePreference(env,a,tenantId)});
     const mutating=request.method!=='GET'&&request.method!=='HEAD'&&u.pathname!=='/api/timetable/preview';if(mutating)await assertTenantWriteAllowed(env,tenantId);

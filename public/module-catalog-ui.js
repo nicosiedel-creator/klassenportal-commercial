@@ -2,8 +2,8 @@ const MODULE_CATALOG_PATH=location.pathname.replace(/\/$/,'')==='/kunden-admin';
 
 if(MODULE_CATALOG_PATH){
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let scheduled=false,loadingTenant='',renderedTenant='';
-
+  const money=(c,cur='EUR')=>new Intl.NumberFormat('de-DE',{style:'currency',currency:cur||'EUR'}).format(Number(c||0)/100);
+  let scheduled=false,loadingTenant='';
   const sections=[
     {title:'Portal & Kommunikation',items:[
       {keys:['announcements'],label:'Meldungen & Informationen',description:'Wichtige Hinweise und aktuelle Informationen im Klassenportal veröffentlichen.'},
@@ -21,82 +21,23 @@ if(MODULE_CATALOG_PATH){
       {keys:['personal_grades'],label:'Persönliche Noten',description:'Teilnehmende können private, nur für sie sichtbare Notizen zu eigenen Ergebnissen führen.'},
     ]},
   ];
-
-  const planned=[
-    ['microsoft_teams','Microsoft Teams','Teams-Anbindung und automatisierte Übergaben werden erst nach vollständiger Integrationsprüfung freigeschaltet.'],
-    ['microsoft_365','Microsoft 365','Microsoft-365-Integration ist für eine spätere Ausbaustufe vorgesehen.'],
-    ['statistics','Statistiken','Erweiterte Auswertungen und Nutzungsstatistiken sind noch nicht produktiv freigegeben.'],
-    ['surveys','Umfragen','Umfragen werden als separates Erweiterungsmodul umgesetzt.'],
-    ['substitution_updates','Vertretungsänderungen','Automatische Vertretungs- und Stundenplanänderungen sind für eine spätere Ausbaustufe vorgesehen.'],
-  ];
-
-  async function json(url,opt={}){
-    const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt,headers:{'content-type':'application/json',...(opt.headers||{})}});
-    let d={};try{d=await r.json();}catch{}
-    if(!r.ok)throw new Error(d.error||`HTTP_${r.status}`);return d;
-  }
+  async function json(url,opt={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt,headers:{'content-type':'application/json',...(opt.headers||{})}});let d={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(d.error||`HTTP_${r.status}`);return d;}
   function tenantId(){return document.querySelector('#tenantPick')?.value||'';}
   function moduleTitle(){return document.querySelector('.content > .top h2')?.textContent?.trim()==='Module';}
-  function sourceLabel(rows){
-    const sources=[...new Set(rows.map(x=>String(x?.source||'')).filter(Boolean))];
-    if(sources.includes('manual'))return 'Individuell eingestellt';
-    if(sources.includes('trial'))return 'Testzugang';
-    if(sources.includes('plan'))return 'Im Tarif enthalten';
-    return 'Nicht zugeordnet';
+  function sourceLabel(rows){const sources=[...new Set(rows.map(x=>String(x?.source||'')).filter(Boolean))];if(sources.includes('manual'))return 'Individuell eingestellt';if(sources.includes('trial'))return 'Testzugang';if(sources.includes('plan'))return 'Im Tarif enthalten';return 'Im Portal verfügbar';}
+  function coreCard(item,map){const rows=item.keys.map(k=>map.get(k)).filter(Boolean),enabled=rows.some(x=>Number(x.enabled)===1),keys=item.keys.join(',');return `<label class="card" style="display:flex;gap:12px;align-items:flex-start;cursor:pointer;min-width:0"><input type="checkbox" class="kp-module-toggle" data-keys="${esc(keys)}" ${enabled?'checked':''} style="margin-top:4px;flex:0 0 auto"><span style="display:block;min-width:0"><strong>${esc(item.label)}</strong><span class="muted" style="display:block;margin-top:5px;line-height:1.4">${esc(item.description)}</span><span class="pill" style="display:inline-flex;margin-top:10px;max-width:100%;white-space:normal">${esc(sourceLabel(rows))}</span></span></label>`;}
+  function advancedCard(m){
+    const pending=m.entitlement_status==='pending_payment',active=!!m.enabled,status=active?'Aktiv':pending?'Zahlung ausstehend':m.bookable?'Zubuchbar':'Noch nicht buchbar';
+    const price=`${money(m.monthly_price_cents,m.currency)} / Monat`;
+    const action=active?`<button type="button" class="btn secondary kp-module-open" data-key="${esc(m.feature_key)}">Öffnen</button>`:pending?'<button type="button" class="btn secondary" disabled>Bestätigung abwarten</button>':m.bookable?`<button type="button" class="btn kp-module-buy" data-key="${esc(m.feature_key)}">${esc(price)} zubuchen</button>`:'<button type="button" class="btn secondary" disabled>Erst Basispaket aktivieren</button>';
+    return `<div class="card" style="display:flex;flex-direction:column;gap:10px;min-width:0"><div><strong>${esc(m.display_name)}</strong><div class="muted" style="margin-top:5px;line-height:1.4">${esc(m.description||'')}</div></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="pill" style="white-space:normal">${esc(status)}</span>${active&&m.entitlement_status==='active'?`<span class="muted">${esc(price)}</span>`:''}</div><div style="margin-top:auto">${action}</div></div>`;
   }
-  function liveCard(item,map){
-    const rows=item.keys.map(k=>map.get(k)).filter(Boolean),enabled=rows.some(x=>Number(x.enabled)===1);
-    const keys=item.keys.join(',');
-    return `<label class="card" style="display:flex;gap:12px;align-items:flex-start;cursor:pointer"><input type="checkbox" class="kp-module-toggle" data-keys="${esc(keys)}" ${enabled?'checked':''} style="margin-top:4px"><span style="display:block;min-width:0"><strong>${esc(item.label)}</strong><span class="muted" style="display:block;margin-top:5px;line-height:1.4">${esc(item.description)}</span><span class="pill" style="display:inline-block;margin-top:10px">${esc(sourceLabel(rows))}</span></span></label>`;
-  }
-  function plannedCard([,label,description]){
-    return `<div class="card" style="opacity:.82"><div class="top" style="align-items:flex-start"><div><strong>${esc(label)}</strong><div class="muted" style="margin-top:5px;line-height:1.4">${esc(description)}</div></div><span class="pill">In Vorbereitung</span></div></div>`;
-  }
-  function markup(modules,tenant){
-    const map=new Map(modules.map(x=>[String(x.feature_key),x]));
-    return `<div id="kp-module-catalog" data-tenant="${esc(tenant)}">
-      <div class="notice" style="margin-bottom:16px"><strong>Module für den Kunden</strong><div style="margin-top:5px">Hier werden nur Funktionen angezeigt, die tatsächlich im Portal nutzbar sind. Technische Schalter und interne Modulnamen werden nicht mehr angezeigt.</div></div>
-      ${sections.map(section=>`<section style="margin-bottom:22px"><h3 style="margin:0 0 10px">${esc(section.title)}</h3><div class="grid">${section.items.map(item=>liveCard(item,map)).join('')}</div></section>`).join('')}
-      <section style="margin-bottom:22px"><div class="top"><div><h3 style="margin:0">Branding & Domain</h3><div class="muted">White-Label, Logo, Farben und eine eigene Domain gehören zur Marken-/Domain-Konfiguration und nicht in die Modulschalter.</div></div><button type="button" class="btn secondary" id="kp-module-branding">Branding öffnen</button></div></section>
-      <section><h3 style="margin:0 0 10px">Geplante Erweiterungen</h3><div class="grid">${planned.map(plannedCard).join('')}</div></section>
-    </div>`;
-  }
-
-  async function render(force=false){
-    if(!moduleTitle())return;
-    const tenant=tenantId();if(!tenant)return;
-    const existing=document.querySelector('#kp-module-catalog');
-    const rawGrid=[...document.querySelectorAll('.content > .grid')].find(x=>!x.closest('#kp-module-catalog'));
-    if(!force&&existing?.dataset.tenant===tenant&&!rawGrid)return;
-    if(loadingTenant===tenant)return;loadingTenant=tenant;
-    try{
-      const data=await json(`/api/tenant/modules?tenant_id=${encodeURIComponent(tenant)}`),modules=data.modules||[];
-      if(!moduleTitle()||tenantId()!==tenant)return;
-      const html=markup(modules,tenant);
-      if(rawGrid)rawGrid.outerHTML=html;
-      else if(existing)existing.outerHTML=html;
-      else document.querySelector('.content > .top')?.insertAdjacentHTML('afterend',html);
-      renderedTenant=tenant;
-      wire();
-    }catch(e){
-      const raw=[...document.querySelectorAll('.content > .grid')].find(x=>!x.closest('#kp-module-catalog'));
-      if(raw)raw.innerHTML=`<div class="notice error">Module konnten nicht geladen werden: ${esc(e.message)}</div>`;
-    }finally{if(loadingTenant===tenant)loadingTenant='';}
-  }
-  function wire(){
-    document.querySelectorAll('.kp-module-toggle').forEach(input=>input.addEventListener('change',async e=>{
-      const box=e.currentTarget,tenant=tenantId(),enabled=box.checked,keys=String(box.dataset.keys||'').split(',').filter(Boolean);
-      box.disabled=true;
-      try{
-        await Promise.all(keys.map(feature_key=>json(`/api/tenant/modules?tenant_id=${encodeURIComponent(tenant)}`,{method:'PUT',body:JSON.stringify({feature_key,enabled})})));
-        renderedTenant='';await render(true);
-      }catch(err){box.checked=!enabled;alert(`Modul konnte nicht geändert werden: ${err.message}`);}finally{box.disabled=false;}
-    }));
-    document.querySelector('#kp-module-branding')?.addEventListener('click',()=>document.querySelector('[data-v="branding"]')?.click());
-  }
+  function modal(title,body){const w=document.createElement('div');w.className='modal-back';w.innerHTML=`<div class="modal" style="width:min(640px,94vw)"><div class="top"><h3 style="margin:0">${esc(title)}</h3><button class="btn secondary" data-close>×</button></div><div data-body>${body}</div></div>`;document.body.append(w);w.querySelector('[data-close]').onclick=()=>w.remove();w.addEventListener('click',e=>{if(e.target===w)w.remove()});return w;}
+  async function buyModule(key){const tid=tenantId();let q;try{q=(await json(`/api/billing/modules/quote?tenant_id=${encodeURIComponent(tid)}`,{method:'POST',body:JSON.stringify({feature_key:key})})).quote;}catch(e){alert(`Modul kann gerade nicht gebucht werden: ${e.message}`);return;}const cycle=q.billingCycle==='annual'?`Jährliche Abrechnung (${q.annualMonthsCharged} Monatsraten für 12 Monate)`:'Monatliche Abrechnung',today=money(q.immediateChargeCents,q.currency);const w=modal(`${q.name} zubuchen`,`<div class="notice ok" style="margin-top:14px"><strong>${esc(money(q.monthlyPriceCents,q.currency))} netto pro Monat</strong><div style="margin-top:5px">${esc(cycle)}</div><div style="margin-top:5px">Heute voraussichtlich fällig: <strong>${esc(today)}</strong></div></div><p class="muted">Die Erweiterung wird deiner bestehenden Stripe-Subscription hinzugefügt. Bei zeitversetzten Zahlarten wird das Modul erst nach bestätigter Zahlung freigeschaltet.</p><label style="display:flex;gap:9px;align-items:flex-start"><input type="checkbox" data-confirm style="margin-top:3px"><span><strong>Bestätigung 1:</strong> Ich habe Modul und Mehrkosten geprüft.</span></label><button class="btn" data-book disabled style="margin-top:14px">Weiter zur zweiten Bestätigung</button><span class="muted" data-status style="margin-left:10px"></span>`);const ck=w.querySelector('[data-confirm]'),bt=w.querySelector('[data-book]'),st=w.querySelector('[data-status]');ck.onchange=()=>bt.disabled=!ck.checked;bt.onclick=async()=>{if(!ck.checked)return;if(!confirm(`Bestätigung 2 von 2\n\n${q.name}\n${money(q.monthlyPriceCents,q.currency)} netto pro Monat\nHeute voraussichtlich: ${today}\n\nKostenpflichtig zubuchen?`))return;bt.disabled=true;st.textContent='Buchung wird an Stripe übermittelt …';try{const r=await json(`/api/billing/modules/subscribe?tenant_id=${encodeURIComponent(tid)}`,{method:'POST',body:JSON.stringify({feature_key:key,confirm_change:true,confirm_costs:true})});if(r.paymentUrl&&r.status!=='active'){st.textContent='Zahlung muss noch bestätigt werden.';location.assign(r.paymentUrl);return;}st.textContent=r.status==='active'?'Modul ist freigeschaltet.':'Zahlung wird bestätigt; Freischaltung erfolgt automatisch.';setTimeout(()=>{w.remove();void render(true)},900);}catch(e){st.textContent=e.message;bt.disabled=false;}};}
+  function openAdvanced(key){window.dispatchEvent(new CustomEvent('kp-open-advanced-module',{detail:{key,tenantId:tenantId()}}));}
+  function markup(core,commerce,tenant){const map=new Map(core.map(x=>[String(x.feature_key),x])),addons=commerce.modules||[];return `<div id="kp-module-catalog" data-tenant="${esc(tenant)}"><div class="notice ok" style="margin-bottom:16px"><strong>Module verwalten und jederzeit zubuchen</strong><div style="margin-top:5px">Enthaltene Portalmodule kannst du ein- oder ausblenden. Erweiterungsmodule können direkt hier kostenpflichtig zur bestehenden Subscription hinzugebucht werden.</div>${Number(commerce.addOnMonthlyCents||0)>0?`<div style="margin-top:7px"><strong>Aktive Erweiterungen:</strong> ${esc(money(commerce.addOnMonthlyCents,'EUR'))} netto / Monat zusätzlich.</div>`:''}</div>${sections.map(section=>`<section style="margin-bottom:22px"><h3 style="margin:0 0 10px">${esc(section.title)}</h3><div class="grid">${section.items.map(item=>coreCard(item,map)).join('')}</div></section>`).join('')}<section style="margin-bottom:22px"><h3 style="margin:0 0 10px">Erweiterungsmodule</h3><div class="grid">${addons.map(advancedCard).join('')}</div></section><section style="margin-bottom:22px"><div class="card"><div class="top" style="gap:12px;flex-wrap:wrap"><div style="min-width:0"><h3 style="margin:0">Branding & Domain</h3><div class="muted" style="margin-top:5px">White-Label, Logo, Farben und eigene Domain werden in der Marken-/Domain-Konfiguration verwaltet.</div></div><button type="button" class="btn secondary" id="kp-module-branding">Branding öffnen</button></div></div></section></div>`;}
+  async function render(force=false){if(!moduleTitle())return;const tenant=tenantId();if(!tenant)return;const existing=document.querySelector('#kp-module-catalog'),rawGrid=[...document.querySelectorAll('.content > .grid')].find(x=>!x.closest('#kp-module-catalog'));if(!force&&existing?.dataset.tenant===tenant&&!rawGrid)return;if(loadingTenant===tenant)return;loadingTenant=tenant;try{const [coreData,commerce]=await Promise.all([json(`/api/tenant/modules?tenant_id=${encodeURIComponent(tenant)}`),json(`/api/billing/modules?tenant_id=${encodeURIComponent(tenant)}`)]);if(!moduleTitle()||tenantId()!==tenant)return;const html=markup(coreData.modules||[],commerce,tenant);if(rawGrid)rawGrid.outerHTML=html;else if(existing)existing.outerHTML=html;else document.querySelector('.content > .top')?.insertAdjacentHTML('afterend',html);wire();}catch(e){const raw=[...document.querySelectorAll('.content > .grid')].find(x=>!x.closest('#kp-module-catalog'));if(raw)raw.innerHTML=`<div class="notice error">Module konnten nicht geladen werden: ${esc(e.message)}</div>`;}finally{if(loadingTenant===tenant)loadingTenant='';}}
+  function wire(){document.querySelectorAll('.kp-module-toggle').forEach(input=>input.addEventListener('change',async e=>{const box=e.currentTarget,tenant=tenantId(),enabled=box.checked,keys=String(box.dataset.keys||'').split(',').filter(Boolean);box.disabled=true;try{await Promise.all(keys.map(feature_key=>json(`/api/tenant/modules?tenant_id=${encodeURIComponent(tenant)}`,{method:'PUT',body:JSON.stringify({feature_key,enabled})})));await render(true);}catch(err){box.checked=!enabled;alert(`Modul konnte nicht geändert werden: ${err.message}`);}finally{box.disabled=false;}}));document.querySelectorAll('.kp-module-buy').forEach(b=>b.onclick=()=>buyModule(b.dataset.key));document.querySelectorAll('.kp-module-open').forEach(b=>b.onclick=()=>openAdvanced(b.dataset.key));document.querySelector('#kp-module-branding')?.addEventListener('click',()=>document.querySelector('[data-v="branding"]')?.click());}
   function schedule(){if(scheduled)return;scheduled=true;queueMicrotask(()=>{scheduled=false;void render();});}
-
-  new MutationObserver(schedule).observe(document.querySelector('#app')||document.body,{subtree:true,childList:true});
-  document.addEventListener('change',e=>{if(e.target?.id==='tenantPick'){renderedTenant='';setTimeout(()=>void render(true),0);}});
-  void render();
+  new MutationObserver(schedule).observe(document.querySelector('#app')||document.body,{subtree:true,childList:true});document.addEventListener('change',e=>{if(e.target?.id==='tenantPick')setTimeout(()=>void render(true),0);});void render();
 }

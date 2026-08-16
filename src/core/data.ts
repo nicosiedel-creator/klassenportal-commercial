@@ -3,6 +3,7 @@ import { audit } from './audit.js';
 import { requireCourseAccess, requireRole } from './permissions.js';
 import { id, nowIso, safeString, slugify } from './utils.js';
 import { hashPassword } from './auth.js';
+import { sendTeamsWorkflowNotification } from './advanced-modules.js';
 
 export async function listTenants(env:Env,auth:CoreAuthContext){
   if(auth.isPlatformAdmin){ const r=await env.DB.prepare(`SELECT t.*,s.portal_name,s.custom_domain,sub.plan_id,sub.status AS subscription_status
@@ -48,6 +49,13 @@ export async function listContent(env:Env,auth:CoreAuthContext,tenantId:string,t
   if(type==='announcements'&&(auth.role==='participant'||auth.role==='guest'))sql+=' AND visible=1';
   sql+=` ORDER BY ${d.order}`; const r=await env.DB.prepare(sql).bind(...binds).all(); return r.results??[];
 }
+function teamsContent(type:string,input:Record<string,unknown>):{title:string;body:string}|null{
+  if(type==='announcements')return{title:`Neue Meldung: ${safeString(input.title,200)}`,body:safeString(input.body,2000)};
+  if(type==='homework')return{title:`Neue Aufgabe: ${safeString(input.title,200)}`,body:[input.due_at?`Fällig: ${String(input.due_at)}`:'',safeString(input.description,1200),safeString(input.submission_info,700)].filter(Boolean).join('\n')};
+  if(type==='appointments')return{title:`Neuer Termin: ${safeString(input.title,200)}`,body:[input.starts_at?`Beginn: ${String(input.starts_at)}`:'',input.location?`Ort: ${safeString(input.location,200)}`:'',safeString(input.description,1200)].filter(Boolean).join('\n')};
+  if(type==='exams')return{title:`Neue Prüfung: ${safeString(input.title,200)}`,body:[input.starts_at?`Termin: ${String(input.starts_at)}`:'',input.room?`Raum: ${safeString(input.room,200)}`:'',safeString(input.notes,1200)].filter(Boolean).join('\n')};
+  return null;
+}
 export async function createContent(env:Env,auth:CoreAuthContext,tenantId:string,type:string,input:Record<string,unknown>){
   requireRole(auth,'class_admin'); const d=def(type);
   for(const f of d.required)if(input[f]===undefined||String(input[f]).trim()==='')throw new Error(`FIELD_REQUIRED:${f}`);
@@ -55,7 +63,9 @@ export async function createContent(env:Env,auth:CoreAuthContext,tenantId:string
   if(input.course_id){await ensureCourse(env,tenantId,input.course_id);requireCourseAccess(auth,String(input.course_id));}
   const obj:Record<string,unknown>={}; for(const f of d.fields){ if(input[f]!==undefined)obj[f]=(f==='course_id'&&input[f]==='')?null:input[f]; }
   if(type==='announcements'&&!obj.published_at)obj.published_at=nowIso(); if(type==='announcements'&&obj.visible===undefined)obj.visible=1; if(type==='exams'&&obj.visible_to_students===undefined)obj.visible_to_students=1;
-  const rowId=id('ent_'),ts=nowIso(); const fields=['id','tenant_id',...Object.keys(obj),'created_at']; const vals:unknown[]=[rowId,tenantId,...Object.values(obj),ts]; if(type==='homework'||type==='exams'){fields.push('updated_at');vals.push(ts);} const sql=`INSERT INTO ${d.table}(${fields.join(',')}) VALUES(${fields.map(()=>'?').join(',')})`; await env.DB.prepare(sql).bind(...vals).run(); await audit(env.DB,auth.userId,`${type}.created`,tenantId,String(input.course_id||'')||undefined,type,rowId); return env.DB.prepare(`SELECT * FROM ${d.table} WHERE id=? AND tenant_id=?`).bind(rowId,tenantId).first();
+  const rowId=id('ent_'),ts=nowIso(); const fields=['id','tenant_id',...Object.keys(obj),'created_at']; const vals:unknown[]=[rowId,tenantId,...Object.values(obj),ts]; if(type==='homework'||type==='exams'){fields.push('updated_at');vals.push(ts);} const sql=`INSERT INTO ${d.table}(${fields.join(',')}) VALUES(${fields.map(()=>'?').join(',')})`; await env.DB.prepare(sql).bind(...vals).run(); await audit(env.DB,auth.userId,`${type}.created`,tenantId,String(input.course_id||'')||undefined,type,rowId);
+  const teams=teamsContent(type,input);if(teams)void sendTeamsWorkflowNotification(env,tenantId,teams.title,teams.body);
+  return env.DB.prepare(`SELECT * FROM ${d.table} WHERE id=? AND tenant_id=?`).bind(rowId,tenantId).first();
 }
 
 export async function setExamVisibility(env:Env,auth:CoreAuthContext,tenantId:string,examId:string,visible:boolean){ requireRole(auth,'class_admin'); const x=await env.DB.prepare('SELECT course_id FROM exams WHERE id=? AND tenant_id=?').bind(examId,tenantId).first<{course_id:string}>(); if(!x)throw new Error('EXAM_NOT_FOUND'); requireCourseAccess(auth,x.course_id); await env.DB.prepare('UPDATE exams SET visible_to_students=?,updated_at=? WHERE id=? AND tenant_id=?').bind(visible?1:0,nowIso(),examId,tenantId).run(); await audit(env.DB,auth.userId,'exam.visibility',tenantId,x.course_id,'exam',examId,{visible}); }

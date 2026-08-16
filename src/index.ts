@@ -5,6 +5,8 @@ import { refreshTrialStates } from './core/commerce-offers.js';
 import { assertPaymentWriteAccess } from './core/payment-access.js';
 import { augmentPaidOnboardingResponse, handlePaymentApi } from './core/payment-router.js';
 import { publicMaterialDownload, publicOverview, publicPortalMetadata } from './core/public.js';
+import { publicAdvancedBySlug } from './core/public-advanced.js';
+import { calendarFeedResponse } from './core/advanced-modules.js';
 import { handleRuntimeSchemaApi } from './core/runtime-schema-router.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
@@ -46,6 +48,8 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   const url = new URL(request.url);
   const logo = url.pathname.match(/^\/brand\/logo\/([^/]+)$/);
   if (logo) return serveTenantLogo(env, decodeURIComponent(logo[1]));
+  const calendarFeed=url.pathname.match(/^\/calendar\/([A-Za-z0-9]+)\.ics$/);
+  if(calendarFeed){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return calendarFeedResponse(env,calendarFeed[1]);}
   const adminPath=url.pathname.replace(/\/$/,'');
   if (['/plattform-admin','/kunden-admin','/klassen-admin'].includes(adminPath)) {
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Methode nicht erlaubt',{status:405});
@@ -86,8 +90,9 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   if(classOverview){
     if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});
     try{
-      const accessCode=request.headers.get('X-Klassenportal-Access-Code')||url.searchParams.get('access_code')||undefined;
-      return jsonOk(await publicOverview(env,decodeURIComponent(classOverview[1]),decodeURIComponent(classOverview[2]),await getSession(env,request),accessCode));
+      const tenantSlug=decodeURIComponent(classOverview[1]),courseCode=decodeURIComponent(classOverview[2]),session=await getSession(env,request),accessCode=request.headers.get('X-Klassenportal-Access-Code')||url.searchParams.get('access_code')||undefined;
+      const base=await publicOverview(env,tenantSlug,courseCode,session,accessCode),advanced=await publicAdvancedBySlug(env,tenantSlug,courseCode,session,env.APP_ORIGIN||url.origin);
+      return jsonOk({...base,...advanced});
     }catch(e){return publicError(e);}
   }
 

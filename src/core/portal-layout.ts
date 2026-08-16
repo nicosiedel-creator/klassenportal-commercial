@@ -3,6 +3,7 @@ import { nowIso } from './utils.js';
 
 const ALLOWED_SECTIONS=new Set([
   'benachrichtigungen','meldungen','woche','stundenplan','aufgaben','termine','pruefungen','erinnerungen','kalender','materialien','links',
+  'vertretungen','umfragen','microsoft365',
 ]);
 
 function normalizeOrder(value:unknown):string[]{
