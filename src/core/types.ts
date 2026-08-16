@@ -9,6 +9,7 @@ export interface Env {
   APP_ORIGIN?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
+  OWNER_MFA_ENCRYPTION_KEY?: string;
 }
 
 export type Role = 'platform_admin' | 'tenant_admin' | 'class_admin' | 'participant' | 'guest';
