@@ -6,6 +6,7 @@ import { assertPaymentWriteAccess } from './core/payment-access.js';
 import { augmentPaidOnboardingResponse, handlePaymentApi } from './core/payment-router.js';
 import { handleBillingLifecycleApi } from './core/billing-lifecycle-router.js';
 import { processScheduledModuleCancellations } from './core/module-cancellation.js';
+import { handleOwnerSecurityApi } from './core/owner-security-router.js';
 import { publicMaterialDownload, publicOverview, publicPortalMetadata } from './core/public.js';
 import { publicAdvancedBySlug } from './core/public-advanced.js';
 import { calendarFeedResponse } from './core/advanced-modules.js';
@@ -102,6 +103,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
     }catch(e){return publicError(e);}
   }
 
+  const ownerSecurity=await handleOwnerSecurityApi(request,env);if(ownerSecurity)return ownerSecurity;
   const schemaApi=await handleRuntimeSchemaApi(request,env);if(schemaApi)return schemaApi;
   const lifecycle=await handleBillingLifecycleApi(request,env);if(lifecycle)return lifecycle;
   const payment=await handlePaymentApi(request,env);if(payment)return payment;
@@ -144,6 +146,7 @@ export default{
     await runScheduledTenantBackups(env,portabilityConfig,'system:backup',3);
     const now=new Date();
     await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now.toISOString()).run();
+    await env.DB.prepare('DELETE FROM platform_mfa_challenges WHERE expires_at <= ?').bind(now.toISOString()).run().catch(()=>undefined);
     await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(now.toISOString()).run();
     await env.DB.prepare('DELETE FROM login_attempts WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60*1000).toISOString()).run();
   },
