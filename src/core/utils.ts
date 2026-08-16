@@ -61,10 +61,15 @@ export function parseCookie(request: Request, name: string): string | null {
 
 export function assertSameOrigin(request: Request, appOrigin?: string): void {
   if (!['POST','PUT','PATCH','DELETE'].includes(request.method)) return;
-  const origin = request.headers.get('origin');
-  if (!origin) return;
-  const expected = appOrigin || new URL(request.url).origin;
-  if (origin !== expected) throw new Error('CSRF_ORIGIN_MISMATCH');
+  const requestOrigin=new URL(request.url).origin;
+  const origin=request.headers.get('origin');
+  const fetchSite=(request.headers.get('sec-fetch-site')||'').toLowerCase();
+  if(fetchSite && fetchSite!=='same-origin') throw new Error('CSRF_ORIGIN_MISMATCH');
+  if(origin){
+    const allowed=new Set([requestOrigin]);
+    if(appOrigin){try{allowed.add(new URL(appOrigin).origin);}catch{/* invalid config does not widen trust */}}
+    if(!allowed.has(origin))throw new Error('CSRF_ORIGIN_MISMATCH');
+  }
 }
 
 export function cookie(name: string, value: string, maxAge: number): string {
