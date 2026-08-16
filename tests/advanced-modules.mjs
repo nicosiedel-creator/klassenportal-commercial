@@ -34,7 +34,12 @@ for(const id of ['vertretungen','umfragen','microsoft365'])assert.ok(layout.incl
 const index=read('src/index.ts');
 assert.match(index,/calendarFeedResponse/);
 assert.match(index,/publicAdvancedBySlug/);
-const classAdmin=read('public/class-admin.html');
-assert.match(classAdmin,/advanced-module-ui\.js/);
+const classAdmin=read('public/class-admin-portal.js');
+for(const key of ['statistics','surveys','substitution_updates','microsoft_365','microsoft_teams'])assert.ok(classAdmin.includes(`${key}:`)||classAdmin.includes(`'${key}'`),`class workspace missing ${key}`);
+assert.match(classAdmin,/data-module/,'class workspace must expose active advanced modules');
+assert.match(classAdmin,/openStatistics/);
+assert.match(classAdmin,/openSurveys/);
+assert.match(classAdmin,/openSubstitutions/);
+assert.match(classAdmin,/openM365/);
 
 console.log('Advanced modules + self-service add-on acceptance checks: OK');

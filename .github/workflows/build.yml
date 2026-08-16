@@ -23,7 +23,7 @@ jobs:
       - name: Browser JavaScript syntax
         run: find public -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Automated tests
-        run: node tests/run.mjs
+        run: npm test
       - name: Release readiness
         run: node scripts/release-check.mjs
       - name: D1 migrations locally
