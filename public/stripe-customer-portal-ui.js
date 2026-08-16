@@ -28,7 +28,7 @@
       try{const r=await api(`/api/billing/stripe-portal?tenant_id=${encodeURIComponent(tid)}`,{method:'POST',body:'{}'});if(!r.url)throw new Error('STRIPE_PORTAL_URL_MISSING');location.assign(r.url);}
       catch(e){alert(e.message==='STRIPE_CUSTOMER_NOT_FOUND'?'Für diesen Kunden ist noch kein Stripe-Zahlungskonto vorhanden.':e.message);b.disabled=false;b.textContent=old;}
     };
-    const billing=side.querySelector('#kp-commerce-tenant');billing?.after(b)||side.append(b);
+    const billing=side.querySelector('#kp-commerce-tenant');if(billing)billing.after(b);else side.append(b);
   }
   async function init(){
     try{me=(await api('/api/auth/me')).user;if(!me)return;}catch{return;}
