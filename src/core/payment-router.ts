@@ -5,6 +5,7 @@ import { billingSummaryWithStripe, createPaidBookingWithStripe, quoteExpansionWi
 import { createStripePortalSessionModeSafe, handleStripeWebhookModeSafe } from './stripe-mode-safe.js';
 import { createTaxStripeCheckout } from './stripe-tax-billing.js';
 import { ensureTenantCommerceState } from './commerce-state.js';
+import { listManagedSetupJobs, updateManagedSetupJob } from './managed-setup.js';
 import { assertSameOrigin, nowIso, safeString } from './utils.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status,headers:{'cache-control':'no-store'}});}
@@ -37,6 +38,13 @@ export async function handlePaymentApi(request:Request,env:Env):Promise<Response
   }
   if(u.pathname==='/api/payments/checkout-status'&&request.method==='GET'){
     try{return await checkoutStatus(request,env,u);}catch(e){return error(e);}
+  }
+  if(u.pathname==='/api/platform/managed-setups'&&request.method==='GET'){
+    try{assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);return out({ok:true,jobs:await listManagedSetupJobs(env,auth)});}catch(e){return error(e);}
+  }
+  const managedSetup=u.pathname.match(/^\/api\/platform\/managed-setups\/([^/]+)$/);
+  if(managedSetup&&request.method==='PATCH'){
+    try{assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);return out({ok:true,job:await updateManagedSetupJob(env,auth,decodeURIComponent(managedSetup[1]),await body(request))});}catch(e){return error(e);}
   }
   if(!u.pathname.startsWith('/api/billing/'))return null;
   const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)return out({ok:false,error:'TENANT_ID_REQUIRED'},400);
