@@ -8,6 +8,9 @@ const router=await text('src/core/router.ts');
 const runtimeRouter=await text('src/core/runtime-schema-router.ts');
 const publicApi=await text('src/core/public.ts');
 const platformOwner=await text('src/core/platform-owner.ts');
+const auth=await text('src/core/auth.ts');
+const utils=await text('src/core/utils.ts');
+const pkg=JSON.parse(await text('package.json'));
 const classPortalHtml=await text('public/class-portal.html');
 const classAdminHtml=await text('public/class-admin.html');
 const classAdminPortal=await text('public/class-admin-portal.js');
@@ -32,6 +35,14 @@ for(const header of ['x-content-type-options','x-frame-options','referrer-policy
 assert.ok(index.includes("headers.set('cache-control','no-store')"),'HTML must be no-store');
 assert.ok(index.includes("jsonError('INTERNAL_ERROR',500)"),'unhandled request errors must be sanitized');
 assert.ok(index.includes('DELETE FROM login_attempts'),'expired login throttling rows must be cleaned');
+
+assert.ok(auth.includes('CURRENT_ITERATIONS = 600_000'),'new passwords must use hardened PBKDF2 cost');
+assert.ok(auth.includes('MIN_ACCEPTED_ITERATIONS = 100_000'),'legacy hashes must have a strict lower security floor');
+assert.ok(auth.includes('PLATFORM_IDLE_MINUTES = 30')&&auth.includes('PLATFORM_SESSION_HOURS = 12'),'owner sessions must be short and idle-limited');
+assert.ok(auth.includes('passwordIterations(u.password_hash)<CURRENT_ITERATIONS'),'legacy password hashes must upgrade transparently on successful login');
+assert.ok(auth.includes("DELETE FROM sessions WHERE user_id=? AND token_hash<>?"),'password change must revoke other sessions');
+assert.ok(utils.includes("fetchSite && fetchSite!=='same-origin'"),'cross-site browser mutations must be rejected');
+assert.ok(String(pkg.scripts?.test||'').includes('tests/security-roles.mjs'),'security role tests must run in CI');
 
 assert.ok(!router.includes('/api/bootstrap'),'public bootstrap route must stay removed');
 assert.ok(!index.includes('BOOTSTRAP_SECRET'),'runtime must not use BOOTSTRAP_SECRET');
