@@ -9,6 +9,7 @@ const mail=await readFile('src/core/mail.ts','utf8');
 const legal=await readFile('src/core/legal.ts','utf8');
 const backups=await readFile('src/core/backup-verification.ts','utf8');
 const readiness=await readFile('src/core/launch-readiness.ts','utf8');
+const releaseState=await readFile('src/core/production-release-state.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
 const wrangler=await readFile('wrangler.jsonc','utf8');
 const accountPage=await readFile('public/account-action.js','utf8');
@@ -45,7 +46,7 @@ assert.match(readiness,/Eigentümer-MFA ist nicht aktiviert/,'production readine
 assert.match(readiness,/Transaktions-E-Mail ist nicht vollständig konfiguriert/,'production readiness must require transactional mail');
 assert.match(readiness,/Rechtliche Unterlagen/,'production readiness must require legal configuration');
 assert.match(readiness,/Backup-Sicherheit nicht erfüllt/,'production readiness must require verified current backups');
-assert.match(readiness,/\.workers\.dev/,'preview Worker origin must never count as production-ready');
+assert.match(releaseState,/\.workers\.dev/,'preview Worker origin must never count as production-ready');
 assert.match(readiness,/CLOUDFLARE_SAAS_CNAME_TARGET/,'production readiness must require custom-domain provider when that module is sold');
 
 for(const route of ['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren','/impressum','/datenschutz','/agb','/avv'])assert.ok(index.includes(`'${route}'`)||wrangler.includes(`"${route}*"`),`launch route missing: ${route}`);

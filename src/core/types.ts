@@ -1,6 +1,7 @@
 import type { D1DatabaseLike, R2BucketLike } from '../portability/types.js';
 
 export interface AssetBindingLike { fetch(request: Request): Promise<Response>; }
+export interface WorkerVersionMetadataLike { id:string; tag?:string; timestamp?:string; }
 
 export interface Env {
   DB: D1DatabaseLike;
@@ -15,6 +16,7 @@ export interface Env {
   CLOUDFLARE_SAAS_CNAME_TARGET?: string;
   RESEND_API_KEY?: string;
   MAIL_FROM?: string;
+  CF_VERSION_METADATA?: WorkerVersionMetadataLike;
 }
 
 export type Role = 'platform_admin' | 'tenant_admin' | 'class_admin' | 'participant' | 'guest';
