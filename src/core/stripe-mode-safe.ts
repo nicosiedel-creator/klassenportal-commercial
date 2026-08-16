@@ -4,6 +4,7 @@ import { stripeMode } from './stripe-mode.js';
 import { persistStripeModeState, prepareStripeModeState } from './stripe-mode-state.js';
 import { requireRole } from './permissions.js';
 import { nowIso } from './utils.js';
+import { handleModuleInvoiceFailed, handleModuleInvoicePaid } from './module-commerce.js';
 
 const API='https://api.stripe.com/v1';
 
@@ -15,6 +16,12 @@ async function stripePost(env:Env,path:string,entries:Array<[string,unknown]>,id
   const mode=stripeMode(env),headers:Record<string,string>={Authorization:`Bearer ${env.STRIPE_SECRET_KEY}`,'content-type':'application/x-www-form-urlencoded'};if(idem)headers['Idempotency-Key']=`${mode}:${idem}`.slice(0,255);
   const r=await fetch(`${API}${path}`,{method:'POST',headers,body:form(entries)});let d:any={};try{d=await r.json();}catch{}if(!r.ok){const code=String(d?.error?.code||d?.error?.type||'API_ERROR').toUpperCase().replace(/[^A-Z0-9]+/g,'_');throw new Error(`STRIPE_${code}`);}return d;
 }
+async function settleModuleInvoice(env:Env,event:StripeObj):Promise<void>{
+  const type=String(event?.type||''),invoiceId=sid(event?.data?.object);if(!invoiceId||!['invoice.paid','invoice.payment_failed'].includes(type))return;
+  const local=await env.DB.prepare('SELECT tenant_id,change_id FROM commercial_invoices WHERE external_invoice_id=? ORDER BY created_at DESC LIMIT 1').bind(invoiceId).first<{tenant_id:string;change_id:string|null}>();if(!local?.tenant_id)return;
+  if(type==='invoice.paid')await handleModuleInvoicePaid(env,local.tenant_id,local.change_id,invoiceId);
+  else await handleModuleInvoiceFailed(env,local.tenant_id,local.change_id,invoiceId);
+}
 
 export async function handleStripeWebhookModeSafe(env:Env,request:Request):Promise<Response>{
   if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)throw new Error('STRIPE_NOT_CONFIGURED');
@@ -23,6 +30,7 @@ export async function handleStripeWebhookModeSafe(env:Env,request:Request):Promi
   const forwarded=new Request(request.url,{method:'POST',headers:new Headers(request.headers),body:raw}),eventId=sid(event);let response:Response|undefined;
   try{
     response=await handleStripeWebhook(env,forwarded);
+    if(response.ok)await settleModuleInvoice(env,event);
     return response;
   }finally{
     const ts=nowIso(),ops=[];
