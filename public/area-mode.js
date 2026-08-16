@@ -28,7 +28,7 @@ if(AREA){
     if(brand)setText(brand,AREA==='platform'?'Klassenportal · Plattform-Admin':'Klassenportal · Kunden-Admin');
     const side=document.querySelector('.side');
     if(!side)return;
-    if(AREA==='customer')applyCustomerMode(side);else setText(side.querySelector('h1'),'Klassenportal · Plattform-Admin');
+    if(AREA==='customer')applyCustomerMode(side);else setText(side.querySelector('h1'),'Klassenportal · Plattform');
     let switcher=side.querySelector('#kp-area-switch');
     if(isPlatformOwner()&&!switcher){
       switcher=document.createElement('button');switcher.className='nav';switcher.id='kp-area-switch';
