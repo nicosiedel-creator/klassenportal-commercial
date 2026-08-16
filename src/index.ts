@@ -7,6 +7,9 @@ import { augmentPaidOnboardingResponse, handlePaymentApi } from './core/payment-
 import { handleBillingLifecycleApi } from './core/billing-lifecycle-router.js';
 import { processScheduledModuleCancellations } from './core/module-cancellation.js';
 import { handleOwnerSecurityApi } from './core/owner-security-router.js';
+import { handleCustomDomainApi } from './core/custom-domain-router.js';
+import { reconcilePendingCustomDomains } from './core/custom-domains.js';
+import { ensureCustomDomainGuards } from './core/custom-domain-guards.js';
 import { publicMaterialDownload, publicOverview, publicPortalMetadata } from './core/public.js';
 import { publicAdvancedBySlug } from './core/public-advanced.js';
 import { calendarFeedResponse } from './core/advanced-modules.js';
@@ -104,6 +107,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   }
 
   const ownerSecurity=await handleOwnerSecurityApi(request,env);if(ownerSecurity)return ownerSecurity;
+  const customDomain=await handleCustomDomainApi(request,env);if(customDomain)return customDomain;
   const schemaApi=await handleRuntimeSchemaApi(request,env);if(schemaApi)return schemaApi;
   const lifecycle=await handleBillingLifecycleApi(request,env);if(lifecycle)return lifecycle;
   const payment=await handlePaymentApi(request,env);if(payment)return payment;
@@ -143,6 +147,8 @@ export default{
   async scheduled(_controller:unknown,env:Env):Promise<void>{
     await refreshTrialStates(env);
     await processScheduledModuleCancellations(env,25);
+    await ensureCustomDomainGuards(env).catch(()=>undefined);
+    await reconcilePendingCustomDomains(env,25).catch(e=>console.error('Custom domain reconciliation failed',{error:String((e as Error)?.message||e)}));
     await runScheduledTenantBackups(env,portabilityConfig,'system:backup',3);
     const now=new Date();
     await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now.toISOString()).run();
