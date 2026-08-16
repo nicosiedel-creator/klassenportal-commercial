@@ -77,11 +77,13 @@ export async function resetTenantUserPassword(env:Env,auth:CoreAuthContext,tenan
     FROM users u WHERE u.id=?`).bind(userId).first<Record<string,unknown>>();
   if(!target)throw new Error('USER_NOT_FOUND');
   if(Number(target.is_platform_admin)===1)throw new Error('PLATFORM_ADMIN_RESET_FORBIDDEN');
-  const memberships=(await env.DB.prepare('SELECT course_id,role FROM memberships WHERE tenant_id=? AND user_id=?').bind(tenantId,userId).all<Record<string,unknown>>()).results??[];
-  if(!memberships.length)throw new Error('USER_NOT_FOUND');
+  const memberships=(await env.DB.prepare('SELECT tenant_id,course_id,role FROM memberships WHERE user_id=?').bind(userId).all<Record<string,unknown>>()).results??[];
+  const tenantMemberships=memberships.filter(m=>String(m.tenant_id)===tenantId);
+  if(!tenantMemberships.length)throw new Error('USER_NOT_FOUND');
+  if(!auth.isPlatformAdmin&&new Set(memberships.map(m=>String(m.tenant_id))).size>1)throw new Error('SHARED_USER_RESET_PLATFORM_REQUIRED');
   if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'){
-    const privileged=memberships.some(m=>['tenant_admin','class_admin'].includes(String(m.role)));
-    const allowed=memberships.some(m=>m.course_id&&auth.courseIds.includes(String(m.course_id))&&['participant','guest'].includes(String(m.role)));
+    const privileged=tenantMemberships.some(m=>['tenant_admin','class_admin'].includes(String(m.role)));
+    const allowed=tenantMemberships.some(m=>m.course_id&&auth.courseIds.includes(String(m.course_id))&&['participant','guest'].includes(String(m.role)));
     if(privileged||!allowed)throw new Error('FORBIDDEN_USER_RESET');
   }
   const temporaryPassword=b64(randomBytes(15)).replace(/[+/=]/g,'').slice(0,18)+'Aa1!',ts=nowIso();
