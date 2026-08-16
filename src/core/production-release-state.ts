@@ -40,8 +40,9 @@ export async function ensureProductionReleaseSchema(env:Env):Promise<void>{
 }
 
 export async function productionReleaseAccess(env:Env,request:Request):Promise<ProductionReleaseAccess>{
-  if(requestLooksLikePreview(request))return{production:false,allowed:true,approved:false,origin:null,version:currentWorkerVersion(env),approvedAt:null,approvedBy:null,reason:null};
-  const origin=productionOriginStatus(env),version=currentWorkerVersion(env);
+  const origin=productionOriginStatus(env),version=currentWorkerVersion(env),preview=requestLooksLikePreview(request);
+  if(preview&&!origin.ok)return{production:false,allowed:true,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:null};
+  if(preview&&origin.ok)return{production:true,allowed:false,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:'Vorschau-URL verwendet Produktionskonfiguration; Kundenverkehr bleibt aus Sicherheitsgründen gesperrt'};
   if(!origin.ok)return{production:true,allowed:false,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:origin.reason||'Produktionsursprung ist nicht sicher konfiguriert'};
   if(!version)return{production:true,allowed:false,approved:false,origin:origin.origin,version:null,approvedAt:null,approvedBy:null,reason:'Worker-Versionsmetadaten fehlen; Produktion bleibt gesperrt'};
   try{
