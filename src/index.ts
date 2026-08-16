@@ -5,6 +5,7 @@ import { refreshTrialStates } from './core/commerce-offers.js';
 import { assertPaymentWriteAccess } from './core/payment-access.js';
 import { augmentPaidOnboardingResponse, handlePaymentApi } from './core/payment-router.js';
 import { publicMaterialDownload, publicOverview, publicPortalMetadata } from './core/public.js';
+import { handleRuntimeSchemaApi } from './core/runtime-schema-router.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
@@ -89,6 +90,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
     }catch(e){return publicError(e);}
   }
 
+  const schemaApi=await handleRuntimeSchemaApi(request,env);if(schemaApi)return schemaApi;
   const payment=await handlePaymentApi(request,env);if(payment)return payment;
 
   const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);
