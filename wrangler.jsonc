@@ -11,10 +11,12 @@
       "/api/*",
       "/public/*",
       "/brand/*",
+      "/calendar/*",
       "/portal/*",
       "/einrichtung/*",
       "/plattform-admin*",
       "/kunden-admin*",
+      "/klassen-admin*",
       "/zahlung/*"
     ]
   },
