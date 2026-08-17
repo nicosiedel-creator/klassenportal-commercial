@@ -3,6 +3,7 @@ import { resolveCoreAuth } from './auth.js';
 import { applyReleaseSchema, releaseSchemaStatus } from './runtime-schema.js';
 import { getPortalLayout, resetPortalLayout, savePortalLayout } from './portal-layout.js';
 import { createDemoFixturePhase, demoFixtureStatus, platformTenantDetail, updatePlatformTenant } from './platform-owner.js';
+import { handlePlatformOfferApi } from './platform-offer-router.js';
 import { assertSameOrigin, json } from './utils.js';
 
 function error(e:unknown):Response{
@@ -13,6 +14,7 @@ function error(e:unknown):Response{
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 
 export async function handleRuntimeSchemaApi(request:Request,env:Env):Promise<Response|null>{
+  const offerApi=await handlePlatformOfferApi(request,env);if(offerApi)return offerApi;
   const u=new URL(request.url);
   if(u.pathname==='/api/personal/portal-layout'){
     try{
