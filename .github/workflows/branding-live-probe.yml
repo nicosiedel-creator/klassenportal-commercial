@@ -14,6 +14,7 @@ jobs:
         run: |
           set -euo pipefail
           candidates=(
+            commercial-preview
             block3-onboarding-managed-setup
             branding-runtime-schema-safety
             branding-theme-studio
@@ -36,7 +37,7 @@ jobs:
             if grep -Fq '"background_color":"#ffffff"' /tmp/meta 2>/dev/null; then bg_nonwhite=false; elif [ "$meta_code" = 200 ]; then bg_nonwhite=true; fi
             ok=false
             if [ "$code" = 200 ] && [ "$meta_code" = 200 ] && [ "$six" = true ] && [ "$free" = true ] && [ "$accent" = true ] && [ "$surface" = true ] && [ "$text" = true ] && [ "$bg_nonwhite" = true ]; then ok=true; fi
-            if [ "$branch" = block3-onboarding-managed-setup ] && { [ "$marker_code" != 200 ] || [ "$marker" != true ]; }; then ok=false; fi
+            if { [ "$branch" = block3-onboarding-managed-setup ] || [ "$branch" = commercial-preview ]; } && { [ "$marker_code" != 200 ] || [ "$marker" != true ]; }; then ok=false; fi
             item=$(jq -nc --arg branch "$branch" --arg base "$base" --arg code "$code" --arg meta "$meta_code" --arg marker_code "$marker_code" --argjson six "$six" --argjson free "$free" --argjson accent "$accent" --argjson surface "$surface" --argjson text "$text" --argjson bg "$bg_nonwhite" --argjson marker "$marker" --argjson ok "$ok" '{branch:$branch,base:$base,http:{branding:$code,meta:$meta,marker:$marker_code},markers:{six:$six,free:$free,accent:$accent,surface:$surface,text:$text,nonwhite:$bg,deployment_marker:$marker},ok:$ok}')
             result=$(jq -nc --argjson a "$result" --argjson i "$item" '$a+[$i]')
           done
