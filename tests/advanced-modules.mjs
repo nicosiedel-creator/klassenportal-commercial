@@ -42,4 +42,21 @@ assert.match(classAdmin,/openSurveys/);
 assert.match(classAdmin,/openSubstitutions/);
 assert.match(classAdmin,/openM365/);
 
+const data=read('src/core/data.ts');
+assert.match(data,/MODULE_MANAGED_BY_BILLING/,'paid add-ons must not be toggled through the generic tenant module API');
+assert.match(data,/MODULE_MANAGED_BY_PACKAGE/,'package-controlled features must not be toggled through the generic tenant module API');
+assert.match(data,/STANDARD_MODULES/,'standard modules must preserve plan ownership');
+const hardening=read('migrations/0043_module_access_hardening.sql');
+assert.match(hardening,/trg_paid_module_feature_insert/);
+assert.match(hardening,/trg_paid_module_feature_update/);
+assert.match(hardening,/tenant_module_entitlements/);
+const adminEntry=read('public/admin-entry-route-ui.js');
+assert.match(adminEntry,/\/plattform-admin/);
+assert.match(adminEntry,/\/kunden-admin/);
+assert.match(adminEntry,/\/klassen-admin/);
+const rootHtml=read('public/index.html');
+assert.match(rootHtml,/admin-entry-route-ui\.js/,'generic root must route admins to their dedicated area');
+const localization=read('public/localization.js');
+for(const key of ['learning_materials','microsoft_365','substitution_updates','custom_domain','weekly_overview'])assert.ok(localization.includes(`'${key}'`),`missing German localization for ${key}`);
+
 console.log('Advanced modules + self-service add-on acceptance checks: OK');
