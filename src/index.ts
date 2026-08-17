@@ -13,7 +13,7 @@ import { ensureCustomDomainGuards } from './core/custom-domain-guards.js';
 import { handleAccountRecoveryApi } from './core/account-recovery-router.js';
 import { cleanupAccountActions } from './core/account-recovery.js';
 import { handleLaunchReadinessApi } from './core/launch-readiness-router.js';
-import { publicLegal } from './core/legal.js';
+import { renderLegalDocument } from './core/legal-documents.js';
 import { verifyPendingBackups } from './core/backup-verification.js';
 import { productionReleaseAccess } from './core/production-release-state.js';
 import { publicMaterialDownload, publicOverview, publicPortalMetadata } from './core/public.js';
@@ -33,9 +33,10 @@ function jsonError(code:string,status:number):Response{return new Response(JSON.
 function publicError(e:unknown):Response{const raw=String((e as Error)?.message||'PUBLIC_PORTAL_ERROR'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PUBLIC_PORTAL_ERROR',status=code.includes('NOT_FOUND')?404:['LOGIN_REQUIRED','ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(code)?401:code==='PUBLIC_PORTAL_ERROR'?500:400;return jsonError(code,status);}
 function jsonOk(data:unknown):Response{return new Response(JSON.stringify({ok:true,...(data as Record<string,unknown>)}),{status:200,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 
+const LEGAL_PATHS=['/impressum','/datenschutz','/agb','/avv','/unterauftragsverarbeiter','/datenportabilitaet','/rechtsverstoss-melden'] as const;
 function releaseGateBypass(path:string):boolean{
-  if(path==='/'||path==='/plattform-admin'||path.startsWith('/api/platform/')||path.startsWith('/api/auth/')||path==='/api/public/legal'||path==='/api/payments/stripe/webhook')return true;
-  if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren','/impressum','/datenschutz','/agb','/avv'].includes(path.replace(/\/$/,'')))return true;
+  if(path==='/'||path==='/plattform-admin'||path.startsWith('/api/platform/')||path.startsWith('/api/auth/')||path==='/api/public/legal'||path==='/api/legal/report'||path==='/api/payments/stripe/webhook')return true;
+  if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren',...LEGAL_PATHS].includes(path.replace(/\/$/,'') as any))return true;
   if(path.startsWith('/brand/logo/'))return true;
   return /\.(?:js|css|mjs|map|png|jpe?g|webp|svg|ico|woff2?|ttf)$/i.test(path);
 }
@@ -53,7 +54,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   const logo=url.pathname.match(/^\/brand\/logo\/([^/]+)$/);if(logo)return serveTenantLogo(env,decodeURIComponent(logo[1]));
   const calendarFeed=url.pathname.match(/^\/calendar\/([A-Za-z0-9]+)\.ics$/);if(calendarFeed){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return calendarFeedResponse(env,calendarFeed[1]);}
   if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren'].includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/account-action.html',request.url),{method:request.method,headers:request.headers}));}
-  if(['/impressum','/datenschutz','/agb','/avv'].includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});const legal=await publicLegal(env),target=clean==='/impressum'?legal.legalNoticeUrl:clean==='/datenschutz'?legal.privacyUrl:clean==='/agb'?legal.termsUrl:legal.dpaUrl;if(target)return new Response(null,{status:302,headers:{location:String(target),'cache-control':'no-store'}});return new Response('Rechtlicher Verweis ist noch nicht veröffentlicht.',{status:503,headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store'}});}
+  if((LEGAL_PATHS as readonly string[]).includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return renderLegalDocument(env,clean.slice(1) as any);}
   if(['/plattform-admin','/kunden-admin','/klassen-admin'].includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});const asset=clean==='/kunden-admin'?'/customer-admin.html':clean==='/klassen-admin'?'/class-admin.html':'/platform-admin.html';return env.ASSETS.fetch(new Request(new URL(asset,request.url),{method:request.method,headers:request.headers}));}
   if(/^\/portal\/[^/]+\/[^/]+\/?$/.test(url.pathname)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/class-portal.html',request.url),{method:request.method,headers:request.headers}));}
   if(url.pathname.startsWith('/einrichtung/')){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/onboarding.html',request.url),{method:request.method,headers:request.headers}));}
@@ -84,6 +85,6 @@ export default{
   async fetch(request:Request,env:Env):Promise<Response>{try{return harden(await routeRequest(request,env));}catch(error){console.error('Unhandled request error',{path:new URL(request.url).pathname,error:String((error as Error)?.message||error)});return harden(jsonError('INTERNAL_ERROR',500));}},
   async scheduled(_controller:unknown,env:Env):Promise<void>{
     await refreshTrialStates(env);await processScheduledModuleCancellations(env,25);await ensureCustomDomainGuards(env).catch(()=>undefined);await reconcilePendingCustomDomains(env,25).catch(e=>console.error('Custom domain reconciliation failed',{error:String((e as Error)?.message||e)}));await runScheduledTenantBackups(env,portabilityConfig,'system:backup',3);await verifyPendingBackups(env,2).catch(e=>console.error('Backup verification failed',{error:String((e as Error)?.message||e)}));await cleanupAccountActions(env).catch(()=>undefined);
-    const now=new Date();await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now.toISOString()).run();await env.DB.prepare('DELETE FROM platform_mfa_challenges WHERE expires_at <= ?').bind(now.toISOString()).run().catch(()=>undefined);await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(now.toISOString()).run();await env.DB.prepare('DELETE FROM login_attempts WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run();
+    const now=new Date();await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now.toISOString()).run();await env.DB.prepare('DELETE FROM platform_mfa_challenges WHERE expires_at <= ?').bind(now.toISOString()).run().catch(()=>undefined);await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(now.toISOString()).run();await env.DB.prepare('DELETE FROM login_attempts WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run();await env.DB.prepare('DELETE FROM legal_content_report_limits WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run().catch(()=>undefined);
   },
 };
