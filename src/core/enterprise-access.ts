@@ -1,4 +1,5 @@
 import type { CoreAuthContext, Env } from './types.js';
+import { responsibilityPermissions, type ResponsibilityKind } from './responsibility-policy.js';
 import { nowIso } from './utils.js';
 
 export const ORG_PERMISSIONS=[
@@ -29,6 +30,9 @@ async function grants(env:Env,userId:string,tenantId:string){
       AND (valid_from IS NULL OR valid_from<=?) AND (valid_until IS NULL OR valid_until>?)`).bind(tenantId,userId,now,now).all<Record<string,unknown>>();
   return r.results??[];
 }
+async function responsibilities(env:Env,userId:string,tenantId:string){
+  const now=nowIso();try{const r=await env.DB.prepare(`SELECT id,org_unit_id,course_id,responsibility_kind,inherit_descendants FROM responsibility_assignments WHERE tenant_id=? AND user_id=? AND status='active' AND (valid_from IS NULL OR valid_from<=?) AND (valid_until IS NULL OR valid_until>?)`).bind(tenantId,userId,now,now).all<Record<string,unknown>>();return r.results??[];}catch{return[];}
+}
 
 async function descendants(env:Env,tenantId:string,rootId:string):Promise<string[]>{
   const r=await env.DB.prepare(`WITH RECURSIVE tree(id) AS (
@@ -38,16 +42,16 @@ async function descendants(env:Env,tenantId:string,rootId:string):Promise<string
 }
 
 export async function effectiveOrgAccess(env:Env,userId:string,tenantId:string){
-  let gs:Record<string,unknown>[]=[];try{gs=await grants(env,userId,tenantId);}catch{return{orgUnitIds:[] as string[],courseIds:[] as string[],permissions:[] as OrgPermission[],grants:[] as Record<string,unknown>[]};}
-  const units=new Set<string>(),perms=new Set<OrgPermission>();
+  let gs:Record<string,unknown>[]=[];try{gs=await grants(env,userId,tenantId);}catch{return{orgUnitIds:[] as string[],courseIds:[] as string[],permissions:[] as OrgPermission[],grants:[] as Record<string,unknown>[],responsibilities:[] as Record<string,unknown>[]};}
+  const rs=await responsibilities(env,userId,tenantId),units=new Set<string>(),courses=new Set<string>(),perms=new Set<OrgPermission>();
   for(const g of gs){
     const p=profilePermissions(String(g.profile) as OrgProfile,g.permissions_json);for(const x of p)perms.add(x);
     const root=String(g.org_unit_id);units.add(root);
     if(Number(g.inherit_descendants)===1)for(const child of await descendants(env,tenantId,root))units.add(child);
   }
-  const unitIds=[...units];let courseIds:string[]=[];
-  if(unitIds.length){const marks=unitIds.map(()=>'?').join(',');const r=await env.DB.prepare(`SELECT DISTINCT course_id FROM course_org_units WHERE tenant_id=? AND org_unit_id IN (${marks})`).bind(tenantId,...unitIds).all<{course_id:string}>();courseIds=(r.results??[]).map(x=>x.course_id);}
-  return{orgUnitIds:unitIds,courseIds,permissions:[...perms],grants:gs};
+  for(const r of rs){for(const p of responsibilityPermissions(String(r.responsibility_kind) as ResponsibilityKind))perms.add(p);if(r.course_id)courses.add(String(r.course_id));if(r.org_unit_id){const root=String(r.org_unit_id);units.add(root);if(Number(r.inherit_descendants)===1)for(const child of await descendants(env,tenantId,root))units.add(child);}}
+  const unitIds=[...units];if(unitIds.length){const marks=unitIds.map(()=>'?').join(',');const r=await env.DB.prepare(`SELECT DISTINCT course_id FROM course_org_units WHERE tenant_id=? AND org_unit_id IN (${marks})`).bind(tenantId,...unitIds).all<{course_id:string}>();for(const x of r.results??[])courses.add(x.course_id);}
+  return{orgUnitIds:unitIds,courseIds:[...courses],permissions:[...perms],grants:gs,responsibilities:rs};
 }
 
 export async function augmentOrgAuth(env:Env,auth:CoreAuthContext,tenantId?:string):Promise<CoreAuthContext>{
@@ -56,9 +60,9 @@ export async function augmentOrgAuth(env:Env,auth:CoreAuthContext,tenantId?:stri
   let targets:string[]=[];
   if(tenantId)targets=[tenantId];
   else{
-    try{const now=nowIso();const r=await env.DB.prepare(`SELECT DISTINCT tenant_id FROM org_permission_grants WHERE user_id=? AND status='active' AND (valid_from IS NULL OR valid_from<=?) AND (valid_until IS NULL OR valid_until>?)`).bind(auth.userId,now,now).all<{tenant_id:string}>();targets=(r.results??[]).map(x=>x.tenant_id);}catch{return auth;}
+    try{const now=nowIso();const r=await env.DB.prepare(`SELECT DISTINCT tenant_id FROM (SELECT tenant_id FROM org_permission_grants WHERE user_id=? AND status='active' AND (valid_from IS NULL OR valid_from<=?) AND (valid_until IS NULL OR valid_until>?) UNION ALL SELECT tenant_id FROM responsibility_assignments WHERE user_id=? AND status='active' AND (valid_from IS NULL OR valid_from<=?) AND (valid_until IS NULL OR valid_until>?))`).bind(auth.userId,now,now,auth.userId,now,now).all<{tenant_id:string}>();targets=(r.results??[]).map(x=>x.tenant_id);}catch{return auth;}
   }
-  for(const tid of targets){const x=await effectiveOrgAccess(env,auth.userId,tid);if(x.orgUnitIds.length){tenantIds.add(tid);for(const id of x.orgUnitIds)orgUnitIds.add(id);for(const id of x.courseIds)courseIds.add(id);for(const p of x.permissions)permissions.add(p);}}
+  for(const tid of targets){const x=await effectiveOrgAccess(env,auth.userId,tid);if(x.orgUnitIds.length||x.courseIds.length||x.permissions.length){tenantIds.add(tid);for(const id of x.orgUnitIds)orgUnitIds.add(id);for(const id of x.courseIds)courseIds.add(id);for(const p of x.permissions)permissions.add(p);}}
   let role=auth.role;
   if(role==='guest'||role==='participant'){
     if(permissions.has('content.manage')||permissions.has('participants.manage')||permissions.has('courses.manage')||permissions.has('org.manage'))role='class_admin';
@@ -75,9 +79,9 @@ export async function isOrgUnitWithin(env:Env,tenantId:string,rootId:string,targ
 
 export async function canManageOrgUnit(env:Env,auth:CoreAuthContext,tenantId:string,targetId:string,permission:OrgPermission='org.manage'):Promise<boolean>{
   if(auth.isPlatformAdmin||auth.role==='tenant_admin')return true;
-  const now=nowIso(),r=await env.DB.prepare(`SELECT org_unit_id,profile,permissions_json,inherit_descendants FROM org_permission_grants
-    WHERE tenant_id=? AND user_id=? AND status='active' AND (valid_from IS NULL OR valid_from<=?) AND (valid_until IS NULL OR valid_until>?)`).bind(tenantId,auth.userId,now,now).all<Record<string,unknown>>();
+  const now=nowIso(),r=await env.DB.prepare(`SELECT org_unit_id,profile,permissions_json,inherit_descendants FROM org_permission_grants WHERE tenant_id=? AND user_id=? AND status='active' AND (valid_from IS NULL OR valid_from<=?) AND (valid_until IS NULL OR valid_until>?)`).bind(tenantId,auth.userId,now,now).all<Record<string,unknown>>();
   for(const g of r.results??[]){const ps=profilePermissions(String(g.profile) as OrgProfile,g.permissions_json);if(!ps.includes(permission))continue;const root=String(g.org_unit_id);if(root===targetId||Number(g.inherit_descendants)===1&&await isOrgUnitWithin(env,tenantId,root,targetId))return true;}
+  try{const rr=await env.DB.prepare(`SELECT org_unit_id,responsibility_kind,inherit_descendants FROM responsibility_assignments WHERE tenant_id=? AND user_id=? AND org_unit_id IS NOT NULL AND status='active' AND (valid_from IS NULL OR valid_from<=?) AND (valid_until IS NULL OR valid_until>?)`).bind(tenantId,auth.userId,now,now).all<Record<string,unknown>>();for(const a of rr.results??[]){if(!responsibilityPermissions(String(a.responsibility_kind) as ResponsibilityKind).includes(permission))continue;const root=String(a.org_unit_id);if(root===targetId||Number(a.inherit_descendants)===1&&await isOrgUnitWithin(env,tenantId,root,targetId))return true;}}catch{}
   return false;
 }
 
