@@ -1,10 +1,13 @@
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 import { profilePermissions } from '../dist/core/enterprise-access.js';
+import { responsibilityPermissions } from '../dist/core/responsibility-policy.js';
 
 const migration=await readFile('migrations/0048_enterprise_hierarchy_sso_scim_api.sql','utf8');
+const responsibilityMigration=await readFile('migrations/0050_responsibility_assignments.sql','utf8');
 const access=await readFile('src/core/enterprise-access.ts','utf8');
 const org=await readFile('src/core/enterprise-organization.ts','utf8');
+const responsibilities=await readFile('src/core/responsibilities.ts','utf8');
 const sso=await readFile('src/core/enterprise-sso.ts','utf8');
 const secrets=await readFile('src/core/tenant-secrets.ts','utf8');
 const scim=await readFile('src/core/enterprise-scim-v2.ts','utf8');
@@ -12,6 +15,8 @@ const api=await readFile('src/core/enterprise-api.ts','utf8');
 const router=await readFile('src/core/enterprise-router.ts','utf8');
 const auth=await readFile('src/core/auth.ts','utf8');
 const ui=await readFile('public/enterprise-admin-ui.js','utf8');
+const responsibilityUi=await readFile('public/responsibility-ui.js','utf8');
+const customerHtml=await readFile('public/customer-admin.html','utf8');
 const exportCode=await readFile('src/portability/export.ts','utf8');
 const importCode=await readFile('src/portability/import.ts','utf8');
 const backup=await readFile('src/portability/backup.ts','utf8');
@@ -33,6 +38,23 @@ assert.match(org,/SELF_ELEVATION_FORBIDDEN/,'delegated admins must not self-elev
 assert.match(org,/ORG_HIERARCHY_CYCLE/,'organisation tree must reject cycles');
 assert.match(org,/digest/,'bulk hierarchy import must require immutable preview confirmation');
 assert.match(org,/IMPORT_PARENT_RESOLUTION_FAILED/,'ambiguous parent resolution must fail closed');
+
+assert.match(responsibilityMigration,/CREATE TABLE IF NOT EXISTS responsibility_assignments/,'responsibilities need a dedicated auditable table');
+for(const kind of ['primary','co_responsible','deputy'])assert.ok(responsibilityMigration.includes(`'${kind}'`),`responsibility kind missing: ${kind}`);
+assert.match(responsibilityMigration,/org_unit_id IS NOT NULL AND course_id IS NULL/,'responsibility target must be exactly one organisation unit or course');
+assert.ok(responsibilityPermissions('primary').includes('access.manage'),'primary responsibility must be able to manage access');
+assert.ok(responsibilityPermissions('co_responsible').includes('access.manage'),'co-responsible must be able to stand in for the lead');
+assert.ok(!responsibilityPermissions('deputy').includes('access.manage'),'deputy must not appoint or elevate other users by default');
+assert.match(responsibilities,/PRIMARY_RESPONSIBILITY_TENANT_ADMIN_REQUIRED/,'only the overall customer admin may replace the primary responsible person');
+assert.match(responsibilities,/CANNOT_REVOKE_OWN_RESPONSIBILITY/,'lead users must not accidentally remove their own continuity access');
+assert.match(responsibilities,/responsibility_kind='primary'/,'replacing a lead must explicitly retire the previous primary assignment');
+assert.match(access,/responsibility_assignments/,'responsibility assignments must participate in server-side authorization');
+assert.match(router,/api\/enterprise\/responsibilities/,'responsibility management must have dedicated secured endpoints');
+for(const label of ['Hauptverantwortlich','2. / weitere Verantwortliche','Vertretung'])assert.ok(responsibilityUi.includes(label),`responsibility UI missing ${label}`);
+assert.match(responsibilityUi,/Gültig bis/,'deputies and co-responsibles must support time limits');
+assert.match(responsibilityUi,/Klasse \/ Kurs/,'responsibility UI must support direct course responsibility');
+assert.ok(customerHtml.includes('/responsibility-ui.js'),'customer admin must load responsibility management');
+assert.ok(readiness.includes("'responsibility_assignments'"),'production release must fail closed if responsibility schema is missing');
 
 assert.match(secrets,/AES-GCM/,'tenant secrets must be encrypted with authenticated encryption');
 assert.match(secrets,/TENANT_SECRETS_ENCRYPTION_KEY/,'tenant secret encryption must use a dedicated key');
@@ -75,8 +97,8 @@ assert.match(backup,/integrationSafety:'sso_disabled_tokens_revoked'/,'restore a
 assert.match(backup,/tenant_sso_configs SET enabled=0,enforce_sso=0/,'restore must disable SSO before service resumes');
 assert.match(backup,/scim_tokens SET revoked_at/);assert.match(backup,/api_tokens SET revoked_at/);
 assert.match(readiness,/TENANT_SECRETS_ENCRYPTION_KEY/,'live gate must block enabled SSO without tenant-secret encryption');
-for(const t of ['org_units','org_permission_grants','tenant_sso_configs','api_tokens','scim_tokens'])assert.ok(readiness.includes(`'${t}'`),`launch readiness schema check missing ${t}`);
+for(const t of ['org_units','org_permission_grants','tenant_sso_configs','api_tokens','scim_tokens','responsibility_assignments'])assert.ok(readiness.includes(`'${t}'`),`launch readiness schema check missing ${t}`);
 assert.ok(index.includes("url.pathname.startsWith('/sso/')")&&index.includes("url.pathname.startsWith('/scim/')")&&index.includes("url.pathname.startsWith('/api/v1/')"));
 assert.ok(wrangler.includes('"/sso/*"')&&wrangler.includes('"/scim/*"'));
 
-console.log('Enterprise hierarchy, delegated access, OIDC SSO, SCIM 2.0, scoped API and portability security checks: OK');
+console.log('Enterprise hierarchy, responsibilities/deputies, delegated access, OIDC SSO, SCIM 2.0, scoped API and portability security checks: OK');
