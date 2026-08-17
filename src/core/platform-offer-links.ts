@@ -1,13 +1,14 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { requirePlatform } from './permissions.js';
 import { audit } from './audit.js';
+import { publicLegal } from './legal.js';
 import { b64, id, nowIso, randomBytes, sha256Text } from './utils.js';
 import { getPlatformOffer } from './platform-offers.js';
 
 async function ready(env:Env){
-  const seller=await env.DB.prepare('SELECT legal_name,street,postal_code,city,country,email FROM seller_billing_profile WHERE id=1').first<Record<string,unknown>>(),legal=await env.DB.prepare('SELECT provider_name,legal_notice_url,privacy_url,terms_url,dpa_url,support_email FROM legal_configuration WHERE id=1').first<Record<string,unknown>>().catch(()=>null);
+  const seller=await env.DB.prepare('SELECT legal_name,street,postal_code,city,country,email FROM seller_billing_profile WHERE id=1').first<Record<string,unknown>>();
   if(!(seller?.legal_name&&seller?.street&&seller?.postal_code&&seller?.city&&seller?.country&&seller?.email))throw new Error('SELLER_PROFILE_INCOMPLETE');
-  if(!(legal?.provider_name&&legal?.legal_notice_url&&legal?.privacy_url&&legal?.terms_url&&legal?.dpa_url&&legal?.support_email))throw new Error('LEGAL_CONFIGURATION_INCOMPLETE');
+  if(!(await publicLegal(env)).complete)throw new Error('LEGAL_CONFIGURATION_INCOMPLETE');
 }
 
 export async function publishOrRotatePlatformOffer(env:Env,auth:CoreAuthContext,quoteId:string,request:Request){
