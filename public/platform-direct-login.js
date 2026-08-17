@@ -1,43 +1,64 @@
 const PLATFORM_DIRECT_PATH=location.pathname.replace(/\/$/,'')==='/plattform-admin';
 
 if(PLATFORM_DIRECT_PATH){
-  let loginAttempt=false;
-  let checking=false;
-  let timer=0;
+  const root=document.querySelector('#app');
+  let loading=false;
 
-  async function checkSession(){
-    if(!loginAttempt||checking)return;
-    checking=true;
-    try{
-      const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});
-      if(!r.ok)return;
-      const user=(await r.json()).user||null;
-      if(!user)return;
-      loginAttempt=false;
-      if(user.isPlatformAdmin){
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  async function json(url,opt={}){
+    const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt,headers:{'content-type':'application/json',...(opt.headers||{})}});
+    let d={};try{d=await r.clone().json();}catch{}
+    return{r,d};
+  }
+  async function currentUser(){const {r,d}=await json('/api/auth/me');return r.ok?(d.user||null):null;}
+  async function logout(){try{await fetch('/api/auth/logout',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:'{}'});}catch{}}
+
+  function renderLogin(message=''){
+    root.innerHTML=`<main class="center"><form class="login" id="platform-login" autocomplete="on"><div class="brand">Klassenportal · Plattform-Admin</div><p class="muted">Direkte Anmeldung für die Plattformverwaltung.</p><label class="field">E-Mail<input name="email" type="email" autocomplete="username" required autofocus></label><label class="field">Passwort<input name="password" type="password" autocomplete="current-password" required></label><button class="btn" type="submit">Anmelden</button><a href="/passwort-vergessen" style="display:inline-block;margin-top:12px">Passwort vergessen?</a><p class="error" id="platform-login-error">${esc(message)}</p></form></main>`;
+    const form=root.querySelector('#platform-login'),err=root.querySelector('#platform-login-error'),button=form.querySelector('button');
+    form.onsubmit=async e=>{
+      e.preventDefault();err.textContent='';button.disabled=true;
+      try{
+        const f=new FormData(form),email=String(f.get('email')||'').trim(),password=String(f.get('password')||'');
+        const {r,d}=await json('/api/auth/login',{method:'POST',body:JSON.stringify({email,password})});
+        if(!r.ok){const messages={LOGIN_FAILED:'E-Mail oder Passwort ist nicht korrekt.',LOGIN_RATE_LIMITED:'Zu viele Anmeldeversuche. Bitte später erneut versuchen.'};throw new Error(messages[d.error]||d.error||`HTTP_${r.status}`);}
+        if(d?.mfaRequired)return;
+        if(!d?.user?.isPlatformAdmin){await logout();throw new Error('Dieses Konto hat keinen Plattform-Admin-Zugang.');}
         location.reload();
-        return;
-      }
-      const roles=user.tenantRoles||[];
-      if(roles.some(x=>x.role==='tenant_admin'))location.replace('/kunden-admin');
-      else if(roles.some(x=>x.role==='class_admin'))location.replace('/klassen-admin');
-      else location.replace('/');
-    }catch{}finally{checking=false;}
+      }catch(x){err.textContent=x.message||'Anmeldung fehlgeschlagen.';button.disabled=false;}
+    };
   }
 
-  function poll(){
-    clearInterval(timer);
-    timer=setInterval(checkSession,250);
-    void checkSession();
+  async function loadPlatform(){
+    if(loading)return;loading=true;
+    root.innerHTML='<main class="center"><div class="loader">Plattform-Admin wird geladen …</div></main>';
+    await import('/boot.js?v=20260817-5');
+    await Promise.all([
+      import('/branding-assistant.js?v=20260817-2'),
+      import('/timetable-assistant.js?v=20260816-14'),
+      import('/timetable-bulk-v3.js?v=20260816-14'),
+      import('/localization.js?v=20260817-3'),
+      import('/class-role-ui.js?v=20260816-14'),
+      import('/platform-admin-ui.js?v=20260816-14'),
+      import('/platform-owner-ui.js?v=20260816-14'),
+      import('/owner-security-ui.js?v=20260816-14'),
+      import('/launch-readiness-ui.js?v=20260816-14'),
+      import('/custom-domain-ui.js?v=20260816-14'),
+      import('/schema-upgrade-ui.js?v=20260816-14'),
+      import('/commerce-safe-ui.js?v=20260816-14'),
+      import('/module-pricing-platform-ui.js?v=20260816-14'),
+      import('/area-mode.js?v=20260816-14')
+    ]);
   }
 
-  document.addEventListener('submit',e=>{
-    const form=e.target;
-    if(!(form instanceof HTMLFormElement))return;
-    if(!form.querySelector('input[name="email"]')||!form.querySelector('input[name="password"]'))return;
-    loginAttempt=true;
-    poll();
-  },true);
-
-  window.addEventListener('beforeunload',()=>clearInterval(timer));
+  try{
+    const user=await currentUser();
+    if(user?.isPlatformAdmin)await loadPlatform();
+    else{
+      if(user)await logout();
+      renderLogin(user?'Bitte melde Dich mit Deinem Plattform-Admin-Konto an.':'');
+    }
+  }catch(e){
+    renderLogin('Die Plattform-Anmeldung konnte nicht geladen werden. Bitte erneut versuchen.');
+  }
 }
