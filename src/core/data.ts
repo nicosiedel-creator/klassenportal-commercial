@@ -4,6 +4,7 @@ import { requireCourseAccess, requireRole } from './permissions.js';
 import { id, nowIso, safeString, slugify } from './utils.js';
 import { hashPassword } from './auth.js';
 import { sendTeamsWorkflowNotification } from './advanced-modules.js';
+import { ensureBrandingSchema } from './branding-schema.js';
 
 export async function listTenants(env:Env,auth:CoreAuthContext){
   if(auth.isPlatformAdmin){ const r=await env.DB.prepare(`SELECT t.*,s.portal_name,s.custom_domain,sub.plan_id,sub.status AS subscription_status
@@ -12,7 +13,7 @@ export async function listTenants(env:Env,auth:CoreAuthContext){
   const qs=ids.map(()=>'?').join(','); const r=await env.DB.prepare(`SELECT t.*,s.portal_name,s.custom_domain FROM tenants t LEFT JOIN tenant_settings s ON s.tenant_id=t.id WHERE t.id IN (${qs}) ORDER BY t.name`).bind(...ids).all(); return r.results??[];
 }
 
-export async function getSettings(env:Env,auth:CoreAuthContext,tenantId:string){ requireRole(auth,'guest'); return env.DB.prepare('SELECT * FROM tenant_settings WHERE tenant_id=?').bind(tenantId).first(); }
+export async function getSettings(env:Env,auth:CoreAuthContext,tenantId:string){ requireRole(auth,'guest'); await ensureBrandingSchema(env); return env.DB.prepare('SELECT * FROM tenant_settings WHERE tenant_id=?').bind(tenantId).first(); }
 function brandRgb(v:string){return [Number.parseInt(v.slice(1,3),16),Number.parseInt(v.slice(3,5),16),Number.parseInt(v.slice(5,7),16)];}
 function brandNearWhite(v:string){const [r,g,b]=brandRgb(v);return r>=248&&g>=248&&b>=248;}
 function brandLum(v:string){const c=brandRgb(v).map(x=>{const s=x/255;return s<=0.03928?s/12.92:((s+0.055)/1.055)**2.4;});return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2];}

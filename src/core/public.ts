@@ -1,5 +1,6 @@
 import type { Env, SessionUser } from './types.js';
 import { verifyPassword } from './auth.js';
+import { ensureBrandingSchema } from './branding-schema.js';
 import { safeFilename } from '../portability/utils.js';
 
 function viewerRole(session:SessionUser|null,tenantId:string,courseId:string):string|null{
@@ -11,6 +12,7 @@ function viewerRole(session:SessionUser|null,tenantId:string,courseId:string):st
 }
 
 async function coursePortalRow(env:Env,tenantSlug:string,courseCode:string){
+  await ensureBrandingSchema(env);
   const row=await env.DB.prepare(`SELECT
       c.id,c.tenant_id,c.name,c.code,c.start_date,c.end_date,c.access_mode,c.access_code_hash,
       t.name AS tenant_name,t.slug,

@@ -45,6 +45,7 @@ const vfaRefinementCss=await text('public/vfa13-refinement.css');
 const brandingAssistant=await text('public/branding-assistant.js');
 const users=await text('src/core/users.ts');
 const dataSource=await text('src/core/data.ts');
+const brandingSchema=await text('src/core/branding-schema.ts');
 const dataBrandingGuard=()=>dataSource.includes('WHITE_BACKGROUND_NOT_ALLOWED')&&dataSource.includes('BRANDING_CONTRAST_TOO_LOW')&&dataSource.includes('accent_color')&&dataSource.includes('surface_color')&&dataSource.includes('text_color');
 
 for(const route of ['/api/*','/public/*','/brand/*','/calendar/*','/portal/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/klassen-admin*','/zahlung/*','/passwort-vergessen*','/passwort-zuruecksetzen*','/konto-aktivieren*','/impressum*','/datenschutz*','/agb*','/avv*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
@@ -107,6 +108,8 @@ assert.ok(customerAdminHtml.includes('customer-portal-admin')&&customerAdminHtml
 assert.ok(vfaReferenceCss.includes('#stundenplan,#aufgaben')&&vfaReferenceCss.includes('flex-wrap:wrap'),'VFA13 priorities and wrapped customer navigation must stay intact');
 assert.ok(vfaRefinementCss.includes('--portal-surface')&&vfaRefinementCss.includes('--portal-accent'),'portal must consume the complete six-color tenant theme');
 assert.ok(dataBrandingGuard(),'six-color branding must reject white backgrounds and unsafe text contrast');
+assert.ok(brandingSchema.includes('ensureBrandingSchema')&&brandingSchema.includes('addColumnSafely')&&brandingSchema.includes('ALTER TABLE tenant_settings ADD COLUMN'),'branding schema must self-heal safely when deployment migrations lag');
+assert.ok(publicApi.includes('await ensureBrandingSchema(env)')&&dataSource.includes('await ensureBrandingSchema(env)')&&runtimeRouter.includes('/api/platform/system/schema'),'public/settings paths must guard the branding schema and the owner schema endpoint must remain available');
 assert.ok(brandingAssistant.includes('Sechs Designvorschläge')&&brandingAssistant.includes('Farben frei zusammenstellen'),'customer branding must offer six suggestions and manual color assembly');
 assert.ok(compactUi.includes("section.id==='uebersicht'")&&compactUi.includes('portal-compact-toggle'),'compact portal behavior must stay intact');
 assert.ok(compactCss.includes('.portal-stats,.portal-nav{display:none!important}'),'duplicate portal navigation/stats must stay removed');
