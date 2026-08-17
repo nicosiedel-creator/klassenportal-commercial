@@ -16,6 +16,8 @@ export interface Env {
   CLOUDFLARE_API_TOKEN?: string;
   CLOUDFLARE_SAAS_CNAME_TARGET?: string;
   RESEND_API_KEY?: string;
+  RESEND_WEBHOOK_SECRET?: string;
+  INBOUND_MAIL_DOMAIN?: string;
   MAIL_FROM?: string;
   CF_VERSION_METADATA?: WorkerVersionMetadataLike;
 }
