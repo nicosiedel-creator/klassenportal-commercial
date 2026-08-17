@@ -14,13 +14,13 @@ const ALIASES:Record<string,string>={
   course_name:'course_name',kurs:'kurs',klasse:'klasse',massnahme:'massnahme',bildungsgang:'bildungsgang',studiengang:'studiengang',
   beginn:'beginn',start:'start',enrollment_start:'enrollment_start',ende:'ende',enrollment_end:'enrollment_end'
 };
-function mapRows(rows:Record<string,unknown>[]){return rows.map(row=>{const out:Record<string,unknown>={};for(const [h,v] of Object.entries(row)){const target=ALIASES[key(h)]||key(h);out[target]=v;}return out;});}
+export function mapParticipantRows(rows:Record<string,unknown>[]){return rows.map(row=>{const out:Record<string,unknown>={};for(const [h,v] of Object.entries(row)){const target=ALIASES[key(h)]||key(h);out[target]=v;}return out;});}
 
 export async function previewParticipantImportFile(env:Env,auth:CoreAuthContext,tenantId:string,request:Request){
   const form=await request.formData(),file=form.get('file');if(!(file instanceof File))throw new Error('IMPORT_FILE_REQUIRED');if(file.size>15*1024*1024)throw new Error('IMPORT_FILE_TOO_LARGE');const name=file.name.toLowerCase(),type=file.type.toLowerCase();
-  if(name.endsWith('.csv')||type==='text/csv'){const parsed=parseCsv(await file.text());return previewParticipantImport(env,auth,tenantId,{source_name:file.name,source_kind:'structured',rows:mapRows(parsed.rows)});}
-  if(name.endsWith('.xlsx')||type==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'){const parsed=await parseXlsx(await file.arrayBuffer());return previewParticipantImport(env,auth,tenantId,{source_name:file.name,source_kind:'structured',rows:mapRows(parsed.rows)});}
-  if(name.endsWith('.json')||type==='application/json'){let value:unknown;try{value=JSON.parse(await file.text());}catch{throw new Error('IMPORT_JSON_INVALID');}const rows=Array.isArray(value)?value:(value&&typeof value==='object'&&Array.isArray((value as any).rows)?(value as any).rows:null);if(!rows)throw new Error('IMPORT_JSON_ROWS_REQUIRED');return previewParticipantImport(env,auth,tenantId,{source_name:file.name,source_kind:'structured',rows:mapRows(rows as Record<string,unknown>[])});}
+  if(name.endsWith('.csv')||type==='text/csv'){const parsed=parseCsv(await file.text());return previewParticipantImport(env,auth,tenantId,{source_name:file.name,source_kind:'structured',rows:mapParticipantRows(parsed.rows)});}
+  if(name.endsWith('.xlsx')||type==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'){const parsed=await parseXlsx(await file.arrayBuffer());return previewParticipantImport(env,auth,tenantId,{source_name:file.name,source_kind:'structured',rows:mapParticipantRows(parsed.rows)});}
+  if(name.endsWith('.json')||type==='application/json'){let value:unknown;try{value=JSON.parse(await file.text());}catch{throw new Error('IMPORT_JSON_INVALID');}const rows=Array.isArray(value)?value:(value&&typeof value==='object'&&Array.isArray((value as any).rows)?(value as any).rows:null);if(!rows)throw new Error('IMPORT_JSON_ROWS_REQUIRED');return previewParticipantImport(env,auth,tenantId,{source_name:file.name,source_kind:'structured',rows:mapParticipantRows(rows as Record<string,unknown>[])});}
   if(name.endsWith('.txt')||type.startsWith('text/'))return previewParticipantImport(env,auth,tenantId,{source_name:file.name,source_kind:'pasted_text',text:await file.text()});
   if(name.endsWith('.pdf')||type==='application/pdf')throw new Error('PDF_CLIENT_EXTRACTION_REQUIRED');
   throw new Error('UNSUPPORTED_PARTICIPANT_IMPORT_FILE');
