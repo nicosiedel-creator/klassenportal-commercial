@@ -1,0 +1,78 @@
+import { strict as assert } from 'node:assert';
+import { readFile } from 'node:fs/promises';
+import { profilePermissions } from '../dist/core/enterprise-access.js';
+
+const migration=await readFile('migrations/0048_enterprise_hierarchy_sso_scim_api.sql','utf8');
+const access=await readFile('src/core/enterprise-access.ts','utf8');
+const org=await readFile('src/core/enterprise-organization.ts','utf8');
+const sso=await readFile('src/core/enterprise-sso.ts','utf8');
+const secrets=await readFile('src/core/tenant-secrets.ts','utf8');
+const scim=await readFile('src/core/enterprise-scim-v2.ts','utf8');
+const api=await readFile('src/core/enterprise-api.ts','utf8');
+const router=await readFile('src/core/enterprise-router.ts','utf8');
+const auth=await readFile('src/core/auth.ts','utf8');
+const ui=await readFile('public/enterprise-admin-ui.js','utf8');
+const exportCode=await readFile('src/portability/export.ts','utf8');
+const importCode=await readFile('src/portability/import.ts','utf8');
+const backup=await readFile('src/portability/backup.ts','utf8');
+const readiness=await readFile('src/core/launch-readiness.ts','utf8');
+const index=await readFile('src/index.ts','utf8');
+const wrangler=await readFile('wrangler.jsonc','utf8');
+
+for(const table of ['org_unit_types','org_units','course_org_units','tenant_users','org_permission_grants','org_import_batches','tenant_sso_configs','external_identities','oidc_login_states','scim_tokens','scim_groups','scim_group_members','api_tokens','integration_rate_limits'])assert.ok(migration.includes(`TABLE IF NOT EXISTS ${table}`)||migration.includes(`TABLE ${table}`),`enterprise migration missing ${table}`);
+assert.match(migration,/valid_from TEXT/);assert.match(migration,/valid_until TEXT/);assert.match(migration,/inherit_descendants INTEGER/);assert.match(migration,/UNIQUE\(tenant_id,external_id\)/);
+assert.match(migration,/SELECT 'orgloc_'\|\|id/,'existing locations must migrate without destructive ids');
+assert.match(access,/WITH RECURSIVE tree/,'hierarchy access must resolve descendants server-side');
+assert.match(access,/valid_from IS NULL OR valid_from<=/,'future grants must not activate early');
+assert.match(access,/valid_until IS NULL OR valid_until>/,'expired grants must stop automatically');
+assert.ok(profilePermissions('responsible').includes('access.manage'));
+assert.ok(profilePermissions('editor').includes('content.manage'));
+assert.ok(!profilePermissions('viewer').includes('content.manage'));
+assert.ok(!profilePermissions('reporting').includes('access.manage'));
+assert.match(org,/SELF_ELEVATION_FORBIDDEN/,'delegated admins must not self-elevate to responsible');
+assert.match(org,/ORG_HIERARCHY_CYCLE/,'organisation tree must reject cycles');
+assert.match(org,/digest/,'bulk hierarchy import must require immutable preview confirmation');
+assert.match(org,/IMPORT_PARENT_RESOLUTION_FAILED/,'ambiguous parent resolution must fail closed');
+
+assert.match(secrets,/AES-GCM/,'tenant secrets must be encrypted with authenticated encryption');
+assert.match(secrets,/TENANT_SECRETS_ENCRYPTION_KEY/,'tenant secret encryption must use a dedicated key');
+assert.match(sso,/code_challenge_method','S256'/,'OIDC must use PKCE S256');
+assert.match(sso,/nonceHash/,'OIDC must bind a nonce');
+assert.match(sso,/stateHash/,'OIDC state must be stored only as a hash');
+assert.match(sso,/RS256/,'OIDC ID token signature algorithm must be explicitly checked');
+assert.match(sso,/jwks_uri/,'OIDC signatures must be validated through discovery JWKS');
+assert.match(sso,/SSO_AUDIENCE_INVALID/);assert.match(sso,/SSO_ISSUER_MISMATCH/);assert.match(sso,/SSO_USER_NOT_PROVISIONED/,'SSO must not create privileged users just from an external claim');
+assert.match(auth,/authTenantId!==tenantId/,'SSO for tenant A must not satisfy SSO enforcement for tenant B');
+assert.match(sso,/SSO_BREAK_GLASS_REQUIRED/,'enforced SSO must retain a deliberate emergency admin');
+assert.doesNotMatch(sso,/client_secret[^\n]*return/i,'OIDC secret must not be returned to the browser');
+
+assert.match(scim,/token_hash/,'SCIM tokens must be authenticated by stored hashes');
+assert.match(scim,/expires_at>/,'SCIM tokens must expire');
+assert.match(scim,/members\\s\*\\\[/,'SCIM must understand filtered member removal paths');
+assert.match(scim,/action==='add'/,'SCIM group PATCH add must be supported');
+assert.match(scim,/source='scim'/,'SCIM group mappings must create identifiable delegated grants');
+assert.match(scim,/!g\.org_unit_id\|\|!g\.profile/,'unmapped SCIM groups must remain zero privilege');
+assert.match(scim,/tenant_users SET status='suspended'/,'SCIM delete must suspend only the tenant relationship');
+
+for(const scope of ['org.read','org.write','courses.read','courses.write','users.read','users.write','content.read','content.write','reports.read'])assert.ok(api.includes(`'${scope}'`),`API scope missing: ${scope}`);
+assert.match(api,/token_hash/,'API tokens must be stored as hashes');
+assert.match(api,/org_unit_id/,'API tokens must support subtree restriction');
+assert.match(api,/API_SCOPE_REQUIRED/,'every API operation must enforce scopes');
+assert.match(api,/reports\/summary/,'reports.read must have a real endpoint');
+assert.match(api,/upsertApiOrgGrant/,'API provisioning grants must use explicit idempotent reconciliation');
+assert.doesNotMatch(api,/ON CONFLICT\(tenant_id,user_id,org_unit_id,source,source_ref\)/,'API must not rely on an invalid partial-index conflict target');
+
+assert.match(router,/file-preview/,'customer hierarchy setup must accept uploaded structure files');
+assert.match(ui,/Struktur aus CSV\/XLSX/);assert.match(ui,/SSO, SCIM & API/);assert.match(ui,/nur jetzt sichtbar/,'integration secrets must be one-time display values');
+assert.match(exportCode,/excludedSecurityData/,'customer export must declare excluded credentials');
+assert.match(exportCode,/tenant_sso_config/,'SSO secret configuration must be excluded from customer-visible exports');
+assert.match(importCode,/DEDICATED_STRUCTURE_IMPORT_REQUIRED/,'generic import must not write hierarchy/security tables');
+assert.match(backup,/integrationSafety:'sso_disabled_tokens_revoked'/,'restore audit must record integration safety shutdown');
+assert.match(backup,/tenant_sso_configs SET enabled=0,enforce_sso=0/,'restore must disable SSO before service resumes');
+assert.match(backup,/scim_tokens SET revoked_at/);assert.match(backup,/api_tokens SET revoked_at/);
+assert.match(readiness,/TENANT_SECRETS_ENCRYPTION_KEY/,'live gate must block enabled SSO without tenant-secret encryption');
+for(const t of ['org_units','org_permission_grants','tenant_sso_configs','api_tokens','scim_tokens'])assert.ok(readiness.includes(`'${t}'`),`launch readiness schema check missing ${t}`);
+assert.ok(index.includes("url.pathname.startsWith('/sso/')")&&index.includes("url.pathname.startsWith('/scim/')")&&index.includes("url.pathname.startsWith('/api/v1/')"));
+assert.ok(wrangler.includes('"/sso/*"')&&wrangler.includes('"/scim/*"'));
+
+console.log('Enterprise hierarchy, delegated access, OIDC SSO, SCIM 2.0, scoped API and portability security checks: OK');
