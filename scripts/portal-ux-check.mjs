@@ -10,9 +10,10 @@ assert.ok(customerHtml.includes('/owner-route-privacy.js'),'customer admin must 
 assert.ok(refCss.includes('grid-template-columns:repeat(3,minmax(0,1fr))'),'desktop portal must use a balanced three-column dashboard');
 assert.ok(refCss.includes('.portal-layout-controls{display:none!important}'),'tile movement controls must be hidden outside edit mode');
 assert.ok(refCss.includes('.portal-layout-editing .portal-layout-controls{display:flex!important}'),'tile movement controls must remain available in edit mode');
+assert.ok(refCss.includes('.portal-header-actions>a.portal-btn.secondary{visibility:hidden!important}')&&refCss.includes('[data-role-link="1"]{visibility:visible!important}'),'management link must stay hidden until a non-owner role is resolved');
 assert.ok(refJs.includes("button.textContent='Kacheln anpassen'")&&refJs.includes("button.textContent=editing?'Fertig':'Kacheln anpassen'"),'tile editing must use one explicit mode button');
 assert.ok(refJs.includes("if(!user||user.isPlatformAdmin)return null"),'owner must not receive a portal management link');
-assert.ok(refJs.includes("label:'Kundenbereich'")&&refJs.includes("label:'Klassenbereich'"),'non-owner admin links must be role-specific');
+assert.ok(refJs.includes("management.dataset.roleLink='1'")&&refJs.includes("label:'Kundenbereich'")&&refJs.includes("label:'Klassenbereich'"),'only role-resolved non-owner admin links may be revealed');
 assert.ok(privacy.includes('a[href^="/plattform-admin"]'),'non-owner surfaces must actively remove owner-route anchors');
 assert.ok(index.includes("if(clean==='/plattform-admin')")&&index.includes("if(!session?.isPlatformAdmin)return new Response('Nicht gefunden'"),'owner route must remain server-side gated');
 const publicFiles=(await readdir('public')).filter(x=>/\.(?:html|js)$/.test(x)&&!['platform-admin.html','platform-admin-ui.js','platform-owner-ui.js','owner-security-ui.js','launch-readiness-ui.js','auth-mfa-ui.js','owner-route-privacy.js'].includes(x));
