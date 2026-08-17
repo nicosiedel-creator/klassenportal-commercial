@@ -7,6 +7,9 @@ const recovery=await readFile('src/core/account-recovery.ts','utf8');
 const recoveryRouter=await readFile('src/core/account-recovery-router.ts','utf8');
 const mail=await readFile('src/core/mail.ts','utf8');
 const legal=await readFile('src/core/legal.ts','utf8');
+const legalDocs=await readFile('src/core/legal-documents.ts','utf8');
+const legalSchema=await readFile('src/core/legal-schema.ts','utf8');
+const legalReport=await readFile('src/core/legal-content-report.ts','utf8');
 const backups=await readFile('src/core/backup-verification.ts','utf8');
 const readiness=await readFile('src/core/launch-readiness.ts','utf8');
 const releaseState=await readFile('src/core/production-release-state.ts','utf8');
@@ -34,23 +37,35 @@ assert.match(mail,/user-agent/,'direct mail API calls must send a User-Agent');
 assert.match(mail,/idempotency-key/,'transactional mail must be idempotency protected');
 assert.ok(!mail.includes('console.log(key)')&&!mail.includes('RESEND_API_KEY:'),'mail API secret must never be logged or serialized');
 
-assert.match(legal,/u\.protocol!=='https:'/,'legal URLs must be HTTPS');
-for(const f of ['legal_notice_url','privacy_url','terms_url','dpa_url','support_email'])assert.ok(legal.includes(f),`required legal field missing: ${f}`);
+assert.match(legal,/documents_enabled/,'legal publication must require an explicit owner switch');
+assert.match(legal,/document_version/,'legal documents must be versioned');
+assert.match(legal,/sellerComplete/,'legal publication must fail closed without real provider identity/address');
+assert.match(legal,/legal_document_events/,'legal changes must be auditable');
+for(const marker of ['Allgemeine Geschäftsbedingungen (B2B)','Datenschutzerklärung','Auftragsverarbeitungsvertrag (AVV)','Unterauftragsverarbeiter & Drittanbieter','Datenportabilität und Anbieterwechsel','Rechtswidrige Inhalte melden'])assert.ok(legalDocs.includes(marker),`integrated legal document missing: ${marker}`);
+assert.match(legalDocs,/keine automatische Umwandlung in ein kostenpflichtiges Abonnement/,'pilot terms must explicitly exclude automatic paid conversion');
+assert.match(legalDocs,/12\. Januar 2027/,'Data Act switching fee phase-out must be covered');
+assert.match(legalDocs,/Art\. 9 DSGVO/,'AVV must address special-category data explicitly');
+assert.match(legalSchema,/ensureLegalDocumentSchema/,'legal schema must self-heal before publication checks');
+assert.match(legalReport,/legal_content_report_limits/,'legal notice endpoint must be rate limited');
+assert.match(legalReport,/sendMail/,'legal notice endpoint must notify the legal/support contact when mail is configured');
 
 assert.match(backups,/manifest\.version!==1/,'backup verification must validate manifest identity/version');
 assert.match(backups,/manifest\.resources\.map/,'backup verification must verify every resource object');
 assert.match(backups,/manifest\.files\.map/,'backup verification must verify every backed-up file object');
-assert.match(backups,/Last|./); // keeps file parsed before readiness assertions
+assert.match(backups,/Last|./);
 assert.match(readiness,/Stripe läuft noch nicht mit Live-Schlüssel/,'production readiness must require live Stripe');
 assert.match(readiness,/Eigentümer-MFA ist nicht aktiviert/,'production readiness must require owner MFA');
 assert.match(readiness,/Transaktions-E-Mail ist nicht vollständig konfiguriert/,'production readiness must require transactional mail');
 assert.match(readiness,/Rechtliche Unterlagen/,'production readiness must require legal configuration');
+assert.match(readiness,/legal_document_events/,'readiness must require the integrated legal schema');
+assert.match(readiness,/commercial_offer_acceptances/,'readiness must require offer acceptance schema');
 assert.match(readiness,/Backup-Sicherheit nicht erfüllt/,'production readiness must require verified current backups');
 assert.match(releaseState,/\.workers\.dev/,'preview Worker origin must never count as production-ready');
 assert.match(readiness,/CLOUDFLARE_SAAS_CNAME_TARGET/,'production readiness must require custom-domain provider when that module is sold');
 
-for(const route of ['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren','/impressum','/datenschutz','/agb','/avv'])assert.ok(index.includes(`'${route}'`)||wrangler.includes(`"${route}*"`),`launch route missing: ${route}`);
+for(const route of ['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren','/impressum','/datenschutz','/agb','/avv','/unterauftragsverarbeiter','/datenportabilitaet','/rechtsverstoss-melden'])assert.ok(index.includes(`'${route}'`)||wrangler.includes(`"${route}*"`),`launch route missing: ${route}`);
+assert.match(index,/renderLegalDocument/,'legal routes must render integrated documents instead of redirecting to external placeholders');
 assert.match(index,/verifyPendingBackups/,'scheduled job must automatically verify backups');
 assert.match(index,/cleanupAccountActions/,'scheduled job must clean expired account actions');
 
-console.log('Launch readiness, account recovery and backup verification tests: OK');
+console.log('Launch readiness, integrated legal documents, account recovery and backup verification tests: OK');
