@@ -8,10 +8,11 @@ import { createScimTokenV2, handleScimRequestV2, listScimGroupsForAdminV2, listS
 import { finishTenantSso, getTenantSso, saveTenantSso, startTenantSso } from './enterprise-sso.js';
 import { applyParticipantImport, previewParticipantImport } from './participant-document-import.js';
 import { previewParticipantImportFile } from './participant-import-file.js';
+import { createResponsibility, listResponsibilities, revokeResponsibility } from './responsibilities.js';
 
 function json(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=(e as Error).message||'ENTERPRISE_ERROR',status=code==='UNAUTHENTICATED'||code==='SSO_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='SELF_ELEVATION_FORBIDDEN'?403:code.includes('NOT_FOUND')?404:code.includes('EXISTS')||code.includes('CYCLE')||code.includes('ALREADY')||code.includes('CHANGED')?409:code.includes('EXPIRED')?410:code.includes('RATE_LIMITED')?429:code.includes('TOO_LARGE')?413:code.includes('NOT_READY')||code.includes('REQUIRED')&&code.includes('KEY')?428:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=(e as Error).message||'ENTERPRISE_ERROR',status=code==='UNAUTHENTICATED'||code==='SSO_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='SELF_ELEVATION_FORBIDDEN'||code==='PRIMARY_RESPONSIBILITY_TENANT_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code.includes('EXISTS')||code.includes('CYCLE')||code.includes('ALREADY')||code.includes('CHANGED')?409:code.includes('EXPIRED')?410:code.includes('RATE_LIMITED')?429:code.includes('TOO_LARGE')?413:code.includes('NOT_READY')||code.includes('REQUIRED')&&code.includes('KEY')?428:400;return json({ok:false,error:code},status);}
 
 export async function handleEnterpriseRouter(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;
@@ -24,6 +25,9 @@ export async function handleEnterpriseRouter(request:Request,env:Env):Promise<Re
     if(!path.startsWith('/api/enterprise/'))return null;
     assertSameOrigin(request,env.APP_ORIGIN);const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)throw new Error('TENANT_ID_REQUIRED');const auth=await resolveCoreAuth(env,request,tenantId,u.searchParams.get('course_id')||undefined);
     if(path==='/api/enterprise/context'&&request.method==='GET')return json({ok:true,context:{tenant_id:tenantId,role:auth.role,course_ids:auth.courseIds,org_unit_ids:auth.orgUnitIds??[],permissions:auth.permissions??[],is_platform_admin:auth.isPlatformAdmin}});
+    if(path==='/api/enterprise/responsibilities'&&request.method==='GET')return json({ok:true,responsibilities:await listResponsibilities(env,auth,tenantId)});
+    if(path==='/api/enterprise/responsibilities'&&request.method==='POST')return json({ok:true,responsibility:await createResponsibility(env,auth,tenantId,await body(request))},201);
+    const responsibility=path.match(/^\/api\/enterprise\/responsibilities\/([^/]+)$/);if(responsibility&&request.method==='DELETE'){await revokeResponsibility(env,auth,tenantId,decodeURIComponent(responsibility[1]));return json({ok:true});}
     if(path==='/api/enterprise/org/types'&&request.method==='GET')return json({ok:true,types:await listOrgUnitTypes(env,auth,tenantId)});
     if(path==='/api/enterprise/org/types'&&request.method==='POST')return json({ok:true,type:await saveOrgUnitType(env,auth,tenantId,await body(request))},201);
     if(path==='/api/enterprise/org/units'&&request.method==='GET')return json({ok:true,units:await listOrgUnits(env,auth,tenantId,u.searchParams.get('archived')==='1')});
