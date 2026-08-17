@@ -1,5 +1,6 @@
 import { parseCsv } from '../portability/csv.js';
 import { parseXlsx } from '../portability/xlsx.js';
+import { toArrayBuffer } from './utils.js';
 
 export type IntakeExtracted=
   |{kind:'rows';rows:Record<string,unknown>[]}
@@ -10,7 +11,7 @@ export type IntakeExtracted=
 
 const decoder=new TextDecoder();
 function u16(d:DataView,o:number){return d.getUint16(o,true);}function u32(d:DataView,o:number){return d.getUint32(o,true);}
-async function inflateRaw(bytes:Uint8Array):Promise<Uint8Array>{const ds=new DecompressionStream('deflate-raw');const stream=new Blob([bytes]).stream().pipeThrough(ds);return new Uint8Array(await new Response(stream).arrayBuffer());}
+async function inflateRaw(bytes:Uint8Array):Promise<Uint8Array>{const ds=new DecompressionStream('deflate-raw');const stream=new Blob([toArrayBuffer(bytes)]).stream().pipeThrough(ds);return new Uint8Array(await new Response(stream).arrayBuffer());}
 async function unzip(buffer:ArrayBuffer,wanted:(name:string)=>boolean){
   const bytes=new Uint8Array(buffer),view=new DataView(buffer);let eocd=-1;for(let p=Math.max(0,bytes.length-65557);p<=bytes.length-22;p++)if(u32(view,p)===0x06054b50)eocd=p;if(eocd<0)throw new Error('DOCUMENT_ZIP_INVALID');
   const count=u16(view,eocd+10);let p=u32(view,eocd+16);const out=new Map<string,Uint8Array>();
