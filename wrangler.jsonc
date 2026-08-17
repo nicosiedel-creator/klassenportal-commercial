@@ -19,6 +19,7 @@
       "/portal/*",
       "/einrichtung/*",
       "/angebot/*",
+      "/produkt*",
       "/plattform-admin*",
       "/kunden-admin*",
       "/klassen-admin*",
