@@ -6,7 +6,14 @@
   function requestedArea(){const query=safeArea(new URLSearchParams(location.search).get('continue')||'');if(query)return query;return safeArea(location.pathname+location.search);}
   function roleHome(user){if(user?.isPlatformAdmin)return'/plattform-admin';const roles=Array.isArray(user?.tenantRoles)?user.tenantRoles:[];if(roles.some(x=>x?.role==='tenant_admin'))return'/kunden-admin';if(roles.some(x=>x?.role==='class_admin'))return'/klassen-admin';return'';}
   function navigateAndWait(target){location.replace(target);return new Promise(()=>{});}
-  async function postAuth(response,user){const requested=requestedArea(),area=requested||roleHome(user);if(user?.mustChangePassword){const target=area?`/?continue=${encodeURIComponent(area)}`:'/';return navigateAndWait(target);}if(requested)return navigateAndWait(requested);if(location.pathname==='/'&&area)return navigateAndWait(area);return response;}
+  async function postAuth(response,user){
+    const requested=requestedArea(),area=requested||roleHome(user);
+    if(user?.mustChangePassword){const target=area?`/?continue=${encodeURIComponent(area)}`:'/';return navigateAndWait(target);}
+    if(requested==='/plattform-admin'&&!user?.isPlatformAdmin)return response;
+    if(requested)return navigateAndWait(requested);
+    if(location.pathname==='/'&&area)return navigateAndWait(area);
+    return response;
+  }
   async function challenge(token){
     return new Promise(resolve=>{
       const old=document.querySelector('#kp-owner-mfa-challenge');old?.remove();const back=document.createElement('div');back.id='kp-owner-mfa-challenge';back.className='modal-back';back.style.zIndex='10000';back.innerHTML=`<form class="modal" style="width:min(440px,94vw)" autocomplete="off"><h3 style="margin-top:0">Sicherheitsprüfung</h3><p class="muted">Für den Eigentümerzugang ist zusätzlich der Code aus Deiner Authenticator-App erforderlich. Alternativ funktioniert ein noch unbenutzter Wiederherstellungscode.</p><label class="field">Authenticator- oder Wiederherstellungscode<input name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus></label><button class="btn" type="submit">Sicher anmelden</button><p class="error" data-error></p></form>`;document.body.append(back);const form=back.querySelector('form'),err=back.querySelector('[data-error]'),button=back.querySelector('button');
