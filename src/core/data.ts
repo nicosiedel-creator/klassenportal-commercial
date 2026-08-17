@@ -6,6 +6,10 @@ import { hashPassword } from './auth.js';
 import { sendTeamsWorkflowNotification } from './advanced-modules.js';
 import { ensureBrandingSchema } from './branding-schema.js';
 
+const STANDARD_MODULES=new Set(['schedule','homework','appointments','announcements','links','files','calendar','reminders','weekly_overview','exams_progress','personal_grades','learning_materials']);
+const BILLING_MODULES=new Set(['microsoft_365','microsoft_teams','statistics','surveys','substitution_updates']);
+const PACKAGE_MODULES=new Set(['custom_domain','white_label']);
+
 export async function listTenants(env:Env,auth:CoreAuthContext){
   if(auth.isPlatformAdmin){ const r=await env.DB.prepare(`SELECT t.*,s.portal_name,s.custom_domain,sub.plan_id,sub.status AS subscription_status
     FROM tenants t LEFT JOIN tenant_settings s ON s.tenant_id=t.id LEFT JOIN subscriptions sub ON sub.tenant_id=t.id ORDER BY t.name`).all(); return r.results??[]; }
@@ -29,8 +33,22 @@ export async function updateSettings(env:Env,auth:CoreAuthContext,tenantId:strin
   await audit(env.DB,auth.userId,'settings.updated',tenantId,undefined,'tenant_settings',tenantId); return getSettings(env,auth,tenantId);
 }
 
-export async function getModules(env:Env,auth:CoreAuthContext,tenantId:string){ requireRole(auth,'guest'); const r=await env.DB.prepare('SELECT feature_key,enabled,source,updated_at FROM feature_flags WHERE tenant_id=? ORDER BY feature_key').bind(tenantId).all(); return r.results??[]; }
-export async function setModule(env:Env,auth:CoreAuthContext,tenantId:string,key:string,enabled:boolean){ requireRole(auth,'tenant_admin'); if(!/^[a-z0-9_]{2,80}$/.test(key)) throw new Error('FEATURE_KEY_INVALID'); await env.DB.prepare(`INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at) VALUES(?,?,?,'manual',?) ON CONFLICT(tenant_id,feature_key) DO UPDATE SET enabled=excluded.enabled,source='manual',updated_at=excluded.updated_at`).bind(tenantId,key,enabled?1:0,nowIso()).run(); await audit(env.DB,auth.userId,'feature.updated',tenantId,undefined,'feature',key,{enabled}); }
+export async function getModules(env:Env,auth:CoreAuthContext,tenantId:string){
+  requireRole(auth,'guest');
+  const r=await env.DB.prepare('SELECT feature_key,enabled,source,updated_at FROM feature_flags WHERE tenant_id=? ORDER BY feature_key').bind(tenantId).all<Record<string,unknown>>();
+  return (r.results??[]).map(row=>STANDARD_MODULES.has(String(row.feature_key))?{...row,source:'plan'}:row);
+}
+export async function setModule(env:Env,auth:CoreAuthContext,tenantId:string,key:string,enabled:boolean){
+  requireRole(auth,'tenant_admin');
+  if(!/^[a-z0-9_]{2,80}$/.test(key)) throw new Error('FEATURE_KEY_INVALID');
+  const current=await env.DB.prepare('SELECT feature_key,enabled,source FROM feature_flags WHERE tenant_id=? AND feature_key=?').bind(tenantId,key).first<{feature_key:string;enabled:number;source:string}>();
+  if(!current)throw new Error('FEATURE_NOT_AVAILABLE');
+  if(BILLING_MODULES.has(key))throw new Error('MODULE_MANAGED_BY_BILLING');
+  if(PACKAGE_MODULES.has(key))throw new Error('MODULE_MANAGED_BY_PACKAGE');
+  const source=STANDARD_MODULES.has(key)?'plan':current.source;
+  await env.DB.prepare('UPDATE feature_flags SET enabled=?,source=?,updated_at=? WHERE tenant_id=? AND feature_key=?').bind(enabled?1:0,source,nowIso(),tenantId,key).run();
+  await audit(env.DB,auth.userId,'feature.updated',tenantId,undefined,'feature',key,{enabled,source});
+}
 
 export async function listCourses(env:Env,auth:CoreAuthContext,tenantId:string){ requireRole(auth,'guest'); let sql='SELECT id,tenant_id,location_id,name,code,start_date,end_date,access_mode,is_active,created_at,updated_at FROM courses WHERE tenant_id=?'; const binds:unknown[]=[tenantId]; if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'){ const ids=auth.session.tenantRoles.filter(x=>x.tenantId===tenantId&&x.courseId).map(x=>x.courseId!); if(!ids.length)return[]; sql+=` AND id IN (${ids.map(()=>'?').join(',')})`; binds.push(...ids); } sql+=' ORDER BY name'; const r=await env.DB.prepare(sql).bind(...binds).all(); return r.results??[]; }
 export async function createCourse(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){ requireRole(auth,'tenant_admin'); const name=safeString(input.name,200); if(!name)throw new Error('COURSE_NAME_REQUIRED'); const code=slugify(input.code||name).slice(0,40); const mode=String(input.access_mode||'login'); if(!['public','link_code','login','hybrid'].includes(mode))throw new Error('ACCESS_MODE_INVALID'); const accessCode=safeString(input.access_code,128); if((mode==='link_code'||mode==='hybrid')&&accessCode.length<6)throw new Error('ACCESS_CODE_REQUIRED'); const accessHash=accessCode?await hashPassword(accessCode):null; const courseId=id('crs_'),ts=nowIso(); await env.DB.prepare('INSERT INTO courses(id,tenant_id,location_id,name,code,start_date,end_date,access_mode,access_code_hash,is_active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,1,?,?)').bind(courseId,tenantId,input.location_id||null,name,code,input.start_date||null,input.end_date||null,mode,accessHash,ts,ts).run(); await audit(env.DB,auth.userId,'course.created',tenantId,courseId,'course',courseId,{name,code,mode}); return env.DB.prepare('SELECT id,tenant_id,location_id,name,code,start_date,end_date,access_mode,is_active,created_at,updated_at FROM courses WHERE id=? AND tenant_id=?').bind(courseId,tenantId).first(); }
