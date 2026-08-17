@@ -32,7 +32,7 @@ if(PLATFORM_DIRECT_PATH){
   async function loadPlatform(){
     if(loading)return;loading=true;
     root.innerHTML='<main class="center"><div class="loader">Plattform-Admin wird geladen …</div></main>';
-    await import('/boot.js?v=20260817-5');
+    await import('/boot.js?v=20260817-6');
     await Promise.all([
       import('/branding-assistant.js?v=20260817-2'),
       import('/timetable-assistant.js?v=20260816-14'),
@@ -41,9 +41,10 @@ if(PLATFORM_DIRECT_PATH){
       import('/class-role-ui.js?v=20260816-14'),
       import('/platform-admin-ui.js?v=20260816-14'),
       import('/platform-owner-ui.js?v=20260816-14'),
-      import('/platform-offers-ui.js?v=20260817-1'),
+      import('/platform-offers-ui.js?v=20260817-2'),
+      import('/legal-owner-ui.js?v=20260817-1'),
       import('/owner-security-ui.js?v=20260816-14'),
-      import('/launch-readiness-ui.js?v=20260816-14'),
+      import('/launch-readiness-ui.js?v=20260817-2'),
       import('/custom-domain-ui.js?v=20260816-14'),
       import('/schema-upgrade-ui.js?v=20260816-14'),
       import('/commerce-safe-ui.js?v=20260816-14'),
