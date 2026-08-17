@@ -25,7 +25,7 @@ assert.match(provision,/MAIL_PROVIDER_NOT_CONFIGURED/,'manual tenant provisionin
 
 assert.match(recovery,/sha256Text\(raw\)/,'account action tokens must be stored only as hashes');
 assert.match(recovery,/RESET_MINUTES=30/,'password reset token must expire quickly');
-assert.match(recovery,/ACTIVATION_HOURS=48/,'activation link must have a finite expiry');
+assert.match(recovery,/ACTIVATION_HOURS=48/,'account action token must expire quickly');
 assert.match(recovery,/is_platform_admin===1\)return\{accepted:true\}/,'owner password reset must not be exposed through public email recovery');
 assert.match(recovery,/DELETE FROM sessions WHERE user_id=\?/,'password reset must revoke active sessions');
 assert.match(recoveryRouter,/SELECT id FROM memberships WHERE tenant_id=\? AND user_id=\?/,'tenant admin may only resend activation for a user in the selected tenant');
@@ -42,7 +42,7 @@ assert.match(legal,/document_version/,'legal documents must be versioned');
 assert.match(legal,/sellerComplete/,'legal publication must fail closed without real provider identity/address');
 assert.match(legal,/legal_document_events/,'legal changes must be auditable');
 for(const marker of ['Allgemeine Geschäftsbedingungen (B2B)','Datenschutzerklärung','Auftragsverarbeitungsvertrag (AVV)','Unterauftragsverarbeiter & Drittanbieter','Datenportabilität und Anbieterwechsel','Rechtswidrige Inhalte melden'])assert.ok(legalDocs.includes(marker),`integrated legal document missing: ${marker}`);
-assert.match(legalDocs,/keine automatische Umwandlung in ein kostenpflichtiges Abonnement/,'pilot terms must explicitly exclude automatic paid conversion');
+assert.match(legalDocs,/wandelt sich nicht automatisch in ein kostenpflichtiges Abonnement um/,'pilot terms must explicitly exclude automatic paid conversion');
 assert.match(legalDocs,/12\. Januar 2027/,'Data Act switching fee phase-out must be covered');
 assert.match(legalDocs,/Art\. 9 DSGVO/,'AVV must address special-category data explicitly');
 assert.match(legalSchema,/ensureLegalDocumentSchema/,'legal schema must self-heal before publication checks');
