@@ -18,6 +18,7 @@
       "/calendar/*",
       "/portal/*",
       "/einrichtung/*",
+      "/angebot/*",
       "/plattform-admin*",
       "/kunden-admin*",
       "/klassen-admin*",
