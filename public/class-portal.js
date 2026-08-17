@@ -44,7 +44,10 @@ async function markAllNotifications(tenantId,courseId){await fetchJson(`/api/not
 function applyBrand(course={}){
   document.documentElement.style.setProperty('--portal-primary',safeColor(course.primary_color,'#2563eb'));
   document.documentElement.style.setProperty('--portal-secondary',safeColor(course.secondary_color,'#0f172a'));
-  document.documentElement.style.setProperty('--portal-bg',safeColor(course.background_color,'#f8fafc'));
+  document.documentElement.style.setProperty('--portal-accent',safeColor(course.accent_color,'#7c3aed'));
+  document.documentElement.style.setProperty('--portal-bg',safeColor(course.background_color,'#f3efe7'));
+  document.documentElement.style.setProperty('--portal-surface',safeColor(course.surface_color,'#f3f0ea'));
+  document.documentElement.style.setProperty('--portal-text',safeColor(course.text_color,'#172033'));
   document.title=`${textOr(course.portal_name,'Klassenportal')} · ${textOr(course.name,'Klasse/Kurs')}`;
 }
 function gateLogo(course){return course?.logo_url?`<img class="portal-logo" src="${esc(course.logo_url)}" alt="">`:'';}
