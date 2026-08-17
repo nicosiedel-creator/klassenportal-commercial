@@ -1,0 +1,53 @@
+name: Cloudflare auth diagnostic
+on:
+  push:
+    branches: [diagnose-cloudflare-preview-auth]
+permissions:
+  contents: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      TOKEN_A: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TOKEN_B: ${{ secrets.CF_API_TOKEN }}
+      ACCOUNT_A: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ACCOUNT_B: ${{ secrets.CF_ACCOUNT_ID }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Check Cloudflare access without exposing credentials
+        shell: bash
+        run: |
+          set +e
+          token="$TOKEN_A"; [ -n "$token" ] || token="$TOKEN_B"
+          account="$ACCOUNT_A"; [ -n "$account" ] || account="$ACCOUNT_B"
+          token_present=false; [ -n "$token" ] && token_present=true
+          account_present=false; [ -n "$account" ] && account_present=true
+          whoami=false; d1=false; versions=false
+          if [ "$token_present" = true ]; then
+            export CLOUDFLARE_API_TOKEN="$token"
+            [ -n "$account" ] && export CLOUDFLARE_ACCOUNT_ID="$account"
+            npx wrangler whoami >/tmp/whoami.log 2>&1 && whoami=true
+            npx wrangler d1 migrations list DB --remote >/tmp/d1.log 2>&1 && d1=true
+            npx wrangler versions list >/tmp/versions.log 2>&1 && versions=true
+          fi
+          status=failure
+          if [ "$whoami" = true ] && [ "$d1" = true ] && [ "$versions" = true ]; then status=success; fi
+          checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          jq -nc --arg status "$status" --arg at "$checked_at" --argjson token "$token_present" --argjson account "$account_present" --argjson who "$whoami" --argjson d1 "$d1" --argjson versions "$versions" '{status:$status,checked_at:$at,token_present:$token,account_present:$account,whoami:$who,d1:$d1,versions:$versions}' >/tmp/result.json
+      - name: Persist redacted diagnostic
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -s /tmp/result.json ] || printf '%s\n' '{"status":"failure","checked_at":null,"token_present":false,"account_present":false,"whoami":false,"d1":false,"versions":false}' >/tmp/result.json
+          encoded=$(base64 -w0 </tmp/result.json)
+          meta=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/cloudflare-auth-diagnostic.json?ref=cloudflare-auth-diagnostic-status")
+          current_sha=$(jq -r '.sha' <<<"$meta")
+          jq -n --arg message "Record Cloudflare auth diagnostic" --arg content "$encoded" --arg sha "$current_sha" --arg branch cloudflare-auth-diagnostic-status '{message:$message,content:$content,sha:$sha,branch:$branch}' >/tmp/update.json
+          curl -fsS -X PUT -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/cloudflare-auth-diagnostic.json" --data-binary @/tmp/update.json >/dev/null
