@@ -13,9 +13,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Static portal UX/privacy checks
-        run: node scripts/portal-ux-check.mjs
-      - name: Wait for cumulative Cloudflare preview and verify deployed assets
+      - name: Static portal UX/privacy and release checks
+        run: |
+          node scripts/portal-ux-check.mjs
+          node scripts/release-check.mjs
+      - name: Wait for cumulative Cloudflare preview and verify deployed portal/branding schema
         env:
           BASE: https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev
         run: |
@@ -23,17 +25,27 @@ jobs:
           ok=0
           for i in $(seq 1 36); do
             css=$(curl -fsS --max-time 12 "$BASE/vfa13-refinement.css?sha=$GITHUB_SHA" || true)
+            theme=$(curl -fsS --max-time 12 "$BASE/branding-theme.css?sha=$GITHUB_SHA" || true)
             js=$(curl -fsS --max-time 12 "$BASE/vfa13-refinement.js?sha=$GITHUB_SHA" || true)
+            branding=$(curl -fsS --max-time 12 "$BASE/branding-assistant.js?sha=$GITHUB_SHA" || true)
             privacy=$(curl -fsS --max-time 12 "$BASE/owner-route-privacy.js?sha=$GITHUB_SHA" || true)
             portal=$(curl -fsS --max-time 12 "$BASE/portal/bildungszentrum-spreeblick-demo/fisi-26-1?sha=$GITHUB_SHA" || true)
+            portal_meta=$(curl -fsS --max-time 12 "$BASE/public/bildungszentrum-spreeblick-demo/fisi-26-1/meta?sha=$GITHUB_SHA" || true)
             customer=$(curl -fsS --max-time 12 "$BASE/kunden-admin?sha=$GITHUB_SHA" || true)
             if grep -q -- '--kp-content-max:1320px' <<<"$css" \
               && grep -Fq '.portal-header-actions>a.portal-btn.secondary{visibility:hidden!important}' <<<"$css" \
+              && grep -q -- '--portal-surface' <<<"$theme" \
+              && grep -q -- '--portal-bg,#ece8df' <<<"$theme" \
               && grep -q 'Kacheln anpassen' <<<"$js" \
               && grep -Fq "management.dataset.roleLink='1'" <<<"$js" \
+              && grep -q 'Sechs Designvorschläge' <<<"$branding" \
+              && grep -q 'Farben frei zusammenstellen' <<<"$branding" \
               && grep -q 'plattform-admin' <<<"$privacy" \
-              && grep -q '/vfa13-refinement.js' <<<"$portal" \
-              && grep -q '/owner-route-privacy.js' <<<"$customer"; then
+              && grep -q '/branding-theme.css' <<<"$portal" \
+              && grep -q '/owner-route-privacy.js' <<<"$customer" \
+              && grep -q '"accent_color"' <<<"$portal_meta" \
+              && grep -q '"surface_color"' <<<"$portal_meta" \
+              && grep -q '"text_color"' <<<"$portal_meta"; then
               ok=1
               break
             fi
