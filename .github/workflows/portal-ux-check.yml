@@ -1,0 +1,15 @@
+name: Portal UX privacy
+on:
+  pull_request:
+  push:
+    branches:
+      - block3-onboarding-managed-setup
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/portal-ux-check.mjs
