@@ -15,6 +15,7 @@
       "/api/*",
       "/scim/*",
       "/sso/*",
+      "/eingang/*",
       "/public/*",
       "/brand/*",
       "/calendar/*",
