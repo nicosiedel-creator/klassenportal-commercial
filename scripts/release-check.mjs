@@ -66,10 +66,10 @@ assert.ok(index.includes('verifyPendingBackups'),'scheduled jobs must verify bac
 
 assert.ok(auth.includes('SCRYPT_N=32_768')&&auth.includes('SCRYPT_R=8')&&auth.includes('SCRYPT_P=3'),'new passwords must use the runtime-verified OWASP scrypt profile');
 assert.ok(auth.includes('LEGACY_PBKDF2_MIN=100_000')&&auth.includes('LEGACY_PBKDF2_MAX=100_000'),'legacy PBKDF2 support must be narrowly capped at the Worker-supported security floor');
-assert.ok(auth.includes("return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$"),'new password hashes must be serialized as scrypt');
+assert.match(auth,/return\s*`scrypt\$\$\{SCRYPT_N\}\$\$\{SCRYPT_R\}\$\$\{SCRYPT_P\}\$/,'new password hashes must be serialized as scrypt');
 assert.ok(auth.includes('passwordNeedsUpgrade(u.password_hash)'),'legacy password hashes must upgrade transparently on successful login');
 assert.ok(wrangler.includes('nodejs_compat'),'Worker must enable the Node crypto runtime used by scrypt');
-assert.ok(auth.includes('PLATFORM_IDLE_MINUTES = 30')&&auth.includes('PLATFORM_SESSION_HOURS = 12'),'owner sessions must be short and idle-limited');
+assert.ok(auth.includes('PLATFORM_IDLE_MINUTES=30')&&auth.includes('PLATFORM_SESSION_HOURS=12'),'owner sessions must be short and idle-limited');
 assert.ok(auth.includes("DELETE FROM sessions WHERE user_id=? AND token_hash<>?"),'password change must revoke other sessions');
 assert.ok(auth.includes('ownerMfaEnabled')&&auth.includes('mfaRequired:true'),'enabled owner MFA must block session creation until challenge completion');
 assert.ok(mfa.includes('AES-GCM')&&mfa.includes('OWNER_MFA_ENCRYPTION_KEY'),'owner TOTP seed must use dedicated encrypted-at-rest storage');
@@ -131,9 +131,9 @@ assert.ok(platformOwnerUi.includes('owner-edit')&&platformOwnerUi.includes('data
 assert.equal((platformOwner.match(/\['VFA 26\/|\['Kaufleute Büromanagement|\['Fachinformatik Systemintegration|\['Sozialverwaltung/g)||[]).length,20,'demo fixture must define exactly 20 classes');
 assert.ok(platformOwner.includes('j<20')&&platformOwner.includes('week<6'),'demo fixture must keep 20 participants per class and six timetable weeks');
 
-assert.ok(String(pkg.scripts?.test||'').includes('tests/security-roles.mjs')&&String(pkg.scripts?.test||'').includes('tests/owner-security.mjs')&&String(pkg.scripts?.test||'').includes('tests/custom-domains.mjs')&&String(pkg.scripts?.test||'').includes('tests/launch-readiness.mjs')&&String(pkg.scripts?.test||'').includes('tests/password-kdf-runtime.mjs'),'full security/launch/password regression suite must run in CI');
+assert.ok(String(pkg.scripts?.test||'').includes('tests/security-roles.mjs')&&String(pkg.scripts?.test||'').includes('tests/enterprise-hierarchy-sso-scim-api.mjs')&&String(pkg.scripts?.test||'').includes('tests/owner-security.mjs')&&String(pkg.scripts?.test||'').includes('tests/custom-domains.mjs')&&String(pkg.scripts?.test||'').includes('tests/launch-readiness.mjs')&&String(pkg.scripts?.test||'').includes('tests/password-kdf-runtime.mjs'),'full security/enterprise/launch/password regression suite must run in CI');
 const migrations=(await readdir('migrations')).filter(x=>/^\d+_.*\.sql$/.test(x)).sort();
-for(const required of ['0035_notifications.sql','0038_module_cancellations.sql','0039_owner_security.sql','0040_custom_domains.sql','0041_launch_readiness.sql','0042_branding_palette.sql'])assert.ok(migrations.includes(required),`required migration missing: ${required}`);
+for(const required of ['0035_notifications.sql','0038_module_cancellations.sql','0039_owner_security.sql','0040_custom_domains.sql','0041_launch_readiness.sql','0042_branding_palette.sql','0048_enterprise_hierarchy_sso_scim_api.sql'])assert.ok(migrations.includes(required),`required migration missing: ${required}`);
 for(let i=1;i<migrations.length;i++)assert.ok(migrations[i]>migrations[i-1],'migration order must be deterministic');
 
 console.log('Release readiness checks: OK');
