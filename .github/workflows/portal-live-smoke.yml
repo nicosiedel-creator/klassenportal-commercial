@@ -1,0 +1,54 @@
+name: Portal live smoke
+on:
+  push:
+    branches:
+      - block3-onboarding-managed-setup
+permissions:
+  contents: read
+  issues: write
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Static portal UX/privacy checks
+        run: node scripts/portal-ux-check.mjs
+      - name: Wait for cumulative Cloudflare preview and verify deployed assets
+        env:
+          BASE: https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev
+        run: |
+          set -euo pipefail
+          ok=0
+          for i in $(seq 1 36); do
+            css=$(curl -fsS --max-time 12 "$BASE/vfa13-refinement.css?sha=$GITHUB_SHA" || true)
+            js=$(curl -fsS --max-time 12 "$BASE/vfa13-refinement.js?sha=$GITHUB_SHA" || true)
+            privacy=$(curl -fsS --max-time 12 "$BASE/owner-route-privacy.js?sha=$GITHUB_SHA" || true)
+            portal=$(curl -fsS --max-time 12 "$BASE/portal/bildungszentrum-spreeblick-demo/fisi-26-1?sha=$GITHUB_SHA" || true)
+            customer=$(curl -fsS --max-time 12 "$BASE/kunden-admin?sha=$GITHUB_SHA" || true)
+            if grep -q -- '--kp-content-max:1320px' <<<"$css" \
+              && grep -q 'Kacheln anpassen' <<<"$js" \
+              && grep -q 'plattform-admin' <<<"$privacy" \
+              && grep -q '/vfa13-refinement.js' <<<"$portal" \
+              && grep -q '/owner-route-privacy.js' <<<"$customer"; then
+              ok=1
+              break
+            fi
+            sleep 10
+          done
+          test "$ok" = 1
+      - name: Record successful live verification
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body="✅ Portal live smoke passed for ${GITHUB_SHA}: VFA13 refinement assets are deployed on the stable cumulative preview, the demo portal serves the refined shell, the customer admin loads owner-route privacy, and static UX/privacy regressions passed."
+          jq -n --arg body "$body" '{body:$body}' > /tmp/comment.json
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/16/comments" \
+            --data-binary @/tmp/comment.json
