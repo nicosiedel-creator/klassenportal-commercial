@@ -20,12 +20,14 @@ import { publicMaterialDownload, publicOverview, publicPortalMetadata } from './
 import { publicAdvancedBySlug } from './core/public-advanced.js';
 import { calendarFeedResponse } from './core/advanced-modules.js';
 import { handleRuntimeSchemaApi } from './core/runtime-schema-router.js';
+import { handleEnterpriseRouter } from './core/enterprise-router.js';
+import { cleanupOidcStates } from './core/enterprise-sso.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
 const SECURITY_HEADERS:Record<string,string>={
-  'x-content-type-options':'nosniff','x-frame-options':'DENY','referrer-policy':'strict-origin-when-cross-origin','permissions-policy':'camera=(), microphone=(), geolocation=()','cross-origin-opener-policy':'same-origin','strict-transport-security':'max-age=31536000; includeSubDomains',
-  'content-security-policy':"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://checkout.stripe.com https://api.resend.com",
+  'x-content-type-options':'nosniff','x-frame-options':'DENY','referrer-policy':'strict-origin-when-cross-origin','permissions-policy':'camera=(), microphone=(), geolocation=()','cross-origin-opener-policy':'same-origin','strict-origin-agent-cluster':'?1','strict-transport-security':'max-age=31536000; includeSubDomains',
+  'content-security-policy':"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://checkout.stripe.com https://api.resend.com https://login.microsoftonline.com",
 };
 function harden(response:Response):Response{const headers=new Headers(response.headers);for(const [k,v] of Object.entries(SECURITY_HEADERS))if(!headers.has(k))headers.set(k,v);headers.set('x-request-id',crypto.randomUUID());if((headers.get('content-type')||'').includes('text/html'))headers.set('cache-control','no-store');return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}
 function accessError(e:unknown):Response{const raw=String((e as Error)?.message||'PAYMENT_REQUIRED'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PAYMENT_REQUIRED',status=code==='TRIAL_EXPIRED'?410:code==='TRIAL_READ_ONLY'?423:402;return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
@@ -42,7 +44,7 @@ function releaseGateBypass(path:string):boolean{
 }
 function productionLockedResponse(path:string,reason:string|null):Response{
   const headers={'cache-control':'no-store','retry-after':'300'};
-  if(path.startsWith('/api/')||path.startsWith('/public/')||path.startsWith('/calendar/'))return new Response(JSON.stringify({ok:false,error:'PRODUCTION_RELEASE_LOCKED'}),{status:503,headers:{...headers,'content-type':'application/json; charset=utf-8'}});
+  if(path.startsWith('/api/')||path.startsWith('/public/')||path.startsWith('/calendar/')||path.startsWith('/scim/'))return new Response(JSON.stringify({ok:false,error:'PRODUCTION_RELEASE_LOCKED'}),{status:503,headers:{...headers,'content-type':'application/json; charset=utf-8'}});
   const html='<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Klassenportal</title><body style="font-family:system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f8fafc;color:#0f172a"><main style="max-width:560px;margin:24px;padding:28px;background:#fff;border:1px solid #e2e8f0;border-radius:18px"><h1 style="margin-top:0">Klassenportal vorübergehend nicht verfügbar</h1><p>Diese Version ist noch nicht für den Produktivbetrieb freigegeben. Bitte versuche es später erneut.</p></main></body></html>';
   void reason;return new Response(html,{status:503,headers:{...headers,'content-type':'text/html; charset=utf-8'}});
 }
@@ -51,6 +53,8 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   const url=new URL(request.url),clean=url.pathname.replace(/\/$/,'');
   const release=await productionReleaseAccess(env,request);if(release.production&&!release.allowed&&!releaseGateBypass(url.pathname))return productionLockedResponse(url.pathname,release.reason);
 
+  const enterprisePublic=url.pathname.startsWith('/sso/')||url.pathname.startsWith('/scim/')||url.pathname.startsWith('/api/v1/');
+  if(enterprisePublic){const r=await handleEnterpriseRouter(request,env);if(r)return r;}
   const logo=url.pathname.match(/^\/brand\/logo\/([^/]+)$/);if(logo)return serveTenantLogo(env,decodeURIComponent(logo[1]));
   const calendarFeed=url.pathname.match(/^\/calendar\/([A-Za-z0-9]+)\.ics$/);if(calendarFeed){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return calendarFeedResponse(env,calendarFeed[1]);}
   if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren'].includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/account-action.html',request.url),{method:request.method,headers:request.headers}));}
@@ -76,6 +80,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
 
   const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);if(onboardingPost){const payload=await request.clone().json().catch(()=>({})) as Record<string,unknown>;if(String(payload.commercial_action||'trial')==='book'&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);}
   const tenantId=url.searchParams.get('tenant_id'),mutating=request.method!=='GET'&&request.method!=='HEAD',exemptMutation=url.pathname==='/api/timetable/preview'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/onboarding/')||url.pathname.startsWith('/api/platform/');if(tenantId&&mutating&&!exemptMutation){try{await assertPaymentWriteAccess(env,tenantId);}catch(e){return accessError(e);}}
+  if(url.pathname.startsWith('/api/enterprise/')){const enterprise=await handleEnterpriseRouter(request,env);if(enterprise)return enterprise;}
   const portability=await handlePortabilityRequest(request,env,portabilityConfig,(r)=>resolvePortabilityAuth(env,r));if(portability)return portability;
   const api=await handleCoreApi(request,env);if(api){if(onboardingPost)return augmentPaidOnboardingResponse(env,request,api);return api;}
   const pub=await handlePublicApi(request,env);if(pub)return pub;
@@ -85,7 +90,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
 export default{
   async fetch(request:Request,env:Env):Promise<Response>{try{return harden(await routeRequest(request,env));}catch(error){console.error('Unhandled request error',{path:new URL(request.url).pathname,error:String((error as Error)?.message||error)});return harden(jsonError('INTERNAL_ERROR',500));}},
   async scheduled(_controller:unknown,env:Env):Promise<void>{
-    await refreshTrialStates(env);await processScheduledModuleCancellations(env,25);await ensureCustomDomainGuards(env).catch(()=>undefined);await reconcilePendingCustomDomains(env,25).catch(e=>console.error('Custom domain reconciliation failed',{error:String((e as Error)?.message||e)}));await runScheduledTenantBackups(env,portabilityConfig,'system:backup',3);await verifyPendingBackups(env,2).catch(e=>console.error('Backup verification failed',{error:String((e as Error)?.message||e)}));await cleanupAccountActions(env).catch(()=>undefined);
-    const now=new Date();await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now.toISOString()).run();await env.DB.prepare('DELETE FROM platform_mfa_challenges WHERE expires_at <= ?').bind(now.toISOString()).run().catch(()=>undefined);await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(now.toISOString()).run();await env.DB.prepare('DELETE FROM login_attempts WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run();await env.DB.prepare('DELETE FROM legal_content_report_limits WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run().catch(()=>undefined);
+    await refreshTrialStates(env);await processScheduledModuleCancellations(env,25);await ensureCustomDomainGuards(env).catch(()=>undefined);await reconcilePendingCustomDomains(env,25).catch(e=>console.error('Custom domain reconciliation failed',{error:String((e as Error)?.message||e)}));await runScheduledTenantBackups(env,portabilityConfig,'system:backup',3);await verifyPendingBackups(env,2).catch(e=>console.error('Backup verification failed',{error:String((e as Error)?.message||e)}));await cleanupAccountActions(env).catch(()=>undefined);await cleanupOidcStates(env).catch(()=>undefined);
+    const now=new Date();await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now.toISOString()).run();await env.DB.prepare('DELETE FROM platform_mfa_challenges WHERE expires_at <= ?').bind(now.toISOString()).run().catch(()=>undefined);await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(now.toISOString()).run();await env.DB.prepare('DELETE FROM login_attempts WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run();await env.DB.prepare('DELETE FROM legal_content_report_limits WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run().catch(()=>undefined);await env.DB.prepare('DELETE FROM integration_rate_limits WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run().catch(()=>undefined);await env.DB.prepare("UPDATE org_import_batches SET status='expired' WHERE status='previewed' AND expires_at<=?").bind(now.toISOString()).run().catch(()=>undefined);
   },
 };
