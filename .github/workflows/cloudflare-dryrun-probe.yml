@@ -1,0 +1,36 @@
+name: Cloudflare dry-run probe
+on:
+  push:
+    branches: [cloudflare-dryrun-probe]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Wrangler dry run
+        id: dryrun
+        shell: bash
+        run: |
+          set -o pipefail
+          npx wrangler deploy --dry-run 2>&1 | tee /tmp/wrangler.log
+      - name: Persist result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRYRUN: ${{ steps.dryrun.outcome }}
+        run: |
+          set -euo pipefail
+          log=$(tail -c 10000 /tmp/wrangler.log 2>/dev/null || true)
+          payload=$(jq -nc --arg status "$DRYRUN" --arg sha "$GITHUB_SHA" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg log "$log" '{status:$status,probe_sha:$sha,probed_at:$at,log:$log}')
+          encoded=$(printf '%s\n' "$payload" | base64 -w0)
+          meta=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/cloudflare-dryrun.json?ref=cloudflare-dryrun-status")
+          current_sha=$(jq -r '.sha' <<<"$meta")
+          jq -n --arg message "Record Cloudflare dry-run probe" --arg content "$encoded" --arg sha "$current_sha" --arg branch cloudflare-dryrun-status '{message:$message,content:$content,sha:$sha,branch:$branch}' >/tmp/update.json
+          curl -fsS -X PUT -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/cloudflare-dryrun.json" --data-binary @/tmp/update.json >/dev/null
