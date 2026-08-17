@@ -28,6 +28,7 @@ const classAdminPortal=await text('public/class-admin-portal.js');
 const classWorkspace=await text('public/class-admin-workspace.js');
 const customerAdminHtml=await text('public/customer-admin.html');
 const platformAdminHtml=await text('public/platform-admin.html');
+const platformDirectLogin=await text('public/platform-direct-login.js');
 const platformOwnerUi=await text('public/platform-owner-ui.js');
 const ownerSecurityUi=await text('public/owner-security-ui.js');
 const launchReadinessUi=await text('public/launch-readiness-ui.js');
@@ -49,9 +50,11 @@ const brandingSchema=await text('src/core/branding-schema.ts');
 const dataBrandingGuard=()=>dataSource.includes('WHITE_BACKGROUND_NOT_ALLOWED')&&dataSource.includes('BRANDING_CONTRAST_TOO_LOW')&&dataSource.includes('accent_color')&&dataSource.includes('surface_color')&&dataSource.includes('text_color');
 
 for(const route of ['/api/*','/public/*','/brand/*','/calendar/*','/portal/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/klassen-admin*','/zahlung/*','/passwort-vergessen*','/passwort-zuruecksetzen*','/konto-aktivieren*','/impressum*','/datenschutz*','/agb*','/avv*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
-for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/vfa13-reference.css','public/customer-admin.html','public/customer-compact.css','public/platform-admin.html','public/platform-owner-ui.js','public/owner-security-ui.js','public/launch-readiness-ui.js','public/auth-mfa-ui.js','public/account-mail-ui.js','public/account-action.html','public/account-action.js','public/legal-footer-ui.js','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/class-admin-workspace.js','public/payment-result.html'])await readFile(asset);
+for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/vfa13-reference.css','public/customer-admin.html','public/customer-compact.css','public/platform-admin.html','public/platform-direct-login.js','public/platform-owner-ui.js','public/owner-security-ui.js','public/launch-readiness-ui.js','public/auth-mfa-ui.js','public/account-mail-ui.js','public/account-action.html','public/account-action.js','public/legal-footer-ui.js','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/class-admin-workspace.js','public/payment-result.html'])await readFile(asset);
 assert.ok(index.includes("clean==='/klassen-admin'?'/class-admin.html'"),'class admin route must serve class-admin.html');
-assert.ok(index.includes("if(clean==='/plattform-admin')")&&index.includes("if(!session?.isPlatformAdmin)return new Response('Nicht gefunden'"),'platform admin HTML must be owner-gated server-side');
+assert.ok(index.includes("['/plattform-admin','/kunden-admin','/klassen-admin'].includes(clean)")&&index.includes("'/platform-admin.html'"),'platform admin route must serve the dedicated platform login/admin shell');
+assert.ok(platformAdminHtml.includes('/platform-direct-login.js')&&!platformAdminHtml.includes('/boot.js'),'platform admin shell must not race the generic app startup');
+assert.ok(platformDirectLogin.includes("if(user?.isPlatformAdmin)await loadPlatform()")&&platformDirectLogin.includes("if(!d?.user?.isPlatformAdmin)")&&platformDirectLogin.includes('await logout()'),'platform direct login must verify owner role before loading privileged modules');
 
 for(const header of ['x-content-type-options','x-frame-options','referrer-policy','permissions-policy','strict-transport-security','content-security-policy'])assert.ok(index.includes(`'${header}'`),`missing production header ${header}`);
 assert.ok(index.includes("headers.set('cache-control','no-store')"),'HTML must be no-store');
@@ -122,7 +125,7 @@ assert.ok(classWorkspace.includes('[data-action="add-participant"]')&&classWorks
 assert.ok(classWorkspace.includes('/api/timetable/preview')&&classWorkspace.includes('/api/timetable/apply')&&classWorkspace.includes('/api/content/lessons/'),'Klassen-Admin must support scoped timetable management');
 assert.ok(users.includes("requireRole(auth,'tenant_admin')")&&users.includes("m.role='participant'"),'participant account mutations/listing must retain correct admin scope');
 
-assert.ok(platformAdminHtml.includes('/platform-owner-ui.js')&&platformAdminHtml.includes('/owner-security-ui.js')&&platformAdminHtml.includes('/launch-readiness-ui.js'),'owner admin/security/release UI must load only in platform admin');
+assert.ok(platformDirectLogin.includes("import('/platform-owner-ui.js")&&platformDirectLogin.includes("import('/owner-security-ui.js")&&platformDirectLogin.includes("import('/launch-readiness-ui.js"),'owner admin/security/release modules must load only after a verified platform session');
 assert.ok(runtimeRouter.includes('/api/platform/owner/demo-fixture')&&runtimeRouter.includes('platformTenantDetail')&&runtimeRouter.includes('updatePlatformTenant'),'owner APIs must expose tenant editing and demo fixture creation');
 assert.ok(platformOwnerUi.includes('owner-edit')&&platformOwnerUi.includes('data-demo-build'),'owner UI must provide customer editing and demo generation');
 assert.equal((platformOwner.match(/\['VFA 26\/|\['Kaufleute Büromanagement|\['Fachinformatik Systemintegration|\['Sozialverwaltung/g)||[]).length,20,'demo fixture must define exactly 20 classes');
