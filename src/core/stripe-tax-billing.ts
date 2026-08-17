@@ -42,7 +42,7 @@ export async function ensureTaxStripeCatalog(env:Env,price:PriceCalculation|Comm
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(plan_id,billing_cycle) DO UPDATE SET stripe_mode=excluded.stripe_mode,currency=excluded.currency,base_product_id=excluded.base_product_id,base_price_id=excluded.base_price_id,base_amount_cents=excluded.base_amount_cents,extra_product_id=excluded.extra_product_id,extra_price_id=excluded.extra_price_id,extra_amount_cents=excluded.extra_amount_cents,tax_behavior=excluded.tax_behavior,tax_code=excluded.tax_code,updated_at=excluded.updated_at`)
     .bind(price.planId,cycle,mode,currency,baseProduct,basePrice,baseAmount,extraProduct,extraPrice,extraAmount,TAX_BEHAVIOR,SAAS_TAX_CODE,ts).run();
   await persistStripeModeState(env);
-  return{plan_id:price.planId,billing_cycle:cycle,currency,base_product_id:baseProduct,b ase_price_id:basePrice!,base_amount_cents:baseAmount,extra_product_id:extraProduct,extra_price_id:extraPrice,extra_amount_cents:extraAmount,tax_behavior:TAX_BEHAVIOR,tax_code:SAAS_TAX_CODE} as TaxCatalogRow;
+  return{plan_id:price.planId,billing_cycle:cycle,currency,base_product_id:baseProduct,base_price_id:basePrice!,base_amount_cents:baseAmount,extra_product_id:extraProduct,extra_price_id:extraPrice,extra_amount_cents:extraAmount,tax_behavior:TAX_BEHAVIOR,tax_code:SAAS_TAX_CODE};
 }
 
 function countryCode(v:unknown):string|null{const s=String(v??'').trim();if(/^[A-Za-z]{2}$/.test(s))return s.toUpperCase();const n=s.toLocaleLowerCase('de-DE');if(n==='deutschland'||n==='germany')return'DE';return null;}
