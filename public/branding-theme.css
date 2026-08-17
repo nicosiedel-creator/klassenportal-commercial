@@ -1,0 +1,7 @@
+.portal-body,.portal-shell,.portal-gate,.class-admin-login{background:var(--portal-bg,#ece8df)!important;color:var(--portal-text,#172033)!important}
+.portal-gate{background:radial-gradient(circle at top left,color-mix(in srgb,var(--portal-primary,#2563eb) 13%,var(--portal-bg,#ece8df)),var(--portal-bg,#ece8df) 48%)!important}
+.portal-gate-card,.class-admin-login-card,.class-admin-modal,.portal-hero,.portal-section,.portal-item,.portal-day,.class-admin-person,.class-admin-module,.class-admin-count,.portal-logo{background:var(--portal-surface,#f3f0ea)!important;color:var(--portal-text,#172033)!important}
+.portal-field input,.class-admin-form input,.class-admin-form textarea,.class-admin-form select{background:color-mix(in srgb,var(--portal-surface,#f3f0ea) 78%,var(--portal-bg,#ece8df))!important;color:var(--portal-text,#172033)!important}
+.portal-date,.portal-pill{background:color-mix(in srgb,var(--portal-primary,#2563eb) 10%,var(--portal-surface,#f3f0ea))!important}
+.portal-btn.secondary{background:color-mix(in srgb,var(--portal-surface,#f3f0ea) 84%,var(--portal-bg,#ece8df))!important;color:var(--portal-text,#172033)!important}
+.portal-footer,.portal-empty,.portal-item .meta,.portal-rich-row span{color:color-mix(in srgb,var(--portal-text,#172033) 68%,var(--portal-bg,#ece8df))!important}
