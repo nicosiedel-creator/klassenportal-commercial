@@ -48,13 +48,14 @@ assert.match(intake,/r2_key=NULL,extracted_text=NULL,extraction_state='purged'/,
 assert.match(intake,/FILES\.delete/,'temporary R2 originals must be physically deleted');
 
 for(const blocked of ['MULTIPLE_EMAILS','COURSE_AMBIGUOUS','DUPLICATE_IN_IMPORT','SPECIAL_CATEGORY_DATA_DETECTED_NOT_IMPORTED','BANK_DATA_DETECTED_NOT_IMPORTED'])assert.ok(intake.includes(`'${blocked}'`),`safe-auto guard missing ${blocked}`);
-assert.match(participant,/source_kind:'api'/g,'intake must use a source kind allowed by the existing participant-import schema');
+assert.match(intake,/source_kind:'api'/,'intake must call the participant importer with a source kind allowed by its existing schema');
+assert.match(participant,/const storedKind=\['contract_text','pdf_text','pasted_text','api'\]\.includes\(kind\)\?kind:'structured'/,'participant importer must normalize every source kind to its constrained database enum');
 assert.match(participant,/detected_not_imported/,'contract extraction must distinguish detected sensitive data from persisted participant data');
 assert.match(participant,/SPECIAL_CATEGORY_DATA_DETECTED_NOT_IMPORTED/);assert.match(participant,/BANK_DATA_DETECTED_NOT_IMPORTED/);
 
 assert.match(intake,/responsibility_assignments/,'review notifications should include assigned course responsibles');
 assert.match(intake,/keine Teilnehmer- oder Vertragsdaten per E-Mail/,'review notification emails must avoid participant/contract data');
-assert.match(intake,/createTenantUser|applyParticipantImport/,'deterministic intake must reuse the existing secure account/invitation pipeline');
+assert.match(intake,/applyParticipantImport/,'deterministic intake must reuse the existing secure account/invitation pipeline');
 assert.match(intake,/intake\.auto_applied/,'successful zero-touch automation must leave an event trail');
 assert.match(intake,/automation_tasks/,'exceptions must feed the attention cockpit');
 
