@@ -1,0 +1,8 @@
+{
+  "channel": "commercial-preview",
+  "release": "2026-08-17-branding-runtime-schema",
+  "expected": {
+    "branding": "six-color-v1",
+    "runtime_schema": "branding-self-healing-v1"
+  }
+}
