@@ -28,7 +28,9 @@ jobs:
             portal=$(curl -fsS --max-time 12 "$BASE/portal/bildungszentrum-spreeblick-demo/fisi-26-1?sha=$GITHUB_SHA" || true)
             customer=$(curl -fsS --max-time 12 "$BASE/kunden-admin?sha=$GITHUB_SHA" || true)
             if grep -q -- '--kp-content-max:1320px' <<<"$css" \
+              && grep -Fq '.portal-header-actions>a.portal-btn.secondary{visibility:hidden!important}' <<<"$css" \
               && grep -q 'Kacheln anpassen' <<<"$js" \
+              && grep -Fq "management.dataset.roleLink='1'" <<<"$js" \
               && grep -q 'plattform-admin' <<<"$privacy" \
               && grep -q '/vfa13-refinement.js' <<<"$portal" \
               && grep -q '/owner-route-privacy.js' <<<"$customer"; then
