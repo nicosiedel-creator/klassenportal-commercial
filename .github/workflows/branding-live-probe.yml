@@ -1,0 +1,43 @@
+name: Branding live probe
+on:
+  push:
+    branches: [branding-live-probe]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe stable cumulative preview
+        env:
+          BASE: https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          fetch(){ curl -sS --max-time 15 -o "$2" -w '%{http_code}' "$1" || true; }
+          css_code=$(fetch "$BASE/vfa13-refinement.css?probe=$GITHUB_SHA" /tmp/css)
+          theme_code=$(fetch "$BASE/branding-theme.css?probe=$GITHUB_SHA" /tmp/theme)
+          branding_code=$(fetch "$BASE/branding-assistant.js?probe=$GITHUB_SHA" /tmp/branding)
+          portal_code=$(fetch "$BASE/portal/bildungszentrum-spreeblick-demo/fisi-26-1?probe=$GITHUB_SHA" /tmp/portal)
+          meta_code=$(fetch "$BASE/public/bildungszentrum-spreeblick-demo/fisi-26-1/meta?probe=$GITHUB_SHA" /tmp/meta)
+          customer_code=$(fetch "$BASE/kunden-admin?probe=$GITHUB_SHA" /tmp/customer)
+          yesno(){ if grep -Fq -- "$1" "$2" 2>/dev/null; then printf true; else printf false; fi; }
+          css_ok=$(yesno -- '--kp-content-max:1320px' /tmp/css)
+          theme_surface=$(yesno -- '--portal-surface' /tmp/theme)
+          theme_bg=$(yesno -- '--portal-bg,#ece8df' /tmp/theme)
+          six=$(yesno -- 'Sechs Designvorschläge' /tmp/branding)
+          free=$(yesno -- 'Farben frei zusammenstellen' /tmp/branding)
+          portal_theme=$(yesno -- '/branding-theme.css' /tmp/portal)
+          customer_privacy=$(yesno -- '/owner-route-privacy.js' /tmp/customer)
+          meta_accent=$(yesno -- '"accent_color"' /tmp/meta)
+          meta_surface=$(yesno -- '"surface_color"' /tmp/meta)
+          meta_text=$(yesno -- '"text_color"' /tmp/meta)
+          meta_preview=$(head -c 1200 /tmp/meta 2>/dev/null || true)
+          ok=false
+          if [ "$css_code" = 200 ] && [ "$theme_code" = 200 ] && [ "$branding_code" = 200 ] && [ "$portal_code" = 200 ] && [ "$meta_code" = 200 ] && [ "$customer_code" = 200 ] && [ "$css_ok" = true ] && [ "$theme_surface" = true ] && [ "$theme_bg" = true ] && [ "$six" = true ] && [ "$free" = true ] && [ "$portal_theme" = true ] && [ "$customer_privacy" = true ] && [ "$meta_accent" = true ] && [ "$meta_surface" = true ] && [ "$meta_text" = true ]; then ok=true; fi
+          payload=$(jq -nc --arg status "$ok" --arg sha "$GITHUB_SHA" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg css_code "$css_code" --arg theme_code "$theme_code" --arg branding_code "$branding_code" --arg portal_code "$portal_code" --arg meta_code "$meta_code" --arg customer_code "$customer_code" --arg css_ok "$css_ok" --arg theme_surface "$theme_surface" --arg theme_bg "$theme_bg" --arg six "$six" --arg free "$free" --arg portal_theme "$portal_theme" --arg customer_privacy "$customer_privacy" --arg meta_accent "$meta_accent" --arg meta_surface "$meta_surface" --arg meta_text "$meta_text" --arg meta_preview "$meta_preview" '{status:$status,probe_sha:$sha,probed_at:$at,http:{css:$css_code,theme:$theme_code,branding:$branding_code,portal:$portal_code,meta:$meta_code,customer:$customer_code},markers:{css:$css_ok,theme_surface:$theme_surface,theme_bg:$theme_bg,six_proposals:$six,free_colors:$free,portal_theme:$portal_theme,customer_privacy:$customer_privacy,meta_accent:$meta_accent,meta_surface:$meta_surface,meta_text:$meta_text},meta_preview:$meta_preview}')
+          encoded=$(printf '%s\n' "$payload" | base64 -w0)
+          meta=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/branding-live-probe.json?ref=branding-live-probe-status")
+          current_sha=$(jq -r '.sha' <<<"$meta")
+          jq -n --arg message "Record branding live probe" --arg content "$encoded" --arg sha "$current_sha" --arg branch branding-live-probe-status '{message:$message,content:$content,sha:$sha,branch:$branch}' >/tmp/update.json
+          curl -fsS -X PUT -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/branding-live-probe.json" --data-binary @/tmp/update.json >/dev/null
