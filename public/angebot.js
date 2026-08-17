@@ -1,5 +1,5 @@
 const root=document.querySelector('#offer-app');
-const token=new URLSearchParams(location.search).get('token')||'';
+const token=new URLSearchParams(location.search).get('token')||decodeURIComponent(location.pathname.split('/').filter(Boolean).at(-1)||'');
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=(c,cur='EUR')=>new Intl.NumberFormat('de-DE',{style:'currency',currency:cur}).format(Number(c||0)/100);
 const date=v=>v?new Date(v).toLocaleDateString('de-DE'):'—';
@@ -10,7 +10,7 @@ function statusText(s){return({draft:'Entwurf',offered:'Angeboten',accepted:'Ang
 function priceRows(o){
   const p=o.pricing||{},cur=o.currency||'EUR',rows=[];
   if(o.kind==='pilot'){
-    rows.push(`<tr><td><strong>3-Monats-Pilot / Testbetrieb</strong><div class="muted">${E(p.pilotDays||90)} Tage · bis ${E(p.pilotCourseLimit||o.courseCount)} Klassen/Kurse · keine automatische kostenpflichtige Verlängerung</div></td><td>${money(0,cur)}</td></tr>`);
+    rows.push(`<tr><td><strong>Pilot / Testbetrieb</strong><div class="muted">${E(p.pilotDays||90)} Tage · bis ${E(p.pilotCourseLimit||o.courseCount)} Klassen/Kurse · keine automatische kostenpflichtige Verlängerung</div></td><td>${money(0,cur)}</td></tr>`);
     return rows.join('');
   }
   const cycle=p.billingCycle==='annual'?'Jahresabrechnung':'Monatliche Nutzung';
