@@ -11,6 +11,7 @@ export interface Env {
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   OWNER_MFA_ENCRYPTION_KEY?: string;
+  TENANT_SECRETS_ENCRYPTION_KEY?: string;
   CLOUDFLARE_ZONE_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
   CLOUDFLARE_SAAS_CNAME_TARGET?: string;
@@ -20,6 +21,7 @@ export interface Env {
 }
 
 export type Role = 'platform_admin' | 'tenant_admin' | 'class_admin' | 'participant' | 'guest';
+export type AuthMethod = 'password'|'oidc'|'mfa'|'api'|'scim';
 
 export interface SessionUser {
   userId: string;
@@ -28,6 +30,8 @@ export interface SessionUser {
   isPlatformAdmin: boolean;
   mustChangePassword: boolean;
   tenantRoles: Array<{ tenantId: string; courseId: string | null; role: Exclude<Role,'platform_admin'> }>;
+  authMethod?: AuthMethod;
+  authTenantId?: string | null;
 }
 
 export interface CoreAuthContext {
@@ -35,6 +39,8 @@ export interface CoreAuthContext {
   role: Role;
   tenantIds: string[];
   courseIds: string[];
+  orgUnitIds?: string[];
+  permissions?: string[];
   isPlatformAdmin: boolean;
   session: SessionUser;
 }
