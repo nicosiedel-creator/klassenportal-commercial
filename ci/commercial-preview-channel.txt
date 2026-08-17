@@ -1,0 +1,1 @@
+Permanent Cloudflare acceptance-preview channel. Do not merge into main.
