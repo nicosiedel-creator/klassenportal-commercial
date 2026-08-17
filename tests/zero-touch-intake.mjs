@@ -59,7 +59,9 @@ assert.match(intake,/applyParticipantImport/,'deterministic intake must reuse th
 assert.match(intake,/intake\.auto_applied/,'successful zero-touch automation must leave an event trail');
 assert.match(intake,/automation_tasks/,'exceptions must feed the attention cockpit');
 
-for(const path of ['/api/inbound/resend','/api/intake/upload/','/api/enterprise/intake/overview','/api/enterprise/intake/upload-links'])assert.ok(router.includes(path)||enterprise.includes(path),`intake route missing ${path}`);
+assert.ok(router.includes("path==='/api/inbound/resend'"),'signed inbound email webhook route missing');
+assert.match(router,/\^\\\/api\\\/intake\\\/upload\\\/\(\[\^\/\]\+\)\$/,'public submit-only upload route missing');
+for(const path of ['/api/enterprise/intake/overview','/api/enterprise/intake/upload-links'])assert.ok(router.includes(path)||enterprise.includes(path),`intake route missing ${path}`);
 assert.match(router,/RATE_LIMITED.*429/s,'intake throttle must return HTTP 429');
 assert.match(index,/handlePublicIntakeRoute/);assert.match(index,/cleanupIntake/);
 assert.ok(wrangler.includes('"/eingang/*"'),'secure submit-only page must always run through the Worker');
