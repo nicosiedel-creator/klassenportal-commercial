@@ -9,6 +9,7 @@ import { finishTenantSso, getTenantSso, saveTenantSso, startTenantSso } from './
 import { applyParticipantImport, previewParticipantImport } from './participant-document-import.js';
 import { previewParticipantImportFile } from './participant-import-file.js';
 import { createResponsibility, listResponsibilities, revokeResponsibility } from './responsibilities.js';
+import { handleEnterpriseIntakeRoute } from './intake-router.js';
 
 function json(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -24,6 +25,7 @@ export async function handleEnterpriseRouter(request:Request,env:Env):Promise<Re
     if(path.startsWith('/api/v1/'))return handlePublicApiV1(env,request);
     if(!path.startsWith('/api/enterprise/'))return null;
     assertSameOrigin(request,env.APP_ORIGIN);const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)throw new Error('TENANT_ID_REQUIRED');const auth=await resolveCoreAuth(env,request,tenantId,u.searchParams.get('course_id')||undefined);
+    if(path.startsWith('/api/enterprise/intake')){const intake=await handleEnterpriseIntakeRoute(request,env,auth,tenantId);if(intake)return intake;}
     if(path==='/api/enterprise/context'&&request.method==='GET')return json({ok:true,context:{tenant_id:tenantId,role:auth.role,course_ids:auth.courseIds,org_unit_ids:auth.orgUnitIds??[],permissions:auth.permissions??[],is_platform_admin:auth.isPlatformAdmin}});
     if(path==='/api/enterprise/responsibilities'&&request.method==='GET')return json({ok:true,responsibilities:await listResponsibilities(env,auth,tenantId)});
     if(path==='/api/enterprise/responsibilities'&&request.method==='POST')return json({ok:true,responsibility:await createResponsibility(env,auth,tenantId,await body(request))},201);
