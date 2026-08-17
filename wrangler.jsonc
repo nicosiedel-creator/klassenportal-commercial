@@ -29,7 +29,10 @@
       "/impressum*",
       "/datenschutz*",
       "/agb*",
-      "/avv*"
+      "/avv*",
+      "/unterauftragsverarbeiter*",
+      "/datenportabilitaet*",
+      "/rechtsverstoss-melden*"
     ]
   },
   "d1_databases": [
