@@ -13,12 +13,18 @@ export async function listTenants(env:Env,auth:CoreAuthContext){
 }
 
 export async function getSettings(env:Env,auth:CoreAuthContext,tenantId:string){ requireRole(auth,'guest'); return env.DB.prepare('SELECT * FROM tenant_settings WHERE tenant_id=?').bind(tenantId).first(); }
+function brandRgb(v:string){return [Number.parseInt(v.slice(1,3),16),Number.parseInt(v.slice(3,5),16),Number.parseInt(v.slice(5,7),16)];}
+function brandNearWhite(v:string){const [r,g,b]=brandRgb(v);return r>=248&&g>=248&&b>=248;}
+function brandLum(v:string){const c=brandRgb(v).map(x=>{const s=x/255;return s<=0.03928?s/12.92:((s+0.055)/1.055)**2.4;});return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2];}
+function brandContrast(a:string,b:string){const x=brandLum(a),y=brandLum(b),hi=Math.max(x,y),lo=Math.min(x,y);return(hi+0.05)/(lo+0.05);}
 export async function updateSettings(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
   requireRole(auth,'tenant_admin'); const current=await getSettings(env,auth,tenantId) as Record<string,unknown>|null; if(!current) throw new Error('SETTINGS_NOT_FOUND');
   const currentDomain=safeString(current.custom_domain,255);if(input.custom_domain!==undefined&&safeString(input.custom_domain,255)!==currentDomain)throw new Error('CUSTOM_DOMAIN_MANAGED_SEPARATELY');
-  const portal=safeString(input.portal_name??current.portal_name,200),welcome=safeString(input.welcome_text??current.welcome_text,5000),logo=safeString(input.logo_url??current.logo_url,2048),primary=safeString(input.primary_color??current.primary_color,20),secondary=safeString(input.secondary_color??current.secondary_color,20),background=safeString(input.background_color??current.background_color,20),favicon=safeString(input.favicon_url??current.favicon_url,2048),white=Number(input.white_label??current.white_label)?1:0;
-  const color=/^#[0-9a-fA-F]{6}$/; if(!color.test(primary)||!color.test(secondary)||!color.test(background)) throw new Error('COLOR_INVALID');
-  await env.DB.prepare('UPDATE tenant_settings SET portal_name=?,welcome_text=?,logo_url=?,primary_color=?,secondary_color=?,background_color=?,favicon_url=?,custom_domain=?,white_label=?,updated_at=? WHERE tenant_id=?').bind(portal,welcome||null,logo||null,primary,secondary,background,favicon||null,currentDomain||null,white,nowIso(),tenantId).run();
+  const portal=safeString(input.portal_name??current.portal_name,200),welcome=safeString(input.welcome_text??current.welcome_text,5000),logo=safeString(input.logo_url??current.logo_url,2048),primary=safeString(input.primary_color??current.primary_color,20),secondary=safeString(input.secondary_color??current.secondary_color,20),accent=safeString(input.accent_color??current.accent_color??'#7c3aed',20),background=safeString(input.background_color??current.background_color,20),surface=safeString(input.surface_color??current.surface_color??'#f3f0ea',20),textColor=safeString(input.text_color??current.text_color??'#172033',20),favicon=safeString(input.favicon_url??current.favicon_url,2048),white=Number(input.white_label??current.white_label)?1:0;
+  const color=/^#[0-9a-fA-F]{6}$/; if(![primary,secondary,accent,background,surface,textColor].every(x=>color.test(x))) throw new Error('COLOR_INVALID');
+  if(brandNearWhite(background)||brandNearWhite(surface))throw new Error('WHITE_BACKGROUND_NOT_ALLOWED');
+  if(brandContrast(textColor,background)<4.5||brandContrast(textColor,surface)<4.5)throw new Error('BRANDING_CONTRAST_TOO_LOW');
+  await env.DB.prepare('UPDATE tenant_settings SET portal_name=?,welcome_text=?,logo_url=?,primary_color=?,secondary_color=?,accent_color=?,background_color=?,surface_color=?,text_color=?,favicon_url=?,custom_domain=?,white_label=?,updated_at=? WHERE tenant_id=?').bind(portal,welcome||null,logo||null,primary,secondary,accent,background,surface,textColor,favicon||null,currentDomain||null,white,nowIso(),tenantId).run();
   await audit(env.DB,auth.userId,'settings.updated',tenantId,undefined,'tenant_settings',tenantId); return getSettings(env,auth,tenantId);
 }
 

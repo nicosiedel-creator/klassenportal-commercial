@@ -41,7 +41,11 @@ const compactUi=await text('public/portal-compact.js');
 const compactCss=await text('public/portal-compact.css');
 const customerCompactCss=await text('public/customer-compact.css');
 const vfaReferenceCss=await text('public/vfa13-reference.css');
+const vfaRefinementCss=await text('public/vfa13-refinement.css');
+const brandingAssistant=await text('public/branding-assistant.js');
 const users=await text('src/core/users.ts');
+const dataSource=await text('src/core/data.ts');
+const dataBrandingGuard=()=>dataSource.includes('WHITE_BACKGROUND_NOT_ALLOWED')&&dataSource.includes('BRANDING_CONTRAST_TOO_LOW')&&dataSource.includes('accent_color')&&dataSource.includes('surface_color')&&dataSource.includes('text_color');
 
 for(const route of ['/api/*','/public/*','/brand/*','/calendar/*','/portal/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/klassen-admin*','/zahlung/*','/passwort-vergessen*','/passwort-zuruecksetzen*','/konto-aktivieren*','/impressum*','/datenschutz*','/agb*','/avv*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
 for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/vfa13-reference.css','public/customer-admin.html','public/customer-compact.css','public/platform-admin.html','public/platform-owner-ui.js','public/owner-security-ui.js','public/launch-readiness-ui.js','public/auth-mfa-ui.js','public/account-mail-ui.js','public/account-action.html','public/account-action.js','public/legal-footer-ui.js','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/class-admin-workspace.js','public/payment-result.html'])await readFile(asset);
@@ -101,6 +105,9 @@ assert.ok(classAdminHtml.includes('/class-admin-workspace.js')&&classAdminHtml.i
 assert.ok(!classAdminHtml.includes('/boot.js')&&!classAdminHtml.includes('/app.js'),'Klassen-Admin must not fall back to generic admin SPA');
 assert.ok(customerAdminHtml.includes('customer-portal-admin')&&customerAdminHtml.includes('/customer-compact.css')&&customerAdminHtml.includes('/vfa13-reference.css'),'customer admin must share compact VFA13 visual language');
 assert.ok(vfaReferenceCss.includes('#stundenplan,#aufgaben')&&vfaReferenceCss.includes('flex-wrap:wrap'),'VFA13 priorities and wrapped customer navigation must stay intact');
+assert.ok(vfaRefinementCss.includes('--portal-surface')&&vfaRefinementCss.includes('--portal-accent'),'portal must consume the complete six-color tenant theme');
+assert.ok(dataBrandingGuard(),'six-color branding must reject white backgrounds and unsafe text contrast');
+assert.ok(brandingAssistant.includes('Sechs Designvorschläge')&&brandingAssistant.includes('Farben frei zusammenstellen'),'customer branding must offer six suggestions and manual color assembly');
 assert.ok(compactUi.includes("section.id==='uebersicht'")&&compactUi.includes('portal-compact-toggle'),'compact portal behavior must stay intact');
 assert.ok(compactCss.includes('.portal-stats,.portal-nav{display:none!important}'),'duplicate portal navigation/stats must stay removed');
 assert.ok(customerCompactCss.includes('flex-wrap:wrap')&&!customerCompactCss.includes('overflow-x:auto;white-space:nowrap'),'customer navigation must wrap instead of forcing one long row');
@@ -120,7 +127,7 @@ assert.ok(platformOwner.includes('j<20')&&platformOwner.includes('week<6'),'demo
 
 assert.ok(String(pkg.scripts?.test||'').includes('tests/security-roles.mjs')&&String(pkg.scripts?.test||'').includes('tests/owner-security.mjs')&&String(pkg.scripts?.test||'').includes('tests/custom-domains.mjs')&&String(pkg.scripts?.test||'').includes('tests/launch-readiness.mjs')&&String(pkg.scripts?.test||'').includes('tests/password-kdf-runtime.mjs'),'full security/launch/password regression suite must run in CI');
 const migrations=(await readdir('migrations')).filter(x=>/^\d+_.*\.sql$/.test(x)).sort();
-for(const required of ['0035_notifications.sql','0038_module_cancellations.sql','0039_owner_security.sql','0040_custom_domains.sql','0041_launch_readiness.sql'])assert.ok(migrations.includes(required),`required migration missing: ${required}`);
+for(const required of ['0035_notifications.sql','0038_module_cancellations.sql','0039_owner_security.sql','0040_custom_domains.sql','0041_launch_readiness.sql','0042_branding_palette.sql'])assert.ok(migrations.includes(required),`required migration missing: ${required}`);
 for(let i=1;i<migrations.length;i++)assert.ok(migrations[i]>migrations[i-1],'migration order must be deterministic');
 
 console.log('Release readiness checks: OK');

@@ -9,3 +9,11 @@
 .portal-footer{padding:4px 16px 24px!important;font-size:.76rem!important}
 @media(max-width:1050px){.portal-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}#stundenplan,#woche{grid-column:1/-1!important}}
 @media(max-width:700px){.portal-main{padding:8px 11px 30px!important}.portal-header-inner{padding:8px 11px 5px!important}.portal-grid{grid-template-columns:1fr!important;gap:10px!important}.portal-section,.portal-section.wide,#stundenplan,#woche,.portal-section.portal-compact-open,.portal-section[data-keep-open="1"]{grid-column:auto!important}.portal-hero{padding:13px 14px!important}.portal-date{display:none!important}.portal-layout-edit{padding:6px 8px!important}.portal-user{display:none!important}}
+
+/* Six-color tenant theme: page and card surfaces are deliberately never hard white. */
+.portal-body{background:var(--portal-bg,#f3efe7)!important;color:var(--portal-text,#172033)!important}
+.portal-hero,.portal-section,.portal-section.wide,.portal-item,.portal-day,.class-admin-person,.class-admin-module,.class-admin-count{background:var(--portal-surface,#f3f0ea)!important;color:var(--portal-text,#172033)!important}
+.portal-hero h1,.portal-section h2,.portal-item strong,.portal-brand strong{color:var(--portal-text,#172033)!important}
+.portal-btn:not(.secondary),.portal-pill{background:var(--portal-primary,#2563eb)!important}
+.portal-btn.secondary{background:color-mix(in srgb,var(--portal-surface,#f3f0ea) 86%,var(--portal-bg,#f3efe7))!important;color:var(--portal-text,#172033)!important}
+.portal-section:nth-child(3n+2){border-left-color:var(--portal-accent,#7c3aed)!important}

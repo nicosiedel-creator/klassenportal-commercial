@@ -14,7 +14,7 @@ async function coursePortalRow(env:Env,tenantSlug:string,courseCode:string){
   const row=await env.DB.prepare(`SELECT
       c.id,c.tenant_id,c.name,c.code,c.start_date,c.end_date,c.access_mode,c.access_code_hash,
       t.name AS tenant_name,t.slug,
-      s.portal_name,s.welcome_text,s.logo_url,s.primary_color,s.secondary_color,s.background_color,
+      s.portal_name,s.welcome_text,s.logo_url,s.primary_color,s.secondary_color,s.accent_color,s.background_color,s.surface_color,s.text_color,
       s.white_label,s.locale,s.timezone
     FROM courses c
     JOIN tenants t ON t.id=c.tenant_id
@@ -29,7 +29,7 @@ function safeCourse(row:Record<string,unknown>){
   return {
     id:row.id,name:row.name,code:row.code,start_date:row.start_date,end_date:row.end_date,access_mode:row.access_mode,
     tenant_name:row.tenant_name,slug:row.slug,portal_name:row.portal_name,welcome_text:row.welcome_text,logo_url:row.logo_url,
-    primary_color:row.primary_color,secondary_color:row.secondary_color,background_color:row.background_color,
+    primary_color:row.primary_color,secondary_color:row.secondary_color,accent_color:row.accent_color,background_color:row.background_color,surface_color:row.surface_color,text_color:row.text_color,
     white_label:row.white_label,locale:row.locale,timezone:row.timezone,
   };
 }
