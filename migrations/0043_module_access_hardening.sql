@@ -11,8 +11,9 @@ WHERE source='manual'
     'reminders','weekly_overview','exams_progress','personal_grades','learning_materials'
   );
 
--- Kostenpflichtige Erweiterungen dürfen nur aktiv sein, wenn eine bestätigte Modulbuchung
--- existiert oder sie ausdrücklich als Tarif/Testumfang geführt werden.
+-- Kostenpflichtige Erweiterungen, die zuletzt über die alte Häkchenansicht von einem
+-- normalen Kundenbenutzer aktiviert wurden, werden zurückgenommen. Bereits gebuchte
+-- Erweiterungen sowie bewusste Plattform-/Demo-Freigaben bleiben unangetastet.
 UPDATE feature_flags
 SET enabled=0, source='plan', updated_at=CURRENT_TIMESTAMP
 WHERE source='manual'
@@ -28,26 +29,51 @@ WHERE source='manual'
     WHERE c.tenant_id=feature_flags.tenant_id
       AND c.feature_key=feature_flags.feature_key
       AND c.status='active'
-  );
-
--- Paketgesteuerte Funktionen, die zuletzt durch einen normalen Kundenbenutzer über die
--- alte Häkchenansicht auf 'manual' gesetzt wurden, werden zurückgenommen. Eine bewusste
--- Plattform-Admin-Freigabe bleibt unangetastet.
-UPDATE feature_flags
-SET enabled=0, source='plan', updated_at=CURRENT_TIMESTAMP
-WHERE source='manual'
-  AND feature_key IN ('custom_domain','white_label')
-  AND COALESCE((
-    SELECT u.is_platform_admin
+  )
+  AND EXISTS (
+    SELECT 1
     FROM audit_log a
     LEFT JOIN users u ON u.id=a.actor_user_id
     WHERE a.tenant_id=feature_flags.tenant_id
       AND a.action='feature.updated'
       AND a.entity_type='feature'
       AND a.entity_id=feature_flags.feature_key
-    ORDER BY a.created_at DESC
-    LIMIT 1
-  ),0)=0;
+      AND COALESCE(u.is_platform_admin,0)=0
+      AND a.created_at=(
+        SELECT MAX(a2.created_at)
+        FROM audit_log a2
+        WHERE a2.tenant_id=feature_flags.tenant_id
+          AND a2.action='feature.updated'
+          AND a2.entity_type='feature'
+          AND a2.entity_id=feature_flags.feature_key
+      )
+  );
+
+-- Paketgesteuerte Funktionen, die zuletzt durch einen normalen Kundenbenutzer über die
+-- alte Häkchenansicht auf 'manual' gesetzt wurden, werden zurückgenommen. Eine bewusste
+-- Plattform-Admin-/Demo-Freigabe bleibt unangetastet.
+UPDATE feature_flags
+SET enabled=0, source='plan', updated_at=CURRENT_TIMESTAMP
+WHERE source='manual'
+  AND feature_key IN ('custom_domain','white_label')
+  AND EXISTS (
+    SELECT 1
+    FROM audit_log a
+    LEFT JOIN users u ON u.id=a.actor_user_id
+    WHERE a.tenant_id=feature_flags.tenant_id
+      AND a.action='feature.updated'
+      AND a.entity_type='feature'
+      AND a.entity_id=feature_flags.feature_key
+      AND COALESCE(u.is_platform_admin,0)=0
+      AND a.created_at=(
+        SELECT MAX(a2.created_at)
+        FROM audit_log a2
+        WHERE a2.tenant_id=feature_flags.tenant_id
+          AND a2.action='feature.updated'
+          AND a2.entity_type='feature'
+          AND a2.entity_id=feature_flags.feature_key
+      )
+  );
 
 -- Defense in depth: Ein kostenpflichtiges Modul darf nicht durch ein beliebiges
 -- feature_flags-Update auf 'manual + aktiv' gesetzt werden. Der reguläre Stripe-Flow
