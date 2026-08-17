@@ -36,7 +36,8 @@ assert.match(org,/IMPORT_PARENT_RESOLUTION_FAILED/,'ambiguous parent resolution 
 
 assert.match(secrets,/AES-GCM/,'tenant secrets must be encrypted with authenticated encryption');
 assert.match(secrets,/TENANT_SECRETS_ENCRYPTION_KEY/,'tenant secret encryption must use a dedicated key');
-assert.match(sso,/code_challenge_method','S256'/,'OIDC must use PKCE S256');
+assert.match(sso,/code_challenge_method/,'OIDC must send a PKCE challenge method');
+assert.match(sso,/S256/,'OIDC must use PKCE S256');
 assert.match(sso,/nonceHash/,'OIDC must bind a nonce');
 assert.match(sso,/stateHash/,'OIDC state must be stored only as a hash');
 assert.match(sso,/RS256/,'OIDC ID token signature algorithm must be explicitly checked');
