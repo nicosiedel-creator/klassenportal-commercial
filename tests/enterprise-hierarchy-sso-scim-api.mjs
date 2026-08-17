@@ -45,7 +45,10 @@ assert.match(sso,/jwks_uri/,'OIDC signatures must be validated through discovery
 assert.match(sso,/SSO_AUDIENCE_INVALID/);assert.match(sso,/SSO_ISSUER_MISMATCH/);assert.match(sso,/SSO_USER_NOT_PROVISIONED/,'SSO must not create privileged users just from an external claim');
 assert.match(auth,/authTenantId!==tenantId/,'SSO for tenant A must not satisfy SSO enforcement for tenant B');
 assert.match(sso,/SSO_BREAK_GLASS_REQUIRED/,'enforced SSO must retain a deliberate emergency admin');
-assert.doesNotMatch(sso,/client_secret[^\n]*return/i,'OIDC secret must not be returned to the browser');
+const getSsoBody=(sso.match(/export async function getTenantSso[\s\S]*?\n}\n/)||[''])[0];
+assert.ok(getSsoBody,'tenant SSO read function must exist');
+assert.doesNotMatch(getSsoBody,/client_secret_ciphertext\s*:/i,'OIDC secret ciphertext must not be serialized to the browser');
+assert.match(getSsoBody,/has_client_secret/,'browser may receive only a boolean indicating whether a secret is configured');
 
 assert.match(scim,/token_hash/,'SCIM tokens must be authenticated by stored hashes');
 assert.match(scim,/expires_at>/,'SCIM tokens must expire');
