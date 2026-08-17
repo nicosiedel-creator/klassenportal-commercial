@@ -1,6 +1,7 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { audit } from './audit.js';
 import { requireCourseAccess, requireRole } from './permissions.js';
+import { hasPermission } from './enterprise-access.js';
 import { nowIso, safeString, slugify } from './utils.js';
 import { hashPassword } from './auth.js';
 
@@ -19,7 +20,7 @@ function scope(auth:CoreAuthContext,courseId:unknown){if(auth.isPlatformAdmin||a
 function value(field:string,v:unknown):unknown{if(field==='course_id')return v===''||v===null?null:v;if(field==='visible'||field==='visible_to_students')return v===false||v===0||v==='0'?0:1;return v===''?null:v;}
 
 export async function updateCourse(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,input:Record<string,unknown>){
-  requireRole(auth,'tenant_admin');const current=await env.DB.prepare('SELECT * FROM courses WHERE id=? AND tenant_id=?').bind(courseId,tenantId).first<Record<string,unknown>>();if(!current)throw new Error('COURSE_NOT_FOUND');
+  if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'){if(!hasPermission(auth,'courses.manage'))throw new Error('FORBIDDEN_PERMISSION');requireCourseAccess(auth,courseId);}const current=await env.DB.prepare('SELECT * FROM courses WHERE id=? AND tenant_id=?').bind(courseId,tenantId).first<Record<string,unknown>>();if(!current)throw new Error('COURSE_NOT_FOUND');
   const name=safeString(input.name??current.name,200);if(!name)throw new Error('COURSE_NAME_REQUIRED');const code=slugify(input.code??current.code??name).slice(0,40);if(!code)throw new Error('COURSE_CODE_REQUIRED');
   const mode=String(input.access_mode??current.access_mode??'login');if(!['public','link_code','login','hybrid'].includes(mode))throw new Error('ACCESS_MODE_INVALID');
   let accessHash=current.access_code_hash??null;if(mode==='public'||mode==='login')accessHash=null;else{const newCode=input.access_code===undefined?'':safeString(input.access_code,128);if(newCode){if(newCode.length<6)throw new Error('ACCESS_CODE_REQUIRED');accessHash=await hashPassword(newCode);}if(!accessHash)throw new Error('ACCESS_CODE_REQUIRED');}
