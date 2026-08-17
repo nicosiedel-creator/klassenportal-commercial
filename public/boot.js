@@ -1,7 +1,7 @@
 const root=document.querySelector('#app');
 
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function safeContinuation(){const value=new URLSearchParams(location.search).get('continue')||'';return /^\/portal\/[^/]+\/[^/?#]+\/?$/.test(value)?value:'';}
+function safeContinuation(){const value=new URLSearchParams(location.search).get('continue')||'';try{if(!value)return'';const u=new URL(value,location.origin);if(u.origin!==location.origin)return'';const p=u.pathname.replace(/\/$/,'')||'/';if(['/plattform-admin','/kunden-admin','/klassen-admin'].includes(p))return p+u.search;if(/^\/portal\/[^/]+\/[^/?#]+$/.test(p))return p+u.search;return'';}catch{return'';}}
 
 async function getMe(){
   const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});
