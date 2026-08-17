@@ -1,6 +1,7 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertSameOrigin } from './utils.js';
+import { ensureOfferSchema } from './offer-schema.js';
 import { acceptPublicOffer, cancelPlatformOffer, createPlatformOffer, getPlatformOffer, listPlatformOffers, platformOfferMeta, previewPlatformOffer, publicOffer } from './platform-offers.js';
 import { publishOrRotatePlatformOffer } from './platform-offer-links.js';
 
@@ -20,6 +21,8 @@ function error(e:unknown):Response{
 
 export async function handlePlatformOfferApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url);
+  if(!u.pathname.startsWith('/api/offers/')&&!u.pathname.startsWith('/api/platform/offers'))return null;
+  try{await ensureOfferSchema(env);}catch(e){return error(e);}
   const publicMatch=u.pathname.match(/^\/api\/offers\/([^/]+)$/);
   if(publicMatch){
     try{
@@ -29,7 +32,6 @@ export async function handlePlatformOfferApi(request:Request,env:Env):Promise<Re
       return out({ok:false,error:'METHOD_NOT_ALLOWED'},405);
     }catch(e){return error(e);}
   }
-  if(!u.pathname.startsWith('/api/platform/offers'))return null;
   try{
     assertSameOrigin(request,env.APP_ORIGIN);
     const auth=await resolveCoreAuth(env,request);
