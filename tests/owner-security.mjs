@@ -8,6 +8,8 @@ const router=await readFile('src/core/owner-security-router.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
 const ui=await readFile('public/owner-security-ui.js','utf8');
 const mfaUi=await readFile('public/auth-mfa-ui.js','utf8');
+const platformHtml=await readFile('public/platform-admin.html','utf8');
+const directLogin=await readFile('public/platform-direct-login.js','utf8');
 
 assert.match(auth,/ownerMfaEnabled/,'owner login must check MFA state before issuing a session');
 assert.match(auth,/mfaRequired:true/,'owner login must return an MFA challenge instead of a session when MFA is enabled');
@@ -21,6 +23,12 @@ assert.match(router,/\/api\/auth\/mfa\/verify/,'MFA verification endpoint must b
 assert.match(index,/handleOwnerSecurityApi/,'owner security router must be wired into the worker');
 assert.match(mfaUi,/challenge_token/,'login UI must complete the MFA challenge before normal app startup');
 
+assert.match(index,/const asset=clean==='\/kunden-admin'\?'\/customer-admin\.html':clean==='\/klassen-admin'\?'\/class-admin\.html':'\/platform-admin\.html'/,'platform admin route must serve its login shell without requiring an existing owner session');
+assert.doesNotMatch(index,/clean==='\/plattform-admin'.*Nicht gefunden/,'platform admin route must not hide the login page behind an existing session');
+assert.match(platformHtml,/platform-direct-login\.js/,'platform admin shell must load the direct-login session handoff');
+assert.match(directLogin,/user\.isPlatformAdmin/,'direct platform login must distinguish owner sessions');
+assert.match(directLogin,/location\.reload\(\)/,'successful owner login must reload the dedicated platform area');
+
 assert.match(cockpit,/requestTenantDeletion/,'owner deletion must reuse backup/export/grace workflow');
 assert.match(cockpit,/ACTIVE_BILLING_MUST_END_FIRST/,'tenant deletion must refuse active billing');
 assert.match(cockpit,/MFA_REQUIRED_FOR_DESTRUCTIVE_ACTION/,'destructive owner actions must require MFA');
@@ -29,4 +37,4 @@ assert.match(cockpit,/confirm_name/,'tenant deletion must require exact tenant-n
 assert.match(ui,/14-tägigen Schutzfrist/,'owner UI must explain the protected deletion grace period');
 assert.match(ui,/System & Sicherheit/,'owner cockpit must be visible only inside platform admin');
 
-console.log('Owner MFA/cockpit/deletion regression tests: OK');
+console.log('Owner MFA/cockpit/deletion/direct-login regression tests: OK');
