@@ -5,7 +5,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json && node scripts/copy-pdfjs.mjs",
-    "test": "npm run build && node tests/password-kdf-runtime.mjs && node tests/run.mjs && node tests/advanced-modules.mjs && node tests/security-roles.mjs && node tests/billing-lifecycle.mjs && node tests/owner-security.mjs && node tests/custom-domains.mjs && node tests/launch-readiness.mjs && node tests/production-release-gate.mjs",
+    "test": "npm run build && node tests/password-kdf-runtime.mjs && node tests/run.mjs && node tests/advanced-modules.mjs && node tests/security-roles.mjs && node tests/billing-lifecycle.mjs && node tests/platform-offers.mjs && node tests/owner-security.mjs && node tests/custom-domains.mjs && node tests/launch-readiness.mjs && node tests/production-release-gate.mjs",
     "db:migrate": "wrangler d1 migrations apply DB --remote",
     "deploy": "npm run db:migrate && wrangler deploy"
   },
