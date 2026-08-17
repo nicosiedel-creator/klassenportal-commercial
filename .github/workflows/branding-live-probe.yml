@@ -1,49 +1,64 @@
-name: Branding live probe
+name: Commercial live acceptance
 on:
   push:
     branches: [branding-live-probe]
 permissions:
   contents: write
 jobs:
-  probe:
+  acceptance:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe Cloudflare branch previews
+      - name: Verify stable cumulative preview end to end without credentials
         env:
+          BASE: https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           set -euo pipefail
-          candidates=(
-            commercial-preview
-            block3-onboarding-managed-setup
-            branding-runtime-schema-safety
-            branding-theme-studio
-            verify-branding-live-smoke
-            branding-live-probe
-          )
-          result='[]'
-          for branch in "${candidates[@]}"; do
-            base="https://${branch}-klassenportal-commercial.nicosiedel.workers.dev"
-            code=$(curl -sS --max-time 15 -o /tmp/branding -w '%{http_code}' "$base/branding-assistant.js?probe=$GITHUB_SHA" || true)
-            meta_code=$(curl -sS --max-time 15 -o /tmp/meta -w '%{http_code}' "$base/public/bildungszentrum-spreeblick-demo/fisi-26-1/meta?probe=$GITHUB_SHA" || true)
-            marker_code=$(curl -sS --max-time 15 -o /tmp/marker -w '%{http_code}' "$base/deployment-health.json?probe=$GITHUB_SHA" || true)
-            six=false; free=false; accent=false; surface=false; text=false; bg_nonwhite=false; marker=false
-            grep -Fq 'Sechs Designvorschläge' /tmp/branding 2>/dev/null && six=true || true
-            grep -Fq 'Farben frei zusammenstellen' /tmp/branding 2>/dev/null && free=true || true
-            grep -Fq '"accent_color"' /tmp/meta 2>/dev/null && accent=true || true
-            grep -Fq '"surface_color"' /tmp/meta 2>/dev/null && surface=true || true
-            grep -Fq '"text_color"' /tmp/meta 2>/dev/null && text=true || true
-            grep -Fq '2026-08-17-branding-runtime-schema' /tmp/marker 2>/dev/null && marker=true || true
-            if grep -Fq '"background_color":"#ffffff"' /tmp/meta 2>/dev/null; then bg_nonwhite=false; elif [ "$meta_code" = 200 ]; then bg_nonwhite=true; fi
-            ok=false
-            if [ "$code" = 200 ] && [ "$meta_code" = 200 ] && [ "$six" = true ] && [ "$free" = true ] && [ "$accent" = true ] && [ "$surface" = true ] && [ "$text" = true ] && [ "$bg_nonwhite" = true ]; then ok=true; fi
-            if { [ "$branch" = block3-onboarding-managed-setup ] || [ "$branch" = commercial-preview ]; } && { [ "$marker_code" != 200 ] || [ "$marker" != true ]; }; then ok=false; fi
-            item=$(jq -nc --arg branch "$branch" --arg base "$base" --arg code "$code" --arg meta "$meta_code" --arg marker_code "$marker_code" --argjson six "$six" --argjson free "$free" --argjson accent "$accent" --argjson surface "$surface" --argjson text "$text" --argjson bg "$bg_nonwhite" --argjson marker "$marker" --argjson ok "$ok" '{branch:$branch,base:$base,http:{branding:$code,meta:$meta,marker:$marker_code},markers:{six:$six,free:$free,accent:$accent,surface:$surface,text:$text,nonwhite:$bg,deployment_marker:$marker},ok:$ok}')
-            result=$(jq -nc --argjson a "$result" --argjson i "$item" '$a+[$i]')
-          done
-          payload=$(jq -nc --arg sha "$GITHUB_SHA" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson results "$result" '{probe_sha:$sha,probed_at:$at,results:$results}')
+          fetch(){ curl -sS --max-time 20 -o "$2" -w '%{http_code}' "$1?accept=$GITHUB_SHA" || true; }
+          branding=$(fetch "$BASE/branding-assistant.js" /tmp/branding)
+          theme=$(fetch "$BASE/branding-theme.css" /tmp/theme)
+          meta=$(fetch "$BASE/public/bildungszentrum-spreeblick-demo/fisi-26-1/meta" /tmp/meta)
+          portal=$(fetch "$BASE/portal/bildungszentrum-spreeblick-demo/fisi-26-1" /tmp/portal)
+          customer=$(fetch "$BASE/kunden-admin" /tmp/customer)
+          classadmin=$(fetch "$BASE/klassen-admin" /tmp/classadmin)
+          owner=$(fetch "$BASE/plattform-admin" /tmp/owner)
+          marker=$(fetch "$BASE/deployment-health.json" /tmp/marker)
+
+          has(){ grep -Fq -- "$1" "$2" 2>/dev/null; }
+          six=false; has 'Sechs Designvorschläge' /tmp/branding && six=true || true
+          free=false; has 'Farben frei zusammenstellen' /tmp/branding && free=true || true
+          theme_surface=false; has '--portal-surface' /tmp/theme && theme_surface=true || true
+          theme_bg=false; has '--portal-bg' /tmp/theme && theme_bg=true || true
+          accent=false; has '"accent_color"' /tmp/meta && accent=true || true
+          surface=false; has '"surface_color"' /tmp/meta && surface=true || true
+          text=false; has '"text_color"' /tmp/meta && text=true || true
+          nonwhite=false
+          if [ "$meta" = 200 ] && ! has '"background_color":"#ffffff"' /tmp/meta; then nonwhite=true; fi
+          portal_theme=false; has '/branding-theme.css' /tmp/portal && portal_theme=true || true
+          customer_branding=false; has '/branding-assistant.js' /tmp/customer && customer_branding=true || true
+          customer_privacy=false; has '/owner-route-privacy.js' /tmp/customer && customer_privacy=true || true
+          class_theme=false; has '/branding-theme.css' /tmp/classadmin && class_theme=true || true
+          owner_hidden=false
+          if [ "$owner" = 404 ]; then owner_hidden=true; fi
+          exact_marker=false; has '2026-08-17-branding-runtime-schema' /tmp/marker && exact_marker=true || true
+
+          functional=false
+          if [ "$branding" = 200 ] && [ "$theme" = 200 ] && [ "$meta" = 200 ] && [ "$portal" = 200 ] && [ "$customer" = 200 ] && [ "$classadmin" = 200 ] && [ "$owner" = 404 ] \
+             && [ "$six" = true ] && [ "$free" = true ] && [ "$theme_surface" = true ] && [ "$theme_bg" = true ] \
+             && [ "$accent" = true ] && [ "$surface" = true ] && [ "$text" = true ] && [ "$nonwhite" = true ] \
+             && [ "$portal_theme" = true ] && [ "$customer_branding" = true ] && [ "$customer_privacy" = true ] && [ "$class_theme" = true ] && [ "$owner_hidden" = true ]; then functional=true; fi
+
+          meta_preview=$(head -c 1200 /tmp/meta 2>/dev/null || true)
+          payload=$(jq -nc \
+            --arg status "$functional" --arg sha "$GITHUB_SHA" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg branding "$branding" --arg theme "$theme" --arg meta "$meta" --arg portal "$portal" --arg customer "$customer" --arg classadmin "$classadmin" --arg owner "$owner" --arg marker "$marker" \
+            --argjson six "$six" --argjson free "$free" --argjson theme_surface "$theme_surface" --argjson theme_bg "$theme_bg" --argjson accent "$accent" --argjson surface "$surface" --argjson text "$text" --argjson nonwhite "$nonwhite" \
+            --argjson portal_theme "$portal_theme" --argjson customer_branding "$customer_branding" --argjson customer_privacy "$customer_privacy" --argjson class_theme "$class_theme" --argjson owner_hidden "$owner_hidden" --argjson exact_marker "$exact_marker" --arg meta_preview "$meta_preview" \
+            '{functional_ok:$status,probe_sha:$sha,probed_at:$at,http:{branding:$branding,theme:$theme,meta:$meta,portal:$portal,customer_admin:$customer,class_admin:$classadmin,platform_admin_unauth:$owner,deployment_marker:$marker},checks:{six_proposals:$six,free_colors:$free,theme_surface:$theme_surface,theme_background:$theme_bg,meta_accent:$accent,meta_surface:$surface,meta_text:$text,background_nonwhite:$nonwhite,participant_theme:$portal_theme,customer_branding:$customer_branding,customer_owner_privacy:$customer_privacy,class_theme:$class_theme,platform_admin_hidden:$owner_hidden,exact_deployment_marker:$exact_marker},meta_preview:$meta_preview}')
           encoded=$(printf '%s\n' "$payload" | base64 -w0)
-          meta=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/branding-live-probe.json?ref=branding-live-probe-status")
-          current_sha=$(jq -r '.sha' <<<"$meta")
-          jq -n --arg message "Record branch preview probe" --arg content "$encoded" --arg sha "$current_sha" --arg branch branding-live-probe-status '{message:$message,content:$content,sha:$sha,branch:$branch}' >/tmp/update.json
+          ghmeta=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/branding-live-probe.json?ref=branding-live-probe-status")
+          current_sha=$(jq -r '.sha' <<<"$ghmeta")
+          jq -n --arg message "Record full commercial live acceptance" --arg content "$encoded" --arg sha "$current_sha" --arg branch branding-live-probe-status '{message:$message,content:$content,sha:$sha,branch:$branch}' >/tmp/update.json
           curl -fsS -X PUT -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/branding-live-probe.json" --data-binary @/tmp/update.json >/dev/null
+          test "$functional" = true
