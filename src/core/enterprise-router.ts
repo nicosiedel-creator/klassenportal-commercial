@@ -21,6 +21,7 @@ export async function handleEnterpriseRouter(request:Request,env:Env):Promise<Re
     if(path.startsWith('/api/v1/'))return handlePublicApiV1(env,request);
     if(!path.startsWith('/api/enterprise/'))return null;
     assertSameOrigin(request,env.APP_ORIGIN);const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)throw new Error('TENANT_ID_REQUIRED');const auth=await resolveCoreAuth(env,request,tenantId,u.searchParams.get('course_id')||undefined);
+    if(path==='/api/enterprise/context'&&request.method==='GET')return json({ok:true,context:{tenant_id:tenantId,role:auth.role,course_ids:auth.courseIds,org_unit_ids:auth.orgUnitIds??[],permissions:auth.permissions??[],is_platform_admin:auth.isPlatformAdmin}});
     if(path==='/api/enterprise/org/types'&&request.method==='GET')return json({ok:true,types:await listOrgUnitTypes(env,auth,tenantId)});
     if(path==='/api/enterprise/org/types'&&request.method==='POST')return json({ok:true,type:await saveOrgUnitType(env,auth,tenantId,await body(request))},201);
     if(path==='/api/enterprise/org/units'&&request.method==='GET')return json({ok:true,units:await listOrgUnits(env,auth,tenantId,u.searchParams.get('archived')==='1')});
