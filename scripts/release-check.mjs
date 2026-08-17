@@ -125,7 +125,12 @@ assert.ok(classAdminPortal.includes('exactRows')&&classAdminPortal.includes('Noc
 assert.ok(!classAdminPortal.includes('newCourse'),'Klassen-Admin must never expose course creation');
 assert.ok(classWorkspace.includes('[data-action="add-participant"]')&&classWorkspace.includes('[data-user-reset]')&&classWorkspace.includes('[data-member-remove]'),'Klassen-Admin must strip participant-account mutation controls');
 assert.ok(classWorkspace.includes('/api/timetable/preview')&&classWorkspace.includes('/api/timetable/apply')&&classWorkspace.includes('/api/content/lessons/'),'Klassen-Admin must support scoped timetable management');
-assert.ok(users.includes("hasPermission(auth,'participants.manage')")&&users.includes("m.role='participant'"),'participant mutations must support explicit delegated participant-management scope while keeping participant-only subordinate role limits');
+assert.ok(
+  users.includes("hasPermission(auth,'participants.manage')")&&
+  users.includes("!['participant','guest'].includes(role)")&&
+  users.includes("m.role IN ('participant','guest')"),
+  'delegated participant managers must stay course-scoped and may create/update only participant or guest memberships, never admin roles'
+);
 assert.ok(participantImport.includes('PARTICIPANT_IMPORT_PREVIEW_CHANGED')&&participantImport.includes('SPECIAL_CATEGORY_DATA_DETECTED_NOT_IMPORTED'),'participant document imports must be immutable and data-minimising');
 assert.ok(participantImportUi.includes('vendor/pdfjs/pdf.mjs')&&participantImportUi.includes('Markierte Teilnehmer übernehmen & einladen'),'customer participant imports must locally extract PDF text and require explicit confirmation');
 
