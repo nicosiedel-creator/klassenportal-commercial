@@ -45,12 +45,14 @@ const vfaReferenceCss=await text('public/vfa13-reference.css');
 const vfaRefinementCss=await text('public/vfa13-refinement.css');
 const brandingAssistant=await text('public/branding-assistant.js');
 const users=await text('src/core/users.ts');
+const participantImport=await text('src/core/participant-document-import.ts');
+const participantImportUi=await text('public/participant-import-ui.js');
 const dataSource=await text('src/core/data.ts');
 const brandingSchema=await text('src/core/branding-schema.ts');
 const dataBrandingGuard=()=>dataSource.includes('WHITE_BACKGROUND_NOT_ALLOWED')&&dataSource.includes('BRANDING_CONTRAST_TOO_LOW')&&dataSource.includes('accent_color')&&dataSource.includes('surface_color')&&dataSource.includes('text_color');
 
 for(const route of ['/api/*','/public/*','/brand/*','/calendar/*','/portal/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/klassen-admin*','/zahlung/*','/passwort-vergessen*','/passwort-zuruecksetzen*','/konto-aktivieren*','/impressum*','/datenschutz*','/agb*','/avv*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
-for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/vfa13-reference.css','public/customer-admin.html','public/customer-compact.css','public/platform-admin.html','public/platform-direct-login.js','public/platform-owner-ui.js','public/owner-security-ui.js','public/launch-readiness-ui.js','public/auth-mfa-ui.js','public/account-mail-ui.js','public/account-action.html','public/account-action.js','public/legal-footer-ui.js','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/class-admin-workspace.js','public/payment-result.html'])await readFile(asset);
+for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/vfa13-reference.css','public/customer-admin.html','public/customer-compact.css','public/participant-import-ui.js','public/platform-admin.html','public/platform-direct-login.js','public/platform-owner-ui.js','public/owner-security-ui.js','public/launch-readiness-ui.js','public/auth-mfa-ui.js','public/account-mail-ui.js','public/account-action.html','public/account-action.js','public/legal-footer-ui.js','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/class-admin-workspace.js','public/payment-result.html'])await readFile(asset);
 assert.ok(index.includes("clean==='/klassen-admin'?'/class-admin.html'"),'class admin route must serve class-admin.html');
 assert.ok(index.includes("['/plattform-admin','/kunden-admin','/klassen-admin'].includes(clean)")&&index.includes("'/platform-admin.html'"),'platform admin route must serve the dedicated platform login/admin shell');
 assert.ok(platformAdminHtml.includes('/platform-direct-login.js')&&!platformAdminHtml.includes('/boot.js'),'platform admin shell must not race the generic app startup');
@@ -123,7 +125,9 @@ assert.ok(classAdminPortal.includes('exactRows')&&classAdminPortal.includes('Noc
 assert.ok(!classAdminPortal.includes('newCourse'),'Klassen-Admin must never expose course creation');
 assert.ok(classWorkspace.includes('[data-action="add-participant"]')&&classWorkspace.includes('[data-user-reset]')&&classWorkspace.includes('[data-member-remove]'),'Klassen-Admin must strip participant-account mutation controls');
 assert.ok(classWorkspace.includes('/api/timetable/preview')&&classWorkspace.includes('/api/timetable/apply')&&classWorkspace.includes('/api/content/lessons/'),'Klassen-Admin must support scoped timetable management');
-assert.ok(users.includes("requireRole(auth,'tenant_admin')")&&users.includes("m.role='participant'"),'participant account mutations/listing must retain correct admin scope');
+assert.ok(users.includes("hasPermission(auth,'participants.manage')")&&users.includes("m.role='participant'"),'participant mutations must support explicit delegated participant-management scope while keeping participant-only subordinate role limits');
+assert.ok(participantImport.includes('PARTICIPANT_IMPORT_PREVIEW_CHANGED')&&participantImport.includes('SPECIAL_CATEGORY_DATA_DETECTED_NOT_IMPORTED'),'participant document imports must be immutable and data-minimising');
+assert.ok(participantImportUi.includes('vendor/pdfjs/pdf.mjs')&&participantImportUi.includes('Markierte Teilnehmer übernehmen & einladen'),'customer participant imports must locally extract PDF text and require explicit confirmation');
 
 assert.ok(platformDirectLogin.includes("import('/platform-owner-ui.js")&&platformDirectLogin.includes("import('/owner-security-ui.js")&&platformDirectLogin.includes("import('/launch-readiness-ui.js"),'owner admin/security/release modules must load only after a verified platform session');
 assert.ok(runtimeRouter.includes('/api/platform/owner/demo-fixture')&&runtimeRouter.includes('platformTenantDetail')&&runtimeRouter.includes('updatePlatformTenant'),'owner APIs must expose tenant editing and demo fixture creation');
@@ -131,9 +135,9 @@ assert.ok(platformOwnerUi.includes('owner-edit')&&platformOwnerUi.includes('data
 assert.equal((platformOwner.match(/\['VFA 26\/|\['Kaufleute Büromanagement|\['Fachinformatik Systemintegration|\['Sozialverwaltung/g)||[]).length,20,'demo fixture must define exactly 20 classes');
 assert.ok(platformOwner.includes('j<20')&&platformOwner.includes('week<6'),'demo fixture must keep 20 participants per class and six timetable weeks');
 
-assert.ok(String(pkg.scripts?.test||'').includes('tests/security-roles.mjs')&&String(pkg.scripts?.test||'').includes('tests/enterprise-hierarchy-sso-scim-api.mjs')&&String(pkg.scripts?.test||'').includes('tests/owner-security.mjs')&&String(pkg.scripts?.test||'').includes('tests/custom-domains.mjs')&&String(pkg.scripts?.test||'').includes('tests/launch-readiness.mjs')&&String(pkg.scripts?.test||'').includes('tests/password-kdf-runtime.mjs'),'full security/enterprise/launch/password regression suite must run in CI');
+assert.ok(String(pkg.scripts?.test||'').includes('tests/security-roles.mjs')&&String(pkg.scripts?.test||'').includes('tests/enterprise-hierarchy-sso-scim-api.mjs')&&String(pkg.scripts?.test||'').includes('tests/participant-document-import.mjs')&&String(pkg.scripts?.test||'').includes('tests/owner-security.mjs')&&String(pkg.scripts?.test||'').includes('tests/custom-domains.mjs')&&String(pkg.scripts?.test||'').includes('tests/launch-readiness.mjs')&&String(pkg.scripts?.test||'').includes('tests/password-kdf-runtime.mjs'),'full security/enterprise/import/launch/password regression suite must run in CI');
 const migrations=(await readdir('migrations')).filter(x=>/^\d+_.*\.sql$/.test(x)).sort();
-for(const required of ['0035_notifications.sql','0038_module_cancellations.sql','0039_owner_security.sql','0040_custom_domains.sql','0041_launch_readiness.sql','0042_branding_palette.sql','0048_enterprise_hierarchy_sso_scim_api.sql'])assert.ok(migrations.includes(required),`required migration missing: ${required}`);
+for(const required of ['0035_notifications.sql','0038_module_cancellations.sql','0039_owner_security.sql','0040_custom_domains.sql','0041_launch_readiness.sql','0042_branding_palette.sql','0048_enterprise_hierarchy_sso_scim_api.sql','0049_participant_document_import.sql'])assert.ok(migrations.includes(required),`required migration missing: ${required}`);
 for(let i=1;i<migrations.length;i++)assert.ok(migrations[i]>migrations[i-1],'migration order must be deterministic');
 
 console.log('Release readiness checks: OK');
