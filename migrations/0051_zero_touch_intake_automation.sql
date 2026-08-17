@@ -1,4 +1,8 @@
 -- Zero-touch intake: secure web/email submission without granting participant-data read access.
+-- Disabled service identity exists only as a valid FK/audit actor for deterministic automatic processing.
+INSERT OR IGNORE INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at)
+VALUES('system_intake_service','system-intake@localhost.invalid','Automatischer Eingang','!disabled-system-account!',0,0,'disabled',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+
 CREATE TABLE IF NOT EXISTS tenant_intake_settings (
   tenant_id TEXT PRIMARY KEY,
   enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
@@ -65,6 +69,12 @@ CREATE TABLE IF NOT EXISTS intake_upload_links (
   CHECK((course_id IS NULL) OR (org_unit_id IS NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_intake_upload_links_tenant ON intake_upload_links(tenant_id,expires_at);
+
+CREATE TABLE IF NOT EXISTS intake_public_rate_limits (
+  key_hash TEXT PRIMARY KEY,
+  window_started_at TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0
+);
 
 CREATE TABLE IF NOT EXISTS intake_batches (
   id TEXT PRIMARY KEY,
