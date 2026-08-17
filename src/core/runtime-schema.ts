@@ -2,6 +2,7 @@ import type { CoreAuthContext, Env } from './types.js';
 import { requirePlatform } from './permissions.js';
 import { audit } from './audit.js';
 import { nowIso } from './utils.js';
+import { brandingSchemaStatus, ensureBrandingSchema } from './branding-schema.js';
 
 const materialColumns=['purpose','course_id','title','description','visible','updated_at'] as const;
 
@@ -25,7 +26,8 @@ export async function releaseSchemaStatus(env:Env,auth:CoreAuthContext){
   const managed=await tableExists(env,'managed_setup_jobs');
   const portalLayouts=await tableExists(env,'user_portal_layouts');
   const notificationTrigger=await triggerExists(env,'trg_notify_announcement_after_insert');
-  return {ready:managed&&missingMaterial.length===0&&notificationTrigger&&portalLayouts,managedSetupTable:managed,missingMaterialColumns:missingMaterial,notificationTriggers:notificationTrigger,userPortalLayoutsTable:portalLayouts};
+  const branding=await brandingSchemaStatus(env);
+  return {ready:managed&&missingMaterial.length===0&&notificationTrigger&&portalLayouts&&branding.ready,managedSetupTable:managed,missingMaterialColumns:missingMaterial,notificationTriggers:notificationTrigger,userPortalLayoutsTable:portalLayouts,branding};
 }
 
 async function ensureManagedSetup(env:Env){
@@ -92,7 +94,7 @@ async function ensurePortalLayouts(env:Env){
 export async function applyReleaseSchema(env:Env,auth:CoreAuthContext){
   requirePlatform(auth);
   const before=await releaseSchemaStatus(env,auth);
-  await ensureManagedSetup(env);await ensureMaterials(env);await ensureNotifications(env);await ensurePortalLayouts(env);
+  await ensureBrandingSchema(env);await ensureManagedSetup(env);await ensureMaterials(env);await ensureNotifications(env);await ensurePortalLayouts(env);
   const after=await releaseSchemaStatus(env,auth);
   await audit(env.DB,auth.userId,'platform.schema_upgraded',undefined,undefined,'platform_schema','commercial_v1',{before,after,at:nowIso()});
   return after;
