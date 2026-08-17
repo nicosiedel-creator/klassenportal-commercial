@@ -5,6 +5,7 @@ import { productionReadiness } from './launch-readiness.js';
 import { approveProductionRelease, releaseStateForOwner, revokeProductionRelease } from './production-release-gate.js';
 import { verifyBackup } from './backup-verification.js';
 import { submitLegalContentReport } from './legal-content-report.js';
+import { publicProduct } from './public-product.js';
 import { assertSameOrigin, json } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -17,6 +18,7 @@ export async function handleLaunchReadinessApi(request:Request,env:Env):Promise<
   const u=new URL(request.url);
   try{
     if(u.pathname==='/api/public/legal'&&request.method==='GET')return json({ok:true,legal:await publicLegal(env)});
+    if(u.pathname==='/api/public/product'&&request.method==='GET')return json({ok:true,product:await publicProduct(env)});
     if(u.pathname==='/api/legal/report'&&request.method==='POST')return json({ok:true,...await submitLegalContentReport(env,request)},201);
     if(!u.pathname.startsWith('/api/platform/legal')&&!u.pathname.startsWith('/api/platform/release-readiness')&&!u.pathname.startsWith('/api/platform/release-state')&&!u.pathname.startsWith('/api/platform/backups/'))return null;
     assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);
