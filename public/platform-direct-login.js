@@ -41,6 +41,7 @@ if(PLATFORM_DIRECT_PATH){
       import('/class-role-ui.js?v=20260816-14'),
       import('/platform-admin-ui.js?v=20260816-14'),
       import('/platform-owner-ui.js?v=20260816-14'),
+      import('/platform-offers-ui.js?v=20260817-1'),
       import('/owner-security-ui.js?v=20260816-14'),
       import('/launch-readiness-ui.js?v=20260816-14'),
       import('/custom-domain-ui.js?v=20260816-14'),
