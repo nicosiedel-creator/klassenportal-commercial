@@ -7,6 +7,7 @@ import { previewOrgImportFile } from './enterprise-import-file.js';
 import { createScimTokenV2, handleScimRequestV2, listScimGroupsForAdminV2, listScimTokensV2, mapScimGroupV2, revokeScimTokenV2 } from './enterprise-scim-v2.js';
 import { finishTenantSso, getTenantSso, saveTenantSso, startTenantSso } from './enterprise-sso.js';
 import { applyParticipantImport, previewParticipantImport } from './participant-document-import.js';
+import { previewParticipantImportFile } from './participant-import-file.js';
 
 function json(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -37,6 +38,7 @@ export async function handleEnterpriseRouter(request:Request,env:Env):Promise<Re
     if(path==='/api/enterprise/org/import/file-preview'&&request.method==='POST')return json({ok:true,preview:await previewOrgImportFile(env,auth,tenantId,request)});
     const apply=path.match(/^\/api\/enterprise\/org\/import\/([^/]+)\/apply$/);if(apply&&request.method==='POST')return json({ok:true,result:await applyOrgImport(env,auth,tenantId,decodeURIComponent(apply[1]),await body(request))});
     if(path==='/api/enterprise/participants/import/preview'&&request.method==='POST')return json({ok:true,preview:await previewParticipantImport(env,auth,tenantId,await body(request))});
+    if(path==='/api/enterprise/participants/import/file-preview'&&request.method==='POST')return json({ok:true,preview:await previewParticipantImportFile(env,auth,tenantId,request)});
     if(path==='/api/enterprise/participants/import/apply'&&request.method==='POST')return json({ok:true,result:await applyParticipantImport(env,auth,tenantId,await body(request))});
     if(path==='/api/enterprise/sso'&&request.method==='GET'){const c=await getTenantSso(env,auth,tenantId),t=await env.DB.prepare('SELECT slug FROM tenants WHERE id=?').bind(tenantId).first<{slug:string}>();return json({ok:true,sso:c,start_url:t?`${env.APP_ORIGIN||u.origin}/sso/${encodeURIComponent(t.slug)}`:null,callback_url:`${env.APP_ORIGIN||u.origin}/sso/callback`});}
     if(path==='/api/enterprise/sso'&&request.method==='PUT')return json({ok:true,sso:await saveTenantSso(env,auth,tenantId,await body(request))});
