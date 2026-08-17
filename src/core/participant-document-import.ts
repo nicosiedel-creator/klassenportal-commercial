@@ -10,7 +10,7 @@ export type ParticipantCandidate={
 };
 
 function canImport(auth:CoreAuthContext){if(auth.isPlatformAdmin||auth.role==='tenant_admin'||auth.permissions?.includes('participants.manage'))return;throw new Error('FORBIDDEN_PERMISSION');}
-const norm=v=>safeString(v,500).replace(/\s+/g,' ').trim();
+const norm=(v:unknown)=>safeString(v,500).replace(/\s+/g,' ').trim();
 function emailOf(v:unknown){const e=normalizeEmail(v);return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)?e:'';}
 function isoDate(raw:string):string|null{const s=raw.trim();let m=s.match(/\b(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})\b/);if(m){const d=new Date(Date.UTC(Number(m[3]),Number(m[2])-1,Number(m[1])));return Number.isNaN(d.getTime())?null:d.toISOString().slice(0,10);}m=s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);return m?`${m[1]}-${m[2]}-${m[3]}`:null;}
 function label(text:string,labels:string[],max=180):string{
