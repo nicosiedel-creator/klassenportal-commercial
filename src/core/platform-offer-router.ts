@@ -1,7 +1,8 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertSameOrigin } from './utils.js';
-import { acceptPublicOffer, cancelPlatformOffer, createPlatformOffer, getPlatformOffer, listPlatformOffers, platformOfferMeta, previewPlatformOffer, publicOffer, publishPlatformOffer } from './platform-offers.js';
+import { acceptPublicOffer, cancelPlatformOffer, createPlatformOffer, getPlatformOffer, listPlatformOffers, platformOfferMeta, previewPlatformOffer, publicOffer } from './platform-offers.js';
+import { publishOrRotatePlatformOffer } from './platform-offer-links.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status,headers:{'cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -10,7 +11,7 @@ function error(e:unknown):Response{
   const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
     :code==='PLATFORM_ADMIN_REQUIRED'||code==='FORBIDDEN'?403
     :code.includes('NOT_FOUND')?404
-    :['OFFER_ALREADY_ACCEPTED','OFFER_NOT_DRAFT','OFFER_NOT_CANCELLABLE'].includes(code)?409
+    :['OFFER_ALREADY_ACCEPTED','OFFER_NOT_DRAFT','OFFER_NOT_CANCELLABLE','OFFER_LINK_NOT_AVAILABLE'].includes(code)?409
     :code==='OFFER_EXPIRED'?410
     :['SELLER_PROFILE_INCOMPLETE','LEGAL_CONFIGURATION_INCOMPLETE'].includes(code)?428
     :code==='INTERNAL_ERROR'?500:400;
@@ -37,7 +38,7 @@ export async function handlePlatformOfferApi(request:Request,env:Env):Promise<Re
     if(u.pathname==='/api/platform/offers'&&request.method==='GET')return out({ok:true,offers:await listPlatformOffers(env,auth)});
     if(u.pathname==='/api/platform/offers'&&request.method==='POST')return out({ok:true,...await createPlatformOffer(env,auth,await body(request),request)},201);
     const publish=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/publish$/);
-    if(publish&&request.method==='POST')return out({ok:true,...await publishPlatformOffer(env,auth,decodeURIComponent(publish[1]),request)});
+    if(publish&&request.method==='POST')return out({ok:true,...await publishOrRotatePlatformOffer(env,auth,decodeURIComponent(publish[1]),request)});
     const cancel=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/cancel$/);
     if(cancel&&request.method==='POST'){await cancelPlatformOffer(env,auth,decodeURIComponent(cancel[1]));return out({ok:true});}
     const detail=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)$/);
