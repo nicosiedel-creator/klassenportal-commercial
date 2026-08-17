@@ -22,7 +22,7 @@ async function refineHeader(){
   const management=[...actions.querySelectorAll('a.portal-btn')].find(a=>['Verwaltung','Kundenbereich','Klassenbereich'].includes(a.textContent?.trim()||''));
   const target=roleDestination(user);
   if(!target){management?.remove();return;}
-  if(management){management.textContent=target.label;management.href=target.href;management.setAttribute('aria-label',target.label);}
+  if(management){management.textContent=target.label;management.href=target.href;management.dataset.roleLink='1';management.setAttribute('aria-label',target.label);}
 }
 function richPreview(section){
   if(section.dataset.richPreview==='1'||section.dataset.keepOpen==='1')return;
