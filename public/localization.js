@@ -25,15 +25,28 @@ const exact=new Map(Object.entries({
   'announcements':'Meldungen / Informationen',
   'links':'Links',
   'lessons':'Stundenplan / Unterricht',
+  'schedule':'Stundenplan',
+  'files':'Dateien',
+  'calendar':'Kalender',
+  'reminders':'Erinnerungen',
+  'weekly_overview':'Wochenübersicht',
+  'exams_progress':'Prüfungen & Lernfortschritt',
+  'learning_materials':'Lernmaterialien',
+  'microsoft_365':'Microsoft 365',
+  'microsoft_teams':'Microsoft Teams',
+  'substitution_updates':'Vertretungsänderungen',
+  'custom_domain':'Eigene Domain',
+  'personal_grades':'Persönliche Noten',
   'exams':'Prüfungen',
   'learning_progress':'Lernfortschritt',
-  'personal_grades':'Persönliche Noten',
   'materials':'Materialien',
   'surveys':'Umfragen',
   'substitution':'Vertretungen',
   'teams':'Microsoft Teams',
   'm365':'Microsoft 365',
-  'statistics':'Statistiken'
+  'statistics':'Statistiken',
+  'plan':'Im Tarif enthalten',
+  'manual':'Zusätzlich freigeschaltet'
 }));
 
 function localize(root=document){
