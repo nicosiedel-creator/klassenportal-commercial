@@ -6,6 +6,11 @@ const requiredBrandingColumns={
   text_color:"TEXT NOT NULL DEFAULT '#172033'",
 } as const;
 
+function supportsDirectD1(env:Env):boolean{
+  const statement=env.DB.prepare('SELECT 1');
+  return typeof statement.all==='function'&&typeof statement.run==='function';
+}
+
 async function settingsColumns(env:Env):Promise<Set<string>>{
   const rows=await env.DB.prepare('PRAGMA table_info(tenant_settings)').all<{name:string}>();
   return new Set((rows.results??[]).map(x=>String(x.name)));
@@ -20,12 +25,14 @@ async function addColumnSafely(env:Env,name:keyof typeof requiredBrandingColumns
 }
 
 export async function brandingSchemaStatus(env:Env){
+  if(!supportsDirectD1(env))return{ready:true,missing:[],adapterManaged:true};
   const current=await settingsColumns(env);
   const missing=Object.keys(requiredBrandingColumns).filter(x=>!current.has(x));
-  return{ready:missing.length===0,missing};
+  return{ready:missing.length===0,missing,adapterManaged:false};
 }
 
 export async function ensureBrandingSchema(env:Env):Promise<void>{
+  if(!supportsDirectD1(env))return;
   let current=await settingsColumns(env);
   for(const [name,definition] of Object.entries(requiredBrandingColumns) as [keyof typeof requiredBrandingColumns,string][]){
     if(current.has(name))continue;
