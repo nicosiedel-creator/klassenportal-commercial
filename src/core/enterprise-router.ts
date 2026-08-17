@@ -6,10 +6,11 @@ import { applyOrgImport, createOrgGrant, createOrgUnit, linkCourseOrgUnits, list
 import { previewOrgImportFile } from './enterprise-import-file.js';
 import { createScimTokenV2, handleScimRequestV2, listScimGroupsForAdminV2, listScimTokensV2, mapScimGroupV2, revokeScimTokenV2 } from './enterprise-scim-v2.js';
 import { finishTenantSso, getTenantSso, saveTenantSso, startTenantSso } from './enterprise-sso.js';
+import { applyParticipantImport, previewParticipantImport } from './participant-document-import.js';
 
 function json(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=(e as Error).message||'ENTERPRISE_ERROR',status=code==='UNAUTHENTICATED'||code==='SSO_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='SELF_ELEVATION_FORBIDDEN'?403:code.includes('NOT_FOUND')?404:code.includes('EXISTS')||code.includes('CYCLE')||code.includes('ALREADY')?409:code.includes('RATE_LIMITED')?429:code.includes('TOO_LARGE')?413:code.includes('NOT_READY')||code.includes('REQUIRED')&&code.includes('KEY')?428:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=(e as Error).message||'ENTERPRISE_ERROR',status=code==='UNAUTHENTICATED'||code==='SSO_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='SELF_ELEVATION_FORBIDDEN'?403:code.includes('NOT_FOUND')?404:code.includes('EXISTS')||code.includes('CYCLE')||code.includes('ALREADY')||code.includes('CHANGED')?409:code.includes('EXPIRED')?410:code.includes('RATE_LIMITED')?429:code.includes('TOO_LARGE')?413:code.includes('NOT_READY')||code.includes('REQUIRED')&&code.includes('KEY')?428:400;return json({ok:false,error:code},status);}
 
 export async function handleEnterpriseRouter(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;
@@ -35,6 +36,8 @@ export async function handleEnterpriseRouter(request:Request,env:Env):Promise<Re
     if(path==='/api/enterprise/org/import/preview'&&request.method==='POST')return json({ok:true,preview:await previewOrgImport(env,auth,tenantId,await body(request))});
     if(path==='/api/enterprise/org/import/file-preview'&&request.method==='POST')return json({ok:true,preview:await previewOrgImportFile(env,auth,tenantId,request)});
     const apply=path.match(/^\/api\/enterprise\/org\/import\/([^/]+)\/apply$/);if(apply&&request.method==='POST')return json({ok:true,result:await applyOrgImport(env,auth,tenantId,decodeURIComponent(apply[1]),await body(request))});
+    if(path==='/api/enterprise/participants/import/preview'&&request.method==='POST')return json({ok:true,preview:await previewParticipantImport(env,auth,tenantId,await body(request))});
+    if(path==='/api/enterprise/participants/import/apply'&&request.method==='POST')return json({ok:true,result:await applyParticipantImport(env,auth,tenantId,await body(request))});
     if(path==='/api/enterprise/sso'&&request.method==='GET'){const c=await getTenantSso(env,auth,tenantId),t=await env.DB.prepare('SELECT slug FROM tenants WHERE id=?').bind(tenantId).first<{slug:string}>();return json({ok:true,sso:c,start_url:t?`${env.APP_ORIGIN||u.origin}/sso/${encodeURIComponent(t.slug)}`:null,callback_url:`${env.APP_ORIGIN||u.origin}/sso/callback`});}
     if(path==='/api/enterprise/sso'&&request.method==='PUT')return json({ok:true,sso:await saveTenantSso(env,auth,tenantId,await body(request))});
     if(path==='/api/enterprise/scim/tokens'&&request.method==='GET')return json({ok:true,tokens:await listScimTokensV2(env,auth,tenantId)});
