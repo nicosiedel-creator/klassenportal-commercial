@@ -12,6 +12,7 @@ assert.doesNotMatch(css,/\.customer-portal-admin \.side\{[^}]*position:sticky/,'
 assert.match(theme,/\.customer-portal-admin \.side\{position:static!important;/,'later VFA13 theme must preserve the non-sticky customer navigation');
 assert.doesNotMatch(theme,/\.customer-portal-admin \.side\{[^}]*position:sticky/,'later VFA13 theme must not reintroduce sticky customer navigation');
 assert.doesNotMatch(theme,/\.customer-portal-admin \.side\{[^}]*z-index:50/,'later VFA13 theme must not reintroduce the old overlay stacking layer');
+assert.match(theme,/\.customer-portal-admin \.kp-customer-nav-primary\{flex-wrap:wrap!important\}/,'VFA13 theme must preserve wrapped primary customer navigation without making the header sticky');
 assert.match(css,/\.kp-customer-nav-primary/,'customer admin needs a dedicated compact primary navigation row');
 assert.match(css,/\.kp-customer-nav-more-panel\[hidden\]\{display:none!important\}/,'secondary navigation must collapse without overlaying the workspace');
 assert.match(css,/@media\(max-width:680px\)[\s\S]*overflow-x:auto/,'primary navigation must remain usable on narrow screens');
