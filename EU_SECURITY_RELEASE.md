@@ -16,6 +16,8 @@ The commercial production environment uses `DATA_RESIDENCY_MODE=eu_strict`. In t
 
 `EU_WORKER_PROCESSING_ATTESTED=true` is set only after Cloudflare Regional Services (or an equivalent verified EU processing control) is actually active. Until then the owner cockpit shows a warning and the legal disclosure does not claim EU-only Worker execution.
 
+`EU_METADATA_BOUNDARY_ATTESTED=true` is set only after Cloudflare Customer Metadata Boundary has been verified for the production account/zone. It is tracked separately from D1/R2 residency because EU application-data storage does not by itself prove that analytics/log metadata remain EU-only.
+
 ## Cloudflare D1
 
 Do not relabel the existing database as EU-resident. D1 jurisdiction is a resource-creation property. Create a new production D1 resource using Cloudflare's EU jurisdiction option, for example:
@@ -48,11 +50,17 @@ Copy objects with a checksum-verifying R2/S3-compatible migration. Verify object
 
 Backups must target verified EU-jurisdictional object storage. Set `EU_BACKUP_STORAGE_ATTESTED=true` only after a fresh backup has been created, restored in an isolated verification run and its storage location has been checked.
 
-## Worker/edge processing
+## Worker/edge processing and metadata
 
 EU D1/R2 jurisdiction is not used as proof that every HTTP/Worker processing step is EU-only. If Cloudflare Regional Services / a corresponding Data Localization control is purchased and configured for the production hostname, verify it separately and then set `EU_WORKER_PROCESSING_ATTESTED=true`.
 
+Regional Services controls request processing, but it must not be used to make unsupported claims about every Cloudflare subsystem. Scheduled/cron execution and globally deployed Worker code/secrets are assessed separately before any EU-only statement.
+
+Cloudflare Customer Metadata Boundary is likewise a separate control for applicable logs/analytics metadata. If available and verified, set `EU_METADATA_BOUNDARY_ATTESTED=true`; otherwise the owner cockpit keeps a warning and public/legal text must not claim that all operational metadata stays exclusively in the EU.
+
 ## Brevo transactional and inbound mail
+
+EU-strict mode requires the provider selection to be explicit: `MAIL_PROVIDER=brevo`. Merely having a Brevo API key present is not enough to satisfy the production gate. This prevents an old compatibility secret from silently choosing another provider.
 
 Use a dedicated sender domain/subdomain and a separate inbound subdomain. The inbound webhook endpoint is:
 
@@ -79,20 +87,23 @@ A dedicated EU malware-scanning service may be added only if its hosting/subproc
 
 ## Browser/application security
 
-Production CSP does not allow inline JavaScript (`script-src 'self'`). Sessions use Secure/HttpOnly/SameSite=Strict cookies, mutations use same-origin/CSRF checks, passwords use scrypt, owner access uses MFA, public intake is rate limited and anonymous submit-only uploads explicitly omit portal credentials.
+Production CSP does not allow inline JavaScript (`script-src 'self'`). Sessions use Secure/HttpOnly/SameSite=Strict cookies, mutations use same-origin/CSRF checks, passwords use scrypt, platform owner access uses MFA, local tenant/class administrators using passwords must enrol MFA, and public intake is rate limited. Anonymous submit-only uploads explicitly omit portal credentials.
+
+OIDC administrators rely on the customer's identity provider authentication policy; enforced tenant SSO remains fail-closed with an explicitly designated break-glass account only.
 
 ## Live release order
 
 1. Create and verify EU D1/R2 resources.
 2. Migrate and verify data/files/backups.
 3. Configure production domain and HTTPS.
-4. Configure Brevo sender + inbound subdomain/webhook.
+4. Configure `MAIL_PROVIDER=brevo`, Brevo sender + inbound subdomain/webhook.
 5. Configure Stripe live + webhook without educational-data sharing.
 6. Configure MFA/secrets, SSO secrets and optional Cloudflare for SaaS.
-7. Publish the true provider/legal identity and re-check the integrated AGB/Datenschutz/AVV/subprocessor pages.
-8. Run the full CI suite and E2E customer flow against the exact production candidate.
-9. Review the owner Live-Freigabe cockpit; it must be green.
-10. Explicitly approve exactly that Worker version. Every later Worker version is locked again by design.
+7. If purchased, configure/verify Regional Services and Customer Metadata Boundary; attest each separately.
+8. Publish the true provider/legal identity and re-check the integrated AGB/Datenschutz/AVV/subprocessor pages.
+9. Run the full CI suite and E2E customer flow against the exact production candidate.
+10. Review the owner Live-Freigabe cockpit; all blockers must be green and every remaining warning must be understood/documented.
+11. Explicitly approve exactly that Worker version. Every later Worker version is locked again by design.
 
 ## External assurance before broad rollout
 
