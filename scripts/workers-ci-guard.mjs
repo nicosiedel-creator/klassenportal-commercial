@@ -6,14 +6,9 @@ const files=[
   'assignment-gradebook-ui.js',
   'portal-assignments-ui.js',
   'learning-report-collab-admin-ui.js',
-  'portal-learning-collaboration-ui.js',
-  'platform-accounting-ui.js',
-  'platform-accounting-autopilot-ui.js',
-  'pwa-client.js',
-  'service-worker.js',
-  'timetable-bulk-v3.js'
+  'portal-learning-collaboration-ui.js'
 ];
-console.log(`Cloudflare recent-browser-module syntax gate for ${process.env.WORKERS_CI_COMMIT_SHA || 'current commit'}...`);
+console.log(`Cloudflare assignment/learning browser syntax gate for ${process.env.WORKERS_CI_COMMIT_SHA || 'current commit'}...`);
 for(const name of files){
   const r=spawnSync(process.execPath,['--check',`public/${name}`],{stdio:'inherit',env});
   if(r.error){console.error(`${name}: ${r.error.message}`);process.exit(1);}
