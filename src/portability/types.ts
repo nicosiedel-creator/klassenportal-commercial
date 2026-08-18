@@ -1,13 +1,24 @@
+export interface D1MetaLike {
+  changes?: number;
+  duration?: number;
+  last_row_id?: number;
+  rows_read?: number;
+  rows_written?: number;
+  changed_db?: boolean;
+  size_after?: number;
+  [key: string]: unknown;
+}
+
 export interface D1PreparedStatementLike {
   bind(...values: unknown[]): D1PreparedStatementLike;
-  run<T = unknown>(): Promise<{ success: boolean; results?: T[]; meta?: unknown }>;
-  all<T = Record<string, unknown>>(): Promise<{ success: boolean; results: T[]; meta?: unknown }>;
+  run<T = unknown>(): Promise<{ success: boolean; results?: T[]; meta?: D1MetaLike }>;
+  all<T = Record<string, unknown>>(): Promise<{ success: boolean; results: T[]; meta?: D1MetaLike }>;
   first<T = unknown>(column?: string): Promise<T | null>;
 }
 
 export interface D1DatabaseLike {
   prepare(sql: string): D1PreparedStatementLike;
-  batch<T = unknown>(statements: D1PreparedStatementLike[]): Promise<Array<{ success: boolean; results?: T[]; meta?: unknown }>>;
+  batch<T = unknown>(statements: D1PreparedStatementLike[]): Promise<Array<{ success: boolean; results?: T[]; meta?: D1MetaLike }>>;
 }
 
 export interface R2ObjectBodyLike {
