@@ -45,7 +45,11 @@ assert.match(router,/\/api\/platform\/release-state\/approve/,'owner approval en
 assert.match(router,/\/api\/platform\/release-state\/revoke/,'owner emergency-lock endpoint must exist');
 assert.match(router,/code\.includes\('STATE_CHANGED'\)\?409/,'release state races must return HTTP 409 rather than an internal server error');
 assert.match(index,/PRODUCTION_RELEASE_LOCKED/,'unapproved production traffic must receive a fail-closed response');
-assert.match(index,/path==='\/api\/payments\/stripe\/webhook'/,'Stripe webhooks must remain reachable while customer traffic is locked');
+assert.match(index,/normalized=path==='\/'\?'\/':path\.replace\(\/\\\/\+\$\/,'\'\'\)/,'release-gate bypass paths must normalize trailing slashes before matching');
+assert.match(index,/normalized==='\/plattform-admin'/,'platform admin must remain reachable while production is locked');
+assert.match(index,/normalized==='\/api\/platform'/,'platform release/readiness APIs must remain reachable while production is locked');
+assert.match(index,/normalized==='\/api\/auth'/,'owner authentication APIs must remain reachable while production is locked');
+assert.match(index,/normalized==='\/api\/payments\/stripe\/webhook'/,'Stripe webhooks must remain reachable while customer traffic is locked');
 assert.ok(index.indexOf('productionReleaseAccess(env,request)')<index.indexOf("const calendarFeed=url.pathname.match"),'production lock must run before tenant calendar/public content routes');
 
 assert.match(ui,/Jede neue Worker-Version ist automatisch wieder gesperrt/,'owner UI must explain version-bound release behavior');
