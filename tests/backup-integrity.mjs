@@ -22,7 +22,8 @@ assert.match(preflight,/manifest\.integrity&&!file\.etag/,'strong file backups m
 const verification=await readFile('src/core/backup-verification.ts','utf8');
 assert.match(verification,/integrity_level TEXT NOT NULL DEFAULT 'structural'/,'verification schema must record integrity level');
 assert.match(verification,/ALTER TABLE backup_verifications ADD COLUMN integrity_level/,'existing databases must self-heal the new integrity column');
-for(const marker of ['BACKUP_USERS_ROWCOUNT_MISMATCH','BACKUP_RESOURCE_ROWCOUNT_MISMATCH','BACKUP_FILE_SIZE_MISMATCH','BACKUP_FILE_ETAG_MISMATCH','BACKUP_RESOURCE_HASH_MISMATCH'])assert.ok(verification.includes(marker),`scheduled verification missing ${marker}`);
+assert.match(verification,/catch\(e\)\{const after=await verificationColumns\(env\);if\(!after\.has\('integrity_level'\)\)throw e;\}/,'concurrent schema repair must accept the column if another request created it first');
+for(const marker of ['BACKUP_USERS_ROWCOUNT_MISMATCH','BACKUP_RESOURCE_ROWCOUNT_MISMATCH','BACKUP_FILE_SIZE_MISMATCH','BACKUP_FILE_ETAG_MISMATCH','BACKUP_RESOURCE_HASH_MISMATCH','BACKUP_OBJECT_REFERENCE_DUPLICATE'])assert.ok(verification.includes(marker),`scheduled verification missing ${marker}`);
 assert.match(verification,/row\.integrity_level!=='strong'/,'launch readiness must reject legacy structural-only verification');
 assert.match(verification,/row\.checked_at<row\.completed_at/,'readiness must reject stale verification results');
 
@@ -35,4 +36,4 @@ assert.match(manifestTypes,/integrity\?: \{ version:1; json:'sha256'; files:'r2-
 assert.match(manifestTypes,/sha256\?: string/,'manifest JSON snapshots must support hashes');
 assert.match(manifestTypes,/etag\?: string/,'manifest files must support etags');
 
-console.log('Backup SHA-256, row-count, size, etag and strong-readiness integrity checks: OK');
+console.log('Backup SHA-256, row-count, size, etag, race-safe schema and strong-readiness integrity checks: OK');
