@@ -48,7 +48,8 @@ assert.doesNotMatch(emailFanout,/\bbcc\s*:/i,'fanout must never use BCC');
 assert.match(mail,/to:\[to\]/,'mail provider call must contain exactly the single requested recipient');
 assert.match(emailFanout,/attempts>=3|nextAttempts>=3/,'mail retries must be bounded');
 assert.match(emailFanout,/communication_email_delivery_failed/,'final mail failures must create an attention task');
-assert.doesNotMatch(emailFanout,/detail_json[^\n]*email/i,'attention task payload must not expose participant email addresses');
+assert.match(emailFanout,/JSON\.stringify\(\{failed\}\)/,'attention task payload must contain only the aggregate failure count');
+assert.doesNotMatch(emailFanout,/JSON\.stringify\(\{failed\s*,\s*(?:email|user|recipient)/i,'attention task payload must not expose participant identity');
 
 assert.match(comm,/require_ack/);assert.match(comm,/ack_due_at/);assert.match(comm,/COMMUNICATION_ACK_DUE_INVALID/);
 assert.match(comm,/markCommunicationRead/);assert.match(comm,/acknowledgeCommunication/);
