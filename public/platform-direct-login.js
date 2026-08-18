@@ -48,7 +48,7 @@ if(PLATFORM_DIRECT_PATH){
       import('/platform-accounting-autopilot-ui.js?v=20260818-1'),
       import('/legal-owner-ui.js?v=20260817-1'),
       import('/owner-security-ui.js?v=20260816-14'),
-      import('/launch-readiness-ui.js?v=20260817-2'),
+      import('/launch-readiness-ui.js?v=20260818-2'),
       import('/custom-domain-ui.js?v=20260816-14'),
       import('/schema-upgrade-ui.js?v=20260816-14'),
       import('/commerce-safe-ui.js?v=20260816-14'),

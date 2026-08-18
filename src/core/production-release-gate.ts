@@ -28,10 +28,12 @@ export async function releaseStateForOwner(env:Env,auth:CoreAuthContext){
 export async function approveProductionRelease(env:Env,auth:CoreAuthContext,input:Record<string,unknown>){
   requirePlatform(auth);await ensureProductionReleaseSchema(env);
   if(String(input.confirmation||'')!=='LIVE FREIGEBEN')throw new Error('LIVE_RELEASE_CONFIRMATION_REQUIRED');
-  const origin=productionOriginStatus(env);if(!origin.ok)throw new Error('PRODUCTION_ORIGIN_NOT_READY');
-  const version=currentWorkerVersion(env);if(!version)throw new Error('WORKER_VERSION_METADATA_REQUIRED');
-  const readiness=await productionReadiness(env,auth);if(!readiness.ready)throw new Error('PRODUCTION_NOT_READY');
+  const initialOrigin=productionOriginStatus(env);if(!initialOrigin.ok)throw new Error('PRODUCTION_ORIGIN_NOT_READY');
+  const initialVersion=currentWorkerVersion(env);if(!initialVersion)throw new Error('WORKER_VERSION_METADATA_REQUIRED');
+  const preflight=await productionReadiness(env,auth);if(!preflight.ready)throw new Error('PRODUCTION_NOT_READY');
   await ownerStepUp(env,auth,input.current_password,input.mfa_code);
+  const origin=productionOriginStatus(env),version=currentWorkerVersion(env);if(!origin.ok||!version||origin.origin!==initialOrigin.origin||version.id!==initialVersion.id)throw new Error('PRODUCTION_RELEASE_STATE_CHANGED');
+  const readiness=await productionReadiness(env,auth);if(!readiness.ready)throw new Error('PRODUCTION_NOT_READY_AFTER_STEP_UP');
   const ts=nowIso();
   await env.DB.prepare(`INSERT INTO production_release_approvals(version_id,version_tag,version_timestamp,app_origin,approved_by,approved_at,readiness_json,revoked_at,revoked_by)
     VALUES(?,?,?,?,?,?,?,NULL,NULL)
