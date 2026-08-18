@@ -36,6 +36,13 @@ if(CUSTOMER_ADMIN_PATH){
   }
 
   function navLabel(button){return String(button?.textContent||'').replace(/\s+/g,' ').trim();}
+  function navSourceLabel(button){
+    if(!button)return'';
+    if(button.dataset.customerNavSourceLabel)return button.dataset.customerNavSourceLabel;
+    const label=navLabel(button);
+    button.dataset.customerNavSourceLabel=label;
+    return label;
+  }
   function navGroupFor(label){return NAV_GROUPS.find(group=>group.labels.has(label))||{id:'more',title:'Weitere Verwaltung'};}
   function ensureNavGroup(groups,id,title){
     let group=groups.querySelector(`[data-customer-nav-group="${CSS.escape(id)}"]`);
@@ -106,7 +113,7 @@ if(CUSTOMER_ADMIN_PATH){
     let extraCount=0;
     let extraActive=false;
     for(const button of buttons){
-      const label=navLabel(button);
+      const label=navSourceLabel(button);
       if(PRIMARY_NAV_LABELS.has(label)){
         if(button.parentElement!==primary)primary.append(button);
         continue;
