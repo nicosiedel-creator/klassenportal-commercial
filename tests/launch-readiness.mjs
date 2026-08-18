@@ -61,9 +61,11 @@ assert.match(legalReport,/legal_content_report_limits/,'legal notice endpoint mu
 assert.match(legalReport,/sendMail/,'legal notice endpoint must notify the legal/support contact when mail is configured');
 
 assert.match(backups,/manifest\.version!==1/,'backup verification must validate manifest identity/version');
-assert.match(backups,/manifest\.resources\.map/,'backup verification must verify every resource object');
-assert.match(backups,/manifest\.files\.map/,'backup verification must verify every backed-up file object');
-assert.match(backups,/Last|./);
+assert.match(backups,/BACKUP_RESOURCE_ROWCOUNT_MISMATCH/,'backup verification must parse resource snapshots and verify row counts');
+assert.match(backups,/BACKUP_FILE_SIZE_MISMATCH/,'backup verification must compare stored file sizes');
+assert.match(backups,/BACKUP_FILE_ETAG_MISMATCH/,'backup verification must compare stored R2 etags');
+assert.match(backups,/BACKUP_RESOURCE_HASH_MISMATCH/,'backup verification must compare JSON SHA-256 hashes');
+assert.match(backups,/integrity_level!=='strong'/,'production readiness must reject legacy structural-only backup checks');
 assert.match(readiness,/Stripe läuft noch nicht mit Live-Schlüssel/,'production readiness must require live Stripe');
 assert.match(readiness,/Eigentümer-MFA ist nicht aktiviert/,'production readiness must require owner MFA');
 assert.match(readiness,/Transaktions-E-Mail ist nicht vollständig konfiguriert/,'production readiness must require transactional mail');
@@ -81,4 +83,4 @@ assert.match(index,/PRODUCTION_RELEASE_LOCKED/,'worker must fail closed before e
 assert.match(index,/strict-transport-security/,'security headers must enforce HTTPS');
 assert.match(wrangler,/version_metadata/,'Worker version metadata binding must be configured');
 
-console.log('Launch readiness, legal, EU-first mail/data residency, recovery and backup safety checks: OK');
+console.log('Launch readiness, legal, EU-first mail/data residency, recovery and strong backup safety checks: OK');
