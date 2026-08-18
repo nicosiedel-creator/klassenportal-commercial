@@ -1,8 +1,11 @@
-name: Portal live smoke
+name: Secondary portal live smoke
 on:
-  push:
-    branches:
-      - block3-onboarding-managed-setup
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Preview/production base URL to verify
+        required: true
+        default: https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev
 permissions:
   contents: write
 jobs:
@@ -17,9 +20,9 @@ jobs:
         run: |
           node scripts/portal-ux-check.mjs
           node scripts/release-check.mjs
-      - name: Wait for cumulative Cloudflare preview and verify deployed portal/branding schema
+      - name: Verify deployed portal/branding schema
         env:
-          BASE: https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev
+          BASE: ${{ inputs.base_url }}
         run: |
           set -euo pipefail
           ok=0
