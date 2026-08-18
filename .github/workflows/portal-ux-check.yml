@@ -1,9 +1,8 @@
-name: Portal UX privacy
+name: Secondary portal UX privacy
 on:
-  pull_request:
+  workflow_dispatch:
   push:
-    branches:
-      - block3-onboarding-managed-setup
+    branches: [main]
 jobs:
   verify:
     runs-on: ubuntu-latest
