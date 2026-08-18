@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { readFile } from 'node:fs/promises';
+import { readFile,readdir } from 'node:fs/promises';
 
 const residency=await readFile('src/core/data-residency.ts','utf8');
 const mail=await readFile('src/core/mail.ts','utf8');
@@ -8,6 +8,7 @@ const intakeRouter=await readFile('src/core/intake-router.ts','utf8');
 const intakePage=await readFile('src/core/secure-intake-page.ts','utf8');
 const intakeJs=await readFile('public/intake-public-upload.js','utf8');
 const extract=await readFile('src/core/intake-document-extract.ts','utf8');
+const xlsx=await readFile('src/portability/xlsx.ts','utf8');
 const targeting=await readFile('src/core/participant-hierarchy-targeting.ts','utf8');
 const participant=await readFile('src/core/participant-document-import.ts','utf8');
 const readiness=await readFile('src/core/launch-readiness.ts','utf8');
@@ -34,11 +35,16 @@ assert.match(intakeJs,/credentials:'omit'/,'anonymous submit-only upload must no
 assert.doesNotMatch(index,/script-src 'self' 'unsafe-inline'/,'production CSP must not allow inline JavaScript');
 assert.match(index,/script-src 'self'/);
 assert.match(index,/upgrade-insecure-requests/);
+const publicFiles=await readdir('public');for(const name of publicFiles.filter(x=>x.endsWith('.html'))){const html=await readFile(`public/${name}`,'utf8');assert.doesNotMatch(html,/<script\b(?![^>]*\bsrc=)[^>]*>/i,`${name} contains inline JavaScript and would be blocked by strict CSP`);}
 assert.match(extract,/DOCUMENT_ARCHIVE_EXPANSION_LIMIT/,'Office document extraction must cap archive expansion');
 assert.match(extract,/DOCUMENT_ARCHIVE_TOO_MANY_ENTRIES/,'Office document extraction must cap archive entry count');
 assert.match(extract,/type==='text\/html'\)return\{kind:'unsupported'\}/,'HTML must not be accepted as automatic contract intake');
 assert.match(extract,/type==='text\/rtf'/,'RTF must not be accepted as automatic contract intake');
 assert.match(extract,/pdfMagic/,'PDF file signature must be checked');
+assert.match(xlsx,/XLSX_ARCHIVE_EXPANSION_LIMIT/,'XLSX parser must cap decompressed size before accepting spreadsheet uploads');
+assert.match(xlsx,/MAX_ARCHIVE_ENTRIES/,'XLSX parser must cap archive entry count');
+assert.match(xlsx,/MAX_ROWS/,'XLSX parser must cap spreadsheet rows');
+assert.match(xlsx,/MAX_COLUMNS/,'XLSX parser must cap spreadsheet columns');
 assert.match(targeting,/course_org_units/);
 assert.match(targeting,/ORG_CONTEXT_AMBIGUOUS/);
 assert.match(targeting,/COURSE_FORBIDDEN/);
