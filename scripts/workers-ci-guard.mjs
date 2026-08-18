@@ -1,10 +1,16 @@
 import { spawnSync } from 'node:child_process';
 
 if (process.env.WORKERS_CI !== '1' || process.env.WORKERS_CI_GUARD_ACTIVE === '1') process.exit(0);
-const env={...process.env,WORKERS_CI_GUARD_ACTIVE:'1'};
+
 const npm=process.platform==='win32'?'npm.cmd':'npm';
-function run(cmd,args){const r=spawnSync(cmd,args,{stdio:'inherit',env});if(r.error){console.error(r.error.message);process.exit(1);}if(r.status!==0)process.exit(r.status??1);}
-console.log(`Cloudflare assignments/gradebook diagnostic for ${process.env.WORKERS_CI_COMMIT_SHA || 'current commit'}...`);
-run(npm,['run','build']);
-run(process.execPath,['tests/assignments-gradebook.mjs']);
-process.exit(0);
+console.log(`Cloudflare complete npm test gate for ${process.env.WORKERS_CI_COMMIT_SHA || 'current commit'}...`);
+const result=spawnSync(npm,['test'],{
+  stdio:'inherit',
+  env:{...process.env,WORKERS_CI_GUARD_ACTIVE:'1'},
+});
+if(result.error){
+  console.error('Cloudflare complete npm test gate could not start.');
+  console.error(result.error.message);
+  process.exit(1);
+}
+process.exit(result.status??1);
