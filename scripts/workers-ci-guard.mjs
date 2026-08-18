@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 if (process.env.WORKERS_CI !== '1' || process.env.WORKERS_CI_GUARD_ACTIVE === '1') process.exit(0);
@@ -13,4 +14,17 @@ if(result.error){
   console.error(result.error.message);
   process.exit(1);
 }
-process.exit(result.status??1);
+if((result.status??1)!==0)process.exit(result.status??1);
+
+const commit=String(process.env.WORKERS_CI_COMMIT_SHA||'').trim();
+if(commit){
+  const metadata={
+    commit,
+    branch:String(process.env.WORKERS_CI_BRANCH||'').trim()||null,
+    build_uuid:String(process.env.WORKERS_CI_BUILD_UUID||'').trim()||null,
+    generated_at:new Date().toISOString(),
+  };
+  writeFileSync('public/build-meta.json',`${JSON.stringify(metadata)}\n`,'utf8');
+  console.log(`Bound deployed preview metadata to commit ${commit}.`);
+}
+process.exit(0);
