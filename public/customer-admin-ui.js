@@ -7,6 +7,12 @@ if(CUSTOMER_ADMIN_PATH){
 
   const setText=(el,text)=>{if(el&&el.textContent!==text)el.textContent=text;};
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const PRIMARY_NAV_LABELS=new Set(['Übersicht','Klassen/Kurse','Benutzer & Rollen','Teilnehmer importieren','Inhalte','Prüfungen','Module','Paket & Abrechnung']);
+  const NAV_GROUPS=[
+    {id:'learning',title:'Lernen & Kommunikation',labels:new Set(['Lernen & Berichte','Meldungen & Zielgruppen','Anwesenheit & Klassenbuch','Aufgaben & Bewertungen','Teilnehmer 360°','Automationen & Bescheinigungen'])},
+    {id:'organization',title:'Organisation & Betrieb',labels:new Set(['Unterlagen jetzt einwerfen','Branding','Import/Export/Backups','Struktur & Zuständigkeiten','Zuständigkeiten'])},
+    {id:'technology',title:'Technik & Integrationen',labels:new Set(['Eingang & Automationen','SSO SCIM & API'])},
+  ];
 
   async function loadMe(){
     try{
@@ -27,6 +33,99 @@ if(CUSTOMER_ADMIN_PATH){
     document.querySelector('#pa-onboarding-nav')?.remove();
     document.querySelector('#pa-new-customer')?.remove();
     document.querySelector('#kp-commerce-platform')?.remove();
+  }
+
+  function navLabel(button){return String(button?.textContent||'').replace(/\s+/g,' ').trim();}
+  function navGroupFor(label){return NAV_GROUPS.find(group=>group.labels.has(label))||{id:'more',title:'Weitere Verwaltung'};}
+  function ensureNavGroup(groups,id,title){
+    let group=groups.querySelector(`[data-customer-nav-group="${CSS.escape(id)}"]`);
+    if(group)return group.querySelector('.kp-customer-nav-group-items');
+    group=document.createElement('section');
+    group.className='kp-customer-nav-group';
+    group.dataset.customerNavGroup=id;
+    group.innerHTML=`<h2 class="kp-customer-nav-group-title">${esc(title)}</h2><div class="kp-customer-nav-group-items"></div>`;
+    groups.append(group);
+    return group.querySelector('.kp-customer-nav-group-items');
+  }
+
+  function organizeCustomerNavigation(){
+    const side=document.querySelector('.side');
+    if(!side)return;
+    side.classList.add('kp-customer-nav');
+    side.querySelectorAll(':scope > .spacer').forEach(el=>el.remove());
+
+    let head=side.querySelector(':scope > .kp-customer-nav-head');
+    if(!head){
+      head=document.createElement('div');
+      head.className='kp-customer-nav-head';
+      const title=side.querySelector(':scope > h1')||side.querySelector('h1');
+      const logout=side.querySelector(':scope > #logout')||side.querySelector('#logout');
+      side.prepend(head);
+      if(title)head.append(title);
+      const actions=document.createElement('div');
+      actions.className='kp-customer-nav-actions';
+      const more=document.createElement('button');
+      more.type='button';
+      more.id='kp-customer-more-toggle';
+      more.className='kp-customer-more-toggle';
+      more.setAttribute('aria-controls','kp-customer-nav-more-panel');
+      more.setAttribute('aria-expanded','false');
+      more.innerHTML='Weitere Bereiche <span class="kp-customer-more-count">0</span>';
+      more.addEventListener('click',()=>{
+        const panel=side.querySelector('#kp-customer-nav-more-panel');
+        if(!panel)return;
+        const open=panel.hidden;
+        panel.hidden=!open;
+        more.setAttribute('aria-expanded',String(open));
+        sessionStorage.setItem('kp_customer_nav_more',open?'1':'0');
+      });
+      actions.append(more);
+      if(logout)actions.append(logout);
+      head.append(actions);
+
+      const primary=document.createElement('nav');
+      primary.className='kp-customer-nav-primary';
+      primary.setAttribute('aria-label','Hauptnavigation Kunden-Admin');
+      side.append(primary);
+
+      const panel=document.createElement('section');
+      panel.id='kp-customer-nav-more-panel';
+      panel.className='kp-customer-nav-more-panel';
+      panel.hidden=true;
+      panel.innerHTML='<div class="kp-customer-nav-groups"></div>';
+      side.append(panel);
+    }
+
+    const primary=side.querySelector(':scope > .kp-customer-nav-primary');
+    const panel=side.querySelector(':scope > .kp-customer-nav-more-panel');
+    const groups=panel?.querySelector('.kp-customer-nav-groups');
+    const more=side.querySelector('#kp-customer-more-toggle');
+    if(!primary||!panel||!groups||!more)return;
+
+    const buttons=[...side.querySelectorAll('.nav')].filter(button=>button.id!=='logout');
+    let extraCount=0;
+    let extraActive=false;
+    for(const button of buttons){
+      const label=navLabel(button);
+      if(PRIMARY_NAV_LABELS.has(label)){
+        if(button.parentElement!==primary)primary.append(button);
+        continue;
+      }
+      const group=navGroupFor(label);
+      const target=ensureNavGroup(groups,group.id,group.title);
+      if(button.parentElement!==target)target.append(button);
+      extraCount+=1;
+      if(button.classList.contains('active'))extraActive=true;
+    }
+
+    groups.querySelectorAll('.kp-customer-nav-group').forEach(group=>{group.hidden=!group.querySelector('.nav');});
+    const count=more.querySelector('.kp-customer-more-count');
+    if(count)setText(count,String(extraCount));
+    more.hidden=extraCount===0;
+    const storedOpen=sessionStorage.getItem('kp_customer_nav_more')==='1';
+    const open=extraCount>0&&(extraActive||storedOpen);
+    panel.hidden=!open;
+    more.setAttribute('aria-expanded',String(open));
   }
 
   function normalizeOverview(){
@@ -120,9 +219,10 @@ if(CUSTOMER_ADMIN_PATH){
 
   function apply(){
     document.title='Klassenportal · Kunden-Admin';
+    cleanPlatformControls();
+    organizeCustomerNavigation();
     const side=document.querySelector('.side');
     if(side)setText(side.querySelector('h1'),'Klassenportal · Kunden-Admin');
-    cleanPlatformControls();
     normalizeCustomerPicker();
     normalizeOverview();
     ensureSupportNotice();
