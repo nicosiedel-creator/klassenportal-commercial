@@ -34,9 +34,9 @@ async function userSnapshot(env:BackupPreflightEnv,manifest:BackupManifest):Prom
 export async function preflightTenantBackup(env:BackupPreflightEnv,cfg:PortabilityConfig,backupId:string,expectedTenantId?:string):Promise<{manifest:BackupManifest;resourceCount:number;rowCount:number;fileCount:number;userCount:number;users:UserSnapshotRow[]}>{
   const row=await env.DB.prepare('SELECT id,tenant_id,object_prefix,status FROM portability_backups WHERE id=?').bind(backupId).first<BackupRow>();
   if(!row)throw new Error('BACKUP_NOT_FOUND');if(expectedTenantId&&row.tenant_id!==expectedTenantId)throw new Error('BACKUP_TENANT_MISMATCH');
-  const manifest=await loadManifest(env,row),resourceMap=new Map(cfg.resources.map(x=>[x.key,x])),users=await userSnapshot(env,manifest),manifestKeys=new Set<string>(),objectKeys=new Set<string>();let rowCount=0;const membershipUsers=new Set<string>();
+  const manifest=await loadManifest(env,row),resourceMap=new Map(cfg.resources.map(x=>[x.key,x])),users=await userSnapshot(env,manifest),manifestKeys=new Set<string>(),objectKeys=new Set<string>(manifest.users?[manifest.users.objectKey]:[]);let rowCount=0;const membershipUsers=new Set<string>();
   for(const item of manifest.resources){
-    if(manifestKeys.has(item.key))throw new Error(`BACKUP_RESOURCE_DUPLICATE:${item.key}`);manifestKeys.add(item.key);if(objectKeys.has(item.objectKey))throw new Error(`BACKUP_RESOURCE_OBJECT_DUPLICATE:${item.key}`);objectKeys.add(item.objectKey);if(manifest.integrity&&!item.sha256)throw new Error(`BACKUP_RESOURCE_HASH_MISSING:${item.key}`);
+    if(manifestKeys.has(item.key))throw new Error(`BACKUP_RESOURCE_DUPLICATE:${item.key}`);manifestKeys.add(item.key);if(objectKeys.has(item.objectKey))throw new Error(`BACKUP_OBJECT_REFERENCE_DUPLICATE:${item.key}`);objectKeys.add(item.objectKey);if(manifest.integrity&&!item.sha256)throw new Error(`BACKUP_RESOURCE_HASH_MISSING:${item.key}`);
     const resource=resourceMap.get(item.key);if(!resource)throw new Error(`BACKUP_RESOURCE_UNKNOWN:${item.key}`);
     const object=await env.FILES.get(item.objectKey);if(!object)throw new Error(`BACKUP_RESOURCE_OBJECT_MISSING:${item.key}`);
     let rows:unknown,text:string;try{text=await object.text();if(item.sha256&&await sha256Text(text)!==item.sha256)throw new Error(`BACKUP_RESOURCE_HASH_MISMATCH:${item.key}`);rows=JSON.parse(text);}catch(e){if(String((e as Error)?.message).startsWith('BACKUP_RESOURCE_HASH_MISMATCH:'))throw e;throw new Error(`BACKUP_RESOURCE_JSON_INVALID:${item.key}`);}
@@ -56,8 +56,8 @@ export async function preflightTenantBackup(env:BackupPreflightEnv,cfg:Portabili
   }
   for(const required of cfg.resources)if(!manifestKeys.has(required.key))throw new Error(`BACKUP_RESOURCE_REQUIRED_MISSING:${required.key}`);
   if(membershipUsers.size){if(!manifest.users)throw new Error('BACKUP_USERS_MISSING');const userIds=new Set(users.map(x=>x.id));for(const uid of membershipUsers)if(!userIds.has(uid))throw new Error('BACKUP_MEMBERSHIP_USER_MISSING');}
-  const fileIds=new Set<string>(),fileKeys=new Set<string>();for(const file of manifest.files){
-    if(fileIds.has(file.id)||fileKeys.has(file.backupKey))throw new Error(`BACKUP_FILE_DUPLICATE:${file.id}`);fileIds.add(file.id);fileKeys.add(file.backupKey);if(!file.originalKey.startsWith(`tenants/${manifest.tenantId}/`))throw new Error('BACKUP_FILE_OBJECT_SCOPE_INVALID');if(manifest.integrity&&!file.etag)throw new Error(`BACKUP_FILE_ETAG_MISSING:${file.id}`);
+  const fileIds=new Set<string>();for(const file of manifest.files){
+    if(fileIds.has(file.id)||objectKeys.has(file.backupKey))throw new Error(`BACKUP_OBJECT_REFERENCE_DUPLICATE:${file.id}`);fileIds.add(file.id);objectKeys.add(file.backupKey);if(!file.originalKey.startsWith(`tenants/${manifest.tenantId}/`))throw new Error('BACKUP_FILE_OBJECT_SCOPE_INVALID');if(manifest.integrity&&!file.etag)throw new Error(`BACKUP_FILE_ETAG_MISSING:${file.id}`);
     const obj=await env.FILES.get(file.backupKey);if(!obj)throw new Error(`BACKUP_FILE_OBJECT_MISSING:${file.id}`);if(Number(file.size)!==Number(obj.size))throw new Error(`BACKUP_FILE_SIZE_MISMATCH:${file.id}`);if(file.etag&&!etagMatches(file.etag,obj.etag))throw new Error(`BACKUP_FILE_ETAG_MISMATCH:${file.id}`);
   }
   return{manifest,resourceCount:manifest.resources.length,rowCount,fileCount:manifest.files.length,userCount:users.length,users};
