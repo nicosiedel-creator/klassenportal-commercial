@@ -16,7 +16,10 @@ const index=await readFile('src/index.ts','utf8');
 
 assert.match(residency,/eu_strict/);
 for(const key of ['EU_D1_JURISDICTION_ATTESTED','EU_R2_JURISDICTION_ATTESTED','EU_BACKUP_STORAGE_ATTESTED'])assert.ok(residency.includes(key),`missing EU residency gate ${key}`);
-assert.match(residency,/configuredMailProvider\(env\)!=='brevo'/,'EU strict must fail closed for non-Brevo mail');
+assert.match(residency,/EU_METADATA_BOUNDARY_ATTESTED/,'EU metadata boundary must be separately tracked');
+assert.match(residency,/MAIL_PROVIDER/,'EU mail provider choice must be explicit');
+assert.match(residency,/explicitEuMail/,'EU strict must fail closed unless Brevo is explicitly selected');
+assert.match(residency,/EU_STRICT_MAIL_PROVIDER_REQUIRED/,'EU strict mail must fail closed');
 assert.match(mail,/api\.brevo\.com\/v3\/smtp\/email/);
 assert.match(mail,/assertEuSafeMail/);
 assert.match(inbound,/BREVO_INBOUND_WEBHOOK_TOKEN/);
@@ -52,5 +55,7 @@ assert.match(participant,/Standort/);
 assert.match(participant,/default_org_unit_id/);
 assert.match(participant,/createParticipantTargetResolver/);
 assert.match(readiness,/EU-Datenhaltung nicht bestätigt/);
+assert.match(readiness,/EU Customer Metadata Boundary/);
+for(const table of ['certificate_templates','certificate_records','certificate_events','workflow_rules','workflow_runs'])assert.ok(readiness.includes(table),`live gate must require ${table}`);
 
-console.log('EU-first residency, Brevo intake, hierarchy targeting, strict CSP and upload hardening checks: OK');
+console.log('EU-first residency, Brevo intake, hierarchy targeting, strict CSP, workflow schema and upload hardening checks: OK');
