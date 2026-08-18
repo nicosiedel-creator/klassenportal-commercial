@@ -4,6 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-14",
   "compatibility_flags": ["nodejs_compat"],
+  "build": {
+    "command": "node scripts/workers-ci-guard.mjs"
+  },
   "version_metadata": {
     "binding": "CF_VERSION_METADATA"
   },
