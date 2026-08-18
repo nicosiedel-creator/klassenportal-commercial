@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { reconcileKnownRuntimeSchemaDrift } from './reconcile-runtime-schema-drift.mjs';
+import { patchD1MigrationFilesForWorkersBuild } from './d1-migration-compat.mjs';
 
 const WRANGLER=['wrangler'];
 const npx=process.platform==='win32'?'npx.cmd':'npx';
@@ -46,6 +47,10 @@ function applyNormalMigrations(){run(['d1','migrations','apply','DB','--remote']
 if(workersBuild&&branch&&branch!==productionBranch){
   console.log(`Skipping remote D1 migrations on non-production Workers Build branch: ${branch}`);
   process.exit(0);
+}
+
+if(workersBuild&&branch===productionBranch){
+  await patchD1MigrationFilesForWorkersBuild();
 }
 
 let currentColumns=[];
