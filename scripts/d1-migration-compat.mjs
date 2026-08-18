@@ -17,6 +17,8 @@ export function patchD1TriggerParserSql(sql,expectedCases){
   return patched;
 }
 
+// Workers Builds can execute the repository build hook again from the same checkout
+// during `wrangler deploy`; never let an ephemeral SQL rewrite escape this callback.
 export async function withD1MigrationFilesForWorkersBuild(callback,{files=d1TriggerCompatFiles,read=readFile,write=writeFile}={}){
   const originals=[];
   let primaryError=null;
