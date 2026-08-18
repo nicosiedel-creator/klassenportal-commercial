@@ -3,6 +3,7 @@ import { getSession, issueSession, resolveCoreAuth, verifyPassword } from './aut
 import { beginOwnerMfaSetup, confirmOwnerMfaSetup, ownerMfaStatus, verifyMfaChallenge } from './mfa.js';
 import { cancelOwnerTenantDeletion, finalizeOwnerTenantDeletion, finishOwnerMfaSetup, ownerSystemHealth, requestOwnerTenantDeletion, startOwnerMfaSetup } from './owner-cockpit.js';
 import { handlePlatformAccountingApi } from './platform-accounting-router.js';
+import { handlePlatformAccountingAutopilotApi } from './platform-accounting-autopilot-router.js';
 import { assertSameOrigin, json, noCookie } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -10,6 +11,7 @@ function fail(e:unknown):Response{const code=String((e as Error)?.message||'INTE
 function administrative(user:{isPlatformAdmin:boolean;tenantRoles:Array<{role:string}>}){return user.isPlatformAdmin||user.tenantRoles.some(x=>x.role==='tenant_admin'||x.role==='class_admin');}
 
 export async function handleOwnerSecurityApi(request:Request,env:Env):Promise<Response|null>{
+  const autopilot=await handlePlatformAccountingAutopilotApi(request,env);if(autopilot)return autopilot;
   const accounting=await handlePlatformAccountingApi(request,env);if(accounting)return accounting;
   const u=new URL(request.url);
   if(u.pathname==='/api/auth/mfa/verify'&&request.method==='POST'){
