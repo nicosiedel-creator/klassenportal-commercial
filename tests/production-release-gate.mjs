@@ -36,12 +36,14 @@ assert.match(gate,/platform\.production_release_revoked/,'emergency lock must be
 assert.match(launch,/production_release_approvals/,'release gate schema must be part of production readiness');
 assert.match(launch,/Worker-Versionsmetadaten fehlen/,'readiness must block without version metadata');
 assert.match(launch,/paymentProviderFailures24h:paymentEventsQueryOk&&providerFailures===0/,'payment provider check must use true=healthy semantics');
+assert.match(launch,/paymentProviderFailureCount24h:paymentEventsQueryOk\?providerFailures:null/,'payment failure count must remain separately observable without corrupting boolean check semantics');
 for(const marker of ['SSO-Sicherheitsstatus konnte nicht geprüft werden','Status der Eingangskanäle konnte nicht geprüft werden','Angebotsstatus für eigene Domains konnte nicht geprüft werden','Zahlungsprovider-Ereignisse der letzten 24 Stunden konnten nicht geprüft werden'])assert.ok(launch.includes(marker),`blocking readiness query must fail closed: ${marker}`);
 assert.doesNotMatch(launch,/tenant_sso_configs WHERE enabled=1'\)\.first<number>\('n'\)\.catch\(\(\)=>0\)/,'SSO blocker query must not fail open to zero');
 assert.doesNotMatch(launch,/payment_provider_events WHERE status='failed'[\s\S]{0,250}\.catch\(\(\)=>0\)/,'payment failure query must not fail open to zero');
 
 assert.match(router,/\/api\/platform\/release-state\/approve/,'owner approval endpoint must exist');
 assert.match(router,/\/api\/platform\/release-state\/revoke/,'owner emergency-lock endpoint must exist');
+assert.match(router,/code\.includes\('STATE_CHANGED'\)\?409/,'release state races must return HTTP 409 rather than an internal server error');
 assert.match(index,/PRODUCTION_RELEASE_LOCKED/,'unapproved production traffic must receive a fail-closed response');
 assert.match(index,/path==='\/api\/payments\/stripe\/webhook'/,'Stripe webhooks must remain reachable while customer traffic is locked');
 assert.ok(index.indexOf('productionReleaseAccess(env,request)')<index.indexOf("const calendarFeed=url.pathname.match"),'production lock must run before tenant calendar/public content routes');
@@ -52,6 +54,8 @@ assert.match(ui,/mfa_code/,'owner UI must request MFA for release step-up');
 for(const label of ['EU-Datenhaltung','SSO-Geheimnisse verschlüsselt','Sicherer E-Mail-Eingang','Keine Zahlungsproviderfehler (24 h)'])assert.ok(ui.includes(label),`owner UI must display blocking readiness check: ${label}`);
 for(const label of ['EU-Worker-Verarbeitung / Regional Services','EU Customer Metadata Boundary'])assert.ok(ui.includes(label),`owner UI must display advisory check: ${label}`);
 assert.match(ui,/Unmittelbar nach dem MFA-Schritt prüft der Server alle Freigabebedingungen erneut/,'owner UI must explain final server-side recheck');
+assert.match(ui,/PRODUCTION_NOT_READY_AFTER_STEP_UP:'Während der Bestätigung hat sich eine Freigabebedingung geändert/,'owner UI must explain a post-step-up readiness race in plain German');
+assert.match(ui,/PRODUCTION_RELEASE_STATE_CHANGED:'Worker-Version oder Produktionsdomain haben sich während der Bestätigung geändert/,'owner UI must explain a version/origin race in plain German');
 assert.ok(platformDirect.includes("/launch-readiness-ui.js?v=20260818-2"),'platform loader must bust cache for hardened readiness UI');
 assert.ok(platformHtml.includes('/platform-direct-login.js?v=20260818-2'),'platform page must bust cache for the updated loader');
 
