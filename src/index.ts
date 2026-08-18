@@ -13,7 +13,7 @@ import { ensureCustomDomainGuards } from './core/custom-domain-guards.js';
 import { handleAccountRecoveryApi } from './core/account-recovery-router.js';
 import { cleanupAccountActions } from './core/account-recovery.js';
 import { handleLaunchReadinessApi } from './core/launch-readiness-router.js';
-import { renderLegalDocument } from './core/legal-documents.js';
+import { renderLegalDocument } from './core/legal-documents-eu.js';
 import { verifyPendingBackups } from './core/backup-verification.js';
 import { productionReleaseAccess } from './core/production-release-state.js';
 import { publicMaterialDownload, publicOverview, publicPortalMetadata } from './core/public.js';
@@ -34,7 +34,7 @@ import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups 
 
 const SECURITY_HEADERS:Record<string,string>={
   'x-content-type-options':'nosniff','x-frame-options':'DENY','referrer-policy':'strict-origin-when-cross-origin','permissions-policy':'camera=(), microphone=(), geolocation=()','cross-origin-opener-policy':'same-origin','strict-origin-agent-cluster':'?1','strict-transport-security':'max-age=31536000; includeSubDomains',
-  'content-security-policy':"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://checkout.stripe.com https://api.resend.com https://login.microsoftonline.com",
+  'content-security-policy':"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://checkout.stripe.com https://login.microsoftonline.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests",
 };
 function harden(response:Response):Response{const headers=new Headers(response.headers);for(const [k,v] of Object.entries(SECURITY_HEADERS))if(!headers.has(k))headers.set(k,v);headers.set('x-request-id',crypto.randomUUID());if((headers.get('content-type')||'').includes('text/html'))headers.set('cache-control','no-store');return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}
 function accessError(e:unknown):Response{const raw=String((e as Error)?.message||'PAYMENT_REQUIRED'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PAYMENT_REQUIRED',status=code==='TRIAL_EXPIRED'?410:code==='TRIAL_READ_ONLY'?423:402;return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
