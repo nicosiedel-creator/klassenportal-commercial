@@ -2,6 +2,7 @@ import type { Env } from './types.js';
 import { getSession, issueSession, resolveCoreAuth, verifyPassword } from './auth.js';
 import { beginOwnerMfaSetup, confirmOwnerMfaSetup, ownerMfaStatus, verifyMfaChallenge } from './mfa.js';
 import { cancelOwnerTenantDeletion, finalizeOwnerTenantDeletion, finishOwnerMfaSetup, ownerSystemHealth, requestOwnerTenantDeletion, startOwnerMfaSetup } from './owner-cockpit.js';
+import { handlePlatformAccountingApi } from './platform-accounting-router.js';
 import { assertSameOrigin, json, noCookie } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -9,6 +10,7 @@ function fail(e:unknown):Response{const code=String((e as Error)?.message||'INTE
 function administrative(user:{isPlatformAdmin:boolean;tenantRoles:Array<{role:string}>}){return user.isPlatformAdmin||user.tenantRoles.some(x=>x.role==='tenant_admin'||x.role==='class_admin');}
 
 export async function handleOwnerSecurityApi(request:Request,env:Env):Promise<Response|null>{
+  const accounting=await handlePlatformAccountingApi(request,env);if(accounting)return accounting;
   const u=new URL(request.url);
   if(u.pathname==='/api/auth/mfa/verify'&&request.method==='POST'){
     try{assertSameOrigin(request,env.APP_ORIGIN);const b=await body(request),userId=await verifyMfaChallenge(env,b.challenge_token,b.code),user=await env.DB.prepare("SELECT is_platform_admin,status FROM users WHERE id=?").bind(userId).first<{is_platform_admin:number;status:string}>();if(!user||user.status!=='active')throw new Error('FORBIDDEN');return issueSession(env,userId,!!user.is_platform_admin,'mfa');}catch(e){return fail(e);}
