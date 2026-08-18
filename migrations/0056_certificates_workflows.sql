@@ -1,5 +1,8 @@
 PRAGMA foreign_keys = ON;
 
+INSERT OR IGNORE INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at)
+VALUES('system_workflow_service','system-workflow@localhost.invalid','Automationsdienst','!disabled-system-account!',0,0,'disabled',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+
 CREATE TABLE IF NOT EXISTS certificate_templates (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
