@@ -8,11 +8,18 @@ const router=await readFile('src/core/owner-security-router.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
 const ui=await readFile('public/owner-security-ui.js','utf8');
 const mfaUi=await readFile('public/auth-mfa-ui.js','utf8');
+const adminMfaUi=await readFile('public/admin-mfa-enrollment-ui.js','utf8');
+const customerHtml=await readFile('public/customer-admin.html','utf8');
+const classHtml=await readFile('public/class-admin.html','utf8');
 const platformHtml=await readFile('public/platform-admin.html','utf8');
 const platformLogin=await readFile('public/platform-direct-login.js','utf8');
 
-assert.match(auth,/ownerMfaEnabled/,'owner login must check MFA state before issuing a session');
-assert.match(auth,/mfaRequired:true/,'owner login must return an MFA challenge instead of a session when MFA is enabled');
+assert.match(auth,/ownerMfaEnabled/,'login must check MFA state before issuing a session');
+assert.match(auth,/if\(await ownerMfaEnabled\(env,u\.id\)\)/,'MFA challenge must apply to every enrolled account, not only the platform owner');
+assert.match(auth,/mfaRequired:true/,'login must return an MFA challenge instead of a session when MFA is enabled');
+assert.match(auth,/MFA_ENROLLMENT_REQUIRED/,'local administrative accounts must fail closed until MFA is enrolled');
+assert.match(auth,/session\.authMethod==='oidc'/,'SSO sessions may rely on the customer identity-provider policy instead of local password MFA');
+assert.match(auth,/session\.authMethod!=='mfa'/,'local administrative sessions must be MFA-authenticated');
 assert.match(mfa,/AES-GCM/,'TOTP seed must be encrypted at rest');
 assert.match(mfa,/OWNER_MFA_ENCRYPTION_KEY/,'MFA encryption must use a dedicated server secret');
 assert.match(mfa,/TOTP_STEP=30/,'TOTP must use a 30 second step');
@@ -20,9 +27,16 @@ assert.match(mfa,/last_counter/,'TOTP verification must track last accepted coun
 assert.match(mfa,/MAX_CHALLENGE_ATTEMPTS=5/,'MFA challenge must be rate limited');
 assert.match(mfa,/used_at IS NULL/,'recovery codes must be single-use');
 assert.match(router,/\/api\/auth\/mfa\/verify/,'MFA verification endpoint must be routed before generic auth');
+assert.match(router,/\/api\/auth\/mfa\/setup/,'administrative users need a self-service MFA enrollment route');
+assert.match(router,/verifyPassword/,'password-based MFA enrollment must reauthenticate with the current password');
+assert.match(router,/issueSession\(env,userId,!!user\.is_platform_admin,'mfa'\)/,'successful MFA must mark the new session as MFA-authenticated');
 assert.match(index,/handleOwnerSecurityApi/,'owner security router must be wired into the worker');
 assert.match(mfaUi,/challenge_token/,'login UI must complete the MFA challenge before normal app startup');
 assert.match(mfaUi,/requested==='\/plattform-admin'&&!user\?\.isPlatformAdmin/,'non-platform users must not be redirected into platform admin');
+assert.match(adminMfaUi,/Für administrative Zugänge verpflichtend/,'local admin UI must explain mandatory MFA');
+assert.match(adminMfaUi,/Wiederherstellungscodes jetzt sicher speichern/,'admin MFA enrollment must surface one-time recovery codes');
+assert.match(customerHtml,/admin-mfa-enrollment-ui\.js/,'customer admin must load MFA enrollment protection');
+assert.match(classHtml,/admin-mfa-enrollment-ui\.js/,'class admin must load MFA enrollment protection');
 
 assert.match(index,/const asset=clean==='\/kunden-admin'\?'\/customer-admin\.html':clean==='\/klassen-admin'\?'\/class-admin\.html':'\/platform-admin\.html'/,'platform admin route must serve its login shell without requiring a pre-existing owner session');
 assert.doesNotMatch(platformHtml,/src="\/boot\.js/,'platform admin shell must not start generic boot before platform authentication is resolved');
@@ -40,4 +54,4 @@ assert.match(cockpit,/confirm_name/,'tenant deletion must require exact tenant-n
 assert.match(ui,/14-tägigen Schutzfrist/,'owner UI must explain the protected deletion grace period');
 assert.match(ui,/System & Sicherheit/,'owner cockpit must be visible only inside platform admin');
 
-console.log('Owner MFA/cockpit/direct-platform-login regression tests: OK');
+console.log('Owner/admin MFA, cockpit and direct-platform-login regression tests: OK');
