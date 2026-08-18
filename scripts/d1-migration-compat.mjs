@@ -17,11 +17,37 @@ export function patchD1TriggerParserSql(sql,expectedCases){
   return patched;
 }
 
-export async function patchD1MigrationFilesForWorkersBuild(){
-  for(const item of d1TriggerCompatFiles){
-    const original=await readFile(item.path,'utf8');
-    const patched=patchD1TriggerParserSql(original,item.expectedCases);
-    await writeFile(item.path,patched,'utf8');
-    console.log(`Applied Cloudflare D1 trigger parser compatibility patch: ${item.path}`);
+// Workers Builds can execute the repository build hook again from the same checkout
+// during `wrangler deploy`; never let an ephemeral SQL rewrite escape this callback.
+export async function withD1MigrationFilesForWorkersBuild(callback,{files=d1TriggerCompatFiles,read=readFile,write=writeFile}={}){
+  const originals=[];
+  let primaryError=null;
+  let result;
+  try{
+    for(const item of files){
+      const original=await read(item.path,'utf8');
+      const patched=patchD1TriggerParserSql(original,item.expectedCases);
+      await write(item.path,patched,'utf8');
+      originals.push({path:item.path,original});
+      console.log(`Applied Cloudflare D1 trigger parser compatibility patch: ${item.path}`);
+    }
+    result=await callback();
+  }catch(error){
+    primaryError=error;
   }
+
+  const restoreErrors=[];
+  for(const item of [...originals].reverse()){
+    try{
+      await write(item.path,item.original,'utf8');
+      console.log(`Restored original migration source after D1 compatibility run: ${item.path}`);
+    }catch(error){
+      restoreErrors.push(error);
+    }
+  }
+
+  if(primaryError&&restoreErrors.length)throw new AggregateError([primaryError,...restoreErrors],'D1_TRIGGER_COMPAT_OPERATION_AND_RESTORE_FAILED',{cause:primaryError});
+  if(primaryError)throw primaryError;
+  if(restoreErrors.length)throw new AggregateError(restoreErrors,'D1_TRIGGER_COMPAT_RESTORE_FAILED');
+  return result;
 }
