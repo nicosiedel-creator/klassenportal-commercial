@@ -6,8 +6,10 @@ const provision=await readFile('src/core/provision.ts','utf8');
 const recovery=await readFile('src/core/account-recovery.ts','utf8');
 const recoveryRouter=await readFile('src/core/account-recovery-router.ts','utf8');
 const mail=await readFile('src/core/mail.ts','utf8');
+const residency=await readFile('src/core/data-residency.ts','utf8');
 const legal=await readFile('src/core/legal.ts','utf8');
 const legalDocs=await readFile('src/core/legal-documents.ts','utf8');
+const legalEu=await readFile('src/core/legal-documents-eu.ts','utf8');
 const legalSchema=await readFile('src/core/legal-schema.ts','utf8');
 const legalReport=await readFile('src/core/legal-content-report.ts','utf8');
 const backups=await readFile('src/core/backup-verification.ts','utf8');
@@ -31,11 +33,16 @@ assert.match(recovery,/DELETE FROM sessions WHERE user_id=\?/,'password reset mu
 assert.match(recoveryRouter,/SELECT id FROM memberships WHERE tenant_id=\? AND user_id=\?/,'tenant admin may only resend activation for a user in the selected tenant');
 assert.match(accountPage,/Aus Sicherheitsgründen zeigen wir nicht an/,'forgot-password UI must explain non-enumerating response behavior');
 
-assert.match(mail,/https:\/\/api\.resend\.com\/emails/,'transactional mail must use the provider HTTPS endpoint');
-assert.match(mail,/Bearer \$\{key\}/,'mail provider token must be sent as bearer authorization');
-assert.match(mail,/user-agent/,'direct mail API calls must send a User-Agent');
-assert.match(mail,/idempotency-key/,'transactional mail must be idempotency protected');
-assert.ok(!mail.includes('console.log(key)')&&!mail.includes('RESEND_API_KEY:'),'mail API secret must never be logged or serialized');
+assert.match(mail,/https:\/\/api\.brevo\.com\/v3\/smtp\/email/,'EU-first transactional mail must support Brevo HTTPS endpoint');
+assert.match(mail,/'api-key':key/,'Brevo API token must use the provider authentication header');
+assert.match(mail,/Idempotency-Key/,'transactional mail must remain idempotency protected');
+assert.match(mail,/assertEuSafeMail/,'mail sending must fail closed when the EU-strict provider policy is not met');
+assert.doesNotMatch(mail,/console\.log\s*\(\s*(?:key|env\.(?:BREVO|RESEND)_API_KEY)/,'mail API secret must never be logged');
+assert.match(residency,/DATA_RESIDENCY_MODE/,'data residency mode must be explicit and fail closed');
+assert.match(residency,/EU_D1_JURISDICTION_ATTESTED/,'EU-strict launch must attest D1 jurisdiction');
+assert.match(residency,/EU_R2_JURISDICTION_ATTESTED/,'EU-strict launch must attest R2 jurisdiction');
+assert.match(residency,/EU_BACKUP_STORAGE_ATTESTED/,'EU-strict launch must attest backup jurisdiction');
+assert.match(residency,/configuredMailProvider\(env\)!=='brevo'/,'EU-strict mail must reject a non-EU-primary provider path');
 
 assert.match(legal,/documents_enabled/,'legal publication must require an explicit owner switch');
 assert.match(legal,/document_version/,'legal documents must be versioned');
@@ -45,6 +52,8 @@ for(const marker of ['Allgemeine Geschäftsbedingungen (B2B)','Datenschutzerklä
 assert.match(legalDocs,/wandelt sich nicht automatisch in ein kostenpflichtiges Abonnement um/,'pilot terms must explicitly exclude automatic paid conversion');
 assert.match(legalDocs,/12\. Januar 2027/,'Data Act switching fee phase-out must be covered');
 assert.match(legalDocs,/Art\. 9 DSGVO/,'AVV must address special-category data explicitly');
+assert.match(legalEu,/EU-first Datenstandort/,'AVV rendering must disclose EU-first data location policy');
+assert.match(legalEu,/Brevo/,'legal rendering must support the EU-first mail processor disclosure');
 assert.match(legalSchema,/ensureLegalDocumentSchema/,'legal schema must self-heal before publication checks');
 assert.match(legalReport,/legal_content_report_limits/,'legal notice endpoint must be rate limited');
 assert.match(legalReport,/sendMail/,'legal notice endpoint must notify the legal/support contact when mail is configured');
@@ -56,6 +65,8 @@ assert.match(backups,/Last|./);
 assert.match(readiness,/Stripe läuft noch nicht mit Live-Schlüssel/,'production readiness must require live Stripe');
 assert.match(readiness,/Eigentümer-MFA ist nicht aktiviert/,'production readiness must require owner MFA');
 assert.match(readiness,/Transaktions-E-Mail ist nicht vollständig konfiguriert/,'production readiness must require transactional mail');
+assert.match(readiness,/EU-Datenhaltung nicht bestätigt/,'production readiness must fail closed until EU data residence is attested');
+assert.match(readiness,/euDataResidency/,'EU residency must be visible in the owner live-readiness result');
 assert.match(readiness,/Rechtliche Unterlagen/,'production readiness must require legal configuration');
 assert.match(readiness,/legal_document_events/,'readiness must require the integrated legal schema');
 assert.match(readiness,/commercial_offer_acceptances/,'readiness must require offer acceptance schema');
@@ -68,4 +79,4 @@ assert.match(index,/renderLegalDocument/,'legal routes must render integrated do
 assert.match(index,/verifyPendingBackups/,'scheduled job must automatically verify backups');
 assert.match(index,/cleanupAccountActions/,'scheduled job must clean expired account actions');
 
-console.log('Launch readiness, integrated legal documents, account recovery and backup verification tests: OK');
+console.log('Launch readiness, EU-first residency, integrated legal documents, account recovery and backup verification tests: OK');
