@@ -14,13 +14,17 @@ assert.doesNotMatch(backup,/usersKey=`\$\{prefix\}\/data\/tenant_users\.json`/,'
 assert.match(backup,/BACKUP_RESERVED_RESOURCE_KEY/,'the reserved user snapshot resource key must be protected against future config collisions');
 assert.match(backup,/sqlite_master WHERE type='table' AND name='tenant_users'/,'tenant user fallback must first prove whether the modern tenant_users table exists');
 assert.doesNotMatch(backup,/try\{const rows=await env\.DB\.prepare\(`SELECT DISTINCT u\.id[\s\S]*?catch\{const rows=await env\.DB\.prepare\(`SELECT DISTINCT u\.id/,'a transient tenant_users query failure must never silently downgrade the backup to membership-only users');
+assert.match(backup,/BACKUP_MEMBERSHIP_USER_MISSING/,'backup creation must reject memberships whose user account is absent from the user snapshot');
+assert.match(backup,/backupUserIds\.has\(String\(x\.user_id\?\?''\)\)/,'membership consistency must be checked against the snapshotted user ids');
+assert.match(backup,/json_extract\(row_json,'\$\.originalKey'\)/,'restore metadata must point portability_files back to each original object key');
+assert.doesNotMatch(backup,/json_extract\(row_json,'\$\.objectKey'\)/,'restore metadata must never read a nonexistent generic objectKey field');
 assert.match(backup,/sha256:await sha256Text\(usersJson\)/,'user snapshot must be hashed');
 assert.match(backup,/sha256:await sha256Text\(json\)/,'every JSON resource snapshot must be hashed');
 assert.match(backup,/etag:copy\.etag/,'backed-up files must persist their R2 etag');
 assert.match(backup,/R2_BACKUP_COPY_SIZE_MISMATCH/,'file copy must be size-verified immediately');
 
 const preflight=await readFile('src/portability/backup-preflight.ts','utf8');
-for(const marker of ['BACKUP_USERS_HASH_MISMATCH','BACKUP_RESOURCE_HASH_MISMATCH','BACKUP_FILE_SIZE_MISMATCH','BACKUP_FILE_ETAG_MISMATCH','BACKUP_OBJECT_REFERENCE_DUPLICATE'])assert.ok(preflight.includes(marker),`restore preflight missing ${marker}`);
+for(const marker of ['BACKUP_USERS_HASH_MISMATCH','BACKUP_RESOURCE_HASH_MISMATCH','BACKUP_FILE_SIZE_MISMATCH','BACKUP_FILE_ETAG_MISMATCH','BACKUP_OBJECT_REFERENCE_DUPLICATE','BACKUP_MEMBERSHIP_USER_MISSING'])assert.ok(preflight.includes(marker),`restore preflight missing ${marker}`);
 assert.match(preflight,/new Set<string>\(manifest\.users\?\[manifest\.users\.objectKey\]:\[\]\)/,'restore preflight must reserve the user snapshot object before validating resource/file objects');
 assert.match(preflight,/manifest\.integrity&&!item\.sha256/,'strong resource backups must not silently downgrade when a hash is missing');
 assert.match(preflight,/manifest\.integrity&&!file\.etag/,'strong file backups must not silently downgrade when an etag is missing');
@@ -43,4 +47,4 @@ assert.match(manifestTypes,/integrity\?: \{ version:1; json:'sha256'; files:'r2-
 assert.match(manifestTypes,/sha256\?: string/,'manifest JSON snapshots must support hashes');
 assert.match(manifestTypes,/etag\?: string/,'manifest files must support etags');
 
-console.log('Backup SHA-256, row-count, size, etag, object-path collision, fail-closed user snapshot, race-safe schema and strong-readiness checks: OK');
+console.log('Backup SHA-256, row-count, size, etag, object-path collision, membership consistency, restore-key, fail-closed user snapshot, race-safe schema and strong-readiness checks: OK');
