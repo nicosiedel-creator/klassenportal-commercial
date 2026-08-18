@@ -35,7 +35,7 @@ assert.match(accountPage,/Aus Sicherheitsgründen zeigen wir nicht an/,'forgot-p
 
 assert.match(mail,/https:\/\/api\.brevo\.com\/v3\/smtp\/email/,'EU-first transactional mail must support Brevo HTTPS endpoint');
 assert.match(mail,/'api-key':key/,'Brevo API token must use the provider authentication header');
-assert.match(mail,/Idempotency-Key/,'transactional mail must remain idempotency protected');
+assert.match(mail,/idempotencyKey/,'transactional mail must use Brevo documented idempotency protection');
 assert.match(mail,/assertEuSafeMail/,'mail sending must fail closed when the EU-strict provider policy is not met');
 assert.doesNotMatch(mail,/console\.log\s*\(\s*(?:key|env\.(?:BREVO|RESEND)_API_KEY)/,'mail API secret must never be logged');
 assert.match(residency,/DATA_RESIDENCY_MODE/,'data residency mode must be explicit and fail closed');
