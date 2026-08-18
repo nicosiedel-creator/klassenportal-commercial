@@ -6,6 +6,7 @@ const script=await readFile('scripts/migrate-remote.mjs','utf8');
 const pkg=JSON.parse(await readFile('package.json','utf8'));
 
 assert.equal(pkg.scripts['db:migrate'],'node scripts/migrate-remote.mjs','remote migrations must go through guarded reconciler');
+assert.ok(String(pkg.scripts.deploy||'').includes('npm run db:migrate'),'production deploy must keep the guarded remote migration step');
 assert.ok(script.includes("process.env.WORKERS_CI_BRANCH"),'Workers Builds branch must be inspected');
 assert.ok(script.includes("process.env.WORKERS_CI"),'Workers Builds execution must be detected');
 assert.ok(script.includes("branch!==productionBranch"),'non-production branches must skip remote D1 migrations');
