@@ -12,6 +12,8 @@ assert.match(backup,/integrity:\{version:1,json:'sha256',files:'r2-etag-size'\}/
 assert.match(backup,/data\/__users\.json/,'full user-account snapshot must use a reserved object path that cannot collide with tenant_users resource export');
 assert.doesNotMatch(backup,/usersKey=`\$\{prefix\}\/data\/tenant_users\.json`/,'user snapshot must never reuse the tenant_users resource object');
 assert.match(backup,/BACKUP_RESERVED_RESOURCE_KEY/,'the reserved user snapshot resource key must be protected against future config collisions');
+assert.match(backup,/sqlite_master WHERE type='table' AND name='tenant_users'/,'tenant user fallback must first prove whether the modern tenant_users table exists');
+assert.doesNotMatch(backup,/try\{const rows=await env\.DB\.prepare\(`SELECT DISTINCT u\.id[\s\S]*?catch\{const rows=await env\.DB\.prepare\(`SELECT DISTINCT u\.id/,'a transient tenant_users query failure must never silently downgrade the backup to membership-only users');
 assert.match(backup,/sha256:await sha256Text\(usersJson\)/,'user snapshot must be hashed');
 assert.match(backup,/sha256:await sha256Text\(json\)/,'every JSON resource snapshot must be hashed');
 assert.match(backup,/etag:copy\.etag/,'backed-up files must persist their R2 etag');
@@ -41,4 +43,4 @@ assert.match(manifestTypes,/integrity\?: \{ version:1; json:'sha256'; files:'r2-
 assert.match(manifestTypes,/sha256\?: string/,'manifest JSON snapshots must support hashes');
 assert.match(manifestTypes,/etag\?: string/,'manifest files must support etags');
 
-console.log('Backup SHA-256, row-count, size, etag, object-path collision, race-safe schema and strong-readiness checks: OK');
+console.log('Backup SHA-256, row-count, size, etag, object-path collision, fail-closed user snapshot, race-safe schema and strong-readiness checks: OK');
