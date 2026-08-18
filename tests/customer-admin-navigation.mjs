@@ -37,8 +37,8 @@ assert.match(ui,/aria-controls/,'secondary navigation toggle must be accessible'
 assert.match(ui,/extraActive\|\|storedOpen/,'an active secondary section must remain visible');
 assert.match(ui,/button\.parentElement!==primary/,'existing navigation buttons must be moved rather than recreated so their handlers survive');
 assert.ok(html.includes('/customer-compact.css?v=20260818-2'),'customer layout CSS cache key must be bumped');
-assert.ok(html.includes('/customer-admin-ui.js?v=20260818-2'),'customer navigation JS cache key must be bumped');
+assert.ok(html.includes('/customer-admin-ui.js?v=20260818-3'),'customer navigation JS cache key must reflect the final navigation implementation');
 assert.ok(html.includes('/customer-admin-nav-labels.js?v=20260818-1'),'clarified navigation label asset must be loaded');
-assert.ok(html.includes('/vfa13-reference.css?v=20260818-2'),'later customer theme cache key must be bumped');
+assert.ok(html.includes('/vfa13-reference.css?v=20260818-3'),'later customer theme cache key must reflect the final non-sticky theme');
 
 console.log('Customer admin navigation and non-overlap checks: OK');
