@@ -55,14 +55,16 @@ export interface BackupManifest {
   tenantId: string;
   createdAt: string;
   reason: 'manual' | 'pre_restore' | 'contract_end' | 'automatic';
-  resources: Array<{ key: string; objectKey: string; rowCount: number }>;
-  users?: { objectKey: string; rowCount: number };
+  integrity?: { version:1; json:'sha256'; files:'r2-etag-size' };
+  resources: Array<{ key: string; objectKey: string; rowCount: number; sha256?: string }>;
+  users?: { objectKey: string; rowCount: number; sha256?: string };
   files: Array<{
     id: string;
     originalKey: string;
     backupKey: string;
     originalName: string;
     size: number;
+    etag?: string;
     contentType?: string;
     uploadedBy?: string;
     createdAt?: string;
