@@ -12,6 +12,7 @@ const xlsx=await readFile('src/portability/xlsx.ts','utf8');
 const targeting=await readFile('src/core/participant-hierarchy-targeting.ts','utf8');
 const participant=await readFile('src/core/participant-document-import.ts','utf8');
 const readiness=await readFile('src/core/launch-readiness.ts','utf8');
+const auth=await readFile('src/core/auth.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
 
 assert.match(residency,/eu_strict/);
@@ -21,6 +22,7 @@ assert.match(residency,/MAIL_PROVIDER/,'EU mail provider choice must be explicit
 assert.match(residency,/explicitEuMail/,'EU strict must fail closed unless Brevo is explicitly selected');
 assert.match(residency,/EU_STRICT_MAIL_PROVIDER_REQUIRED/,'EU strict mail must fail closed');
 assert.match(mail,/api\.brevo\.com\/v3\/smtp\/email/);
+assert.match(mail,/Idempotency-Key/);
 assert.match(mail,/assertEuSafeMail/);
 assert.match(inbound,/BREVO_INBOUND_WEBHOOK_TOKEN/);
 assert.match(inbound,/authorization/);
@@ -35,6 +37,11 @@ assert.match(intakeRouter,/\/api\/inbound\/brevo/);
 assert.match(intakeRouter,/RESEND_DISABLED_IN_EU_STRICT/);
 assert.match(intakePage,/intake-public-upload\.js/);
 assert.match(intakeJs,/credentials:'omit'/,'anonymous submit-only upload must not send existing portal cookies');
+assert.match(auth,/ADMIN_SESSION_HOURS=12/,'privileged local admin sessions must have a short absolute lifetime');
+assert.match(auth,/ADMIN_IDLE_MINUTES=60/,'privileged local admin sessions must expire after inactivity');
+assert.match(auth,/privilegedSession\(me\)/,'session lifetime and idle enforcement must include tenant/class administrators');
+assert.match(auth,/MFA_ENROLLMENT_REQUIRED/,'local password admins must be forced to enrol MFA');
+assert.match(auth,/MFA_REQUIRED/,'local password admins must use an MFA-authenticated session');
 assert.doesNotMatch(index,/script-src 'self' 'unsafe-inline'/,'production CSP must not allow inline JavaScript');
 assert.match(index,/script-src 'self'/);
 assert.match(index,/upgrade-insecure-requests/);
@@ -58,4 +65,4 @@ assert.match(readiness,/EU-Datenhaltung nicht bestätigt/);
 assert.match(readiness,/EU Customer Metadata Boundary/);
 for(const table of ['certificate_templates','certificate_records','certificate_events','workflow_rules','workflow_runs'])assert.ok(readiness.includes(table),`live gate must require ${table}`);
 
-console.log('EU-first residency, Brevo intake, hierarchy targeting, strict CSP, workflow schema and upload hardening checks: OK');
+console.log('EU-first residency, privileged sessions, Brevo intake, hierarchy targeting, strict CSP, workflow schema and upload hardening checks: OK');
