@@ -1,7 +1,42 @@
-/* Admin dialogs must always sit above page navigation without escaping the viewport. */
-.modal-back,.class-admin-modal-back,.kp-modal-back{z-index:1000!important;box-sizing:border-box;padding:16px;overflow:auto;overscroll-behavior:contain}
-.modal,.class-admin-modal,.kp-modal{box-sizing:border-box;max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain}
+/* Admin dialogs must fully cover page chrome and remain inside the viewport. */
+.modal-back,.class-admin-modal-back,.kp-modal-back{
+  position:fixed!important;
+  inset:0!important;
+  top:0!important;right:0!important;bottom:0!important;left:0!important;
+  width:100vw!important;
+  height:100dvh!important;
+  min-height:100dvh!important;
+  margin:0!important;
+  box-sizing:border-box!important;
+  padding:16px!important;
+  overflow:auto!important;
+  overscroll-behavior:contain!important;
+  z-index:2147483000!important;
+  isolation:isolate!important;
+  background:rgba(15,23,42,.62)!important;
+  display:grid!important;
+  place-items:center!important;
+}
+.modal,.class-admin-modal,.kp-modal{
+  position:relative!important;
+  z-index:2147483001!important;
+  box-sizing:border-box!important;
+  width:min(920px,100%)!important;
+  max-width:100%!important;
+  max-height:calc(100dvh - 32px)!important;
+  overflow:auto!important;
+  overscroll-behavior:contain!important;
+}
+body.kp-admin-modal-open{overflow:hidden!important}
+body.kp-admin-modal-open .side,
+body.kp-admin-modal-open .portal-header,
+body.kp-admin-modal-open .class-admin-head{z-index:0!important}
 .modal form,.class-admin-modal form,.kp-modal form{min-width:0}
 .modal .row,.class-admin-modal .row,.kp-modal .row{min-width:0}
 .modal input,.modal select,.modal textarea,.class-admin-modal input,.class-admin-modal select,.class-admin-modal textarea,.kp-modal input,.kp-modal select,.kp-modal textarea{max-width:100%;box-sizing:border-box}
-@media(max-width:680px){.modal-back,.class-admin-modal-back,.kp-modal-back{padding:8px;align-items:flex-start}.modal,.class-admin-modal,.kp-modal{width:min(100%,720px)!important;max-height:calc(100dvh - 16px);margin:0!important;border-radius:14px!important;padding:16px!important}.modal .row,.class-admin-modal .row,.kp-modal .row{grid-template-columns:1fr!important;display:grid!important}.modal .toolbar,.class-admin-modal .toolbar,.kp-modal .toolbar{flex-wrap:wrap}}
+@media(max-width:680px){
+  .modal-back,.class-admin-modal-back,.kp-modal-back{padding:8px!important;align-items:flex-start!important}
+  .modal,.class-admin-modal,.kp-modal{width:100%!important;max-height:calc(100dvh - 16px)!important;margin:0!important;border-radius:14px!important;padding:16px!important}
+  .modal .row,.class-admin-modal .row,.kp-modal .row{grid-template-columns:1fr!important;display:grid!important}
+  .modal .toolbar,.class-admin-modal .toolbar,.kp-modal .toolbar{flex-wrap:wrap!important}
+}
