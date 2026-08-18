@@ -26,6 +26,8 @@ import { cleanupIntake } from './core/intake-center.js';
 import { handlePublicIntakeRoute } from './core/intake-router.js';
 import { handleCommunicationsApi } from './core/communications-router.js';
 import { runCommunicationAutomation } from './core/secure-communications.js';
+import { handleAttendanceApi } from './core/attendance-router.js';
+import { runAttendanceAttention } from './core/attendance-classbook.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
@@ -83,6 +85,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   const lifecycle=await handleBillingLifecycleApi(request,env);if(lifecycle)return lifecycle;
   const payment=await handlePaymentApi(request,env);if(payment)return payment;
   const communications=await handleCommunicationsApi(request,env);if(communications)return communications;
+  const attendance=await handleAttendanceApi(request,env);if(attendance)return attendance;
 
   const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);if(onboardingPost){const payload=await request.clone().json().catch(()=>({})) as Record<string,unknown>;if(String(payload.commercial_action||'trial')==='book'&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);}
   const tenantId=url.searchParams.get('tenant_id'),mutating=request.method!=='GET'&&request.method!=='HEAD',exemptMutation=url.pathname==='/api/timetable/preview'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/onboarding/')||url.pathname.startsWith('/api/platform/');if(tenantId&&mutating&&!exemptMutation){try{await assertPaymentWriteAccess(env,tenantId);}catch(e){return accessError(e);}}
@@ -97,6 +100,7 @@ export default{
   async fetch(request:Request,env:Env):Promise<Response>{try{return harden(await routeRequest(request,env));}catch(error){console.error('Unhandled request error',{path:new URL(request.url).pathname,error:String((error as Error)?.message||error)});return harden(jsonError('INTERNAL_ERROR',500));}},
   async scheduled(controller:{cron?:string},env:Env):Promise<void>{
     await runCommunicationAutomation(env).catch(e=>console.error('Communication automation failed',{error:String((e as Error)?.message||e)}));
+    await runAttendanceAttention(env).catch(e=>console.error('Attendance attention automation failed',{error:String((e as Error)?.message||e)}));
     if(controller?.cron==='*/5 * * * *')return;
     await refreshTrialStates(env);await processScheduledModuleCancellations(env,25);await ensureCustomDomainGuards(env).catch(()=>undefined);await reconcilePendingCustomDomains(env,25).catch(e=>console.error('Custom domain reconciliation failed',{error:String((e as Error)?.message||e)}));await runScheduledTenantBackups(env,portabilityConfig,'system:backup',3);await verifyPendingBackups(env,2).catch(e=>console.error('Backup verification failed',{error:String((e as Error)?.message||e)}));await cleanupAccountActions(env).catch(()=>undefined);await cleanupOidcStates(env).catch(()=>undefined);await cleanupIntake(env).catch(e=>console.error('Intake cleanup failed',{error:String((e as Error)?.message||e)}));
     const now=new Date(),nowIso=now.toISOString();await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(nowIso).run();await env.DB.prepare('DELETE FROM platform_mfa_challenges WHERE expires_at <= ?').bind(nowIso).run().catch(()=>undefined);await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(nowIso).run();await env.DB.prepare('DELETE FROM login_attempts WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run();await env.DB.prepare('DELETE FROM legal_content_report_limits WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run().catch(()=>undefined);await env.DB.prepare('DELETE FROM integration_rate_limits WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run().catch(()=>undefined);await env.DB.prepare("UPDATE org_import_batches SET status='expired' WHERE status='previewed' AND expires_at<=?").bind(nowIso).run().catch(()=>undefined);await env.DB.prepare("DELETE FROM participant_import_batches WHERE (status='preview' AND expires_at<=?) OR (status IN ('applied','cancelled','expired') AND COALESCE(applied_at,created_at)<=?)").bind(nowIso,new Date(now.getTime()-90*86400000).toISOString()).run().catch(()=>undefined);
