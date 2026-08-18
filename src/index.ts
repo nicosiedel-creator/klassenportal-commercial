@@ -4,6 +4,7 @@ import { serveTenantLogo } from './core/branding.js';
 import { refreshTrialStates } from './core/commerce-offers.js';
 import { assertPaymentWriteAccess } from './core/payment-access.js';
 import { augmentPaidOnboardingResponse, handlePaymentApi } from './core/payment-router.js';
+import { handleModulePreferencesApi } from './core/modules.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
@@ -51,6 +52,7 @@ export default {
       try{await assertPaymentWriteAccess(env,tenantId);}catch(e){return accessError(e);}
     }
 
+    const modules=await handleModulePreferencesApi(request,env);if(modules)return modules;
     const portability = await handlePortabilityRequest(request, env, portabilityConfig, (r) => resolvePortabilityAuth(env, r));
     if (portability) return portability;
     const api = await handleCoreApi(request, env);
