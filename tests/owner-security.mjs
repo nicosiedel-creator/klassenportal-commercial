@@ -20,6 +20,7 @@ assert.match(auth,/mfaRequired:true/,'login must return an MFA challenge instead
 assert.match(auth,/MFA_ENROLLMENT_REQUIRED/,'local administrative accounts must fail closed until MFA is enrolled');
 assert.match(auth,/session\.authMethod==='oidc'/,'SSO sessions may rely on the customer identity-provider policy instead of local password MFA');
 assert.match(auth,/session\.authMethod!=='mfa'/,'local administrative sessions must be MFA-authenticated');
+assert.match(auth,/PLATFORM_ORIGIN_MISMATCH/,'platform-admin sessions must be bound to the configured platform origin');
 assert.match(mfa,/AES-GCM/,'TOTP seed must be encrypted at rest');
 assert.match(mfa,/OWNER_MFA_ENCRYPTION_KEY/,'MFA encryption must use a dedicated server secret');
 assert.match(mfa,/TOTP_STEP=30/,'TOTP must use a 30 second step');
@@ -29,7 +30,7 @@ assert.match(mfa,/used_at IS NULL/,'recovery codes must be single-use');
 assert.match(router,/\/api\/auth\/mfa\/verify/,'MFA verification endpoint must be routed before generic auth');
 assert.match(router,/\/api\/auth\/mfa\/setup/,'administrative users need a self-service MFA enrollment route');
 assert.match(router,/verifyPassword/,'password-based MFA enrollment must reauthenticate with the current password');
-assert.match(router,/issueSession\(env,userId,!!user\.is_platform_admin,'mfa'\)/,'successful MFA must mark the new session as MFA-authenticated');
+assert.match(router,/issueSession\(env,userId,!!user\.is_platform_admin,'mfa',undefined,request\)/,'successful MFA must mark the new session as MFA-authenticated and bind platform sessions to the request origin');
 assert.match(index,/handleOwnerSecurityApi/,'owner security router must be wired into the worker');
 assert.match(mfaUi,/challenge_token/,'login UI must complete the MFA challenge before normal app startup');
 assert.match(mfaUi,/requested==='\/plattform-admin'&&!user\?\.isPlatformAdmin/,'non-platform users must not be redirected into platform admin');
@@ -54,4 +55,4 @@ assert.match(cockpit,/confirm_name/,'tenant deletion must require exact tenant-n
 assert.match(ui,/14-tägigen Schutzfrist/,'owner UI must explain the protected deletion grace period');
 assert.match(ui,/System & Sicherheit/,'owner cockpit must be visible only inside platform admin');
 
-console.log('Owner/admin MFA, cockpit and direct-platform-login regression tests: OK');
+console.log('Owner/admin MFA, cockpit, platform-origin binding and direct-platform-login regression tests: OK');
