@@ -4,12 +4,18 @@ import { productionReleaseAccess, requestLooksLikePreview, requestLooksLikeRemot
 
 const wrangler=JSON.parse(await readFile('wrangler.jsonc','utf8'));
 const source=await readFile('src/core/production-release-state.ts','utf8');
+const auth=await readFile('src/core/auth.ts','utf8');
+const ownerSecurity=await readFile('src/core/owner-security-router.ts','utf8');
 assert.equal(wrangler.preview_urls,false,'public version/branch preview URLs must remain disabled');
 assert.ok(source.includes(`WORKER_SERVICE_NAME='${wrangler.name}'`),'runtime preview detection must stay bound to the configured Worker name');
 assert.match(source,/custom_domain_requests/,'release gate must verify customer custom domains');
 assert.match(source,/tenant_settings/,'verified custom domain must also be bound in tenant settings');
 assert.match(source,/hostname_status='active'/,'custom domain hostname must be provider-active');
 assert.match(source,/ssl_status='active'/,'custom domain TLS must be provider-active');
+assert.match(auth,/if\(platform&&!platformOriginAllowed\(env,request\)\)throw new Error\('PLATFORM_ORIGIN_MISMATCH'\)/,'platform session issuance must fail closed on the wrong origin');
+assert.match(auth,/u\.is_platform_admin&&!platformOriginAllowed\(env,request\)/,'password login must reject platform admin on non-APP_ORIGIN hosts');
+assert.match(auth,/me\.isPlatformAdmin&&!platformOriginAllowed\(env,request\)/,'existing platform sessions must be revoked on non-APP_ORIGIN hosts');
+assert.match(ownerSecurity,/issueSession\(env,userId,!!user\.is_platform_admin,'mfa',undefined,request\)/,'MFA session issuance must pass the request origin into the platform-session guard');
 
 const base='https://klassenportal-commercial.nicosiedel.workers.dev/';
 const versionPreview='https://50c9593e-klassenportal-commercial.nicosiedel.workers.dev/';
@@ -71,4 +77,4 @@ const brokenDomainEnv={...productionEnv,DB:brokenDomainDb};
 const failClosed=await productionReleaseAccess(brokenDomainEnv,new Request(customer));
 assert.equal(failClosed.allowed,false,'custom-domain verification failure must fail closed');
 
-console.log('Preview URLs disabled, base workers.dev locked, verified customer domains allowed, unknown hosts fail closed: OK');
+console.log('Preview isolation, verified customer domains and platform-admin origin binding: OK');
