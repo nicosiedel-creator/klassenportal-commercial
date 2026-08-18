@@ -2,8 +2,9 @@ import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { assertSameOrigin, json } from './utils.js';
-import { addQuestion, advancedGradebook, bulkGrade, cloneCourseTemplate, createQuestionBank, createQuiz, getQuizAttempt, listCourseTemplates, listQuizzes, manualGradeQuizAttempt, publishQuiz, saveCourseTemplate, saveGradebookCategory, saveGradingScale, saveQuizAnswer, startQuizAttempt, submitQuizAttempt } from './learning-suite.js';
-import { listBankQuestions, listQuestionBanks, listQuizAttemptsAdmin, officialGradeCsv, officialGradeReport, setGradebookItemPolicy } from './learning-suite-management.js';
+import { addQuestion, bulkGrade, cloneCourseTemplate, createQuestionBank, createQuiz, getQuizAttempt, listCourseTemplates, listQuizzes, manualGradeQuizAttempt, publishQuiz, saveCourseTemplate, saveQuizAnswer, startQuizAttempt, submitQuizAttempt } from './learning-suite.js';
+import { listBankQuestions, listQuestionBanks, listQuizAttemptsAdmin, setGradebookItemPolicy } from './learning-suite-management.js';
+import { safeAdvancedGradebook, safeOfficialGradeCsv, safeOfficialGradeReport, safeSaveGradebookCategory, safeSaveGradingScale } from './gradebook-correctness.js';
 
 async function body(r:Request):Promise<Record<string,unknown>>{try{return await r.json() as Record<string,unknown>;}catch{return{};}}
 function fail(e:unknown){const code=String((e as Error)?.message||'LEARNING_SUITE_ERROR');const status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.endsWith('_REQUIRED')?403:code.includes('NOT_FOUND')||code.includes('NOT_AVAILABLE')?404:code.includes('LOCKED')||code.includes('EXHAUSTED')||code.includes('CLOSED')||code.includes('EXPIRED')||code.includes('LIMIT_REACHED')?409:400;return json({ok:false,error:code},status);}
@@ -12,11 +13,11 @@ export async function handleLearningSuiteApi(request:Request,env:Env):Promise<Re
   const u=new URL(request.url),p=u.pathname;if(!p.startsWith('/api/learning-suite'))return null;
   try{
     assertSameOrigin(request,env.APP_ORIGIN);const tenantId=u.searchParams.get('tenant_id')||'',courseId=u.searchParams.get('course_id')||'';if(!tenantId)throw new Error('TENANT_REQUIRED');const auth=await resolveCoreAuth(env,request,tenantId,courseId||undefined);const write=!['GET','HEAD'].includes(request.method);if(write)await assertTenantWriteAllowed(env,tenantId);
-    if(p==='/api/learning-suite/gradebook'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,...await advancedGradebook(env,auth,tenantId,courseId)});}
-    if(p==='/api/learning-suite/gradebook/report'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,...await officialGradeReport(env,auth,tenantId,courseId)});}
-    if(p==='/api/learning-suite/gradebook/export.csv'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_REQUIRED');return new Response(await officialGradeCsv(env,auth,tenantId,courseId),{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="leistungsuebersicht.csv"','cache-control':'no-store'}});}
-    if(p==='/api/learning-suite/gradebook/categories'&&request.method==='PUT'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,category:await saveGradebookCategory(env,auth,tenantId,courseId,await body(request))});}
-    if(p==='/api/learning-suite/gradebook/scales'&&request.method==='PUT'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,...await saveGradingScale(env,auth,tenantId,courseId,await body(request))});}
+    if(p==='/api/learning-suite/gradebook'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,...await safeAdvancedGradebook(env,auth,tenantId,courseId)});}
+    if(p==='/api/learning-suite/gradebook/report'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,...await safeOfficialGradeReport(env,auth,tenantId,courseId)});}
+    if(p==='/api/learning-suite/gradebook/export.csv'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_REQUIRED');return new Response(await safeOfficialGradeCsv(env,auth,tenantId,courseId),{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="leistungsuebersicht.csv"','cache-control':'no-store'}});}
+    if(p==='/api/learning-suite/gradebook/categories'&&request.method==='PUT'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,category:await safeSaveGradebookCategory(env,auth,tenantId,courseId,await body(request))});}
+    if(p==='/api/learning-suite/gradebook/scales'&&request.method==='PUT'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,...await safeSaveGradingScale(env,auth,tenantId,courseId,await body(request))});}
     if(p==='/api/learning-suite/gradebook/bulk'&&request.method==='POST'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,...await bulkGrade(env,auth,tenantId,courseId,await body(request))});}
     const itemPolicy=p.match(/^\/api\/learning-suite\/gradebook\/items\/([^/]+)$/);if(itemPolicy&&request.method==='PUT'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,...await setGradebookItemPolicy(env,auth,tenantId,courseId,decodeURIComponent(itemPolicy[1]),await body(request))});}
     if(p==='/api/learning-suite/question-banks'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,banks:await listQuestionBanks(env,auth,tenantId,courseId)});}
