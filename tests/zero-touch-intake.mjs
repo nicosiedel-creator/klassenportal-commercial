@@ -9,6 +9,7 @@ const router=await readFile('src/core/intake-router.ts','utf8');
 const enterprise=await readFile('src/core/enterprise-router.ts','utf8');
 const participant=await readFile('src/core/participant-document-import.ts','utf8');
 const ui=await readFile('public/intake-center-ui.js','utf8');
+const quickUi=await readFile('public/intake-quick-upload-ui.js','utf8');
 const customerHtml=await readFile('public/customer-admin.html','utf8');
 const readiness=await readFile('src/core/launch-readiness.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
@@ -66,11 +67,18 @@ assert.match(router,/RATE_LIMITED.*429/s,'intake throttle must return HTTP 429')
 assert.match(index,/handlePublicIntakeRoute/);assert.match(index,/cleanupIntake/);
 assert.ok(wrangler.includes('"/eingang/*"'),'secure submit-only page must always run through the Worker');
 assert.match(customerHtml,/intake-center-ui\.js/,'customer admin must load intake cockpit');
+assert.match(customerHtml,/intake-quick-upload-ui\.js/,'customer admin must load one-click internal intake upload');
 for(const marker of ['Heute braucht Deine Aufmerksamkeit','Einfach per E-Mail einreichen','Verkäufer / Sekretariat freigeben','Sicherer Upload-Link','Sichere Automatik'])assert.ok(ui.includes(marker),`intake cockpit missing ${marker}`);
 assert.match(ui,/vendor\/pdfjs\/pdf\.mjs/,'reviewer must be able to extract email PDFs locally in the browser');
 assert.match(ui,/Markierte übernehmen & automatisch einladen/);
+assert.match(quickUi,/Unterlagen jetzt einwerfen/,'customer admin must expose a direct intake action');
+assert.match(quickUi,/valid_days:1,max_uploads:1/,'internal quick upload must use a short-lived one-use submit token');
+assert.match(quickUi,/api\/intake\/upload/,'internal quick upload must reuse the hardened submit-only intake route');
+assert.match(quickUi,/vendor\/pdfjs\/pdf\.mjs/,'internal quick PDF upload must perform local text extraction');
+assert.match(quickUi,/files\.length>100/,'internal quick upload must enforce the same batch file bound client-side');
+assert.match(quickUi,/50\*1024\*1024/,'internal quick upload must enforce the same batch size bound client-side');
 
 for(const table of ['tenant_intake_settings','intake_channels','intake_upload_links','intake_batches','intake_documents','automation_tasks'])assert.ok(readiness.includes(`'${table}'`),`live readiness must require ${table}`);
 assert.match(readiness,/INBOUND_MAIL_DOMAIN/);assert.match(readiness,/RESEND_WEBHOOK_SECRET/);
 
-console.log('Zero-touch contract/email intake, safe automation, submit-only upload and attention cockpit checks: OK');
+console.log('Zero-touch contract/email intake, one-click internal upload, safe automation, submit-only upload and attention cockpit checks: OK');
