@@ -34,6 +34,7 @@ const customerHtml=await readFile('public/customer-admin.html','utf8'),classHtml
 for(const html of [customerHtml,classHtml]){
   assert.ok(html.includes('/gradebook-policy-ui.js?v=20260818-2'),'admin surface must load the final gradebook validation UI');
   assert.ok(html.includes('/gradebook-default-scale-ui.js?v=20260818-1'),'admin surface must upgrade the incomplete legacy scale example');
-  assert.ok(html.includes('/admin-overlay-hardening.css?v=20260818-1'),'gradebook integration must preserve hardened admin dialog/overlay behavior');
+  assert.ok(html.includes('/admin-overlay-hardening.css?v=20260818-2'),'gradebook integration must preserve viewport-wide hardened admin dialog/overlay behavior');
+  assert.ok(html.includes('/admin-overlay-hardening.js?v=20260818-2'),'gradebook integration must preserve the DOM overlay guard');
 }
 console.log('Official gradebook weighting, category totals, deterministic grading-scale, CSV safety, overlay integration and repairable UI checks: OK');
