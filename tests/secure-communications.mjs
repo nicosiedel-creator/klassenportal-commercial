@@ -66,6 +66,8 @@ assert.match(router,/assertSameOrigin/);assert.match(router,/assertTenantWriteAl
 for(const marker of ['Meldungen & Zielgruppen','Einzelne Teilnehmer','Pflichtbestätigung verlangen','Standorte/Bereiche','Klassen/Kurse','Zusätzlich als persönliche E-Mail senden'])assert.ok(adminUi.includes(marker),`admin communication UX missing ${marker}`);
 assert.match(adminUi,/multiple size="6"/,'audience selectors must support multiple recipients');
 assert.match(adminUi,/type:'user'/,'admin UI must submit explicit individual participant targets');
+assert.match(adminUi,/String\(x\.role\)==='participant'/,'personal recipient picker must show real participants only');
+assert.doesNotMatch(adminUi,/\['participant','guest'\]/,'guest accounts must never be offered as personal communication recipients');
 assert.match(adminUi,/Kein CC\/BCC/,'bulk email UX must explicitly describe private individual delivery');
 assert.match(participantUi,/Für Dich/);assert.match(participantUi,/Gelesen & verbindlich bestätigen/);assert.match(participantUi,/Nur für die festgelegten Empfänger/);
 assert.match(participantUi,/api\/communications\/my/);
