@@ -3,6 +3,7 @@ import { resolveCoreAuth } from './auth.js';
 import { assertSameOrigin } from './utils.js';
 import { ensureOfferSchema } from './offer-schema.js';
 import { acceptPublicOffer, cancelPlatformOffer, createPlatformOffer, getPlatformOffer, listPlatformOffers, platformOfferMeta, previewPlatformOffer, publicOffer } from './platform-offers.js';
+import { platformOfferAdminPreview } from './platform-offer-admin-preview.js';
 import { publishOrRotatePlatformOffer } from './platform-offer-links.js';
 import { reissueAcceptedOfferOnboarding } from './platform-offer-onboarding.js';
 import { emailPlatformOffer } from './platform-offer-mail.js';
@@ -43,6 +44,7 @@ export async function handlePlatformOfferApi(request:Request,env:Env):Promise<Re
     const publish=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/publish$/);if(publish&&request.method==='POST')return out({ok:true,...await publishOrRotatePlatformOffer(env,auth,decodeURIComponent(publish[1]),request)});
     const email=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/email$/);if(email&&request.method==='POST')return out({ok:true,...await emailPlatformOffer(env,auth,decodeURIComponent(email[1]),request)});
     const onboarding=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/onboarding-link$/);if(onboarding&&request.method==='POST')return out({ok:true,...await reissueAcceptedOfferOnboarding(env,auth,decodeURIComponent(onboarding[1]),request)});
+    const adminPreview=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/admin-preview$/);if(adminPreview&&request.method==='GET')return out({ok:true,...await platformOfferAdminPreview(env,auth,decodeURIComponent(adminPreview[1]))});
     const cancel=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/cancel$/);if(cancel&&request.method==='POST'){await cancelPlatformOffer(env,auth,decodeURIComponent(cancel[1]));return out({ok:true});}
     const detail=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)$/);if(detail&&request.method==='GET')return out({ok:true,offer:await getPlatformOffer(env,auth,decodeURIComponent(detail[1]))});
     return out({ok:false,error:'NOT_FOUND'},404);

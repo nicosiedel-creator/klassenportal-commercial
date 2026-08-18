@@ -4,11 +4,14 @@ import { readFile } from 'node:fs/promises';
 const offers=await readFile('src/core/platform-offers.ts','utf8');
 const offerLinks=await readFile('src/core/platform-offer-links.ts','utf8');
 const offerRouter=await readFile('src/core/platform-offer-router.ts','utf8');
+const offerAdminPreview=await readFile('src/core/platform-offer-admin-preview.ts','utf8');
 const offerSchema=await readFile('src/core/offer-schema.ts','utf8');
 const accepted=await readFile('src/core/accepted-offer-fulfillment.ts','utf8');
 const onboarding=await readFile('src/core/onboarding.ts','utf8');
 const onboardingUi=await readFile('public/onboarding.js','utf8');
 const ownerUi=await readFile('public/platform-offers-ui.js','utf8');
+const adminPreviewUi=await readFile('public/platform-offer-admin-preview-ui.js','utf8');
+const platformLoginUi=await readFile('public/platform-direct-login.js','utf8');
 const publicUi=await readFile('public/angebot.js','utf8');
 const stripe=await readFile('src/core/stripe-tax-billing.ts','utf8');
 const migration=await readFile('migrations/0045_platform_offers.sql','utf8');
@@ -29,6 +32,9 @@ assert.match(offers,/sha256Text\(raw\)/,'public offer tokens must be stored as h
 assert.match(offerLinks,/publicLegal\(env\)/,'publishing must require the integrated legal documents');
 assert.match(offerLinks,/public_token_hash/,'rotating an offer link must replace the stored hash');
 assert.match(offerRouter,/ensureOfferSchema\(env\)/,'offer API must self-heal a lagging D1 offer schema');
+assert.match(offerRouter,/admin-preview/,'offer API must expose an authenticated admin preview route');
+assert.match(offerAdminPreview,/getPlatformOffer\(env,auth,quoteId\)/,'admin preview must require the existing platform-admin authorization path');
+assert.doesNotMatch(offerAdminPreview,/public_token_hash|publicUrl|sha256Text/,'admin preview must never expose or regenerate the public offer secret');
 assert.match(offerSchema,/PRAGMA table_info\(\$\{table\}\)/,'offer schema guard must verify real columns before adding them');
 
 assert.match(accepted,/createPaidBookingFromAcceptedOffer/,'accepted custom offers must have a dedicated fulfillment path');
@@ -50,6 +56,11 @@ assert.match(stripe,/MANUAL_OFFER_PRICE_INVALID/,'invalid custom Stripe prices m
 assert.doesNotMatch(stripe,/payment_method_types/,'payment methods must not be hardcoded');
 
 for(const marker of ['Individueller Monatspreis','Rabatt auf laufenden Preis','Kostenloser Pilot / Testbetrieb','Als Entwurf speichern','Angebot erstellen & freigeben'])assert.ok(ownerUi.includes(marker),`owner offer UI missing: ${marker}`);
+assert.match(adminPreviewUi,/admin_offer/,'offer detail PDF action must open the authenticated admin preview');
+assert.match(platformLoginUi,/platform-offer-admin-preview-ui\.js/,'platform admin must load the secure offer preview helper');
+assert.match(publicUi,/adminOffer/,'offer view must recognize authenticated admin previews');
+assert.match(publicUi,/adminPreview=!!data\.adminPreview/,'admin preview must render in explicit read-only mode');
+assert.match(publicUi,/Interne schreibgeschützte Admin-Ansicht/,'admin preview must clearly identify itself as read-only');
 assert.match(publicUi,/keine automatische Umwandlung in ein kostenpflichtiges Abonnement/,'public pilot offer must clearly exclude auto conversion');
 assert.match(publicUi,/confirm_terms/,'public acceptance must affirmatively incorporate AGB');
 assert.match(publicUi,/confirm_dpa/,'public acceptance must affirmatively incorporate AVV');
