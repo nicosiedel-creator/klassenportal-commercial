@@ -6,6 +6,9 @@ on:
         description: Preview/production base URL to verify
         required: true
         default: https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev
+  push:
+    branches:
+      - block3-onboarding-managed-setup
 permissions:
   contents: write
 jobs:
@@ -20,13 +23,14 @@ jobs:
         run: |
           node scripts/portal-ux-check.mjs
           node scripts/release-check.mjs
-      - name: Verify deployed portal/branding schema
+      - name: Verify exact deployed Worker and portal/branding schema
         env:
-          BASE: ${{ inputs.base_url }}
+          BASE: ${{ inputs.base_url || 'https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev' }}
         run: |
           set -euo pipefail
           ok=0
           for i in $(seq 1 36); do
+            build_meta=$(curl -fsS --max-time 12 "$BASE/build-meta.json?sha=$GITHUB_SHA" || true)
             css=$(curl -fsS --max-time 12 "$BASE/vfa13-refinement.css?sha=$GITHUB_SHA" || true)
             theme=$(curl -fsS --max-time 12 "$BASE/branding-theme.css?sha=$GITHUB_SHA" || true)
             js=$(curl -fsS --max-time 12 "$BASE/vfa13-refinement.js?sha=$GITHUB_SHA" || true)
@@ -35,7 +39,12 @@ jobs:
             portal=$(curl -fsS --max-time 12 "$BASE/portal/bildungszentrum-spreeblick-demo/fisi-26-1?sha=$GITHUB_SHA" || true)
             portal_meta=$(curl -fsS --max-time 12 "$BASE/public/bildungszentrum-spreeblick-demo/fisi-26-1/meta?sha=$GITHUB_SHA" || true)
             customer=$(curl -fsS --max-time 12 "$BASE/kunden-admin?sha=$GITHUB_SHA" || true)
-            if grep -q -- '--kp-content-max:1320px' <<<"$css" \
+            exact_sha=0
+            if jq -e --arg sha "$GITHUB_SHA" '.commit == $sha' <<<"$build_meta" >/dev/null 2>&1; then
+              exact_sha=1
+            fi
+            if test "$exact_sha" = 1 \
+              && grep -q -- '--kp-content-max:1320px' <<<"$css" \
               && grep -Fq '.portal-header-actions>a.portal-btn.secondary{visibility:hidden!important}' <<<"$css" \
               && grep -q -- '--portal-surface' <<<"$theme" \
               && grep -q -- '--portal-bg,#ece8df' <<<"$theme" \
