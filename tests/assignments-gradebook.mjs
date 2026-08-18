@@ -28,7 +28,7 @@ assert.match(core,/allow_resubmission/,'resubmission policy required');
 assert.match(core,/ASSIGNMENT_DEADLINE_PASSED/,'deadline policy required');
 assert.match(router,/assertTenantWriteAllowed/,'commercial read-only/payment lock must apply to assignment writes');
 assert.match(router,/\/api\/gradebook\/my/,'private participant gradebook endpoint required');
-assert.match(router,/\/api\/assignments\/files/,'authenticated file download endpoint required');
+assert.ok(router.includes('api\\/assignments\\/files')||router.includes('/api/assignments/files'),'authenticated file download endpoint required');
 assert.match(attendanceRouter,/handleAssignmentsApi/,'assignment router must be reachable before core API fallback');
 assert.match(participantUi,/Veröffentlichte Bewertungen/);
 assert.match(participantUi,/Verbindlich einreichen/);
