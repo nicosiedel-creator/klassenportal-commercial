@@ -42,6 +42,7 @@ if(PLATFORM_DIRECT_PATH){
       import('/platform-admin-ui.js?v=20260816-14'),
       import('/platform-owner-ui.js?v=20260816-14'),
       import('/platform-offers-ui.js?v=20260817-2'),
+      import('/platform-offer-admin-preview-ui.js?v=20260818-1'),
       import('/platform-offer-accepted-link-ui.js?v=20260817-1'),
       import('/platform-accounting-ui.js?v=20260818-1'),
       import('/platform-accounting-autopilot-ui.js?v=20260818-1'),
