@@ -1,0 +1,4 @@
+import type { CoreAuthContext, Env } from './types.js';
+import { requireCourseAccess, requireRole } from './permissions.js';
+
+export async function certificateEligibleParticipants(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string){requireRole(auth,'class_admin');requireCourseAccess(auth,courseId);const course=await env.DB.prepare('SELECT id FROM courses WHERE tenant_id=? AND id=?').bind(tenantId,courseId).first();if(!course)throw new Error('COURSE_NOT_FOUND');const r=await env.DB.prepare("SELECT DISTINCT u.id,u.display_name,u.email FROM memberships m JOIN users u ON u.id=m.user_id JOIN tenant_users tu ON tu.tenant_id=m.tenant_id AND tu.user_id=m.user_id WHERE m.tenant_id=? AND m.course_id=? AND m.role='participant' AND u.status='active' AND tu.status='active' ORDER BY u.display_name,u.email").bind(tenantId,courseId).all<Record<string,unknown>>();return r.results??[];}

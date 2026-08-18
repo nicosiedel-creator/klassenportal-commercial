@@ -1,0 +1,64 @@
+import type { BackupManifest, D1DatabaseLike, PortabilityConfig, R2BucketLike } from './types.js';
+
+interface BackupPreflightEnv { DB:D1DatabaseLike; FILES:R2BucketLike; }
+interface BackupRow { id:string; tenant_id:string; object_prefix:string; status:string; }
+export type UserSnapshotRow={id:string;email:string;display_name:string;password_hash:string;force_password_change:number;is_platform_admin:number;status:string;created_at:string;updated_at:string};
+
+async function loadManifest(env:BackupPreflightEnv,row:BackupRow):Promise<BackupManifest>{
+  if(row.status!=='ready')throw new Error('BACKUP_NOT_READY');
+  const obj=await env.FILES.get(`${row.object_prefix}/manifest.json`);if(!obj)throw new Error('BACKUP_MANIFEST_MISSING');
+  let manifest:BackupManifest;try{manifest=JSON.parse(await obj.text()) as BackupManifest;}catch{throw new Error('BACKUP_MANIFEST_INVALID');}
+  if(manifest.version!==1||manifest.backupId!==row.id||manifest.tenantId!==row.tenant_id||!Array.isArray(manifest.resources)||!Array.isArray(manifest.files))throw new Error('BACKUP_MANIFEST_INVALID');
+  return manifest;
+}
+function valueKey(v:unknown):string{return typeof v==='string'||typeof v==='number'?String(v):JSON.stringify(v);}
+async function userSnapshot(env:BackupPreflightEnv,manifest:BackupManifest):Promise<UserSnapshotRow[]>{
+  if(!manifest.users)return[];
+  const obj=await env.FILES.get(manifest.users.objectKey);if(!obj)throw new Error('BACKUP_USERS_OBJECT_MISSING');
+  let rows:unknown;try{rows=JSON.parse(await obj.text());}catch{throw new Error('BACKUP_USERS_JSON_INVALID');}
+  if(!Array.isArray(rows)||rows.length!==Number(manifest.users.rowCount))throw new Error('BACKUP_USERS_ROWCOUNT_MISMATCH');
+  const seenId=new Set<string>(),seenEmail=new Set<string>();
+  for(const raw of rows){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('BACKUP_USER_ROW_INVALID');
+    const u=raw as Record<string,unknown>,uid=String(u.id||''),email=String(u.email||'').trim().toLowerCase();
+    if(!uid||!email||!String(u.display_name||'')||!u.password_hash||Number(u.is_platform_admin)!==0||!['active','disabled'].includes(String(u.status||''))||seenId.has(uid)||seenEmail.has(email))throw new Error('BACKUP_USER_ROW_INVALID');
+    seenId.add(uid);seenEmail.add(email);
+    const emailConflict=await env.DB.prepare('SELECT id FROM users WHERE email=? COLLATE NOCASE AND id<>?').bind(email,uid).first();if(emailConflict)throw new Error('BACKUP_USER_EMAIL_CONFLICT');
+    const idConflict=await env.DB.prepare('SELECT email FROM users WHERE id=?').bind(uid).first<{email:string}>();if(idConflict&&String(idConflict.email).toLowerCase()!==email)throw new Error('BACKUP_USER_ID_CONFLICT');
+  }
+  return rows as UserSnapshotRow[];
+}
+
+export async function preflightTenantBackup(env:BackupPreflightEnv,cfg:PortabilityConfig,backupId:string,expectedTenantId?:string):Promise<{manifest:BackupManifest;resourceCount:number;rowCount:number;fileCount:number;userCount:number;users:UserSnapshotRow[]}>{
+  const row=await env.DB.prepare('SELECT id,tenant_id,object_prefix,status FROM portability_backups WHERE id=?').bind(backupId).first<BackupRow>();
+  if(!row)throw new Error('BACKUP_NOT_FOUND');if(expectedTenantId&&row.tenant_id!==expectedTenantId)throw new Error('BACKUP_TENANT_MISMATCH');
+  const manifest=await loadManifest(env,row),resourceMap=new Map(cfg.resources.map(x=>[x.key,x])),users=await userSnapshot(env,manifest),manifestKeys=new Set<string>();let rowCount=0;const membershipUsers=new Set<string>();
+  for(const item of manifest.resources){
+    if(manifestKeys.has(item.key))throw new Error(`BACKUP_RESOURCE_DUPLICATE:${item.key}`);manifestKeys.add(item.key);
+    const resource=resourceMap.get(item.key);if(!resource)throw new Error(`BACKUP_RESOURCE_UNKNOWN:${item.key}`);
+    const object=await env.FILES.get(item.objectKey);if(!object)throw new Error(`BACKUP_RESOURCE_OBJECT_MISSING:${item.key}`);
+    let rows:unknown;try{rows=JSON.parse(await object.text());}catch{throw new Error(`BACKUP_RESOURCE_JSON_INVALID:${item.key}`);}
+    if(!Array.isArray(rows)||rows.length!==Number(item.rowCount))throw new Error(`BACKUP_RESOURCE_ROWCOUNT_MISMATCH:${item.key}`);
+    const schema=(await env.DB.prepare(`PRAGMA table_info(${resource.table})`).all<{name:string;pk:number}>()).results??[],columns=new Set(schema.map(x=>x.name)),pk=schema.filter(x=>Number(x.pk)>0).sort((a,b)=>Number(a.pk)-Number(b.pk)).map(x=>x.name);
+    if(!schema.length||!pk.length)throw new Error(`BACKUP_RESOURCE_SCHEMA_INVALID:${item.key}`);
+    const seen=new Set<string>();
+    for(const raw of rows){
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error(`BACKUP_RESOURCE_ROW_INVALID:${item.key}`);
+      const record=raw as Record<string,unknown>;
+      for(const key of Object.keys(record))if(!columns.has(key))throw new Error(`BACKUP_RESOURCE_COLUMN_UNKNOWN:${item.key}:${key}`);
+      if(String(record[resource.tenantColumn]??'')!==manifest.tenantId)throw new Error(`BACKUP_RESOURCE_TENANT_SCOPE_INVALID:${item.key}`);
+      const key=pk.map(k=>valueKey(record[k])).join('\u001f');if(pk.some(k=>record[k]===undefined||record[k]===null)||seen.has(key))throw new Error(`BACKUP_RESOURCE_PRIMARY_KEY_INVALID:${item.key}`);seen.add(key);
+      if(item.key==='memberships'){const uid=String(record.user_id||'');if(!uid)throw new Error('BACKUP_MEMBERSHIP_USER_INVALID');membershipUsers.add(uid);}
+      rowCount++;
+    }
+  }
+  for(const required of cfg.resources)if(!manifestKeys.has(required.key))throw new Error(`BACKUP_RESOURCE_REQUIRED_MISSING:${required.key}`);
+  if(membershipUsers.size){
+    if(!manifest.users)throw new Error('BACKUP_USERS_MISSING');const userIds=new Set(users.map(x=>x.id));for(const uid of membershipUsers)if(!userIds.has(uid))throw new Error('BACKUP_MEMBERSHIP_USER_MISSING');
+  }
+  for(const file of manifest.files){
+    if(!file.originalKey.startsWith(`tenants/${manifest.tenantId}/`))throw new Error('BACKUP_FILE_OBJECT_SCOPE_INVALID');
+    const obj=await env.FILES.get(file.backupKey);if(!obj)throw new Error(`BACKUP_FILE_OBJECT_MISSING:${file.id}`);if(Number(file.size)!==Number(obj.size))throw new Error(`BACKUP_FILE_SIZE_MISMATCH:${file.id}`);
+  }
+  return{manifest,resourceCount:manifest.resources.length,rowCount,fileCount:manifest.files.length,userCount:users.length,users};
+}

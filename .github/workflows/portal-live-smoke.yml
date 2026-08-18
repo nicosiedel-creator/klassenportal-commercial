@@ -1,0 +1,136 @@
+name: Secondary portal live smoke
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Preview/production base URL to verify
+        required: true
+        default: https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev
+  push:
+    branches:
+      - block3-onboarding-managed-setup
+permissions:
+  contents: write
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Static portal UX/privacy and release checks
+        id: static
+        continue-on-error: true
+        run: |
+          node scripts/portal-ux-check.mjs
+          node scripts/release-check.mjs
+
+      - name: Verify exact deployed Worker and portal/branding schema
+        id: deployed
+        continue-on-error: true
+        env:
+          BASE: ${{ inputs.base_url || 'https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev' }}
+        run: |
+          set -u
+          ok=0
+          mkdir -p /tmp
+          printf '%s\n' '{"attempt":0,"ready":false}' > /tmp/live-smoke-deployed.json
+          for i in $(seq 1 36); do
+            build_meta=$(curl -fsS --max-time 12 "$BASE/build-meta.json?sha=$GITHUB_SHA" || true)
+            css=$(curl -fsS --max-time 12 "$BASE/vfa13-refinement.css?sha=$GITHUB_SHA" || true)
+            theme=$(curl -fsS --max-time 12 "$BASE/branding-theme.css?sha=$GITHUB_SHA" || true)
+            js=$(curl -fsS --max-time 12 "$BASE/vfa13-refinement.js?sha=$GITHUB_SHA" || true)
+            branding=$(curl -fsS --max-time 12 "$BASE/branding-assistant.js?sha=$GITHUB_SHA" || true)
+            privacy=$(curl -fsS --max-time 12 "$BASE/owner-route-privacy.js?sha=$GITHUB_SHA" || true)
+            portal=$(curl -fsS --max-time 12 "$BASE/portal/bildungszentrum-spreeblick-demo/fisi-26-1?sha=$GITHUB_SHA" || true)
+            portal_meta=$(curl -fsS --max-time 12 "$BASE/public/bildungszentrum-spreeblick-demo/fisi-26-1/meta?sha=$GITHUB_SHA" || true)
+            customer=$(curl -fsS --max-time 12 "$BASE/kunden-admin?sha=$GITHUB_SHA" || true)
+
+            exact_sha=$(jq -e --arg sha "$GITHUB_SHA" '.commit == $sha' <<<"$build_meta" >/dev/null 2>&1 && echo true || echo false)
+            css_width=$(grep -q -- '--kp-content-max:1320px' <<<"$css" && echo true || echo false)
+            css_privacy=$(grep -Fq '.portal-header-actions>a.portal-btn.secondary{visibility:hidden!important}' <<<"$css" && echo true || echo false)
+            theme_surface=$(grep -q -- '--portal-surface' <<<"$theme" && echo true || echo false)
+            theme_bg=$(grep -q -- '--portal-bg,#ece8df' <<<"$theme" && echo true || echo false)
+            tile_ui=$(grep -q 'Kacheln anpassen' <<<"$js" && echo true || echo false)
+            role_link=$(grep -Fq "management.dataset.roleLink='1'" <<<"$js" && echo true || echo false)
+            branding_six=$(grep -q 'Sechs Designvorschläge' <<<"$branding" && echo true || echo false)
+            branding_free=$(grep -q 'Farben frei zusammenstellen' <<<"$branding" && echo true || echo false)
+            privacy_asset=$(grep -q 'plattform-admin' <<<"$privacy" && echo true || echo false)
+            portal_theme=$(grep -q '/branding-theme.css' <<<"$portal" && echo true || echo false)
+            customer_privacy=$(grep -q '/owner-route-privacy.js' <<<"$customer" && echo true || echo false)
+            meta_accent=$(grep -q '"accent_color"' <<<"$portal_meta" && echo true || echo false)
+            meta_surface=$(grep -q '"surface_color"' <<<"$portal_meta" && echo true || echo false)
+            meta_text=$(grep -q '"text_color"' <<<"$portal_meta" && echo true || echo false)
+
+            jq -n \
+              --argjson attempt "$i" \
+              --arg base "$BASE" \
+              --argjson exact_sha "$exact_sha" \
+              --argjson css_width "$css_width" \
+              --argjson css_privacy "$css_privacy" \
+              --argjson theme_surface "$theme_surface" \
+              --argjson theme_bg "$theme_bg" \
+              --argjson tile_ui "$tile_ui" \
+              --argjson role_link "$role_link" \
+              --argjson branding_six "$branding_six" \
+              --argjson branding_free "$branding_free" \
+              --argjson privacy_asset "$privacy_asset" \
+              --argjson portal_theme "$portal_theme" \
+              --argjson customer_privacy "$customer_privacy" \
+              --argjson meta_accent "$meta_accent" \
+              --argjson meta_surface "$meta_surface" \
+              --argjson meta_text "$meta_text" \
+              '{attempt:$attempt,base:$base,ready:($exact_sha and $css_width and $css_privacy and $theme_surface and $theme_bg and $tile_ui and $role_link and $branding_six and $branding_free and $privacy_asset and $portal_theme and $customer_privacy and $meta_accent and $meta_surface and $meta_text),checks:{exact_sha:$exact_sha,css_width:$css_width,css_privacy:$css_privacy,theme_surface:$theme_surface,theme_bg:$theme_bg,tile_ui:$tile_ui,role_link:$role_link,branding_six:$branding_six,branding_free:$branding_free,privacy_asset:$privacy_asset,portal_theme:$portal_theme,customer_privacy:$customer_privacy,meta_accent:$meta_accent,meta_surface:$meta_surface,meta_text:$meta_text}}' > /tmp/live-smoke-deployed.json
+
+            if jq -e '.ready == true' /tmp/live-smoke-deployed.json >/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 10
+          done
+          test "$ok" = 1
+
+      - name: Persist live verification result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATIC_OUTCOME: ${{ steps.static.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deployed.outcome }}
+        run: |
+          set -euo pipefail
+          checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          if test "$STATIC_OUTCOME" = success && test "$DEPLOY_OUTCOME" = success; then status=success; else status=failure; fi
+          if test -f /tmp/live-smoke-deployed.json; then deployed=$(cat /tmp/live-smoke-deployed.json); else deployed='{}'; fi
+          payload=$(jq -nc \
+            --arg status "$status" \
+            --arg sha "$GITHUB_SHA" \
+            --arg at "$checked_at" \
+            --arg static "$STATIC_OUTCOME" \
+            --arg deployed_outcome "$DEPLOY_OUTCOME" \
+            --argjson deployed "$deployed" \
+            '{status:$status,verified_sha:$sha,verified_at:$at,static_outcome:$static,deployed_outcome:$deployed_outcome,deployed:$deployed}')
+          encoded=$(printf '%s\n' "$payload" | base64 -w0)
+          meta=$(curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/portal-live-smoke.json?ref=portal-verification-status")
+          current_sha=$(jq -r '.sha' <<<"$meta")
+          jq -n --arg message "Record portal live smoke for $GITHUB_SHA ($status)" --arg content "$encoded" --arg sha "$current_sha" --arg branch portal-verification-status '{message:$message,content:$content,sha:$sha,branch:$branch}' > /tmp/status.json
+          curl -fsS -X PUT \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/portal-live-smoke.json" \
+            --data-binary @/tmp/status.json >/dev/null
+
+      - name: Enforce live smoke success
+        if: always()
+        env:
+          STATIC_OUTCOME: ${{ steps.static.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deployed.outcome }}
+        run: |
+          test "$STATIC_OUTCOME" = success
+          test "$DEPLOY_OUTCOME" = success

@@ -1,0 +1,14 @@
+{
+  "name": "Klassenportal",
+  "short_name": "Klassenportal",
+  "description": "Sicheres Klassen- und Kursportal für Bildungsträger",
+  "lang": "de-DE",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ece8df",
+  "theme_color": "#172033",
+  "icons": [
+    {"src":"/pwa-icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}

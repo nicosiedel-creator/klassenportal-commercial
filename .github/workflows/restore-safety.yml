@@ -1,0 +1,17 @@
+name: Secondary restore safety check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  restore-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tests/restore-safety.mjs

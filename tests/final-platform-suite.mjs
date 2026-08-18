@@ -1,0 +1,43 @@
+import { strict as assert } from 'node:assert';
+import { readFile } from 'node:fs/promises';
+
+const [learnMig,collabMig,accountMig,learn,learnRouter,management,collab,account,accountRouter,automation,attendanceRouter,ownerRouter,pwa,sw,customer,classAdmin,portal,ciGuard]=await Promise.all([
+  readFile('migrations/0059_learning_suite.sql','utf8'),readFile('migrations/0060_collaboration_reporting_pwa.sql','utf8'),readFile('migrations/0061_platform_accounting.sql','utf8'),readFile('src/core/learning-suite.ts','utf8'),readFile('src/core/learning-suite-router.ts','utf8'),readFile('src/core/learning-suite-management.ts','utf8'),readFile('src/core/collaboration-reporting.ts','utf8'),readFile('src/core/platform-accounting.ts','utf8'),readFile('src/core/platform-accounting-router.ts','utf8'),readFile('src/core/automation-cycle.ts','utf8'),readFile('src/core/attendance-router.ts','utf8'),readFile('src/core/owner-security-router.ts','utf8'),readFile('public/pwa-client.js','utf8'),readFile('public/service-worker.js','utf8'),readFile('public/customer-admin.html','utf8'),readFile('public/class-admin.html','utf8'),readFile('public/class-portal.html','utf8'),readFile('scripts/workers-ci-guard.mjs','utf8')
+]);
+for(const table of ['gradebook_categories','grading_scales','quiz_banks','quiz_questions','quizzes','quiz_attempts','course_templates','course_clone_jobs'])assert.ok(learnMig.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`missing ${table}`);
+for(const table of ['push_subscriptions','push_outbox','discussion_threads','discussion_messages','report_definitions','integration_outbox'])assert.ok(collabMig.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`missing ${table}`);
+for(const table of ['accounting_settings','accounting_accounts','accounting_entries','accounting_lines','accounting_period_locks','accounting_expenses','accounting_reconciliation','accounting_export_runs'])assert.ok(accountMig.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`missing ${table}`);
+assert.match(accountMig,/auto_post_final_invoices INTEGER NOT NULL DEFAULT 0/,'accounting automation must start in review mode');
+assert.match(accountMig,/status TEXT NOT NULL DEFAULT 'draft'.*posted.*reversed/s,'immutable accounting lifecycle required');
+assert.match(learn,/SELECT id,type,prompt,max_points FROM quiz_questions/,'participant quiz payload must not expose answer keys');
+assert.match(learn,/personalDataCopied:false/,'course clone must explicitly exclude personal data');
+assert.match(learn,/QUIZ_ATTEMPTS_EXHAUSTED/,'attempt limit required');
+assert.match(learn,/QUIZ_TIME_EXPIRED/,'server-side quiz timer required');
+assert.match(management,/officialGradeCsv/,'official grade export required');
+assert.match(learnRouter,/question-banks.*GET/s,'question-bank management API required');
+assert.match(learnRouter,/gradebook\/export\.csv/,'gradebook export route required');
+assert.match(collab,/const DATASETS:Record/,'report builder must use a dataset whitelist');
+assert.doesNotMatch(collab,/input\.sql|raw_sql|query_sql/,'report builder must not accept raw SQL');
+assert.match(collab,/direct_messages_enabled:0/,'direct messages must be disabled by default');
+assert.match(collab,/DISCUSSION_RATE_LIMIT/,'forum rate limit required');
+assert.match(account,/function balanced/,'double-entry balance guard required');
+assert.match(account,/ACCOUNTING_ENTRY_UNBALANCED/,'unbalanced entries must fail closed');
+assert.match(account,/reverseEntry/,'posted entries require reversal workflow');
+assert.match(account,/ACCOUNTING_PERIOD_CLOSED/,'closed period guard required');
+assert.match(account,/DATEV_CHART_PROFILE_REQUIRED/,'DATEV must fail closed without chart mapping');
+assert.match(account,/taxSource:'commercial_invoice_snapshot'/,'tax data must come from finalized invoice snapshot');
+assert.match(account,/ERP_WEBHOOK_SIGNING_SECRET/,'ERP webhook must be signed');
+assert.match(accountRouter,/\/api\/platform\/accounting/,'accounting must be platform-admin scoped');
+assert.match(automation,/system:accounting/,'scheduled accounting automation needs an explicit system actor');
+assert.match(attendanceRouter,/handleLearningSuiteApi/,'learning suite must be reachable through operational API gateway');
+assert.match(attendanceRouter,/handleCollaborationReportingApi/,'report/collaboration suite must be reachable through operational API gateway');
+assert.match(ownerRouter,/handlePlatformAccountingApi/,'accounting must be reachable through owner gateway');
+assert.match(pwa,/serviceWorker\.register/,'PWA must register a service worker');
+assert.match(pwa,/Notification\.requestPermission/,'push must remain explicit opt-in');
+assert.match(sw,/u\.pathname\.startsWith\('\/api\/'\)/,'service worker must not cache API responses');
+assert.match(sw,/event\.request\.mode==='navigate'/,'service worker must not offline-cache authenticated page navigations');
+for(const html of [customer,classAdmin])assert.match(html,/learning-report-collab-admin-ui\.js/,'learning/report admin workspace must be loaded');
+for(const html of [customer,classAdmin,portal])assert.match(html,/pwa-client\.js/,'PWA client must be loaded');
+assert.match(portal,/portal-learning-collaboration-ui\.js/,'participant quiz/forum UI must be loaded');
+assert.match(ciGuard,/WORKERS_CI_GUARD_ACTIVE/,'Cloudflare nested Wrangler recursion guard required');
+console.log('Final platform learning/PWA/reporting/accounting security checks: OK');

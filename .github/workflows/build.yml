@@ -1,9 +1,8 @@
-name: Build check
+name: Secondary build check
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main, commerce-model, timetable-update-review, payments-stripe]
-  pull_request:
     branches: [main]
 
 jobs:
@@ -23,5 +22,9 @@ jobs:
         run: npm run build
       - name: Browser JavaScript syntax
         run: find public -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Automated tests
+        run: npm test
+      - name: Release readiness
+        run: node scripts/release-check.mjs
       - name: D1 migrations locally
         run: npx wrangler d1 migrations apply DB --local

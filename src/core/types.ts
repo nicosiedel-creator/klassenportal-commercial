@@ -1,6 +1,7 @@
 import type { D1DatabaseLike, R2BucketLike } from '../portability/types.js';
 
 export interface AssetBindingLike { fetch(request: Request): Promise<Response>; }
+export interface WorkerVersionMetadataLike { id:string; tag?:string; timestamp?:string; }
 
 export interface Env {
   DB: D1DatabaseLike;
@@ -9,9 +10,34 @@ export interface Env {
   APP_ORIGIN?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
+  OWNER_MFA_ENCRYPTION_KEY?: string;
+  TENANT_SECRETS_ENCRYPTION_KEY?: string;
+  CLOUDFLARE_ZONE_ID?: string;
+  CLOUDFLARE_API_TOKEN?: string;
+  CLOUDFLARE_SAAS_CNAME_TARGET?: string;
+  MAIL_PROVIDER?: 'brevo'|'resend';
+  BREVO_API_KEY?: string;
+  BREVO_INBOUND_WEBHOOK_TOKEN?: string;
+  RESEND_API_KEY?: string;
+  RESEND_WEBHOOK_SECRET?: string;
+  INBOUND_MAIL_DOMAIN?: string;
+  MAIL_FROM?: string;
+  DATA_RESIDENCY_MODE?: 'eu_strict'|'standard';
+  EU_D1_JURISDICTION_ATTESTED?: string;
+  EU_R2_JURISDICTION_ATTESTED?: string;
+  EU_WORKER_PROCESSING_ATTESTED?: string;
+  EU_METADATA_BOUNDARY_ATTESTED?: string;
+  EU_BACKUP_STORAGE_ATTESTED?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_JWK?: string;
+  VAPID_SUBJECT?: string;
+  ERP_WEBHOOK_URL?: string;
+  ERP_WEBHOOK_SIGNING_SECRET?: string;
+  CF_VERSION_METADATA?: WorkerVersionMetadataLike;
 }
 
 export type Role = 'platform_admin' | 'tenant_admin' | 'class_admin' | 'participant' | 'guest';
+export type AuthMethod = 'password'|'oidc'|'mfa'|'api'|'scim';
 
 export interface SessionUser {
   userId: string;
@@ -20,6 +46,8 @@ export interface SessionUser {
   isPlatformAdmin: boolean;
   mustChangePassword: boolean;
   tenantRoles: Array<{ tenantId: string; courseId: string | null; role: Exclude<Role,'platform_admin'> }>;
+  authMethod?: AuthMethod;
+  authTenantId?: string | null;
 }
 
 export interface CoreAuthContext {
@@ -27,6 +55,8 @@ export interface CoreAuthContext {
   role: Role;
   tenantIds: string[];
   courseIds: string[];
+  orgUnitIds?: string[];
+  permissions?: string[];
   isPlatformAdmin: boolean;
   session: SessionUser;
 }

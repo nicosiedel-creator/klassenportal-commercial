@@ -1,0 +1,19 @@
+const MODULE_CANCEL_PATH=location.pathname.replace(/\/$/,'')==='/kunden-admin';
+if(MODULE_CANCEL_PATH){
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const date=v=>{try{return new Intl.DateTimeFormat('de-DE',{dateStyle:'long',timeStyle:'short'}).format(new Date(v));}catch{return String(v||'');}};
+  let busy=false,lastTenant='';
+  async function json(url,opt={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt,headers:{...(opt.body?{'content-type':'application/json'}:{}),...(opt.headers||{})}});let d={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(d.error||`HTTP_${r.status}`);return d;}
+  function tenant(){return document.querySelector('#tenantPick')?.value||'';}
+  function onModules(){return document.querySelector('.content > .top h2')?.textContent?.trim()==='Module'&&!!document.querySelector('#kp-module-catalog');}
+  async function refresh(force=false){
+    if(busy||!onModules())return;const tid=tenant();if(!tid)return;if(!force&&lastTenant===tid&&document.querySelector('[data-module-cancel-ready="1"]'))return;busy=true;
+    try{const d=await json(`/api/billing/modules/cancellations?tenant_id=${encodeURIComponent(tid)}`),map=new Map((d.cancellations||[]).map(x=>[String(x.feature_key),x]));document.querySelectorAll('.kp-module-open[data-key]').forEach(open=>{
+      const key=String(open.dataset.key||''),card=open.closest('.card');if(!key||!card||card.dataset.moduleCancelReady==='1')return;card.dataset.moduleCancelReady='1';const row=map.get(key),wrap=document.createElement('div');wrap.className='kp-module-cancel-controls';wrap.style.cssText='margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center';
+      if(row){wrap.innerHTML=`<span class="muted">Kündigung zum <strong>${esc(date(row.effective_at))}</strong>${row.status==='error'?' · erneuter Versuch läuft automatisch':''}</span><button type="button" class="btn secondary" data-undo> Kündigung zurücknehmen </button>`;wrap.querySelector('[data-undo]').onclick=async()=>{const b=wrap.querySelector('[data-undo]');b.disabled=true;try{await json(`/api/billing/modules/cancel/undo?tenant_id=${encodeURIComponent(tid)}`,{method:'POST',body:JSON.stringify({feature_key:key})});lastTenant='';document.querySelectorAll('[data-module-cancel-ready]').forEach(x=>delete x.dataset.moduleCancelReady);await refresh(true);}catch(e){alert(`Kündigung konnte nicht zurückgenommen werden: ${e.message}`);b.disabled=false;}};
+      }else{wrap.innerHTML='<button type="button" class="btn secondary" data-cancel>Zum Ende des bezahlten Zeitraums kündigen</button>';wrap.querySelector('[data-cancel]').onclick=async()=>{if(!confirm('Dieses Erweiterungsmodul wird erst zum Ende des bereits bezahlten Abrechnungszeitraums deaktiviert. Bis dahin bleibt es vollständig nutzbar. Es erfolgt keine sofortige Löschung und keine automatische anteilige Erstattung.\n\nKündigung verbindlich vormerken?'))return;const b=wrap.querySelector('[data-cancel]');b.disabled=true;try{const r=await json(`/api/billing/modules/cancel?tenant_id=${encodeURIComponent(tid)}`,{method:'POST',body:JSON.stringify({feature_key:key,confirm_cancel:true})});alert(`Kündigung vorgemerkt. Das Modul bleibt bis ${date(r.cancellation?.effectiveAt)} aktiv.`);lastTenant='';document.querySelectorAll('[data-module-cancel-ready]').forEach(x=>delete x.dataset.moduleCancelReady);await refresh(true);}catch(e){alert(`Kündigung konnte nicht vorgemerkt werden: ${e.message}`);b.disabled=false;}};}
+      card.append(wrap);
+    });lastTenant=tid;}catch{}finally{busy=false;}
+  }
+  const ob=new MutationObserver(()=>queueMicrotask(()=>void refresh()));ob.observe(document.querySelector('#app')||document.body,{subtree:true,childList:true});document.addEventListener('change',e=>{if(e.target?.id==='tenantPick'){lastTenant='';setTimeout(()=>void refresh(true),0);}});void refresh();
+}

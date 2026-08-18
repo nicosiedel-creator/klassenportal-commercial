@@ -4,10 +4,12 @@ import { audit } from './audit.js';
 import { b64, id, normalizeEmail, nowIso, randomBytes, safeString, sha256Text } from './utils.js';
 import { provisionTenantFromOnboarding } from './provision.js';
 import { calculateCommercialOffer, getCommercePolicy, listManagedSetupOptions, startTenantTrial, createPaidBooking } from './commerce-offers.js';
+import { acceptedQuoteForOnboarding } from './platform-offers.js';
+import { createPaidBookingFromAcceptedOffer, startPilotFromAcceptedOffer } from './accepted-offer-fulfillment.js';
 
 type InvitationRow={
   id:string;token_hash:string;customer_email:string;plan_id:string;status:string;expires_at:string;
-  created_by:string;created_at:string;completed_at:string|null;tenant_id:string|null;form_json:string|null;
+  created_by:string;created_at:string;completed_at:string|null;tenant_id:string|null;form_json:string|null;quote_id:string|null;
 };
 
 type OnboardingInput={
@@ -45,7 +47,7 @@ export async function createOnboardingInvitation(env:Env,auth:CoreAuthContext,re
 export async function listOnboardingInvitations(env:Env,auth:CoreAuthContext):Promise<Record<string,unknown>[]> {
   requirePlatform(auth);
   await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at<=?").bind(nowIso()).run();
-  const rows=await env.DB.prepare(`SELECT i.id,i.customer_email,i.plan_id,p.name AS plan_name,i.status,i.expires_at,i.created_at,i.completed_at,i.tenant_id,t.name AS tenant_name
+  const rows=await env.DB.prepare(`SELECT i.id,i.customer_email,i.plan_id,p.name AS plan_name,i.status,i.expires_at,i.created_at,i.completed_at,i.tenant_id,i.quote_id,t.name AS tenant_name
     FROM onboarding_invitations i LEFT JOIN plans p ON p.id=i.plan_id LEFT JOIN tenants t ON t.id=i.tenant_id ORDER BY i.created_at DESC LIMIT 200`).all<Record<string,unknown>>();
   return rows.results??[];
 }
@@ -77,32 +79,34 @@ async function requireOpenInvitation(env:Env,token:string):Promise<InvitationRow
 export async function getPublicOnboarding(env:Env,token:string):Promise<Record<string,unknown>>{
   const row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
   if(row.status==='open'&&row.expires_at<=nowIso()){await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE id=? AND status='open'").bind(row.id).run();row.status='expired';}
-  const policy=await getCommercePolicy(env);
-  const setupOptions=await listManagedSetupOptions(env);
-  return {...publicInvitation(row),trial:{days:policy.trial_days,course_limit:policy.trial_course_limit,read_only_days:policy.read_only_days,requires_payment_method:!!policy.trial_requires_payment_method},setup_options:setupOptions};
+  const policy=await getCommercePolicy(env),setupOptions=await listManagedSetupOptions(env);
+  let lockedOffer:Record<string,unknown>|null=null;
+  if(row.quote_id){const accepted=await acceptedQuoteForOnboarding(env,row.quote_id);lockedOffer={quote_id:accepted.row.id,quote_number:accepted.row.quote_number,kind:accepted.row.offer_kind,customer_name:accepted.row.customer_name,customer_contact_name:accepted.row.customer_contact_name,customer_email:accepted.row.customer_email,customer_street:accepted.row.customer_street,customer_postal_code:accepted.row.customer_postal_code,customer_city:accepted.row.customer_city,customer_country:accepted.row.customer_country,offer:accepted.offer};}
+  return {...publicInvitation(row),trial:{days:policy.trial_days,course_limit:policy.trial_course_limit,read_only_days:policy.read_only_days,requires_payment_method:!!policy.trial_requires_payment_method},setup_options:setupOptions,locked_offer:lockedOffer};
 }
 
 export async function getPublicOnboardingQuote(env:Env,token:string,args:{courses:unknown;billingCycle?:unknown;setupOptionId?:unknown;purpose?:unknown}){
   const row=await requireOpenInvitation(env,token);
+  if(row.quote_id)return (await acceptedQuoteForOnboarding(env,row.quote_id)).offer;
   const purpose=String(args.purpose)==='trial'?'trial':'paid';
   return calculateCommercialOffer(env,{planId:row.plan_id,courseCount:courseCount(args.courses),billingCycle:args.billingCycle,setupOptionId:purpose==='trial'?'self_service':args.setupOptionId,purpose});
 }
 
 export async function submitPublicOnboarding(env:Env,token:string,request:Request):Promise<Record<string,unknown>>{
-  const invitation=await requireOpenInvitation(env,token);
+  const invitation=await requireOpenInvitation(env,token),locked=invitation.quote_id?await acceptedQuoteForOnboarding(env,invitation.quote_id):null;
   const raw=safeJson(await request.json().catch(()=>({}))) as OnboardingInput;
-  const legalName=safeString(raw.legal_name,200),portalName=safeString(raw.portal_name||legalName,200),contactName=safeString(raw.contact_name,200),contactEmail=normalizeEmail(raw.contact_email||invitation.customer_email);
+  const lockedRow=locked?.row,lockedOffer=locked?.offer;
+  const legalName=lockedRow?.customer_name||safeString(raw.legal_name,200),portalName=safeString(raw.portal_name||legalName,200),contactName=lockedRow?.customer_contact_name||safeString(raw.contact_name,200),contactEmail=normalizeEmail(lockedRow?.customer_email||raw.contact_email||invitation.customer_email);
   const adminName=safeString(raw.admin_name||contactName,200),adminEmail=normalizeEmail(raw.admin_email||contactEmail),password=safeString(raw.admin_password,256),confirm=safeString(raw.admin_password_confirm,256);
-  const street=safeString(raw.street,250),postal=safeString(raw.postal_code,30),city=safeString(raw.city,120),country=safeString(raw.country||'Deutschland',120),requestedCourses=courseCount(raw.desired_course_count??1);
+  const street=lockedRow?.customer_street||safeString(raw.street,250),postal=lockedRow?.customer_postal_code||safeString(raw.postal_code,30),city=lockedRow?.customer_city||safeString(raw.city,120),country=lockedRow?.customer_country||safeString(raw.country||'Deutschland',120),requestedCourses=lockedRow?Number(lockedRow.requested_courses):courseCount(raw.desired_course_count??1);
   if(!legalName||!contactName||!validEmail(contactEmail)||!adminName||!validEmail(adminEmail)||!street||!postal||!city)throw new Error('ONBOARDING_REQUIRED_FIELDS');
   if(password.length<10||password.length>256)throw new Error('PASSWORD_LENGTH');
   if(password!==confirm)throw new Error('PASSWORD_CONFIRMATION_MISMATCH');
 
-  const commercialAction=action(raw.commercial_action);
-  const billingCycle=String(raw.billing_cycle)==='annual'?'annual':'monthly';
-  const setupOptionId=commercialAction==='trial'?'self_service':safeString(raw.managed_setup_option_id||'self_service',80);
-  const acceptedOffer=String(raw.commercial_acceptance??'')==='1';
-  const acceptedCosts=String(raw.commercial_cost_confirmation??'')==='1';
+  const commercialAction=lockedOffer?(String(lockedOffer.offerKind)==='pilot'?'trial':'book'):action(raw.commercial_action);
+  const billingCycle=lockedOffer?(String(lockedOffer.billingCycle)==='annual'?'annual':'monthly'):(String(raw.billing_cycle)==='annual'?'annual':'monthly');
+  const setupOptionId=lockedOffer?safeString(lockedOffer.managedSetupOptionId||'self_service',80):(commercialAction==='trial'?'self_service':safeString(raw.managed_setup_option_id||'self_service',80));
+  const acceptedOffer=String(raw.commercial_acceptance??'')==='1',acceptedCosts=String(raw.commercial_cost_confirmation??'')==='1';
   if(commercialAction==='book'&&(!acceptedOffer||!acceptedCosts))throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');
 
   const firstCourse=safeString(raw.first_course_name,200),firstCourseCode=safeString(raw.first_course_code,80),accessMode=['public','login'].includes(String(raw.access_mode||''))?String(raw.access_mode):'login';
@@ -120,13 +124,17 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
     });
 
     let commercial:Record<string,unknown>;
-    if(commercialAction==='trial'){
+    if(invitation.quote_id&&lockedOffer){
+      commercial=String(lockedOffer.offerKind)==='pilot'
+        ?await startPilotFromAcceptedOffer(env,{tenantId:provisioned.tenantId,quoteId:invitation.quote_id,invitationId:invitation.id,actorId:`onboarding:${invitation.id}`})
+        :await createPaidBookingFromAcceptedOffer(env,{tenantId:provisioned.tenantId,quoteId:invitation.quote_id,invitationId:invitation.id,actorId:`onboarding:${invitation.id}`});
+    }else if(commercialAction==='trial'){
       commercial=await startTenantTrial(env,{tenantId:provisioned.tenantId,planId:invitation.plan_id,requestedCourseCount:requestedCourses,setupOptionId:'self_service',actorId:`onboarding:${invitation.id}`});
     }else{
       commercial=await createPaidBooking(env,{tenantId:provisioned.tenantId,invitationId:invitation.id,planId:invitation.plan_id,courseCount:requestedCourses,billingCycle,setupOptionId,accepted:acceptedOffer&&acceptedCosts,request,actorId:`onboarding:${invitation.id}`});
     }
 
-    const profile={legal_name:legalName,portal_name:portalName,contact_name:contactName,contact_email:contactEmail,phone:safeString(raw.phone,80),website:safeString(raw.website,250),street,postal_code:postal,city,country,billing_email:normalizeEmail(raw.billing_email||contactEmail),vat_id:safeString(raw.vat_id,80)||null,admin_name:adminName,admin_email:adminEmail,desired_course_count:requestedCourses,first_course_name:firstCourse||null,first_course_code:firstCourseCode||null,commercial_action:commercialAction,billing_cycle:billingCycle,managed_setup_option_id:setupOptionId,double_cost_confirmation:commercialAction==='book'&&(acceptedOffer&&acceptedCosts)};
+    const profile={legal_name:legalName,portal_name:portalName,contact_name:contactName,contact_email:contactEmail,phone:safeString(raw.phone,80),website:safeString(raw.website,250),street,postal_code:postal,city,country,billing_email:normalizeEmail(raw.billing_email||contactEmail),vat_id:safeString(raw.vat_id,80)||null,admin_name:adminName,admin_email:adminEmail,desired_course_count:requestedCourses,first_course_name:firstCourse||null,first_course_code:firstCourseCode||null,commercial_action:commercialAction,billing_cycle:billingCycle,managed_setup_option_id:setupOptionId,double_cost_confirmation:commercialAction==='book'&&(acceptedOffer&&acceptedCosts),quote_id:invitation.quote_id||null};
     const ts=nowIso();
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO tenant_profiles(tenant_id,legal_name,contact_name,contact_email,phone,website,street,postal_code,city,country,billing_email,onboarding_invitation_id,updated_at)
@@ -134,7 +142,7 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
       env.DB.prepare("UPDATE onboarding_invitations SET status='completed',completed_at=?,tenant_id=?,form_json=? WHERE id=? AND status='open'").bind(ts,provisioned.tenantId,JSON.stringify(profile),invitation.id),
       env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce),
     ]);
-    await audit(env.DB,`onboarding:${invitation.id}`,'onboarding.completed',provisioned.tenantId,provisioned.courseId,'onboarding_invitation',invitation.id,{customerEmail:invitation.customer_email,requestedCourses,commercialAction,billingCycle,setupOptionId});
+    await audit(env.DB,`onboarding:${invitation.id}`,'onboarding.completed',provisioned.tenantId,provisioned.courseId,'onboarding_invitation',invitation.id,{customerEmail:invitation.customer_email,requestedCourses,commercialAction,billingCycle,setupOptionId,quoteId:invitation.quote_id||null});
     return{ok:true,tenant_id:provisioned.tenantId,login_email:adminEmail,commercial_action:commercialAction,commercial};
   }catch(e){
     if(!provisioned)await env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce).run();

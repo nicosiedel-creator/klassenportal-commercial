@@ -5,13 +5,21 @@ import { billingSummaryWithStripe, createPaidBookingWithStripe, quoteExpansionWi
 import { createStripePortalSessionModeSafe, handleStripeWebhookModeSafe } from './stripe-mode-safe.js';
 import { createTaxStripeCheckout } from './stripe-tax-billing.js';
 import { ensureTenantCommerceState } from './commerce-state.js';
+import { listManagedSetupJobs, updateManagedSetupJob } from './managed-setup.js';
+import { customerSetupProgress } from './setup-progress.js';
+import { listPlatformModuleRules, quoteModuleSubscription, subscribeModule, tenantModuleCatalog, updatePlatformModuleRule } from './module-commerce.js';
 import { assertSameOrigin, nowIso, safeString } from './utils.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status,headers:{'cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function error(e:unknown):Response{
   const code=(e as Error)?.message||'INTERNAL_ERROR';
-  const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code==='FORBIDDEN'||code==='PASSWORD_CHANGE_REQUIRED'||code==='ORIGIN_MISMATCH'||code==='CSRF_ORIGIN_MISMATCH'?403:code==='STRIPE_NOT_CONFIGURED'?503:code.includes('NOT_FOUND')?404:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('CONFIRMATION')?400:code==='SELF_SERVICE_DOWNGRADE_NOT_ALLOWED'||code==='NO_CHANGE'||code==='PAYMENT_ALREADY_PENDING'?409:500;
+  const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
+    :code==='FORBIDDEN'||code==='PASSWORD_CHANGE_REQUIRED'||code==='ORIGIN_MISMATCH'||code==='CSRF_ORIGIN_MISMATCH'||code==='MODULE_SELF_SERVICE_DISABLED'?403
+    :code==='STRIPE_NOT_CONFIGURED'?503
+    :code.includes('NOT_FOUND')?404
+    :code.includes('REQUIRED')||code.includes('INVALID')||code.includes('CONFIRMATION')?400
+    :['SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','MODULE_ALREADY_ACTIVE','MODULE_PAYMENT_PENDING','MODULE_ALREADY_ON_SUBSCRIPTION'].includes(code)?409:500;
   return out({ok:false,error:code},status);
 }
 
@@ -32,37 +40,31 @@ async function checkoutStatus(request:Request,env:Env,u:URL):Promise<Response>{
 
 export async function handlePaymentApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url);
-  if(u.pathname==='/api/payments/stripe/webhook'&&request.method==='POST'){
-    try{return await handleStripeWebhookModeSafe(env,request);}catch(e){return error(e);}
-  }
-  if(u.pathname==='/api/payments/checkout-status'&&request.method==='GET'){
-    try{return await checkoutStatus(request,env,u);}catch(e){return error(e);}
-  }
+  if(u.pathname==='/api/payments/stripe/webhook'&&request.method==='POST'){try{return await handleStripeWebhookModeSafe(env,request);}catch(e){return error(e);}}
+  if(u.pathname==='/api/payments/checkout-status'&&request.method==='GET'){try{return await checkoutStatus(request,env,u);}catch(e){return error(e);}}
+  if(u.pathname==='/api/platform/managed-setups'&&request.method==='GET'){try{assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);return out({ok:true,jobs:await listManagedSetupJobs(env,auth)});}catch(e){return error(e);}}
+  const managedSetup=u.pathname.match(/^\/api\/platform\/managed-setups\/([^/]+)$/);
+  if(managedSetup&&request.method==='PATCH'){try{assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);return out({ok:true,job:await updateManagedSetupJob(env,auth,decodeURIComponent(managedSetup[1]),await body(request))});}catch(e){return error(e);}}
+  if(u.pathname==='/api/platform/commerce/modules'&&request.method==='GET'){try{assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);return out({ok:true,modules:await listPlatformModuleRules(env,auth)});}catch(e){return error(e);}}
+  const platformModule=u.pathname.match(/^\/api\/platform\/commerce\/modules\/([^/]+)$/);
+  if(platformModule&&request.method==='PUT'){try{assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);return out({ok:true,module:await updatePlatformModuleRule(env,auth,decodeURIComponent(platformModule[1]),await body(request))});}catch(e){return error(e);}}
   if(!u.pathname.startsWith('/api/billing/'))return null;
   const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)return out({ok:false,error:'TENANT_ID_REQUIRED'},400);
   try{
     assertSameOrigin(request,env.APP_ORIGIN);
     const auth=await resolveCoreAuth(env,request,tenantId,u.searchParams.get('course_id')||undefined);
     await ensureTenantCommerceState(env,tenantId);
-    if(u.pathname==='/api/billing/summary'&&request.method==='GET')return out({ok:true,...await billingSummaryWithStripe(env,auth,tenantId),trial:await tenantTrialSummary(env,auth,tenantId),commercePolicy:await getCommercePolicy(env),setupOptions:await listManagedSetupOptions(env)});
+    if(u.pathname==='/api/billing/summary'&&request.method==='GET'){const moduleCommerce=await tenantModuleCatalog(env,auth,tenantId).catch(()=>null);return out({ok:true,...await billingSummaryWithStripe(env,auth,tenantId),trial:await tenantTrialSummary(env,auth,tenantId),commercePolicy:await getCommercePolicy(env),setupOptions:await listManagedSetupOptions(env),moduleCommerce});}
+    if(u.pathname==='/api/billing/modules'&&request.method==='GET')return out({ok:true,...await tenantModuleCatalog(env,auth,tenantId)});
+    if(u.pathname==='/api/billing/modules/quote'&&request.method==='POST')return out({ok:true,quote:await quoteModuleSubscription(env,auth,tenantId,await body(request))});
+    if(u.pathname==='/api/billing/modules/subscribe'&&request.method==='POST')return out({ok:true,...await subscribeModule(env,auth,tenantId,await body(request))},201);
+    if(u.pathname==='/api/billing/setup-progress'&&request.method==='GET')return out({ok:true,...await customerSetupProgress(env,auth,tenantId)});
     if(u.pathname==='/api/billing/change-quote'&&request.method==='POST')return out({ok:true,quote:await quoteExpansionWithStripe(env,auth,tenantId,await body(request))});
-    if(u.pathname==='/api/billing/expand'&&request.method==='POST'){
-      const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');
-      return out({ok:true,...await requestExpansionWithStripe(env,auth,tenantId,b)},201);
-    }
-    if(u.pathname==='/api/billing/convert-trial'&&request.method==='POST'){
-      const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');
-      const trial=await tenantTrialSummary(env,auth,tenantId) as Record<string,any>|null;if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');
-      const booked=await createPaidBookingWithStripe(env,{tenantId,planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id,accepted:true,request,actorId:auth.userId});
-      return out({ok:true,...booked},201);
-    }
+    if(u.pathname==='/api/billing/expand'&&request.method==='POST'){const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');return out({ok:true,...await requestExpansionWithStripe(env,auth,tenantId,b)},201);}
+    if(u.pathname==='/api/billing/convert-trial'&&request.method==='POST'){const b=await body(request);if(b.confirm_change!==true||b.confirm_costs!==true)throw new Error('DOUBLE_COST_CONFIRMATION_REQUIRED');const trial=await tenantTrialSummary(env,auth,tenantId) as Record<string,any>|null;if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');const booked=await createPaidBookingWithStripe(env,{tenantId,planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id,accepted:true,request,actorId:auth.userId});return out({ok:true,...booked},201);}
     if(u.pathname==='/api/billing/retry-checkout'&&request.method==='POST')return out({ok:true,...await retryInitialCheckout(env,auth,tenantId,request)});
     if(u.pathname==='/api/billing/stripe-portal'&&request.method==='POST')return out({ok:true,...await createStripePortalSessionModeSafe(env,auth,tenantId,request)});
-    if(u.pathname==='/api/billing/trial-quote'&&request.method==='POST'){
-      const b=await body(request),trial=await tenantTrialSummary(env,auth,tenantId) as Record<string,any>|null;if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');
-      const quote=await calculateCommercialOffer(env,{planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id||'self_service',purpose:'paid'});
-      return out({ok:true,quote});
-    }
+    if(u.pathname==='/api/billing/trial-quote'&&request.method==='POST'){const b=await body(request),trial=await tenantTrialSummary(env,auth,tenantId) as Record<string,any>|null;if(!trial||!['active','read_only'].includes(String(trial.status||'')))throw new Error('TRIAL_NOT_CONVERTIBLE');const quote=await calculateCommercialOffer(env,{planId:String(b.plan_id||trial.target_plan_id),courseCount:Number(b.course_count||trial.requested_course_count),billingCycle:b.billing_cycle,setupOptionId:b.managed_setup_option_id||'self_service',purpose:'paid'});return out({ok:true,quote});}
     return null;
   }catch(e){return error(e);}
 }
@@ -72,14 +74,6 @@ export async function augmentPaidOnboardingResponse(env:Env,request:Request,resp
   let data:any;try{data=await response.clone().json();}catch{return response;}
   if(data?.commercial_action!=='book'||!data?.commercial?.orderId||!data?.commercial?.invoiceId||!data?.commercial?.offer)return response;
   const tenantId=String(data.tenant_id||''),orderId=String(data.commercial.orderId),invoiceId=String(data.commercial.invoiceId);
-  try{
-    const checkout=await createTaxStripeCheckout(env,{tenantId,orderId,invoiceId,offer:data.commercial.offer,request});
-    return out({...data,commercial:{...data.commercial,...checkout,paymentProvider:'stripe'}});
-  }catch(e){
-    await env.DB.batch([
-      env.DB.prepare("UPDATE commercial_orders SET status='cancelled',cancelled_at=? WHERE id=? AND tenant_id=? AND status='pending_payment'").bind(nowIso(),orderId,tenantId),
-      env.DB.prepare("UPDATE commercial_invoices SET status='failed',external_provider='stripe' WHERE id=? AND tenant_id=? AND status='pending_provider'").bind(invoiceId,tenantId),
-    ]);
-    return error(e);
-  }
+  try{const checkout=await createTaxStripeCheckout(env,{tenantId,orderId,invoiceId,offer:data.commercial.offer,request});return out({...data,commercial:{...data.commercial,...checkout,paymentProvider:'stripe'}});}
+  catch(e){await env.DB.batch([env.DB.prepare("UPDATE commercial_orders SET status='cancelled',cancelled_at=? WHERE id=? AND tenant_id=? AND status='pending_payment'").bind(nowIso(),orderId,tenantId),env.DB.prepare("UPDATE commercial_invoices SET status='failed',external_provider='stripe' WHERE id=? AND tenant_id=? AND status='pending_provider'").bind(invoiceId,tenantId)]);return error(e);}
 }
