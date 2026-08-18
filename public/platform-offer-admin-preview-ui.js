@@ -2,7 +2,7 @@ const PLATFORM_OFFER_ADMIN_PREVIEW_PATH=location.pathname.replace(/\/$/,'')==='/
 if(PLATFORM_OFFER_ADMIN_PREVIEW_PATH){
   let activeOfferId='';
   function relabel(){document.querySelectorAll('[data-print]').forEach(button=>{button.textContent='Angebot ansehen / PDF';});}
-  new MutationObserver(()=>queueMicrotask(relabel)).observe(document.querySelector('#app')||document.body,{subtree:true,childList:true});
+  new MutationObserver(()=>queueMicrotask(relabel)).observe(document.body,{subtree:true,childList:true});
   relabel();
   document.addEventListener('click',event=>{
     const target=event.target instanceof Element?event.target:null;
