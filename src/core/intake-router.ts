@@ -1,7 +1,8 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { handleBrevoInboundWebhook } from './brevo-inbound.js';
 import { configuredMailProvider, euStrict } from './data-residency.js';
-import { addIntakeSubmitter, applyIntakeBatch, completeAutomationTask, createIntakeChannel, createIntakeUploadLink, getIntakeBatch, getIntakeDocument, getIntakeOverview, handleIntakePublicUpload, handleResendInboundWebhook, previewIntakeBatch, renderIntakeUploadPage, revokeIntakeChannel, revokeIntakeSubmitter, updateIntakeSettings } from './intake-center.js';
+import { renderSecureIntakeUploadPage } from './secure-intake-page.js';
+import { addIntakeSubmitter, applyIntakeBatch, completeAutomationTask, createIntakeChannel, createIntakeUploadLink, getIntakeBatch, getIntakeDocument, getIntakeOverview, handleIntakePublicUpload, handleResendInboundWebhook, previewIntakeBatch, revokeIntakeChannel, revokeIntakeSubmitter, updateIntakeSettings } from './intake-center.js';
 
 function json(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 function fail(e:unknown){const code=String((e as Error)?.message||'INTAKE_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('RATE_LIMITED')?429:code.includes('EXPIRED')||code.includes('INVALID')&&code.includes('LINK')?410:code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413:code.includes('REQUIRED')||code.includes('INVALID')?400:500;return json({ok:false,error:code},status);}
@@ -12,7 +13,7 @@ export async function handlePublicIntakeRoute(request:Request,env:Env):Promise<R
   const path=new URL(request.url).pathname;
   if(path==='/api/inbound/brevo'){if(request.method!=='POST')return new Response('Methode nicht erlaubt',{status:405});return handleBrevoInboundWebhook(env,request);}
   if(path==='/api/inbound/resend'){if(request.method!=='POST')return new Response('Methode nicht erlaubt',{status:405});if(euStrict(env))return new Response('RESEND_DISABLED_IN_EU_STRICT',{status:410,headers:{'cache-control':'no-store'}});return handleResendInboundWebhook(env,request);}
-  const page=path.match(/^\/eingang\/([^/]+)$/);if(page&&request.method==='GET')return renderIntakeUploadPage(env,decodeURIComponent(page[1]));
+  const page=path.match(/^\/eingang\/([^/]+)$/);if(page&&request.method==='GET')return renderSecureIntakeUploadPage(env,decodeURIComponent(page[1]));
   const upload=path.match(/^\/api\/intake\/upload\/([^/]+)$/);if(upload&&request.method==='POST'){try{return json({ok:true,...await handleIntakePublicUpload(env,decodeURIComponent(upload[1]),request)},201);}catch(e){return fail(e);}}
   return null;
 }
