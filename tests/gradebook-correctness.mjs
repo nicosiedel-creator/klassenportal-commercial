@@ -30,5 +30,10 @@ assert.match(source,/value\.pct\*value\.itemWeight/);assert.match(source,/catego
 const ui=await readFile('public/gradebook-policy-ui.js','utf8');for(const code of ['CATEGORY_WEIGHT_TOTAL_EXCEEDED','CATEGORY_WEIGHT_TOTAL_INVALID','CATEGORY_RENAME_NOT_ALLOWED','GRADING_SCALE_OVERLAP','GRADING_SCALE_GAP','GRADING_SCALE_STORED_INVALID'])assert.ok(ui.includes(code));
 assert.ok(ui.includes('6;0;29.99'));assert.ok(ui.includes("replace(',','.')"));assert.match(ui,/form\.dataset\.categoryId/);assert.match(ui,/form\.elements\.name\.readOnly=true/);assert.match(ui,/hydrateCategories/);assert.match(ui,/form\.dataset\.scaleId/);assert.match(ui,/hydrateScale/);assert.match(ui,/event\.stopImmediatePropagation\(\)/);
 const defaultScaleUi=await readFile('public/gradebook-default-scale-ui.js','utf8');assert.ok(defaultScaleUi.includes("const legacy='1;92;100\\n2;81;91.99\\n3;67;80.99'"));assert.ok(defaultScaleUi.includes('6;0;29.99'));assert.match(defaultScaleUi,/normalized\(textarea\.value\)===legacy/);
-const customerHtml=await readFile('public/customer-admin.html','utf8'),classHtml=await readFile('public/class-admin.html','utf8');assert.ok(customerHtml.includes('/gradebook-policy-ui.js?v=20260818-2'));assert.ok(classHtml.includes('/gradebook-policy-ui.js?v=20260818-2'));assert.ok(customerHtml.includes('/gradebook-default-scale-ui.js?v=20260818-1'));assert.ok(classHtml.includes('/gradebook-default-scale-ui.js?v=20260818-1'));
-console.log('Official gradebook weighting, category totals, deterministic grading-scale, CSV safety and repairable UI checks: OK');
+const customerHtml=await readFile('public/customer-admin.html','utf8'),classHtml=await readFile('public/class-admin.html','utf8');
+for(const html of [customerHtml,classHtml]){
+  assert.ok(html.includes('/gradebook-policy-ui.js?v=20260818-2'),'admin surface must load the final gradebook validation UI');
+  assert.ok(html.includes('/gradebook-default-scale-ui.js?v=20260818-1'),'admin surface must upgrade the incomplete legacy scale example');
+  assert.ok(html.includes('/admin-overlay-hardening.css?v=20260818-1'),'gradebook integration must preserve hardened admin dialog/overlay behavior');
+}
+console.log('Official gradebook weighting, category totals, deterministic grading-scale, CSV safety, overlay integration and repairable UI checks: OK');
