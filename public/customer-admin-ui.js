@@ -6,14 +6,8 @@ if(CUSTOMER_ADMIN_PATH){
   let setupLoadingTenant='';
 
   const setText=(el,text)=>{if(el&&el.textContent!==text)el.textContent=text;};
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const PRIMARY_NAV_LABELS=new Set(['Übersicht','Klassen/Kurse','Benutzer & Rollen','Teilnehmer importieren','Inhalte','Prüfungen','Module','Paket & Abrechnung']);
-  const NAV_LABEL_OVERRIDES=new Map([
-    ['Unterlagen jetzt einwerfen','Dokumente hochladen'],
-    ['Struktur & Zuständigkeiten','Organisation & Struktur'],
-    ['Zuständigkeiten','Verantwortliche & Vertretungen'],
-    ['SSO SCIM & API','SSO, SCIM & API'],
-  ]);
   const NAV_GROUPS=[
     {id:'learning',title:'Lernen & Kommunikation',labels:new Set(['Lernen & Berichte','Meldungen & Zielgruppen','Anwesenheit & Klassenbuch','Aufgaben & Bewertungen','Teilnehmer 360°','Automationen & Bescheinigungen'])},
     {id:'organization',title:'Organisation & Betrieb',labels:new Set(['Unterlagen jetzt einwerfen','Branding','Import/Export/Backups','Struktur & Zuständigkeiten','Zuständigkeiten'])},
@@ -42,13 +36,6 @@ if(CUSTOMER_ADMIN_PATH){
   }
 
   function navLabel(button){return String(button?.textContent||'').replace(/\s+/g,' ').trim();}
-  function navSourceLabel(button){
-    if(!button)return'';
-    if(button.dataset.customerNavSourceLabel)return button.dataset.customerNavSourceLabel;
-    const label=navLabel(button);
-    button.dataset.customerNavSourceLabel=label;
-    return label;
-  }
   function navGroupFor(label){return NAV_GROUPS.find(group=>group.labels.has(label))||{id:'more',title:'Weitere Verwaltung'};}
   function ensureNavGroup(groups,id,title){
     let group=groups.querySelector(`[data-customer-nav-group="${CSS.escape(id)}"]`);
@@ -119,14 +106,12 @@ if(CUSTOMER_ADMIN_PATH){
     let extraCount=0;
     let extraActive=false;
     for(const button of buttons){
-      const sourceLabel=navSourceLabel(button);
-      const displayLabel=NAV_LABEL_OVERRIDES.get(sourceLabel);
-      if(displayLabel)setText(button,displayLabel);
-      if(PRIMARY_NAV_LABELS.has(sourceLabel)){
+      const label=navLabel(button);
+      if(PRIMARY_NAV_LABELS.has(label)){
         if(button.parentElement!==primary)primary.append(button);
         continue;
       }
-      const group=navGroupFor(sourceLabel);
+      const group=navGroupFor(label);
       const target=ensureNavGroup(groups,group.id,group.title);
       if(button.parentElement!==target)target.append(button);
       extraCount+=1;
