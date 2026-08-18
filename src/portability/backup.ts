@@ -12,8 +12,9 @@ async function copyR2(env:PortabilityEnv,sourceKey:string,targetKey:string,tenan
   return{size:copied.size,etag:copied.etag};
 }
 async function tenantUsers(env:PortabilityEnv,tenantId:string):Promise<Record<string,unknown>[]>{
-  try{const rows=await env.DB.prepare(`SELECT DISTINCT u.id,u.email,u.display_name,u.password_hash,u.force_password_change,u.is_platform_admin,u.status,u.created_at,u.updated_at FROM users u JOIN tenant_users tu ON tu.user_id=u.id WHERE tu.tenant_id=? AND u.is_platform_admin=0 ORDER BY u.id`).bind(tenantId).all<Record<string,unknown>>();return rows.results??[];}
-  catch{const rows=await env.DB.prepare(`SELECT DISTINCT u.id,u.email,u.display_name,u.password_hash,u.force_password_change,u.is_platform_admin,u.status,u.created_at,u.updated_at FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.tenant_id=? AND u.is_platform_admin=0 ORDER BY u.id`).bind(tenantId).all<Record<string,unknown>>();return rows.results??[];}
+  const tenantUsersTable=await env.DB.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name='tenant_users'").first();
+  if(tenantUsersTable){const rows=await env.DB.prepare(`SELECT DISTINCT u.id,u.email,u.display_name,u.password_hash,u.force_password_change,u.is_platform_admin,u.status,u.created_at,u.updated_at FROM users u JOIN tenant_users tu ON tu.user_id=u.id WHERE tu.tenant_id=? AND u.is_platform_admin=0 ORDER BY u.id`).bind(tenantId).all<Record<string,unknown>>();return rows.results??[];}
+  const rows=await env.DB.prepare(`SELECT DISTINCT u.id,u.email,u.display_name,u.password_hash,u.force_password_change,u.is_platform_admin,u.status,u.created_at,u.updated_at FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.tenant_id=? AND u.is_platform_admin=0 ORDER BY u.id`).bind(tenantId).all<Record<string,unknown>>();return rows.results??[];
 }
 async function stageRows(env:PortabilityEnv,restoreId:string,key:string,rows:Record<string,unknown>[]):Promise<void>{for(let i=0;i<rows.length;i+=70){const batch=rows.slice(i,i+70).map((row,j)=>env.DB.prepare('INSERT INTO portability_restore_rows (restore_id,resource_key,row_no,row_json) VALUES(?,?,?,?)').bind(restoreId,key,i+j+1,JSON.stringify(row)));if(batch.length)await env.DB.batch(batch);}}
 
