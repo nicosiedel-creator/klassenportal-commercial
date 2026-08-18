@@ -26,6 +26,7 @@ export interface Env {
   EU_D1_JURISDICTION_ATTESTED?: string;
   EU_R2_JURISDICTION_ATTESTED?: string;
   EU_WORKER_PROCESSING_ATTESTED?: string;
+  EU_METADATA_BOUNDARY_ATTESTED?: string;
   EU_BACKUP_STORAGE_ATTESTED?: string;
   CF_VERSION_METADATA?: WorkerVersionMetadataLike;
 }
