@@ -43,6 +43,8 @@ if(CUSTOMER_ADMIN_PATH){
     button.dataset.customerNavSourceLabel=label;
     return label;
   }
+  function navMemorySet(open){try{sessionStorage.setItem('kp_customer_nav_more',open?'1':'0');}catch{}}
+  function navMemoryGet(){try{return sessionStorage.getItem('kp_customer_nav_more')==='1';}catch{return false;}}
   function navGroupFor(label){return NAV_GROUPS.find(group=>group.labels.has(label))||{id:'more',title:'Weitere Verwaltung'};}
   function ensureNavGroup(groups,id,title){
     let group=groups.querySelector(`[data-customer-nav-group="${CSS.escape(id)}"]`);
@@ -84,7 +86,7 @@ if(CUSTOMER_ADMIN_PATH){
         const open=panel.hidden;
         panel.hidden=!open;
         more.setAttribute('aria-expanded',String(open));
-        sessionStorage.setItem('kp_customer_nav_more',open?'1':'0');
+        navMemorySet(open);
       });
       actions.append(more);
       if(logout)actions.append(logout);
@@ -129,7 +131,7 @@ if(CUSTOMER_ADMIN_PATH){
     const count=more.querySelector('.kp-customer-more-count');
     if(count)setText(count,String(extraCount));
     more.hidden=extraCount===0;
-    const storedOpen=sessionStorage.getItem('kp_customer_nav_more')==='1';
+    const storedOpen=navMemoryGet();
     const open=extraCount>0&&(extraActive||storedOpen);
     panel.hidden=!open;
     more.setAttribute('aria-expanded',String(open));
