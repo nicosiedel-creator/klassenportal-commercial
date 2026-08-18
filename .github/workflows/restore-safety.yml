@@ -1,7 +1,7 @@
-name: Restore safety check
+name: Secondary restore safety check
 
 on:
-  pull_request:
+  workflow_dispatch:
   push:
     branches: [main]
 
