@@ -106,9 +106,12 @@ export async function safeOfficialGradeReport(env:Env,auth:CoreAuthContext,tenan
   return{scale:scale?{id:scale.id,name:scale.name,items:scale.items,valid:scale.valid}:null,category_weight_valid:data.policy.category_weight_valid,category_weight_basis_points:data.policy.category_weight_basis_points,rows};
 }
 
-function escapeCsv(v:unknown){return`"${String(v??'').replace(/"/g,'""')}"`;}
+export function csvSafeCell(v:unknown):string{
+  const raw=String(v??''),safe=/^[\s]*[=+\-@]/.test(raw)?`'${raw}`:raw;
+  return`"${safe.replace(/"/g,'""')}"`;
+}
 export async function safeOfficialGradeCsv(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string){
   const report=await safeOfficialGradeReport(env,auth,tenantId,courseId);if(!report.category_weight_valid)throw new Error('CATEGORY_WEIGHT_TOTAL_INVALID');if(report.scale&&report.scale.valid===false)throw new Error('GRADING_SCALE_STORED_INVALID');
   const columns=['user_id','name','email','percent','grade','weight_complete_basis_points'];
-  return'\uFEFF'+[columns.map(escapeCsv).join(';'),...report.rows.map(row=>columns.map(column=>escapeCsv((row as Record<string,unknown>)[column])).join(';'))].join('\r\n');
+  return'\uFEFF'+[columns.map(csvSafeCell).join(';'),...report.rows.map(row=>columns.map(column=>csvSafeCell((row as Record<string,unknown>)[column])).join(';'))].join('\r\n');
 }
