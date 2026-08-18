@@ -15,10 +15,18 @@ export interface Env {
   CLOUDFLARE_ZONE_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
   CLOUDFLARE_SAAS_CNAME_TARGET?: string;
+  MAIL_PROVIDER?: 'brevo'|'resend';
+  BREVO_API_KEY?: string;
+  BREVO_INBOUND_WEBHOOK_TOKEN?: string;
   RESEND_API_KEY?: string;
   RESEND_WEBHOOK_SECRET?: string;
   INBOUND_MAIL_DOMAIN?: string;
   MAIL_FROM?: string;
+  DATA_RESIDENCY_MODE?: 'eu_strict'|'standard';
+  EU_D1_JURISDICTION_ATTESTED?: string;
+  EU_R2_JURISDICTION_ATTESTED?: string;
+  EU_WORKER_PROCESSING_ATTESTED?: string;
+  EU_BACKUP_STORAGE_ATTESTED?: string;
   CF_VERSION_METADATA?: WorkerVersionMetadataLike;
 }
 
