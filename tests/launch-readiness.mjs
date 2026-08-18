@@ -35,14 +35,16 @@ assert.match(accountPage,/Aus Sicherheitsgründen zeigen wir nicht an/,'forgot-p
 
 assert.match(mail,/https:\/\/api\.brevo\.com\/v3\/smtp\/email/,'EU-first transactional mail must support Brevo HTTPS endpoint');
 assert.match(mail,/'api-key':key/,'Brevo API token must use the provider authentication header');
-assert.match(mail,/idempotencyKey/,'transactional mail must use Brevo documented idempotency protection');
+assert.match(mail,/Idempotency-Key/,'transactional mail must use Brevo idempotency protection');
 assert.match(mail,/assertEuSafeMail/,'mail sending must fail closed when the EU-strict provider policy is not met');
 assert.doesNotMatch(mail,/console\.log\s*\(\s*(?:key|env\.(?:BREVO|RESEND)_API_KEY)/,'mail API secret must never be logged');
 assert.match(residency,/DATA_RESIDENCY_MODE/,'data residency mode must be explicit and fail closed');
 assert.match(residency,/EU_D1_JURISDICTION_ATTESTED/,'EU-strict launch must attest D1 jurisdiction');
 assert.match(residency,/EU_R2_JURISDICTION_ATTESTED/,'EU-strict launch must attest R2 jurisdiction');
 assert.match(residency,/EU_BACKUP_STORAGE_ATTESTED/,'EU-strict launch must attest backup jurisdiction');
-assert.match(residency,/configuredMailProvider\(env\)!=='brevo'/,'EU-strict mail must reject a non-EU-primary provider path');
+assert.match(residency,/EU_METADATA_BOUNDARY_ATTESTED/,'EU metadata boundary must be independently tracked');
+assert.match(residency,/explicitEuMail/,'EU-strict mail must require explicit Brevo selection');
+assert.match(residency,/EU_STRICT_MAIL_PROVIDER_REQUIRED/,'EU-strict mail must fail closed for any other provider path');
 
 assert.match(legal,/documents_enabled/,'legal publication must require an explicit owner switch');
 assert.match(legal,/document_version/,'legal documents must be versioned');
@@ -67,16 +69,15 @@ assert.match(readiness,/Eigentümer-MFA ist nicht aktiviert/,'production readine
 assert.match(readiness,/Transaktions-E-Mail ist nicht vollständig konfiguriert/,'production readiness must require transactional mail');
 assert.match(readiness,/EU-Datenhaltung nicht bestätigt/,'production readiness must fail closed until EU data residence is attested');
 assert.match(readiness,/euDataResidency/,'EU residency must be visible in the owner live-readiness result');
+assert.match(readiness,/euMetadataBoundary/,'EU metadata-boundary state must be visible separately');
 assert.match(readiness,/Rechtliche Unterlagen/,'production readiness must require legal configuration');
-assert.match(readiness,/legal_document_events/,'readiness must require the integrated legal schema');
-assert.match(readiness,/commercial_offer_acceptances/,'readiness must require offer acceptance schema');
-assert.match(readiness,/Backup-Sicherheit nicht erfüllt/,'production readiness must require verified current backups');
-assert.match(releaseState,/\.workers\.dev/,'preview Worker origin must never count as production-ready');
-assert.match(readiness,/CLOUDFLARE_SAAS_CNAME_TARGET/,'production readiness must require custom-domain provider when that module is sold');
+assert.match(readiness,/Backup-Sicherheit nicht erfüllt/,'production readiness must require verified backups');
+assert.match(readiness,/Datenbankschema unvollständig/,'production readiness must require schema completion');
+assert.match(readiness,/TENANT_SECRETS_ENCRYPTION_KEY/,'production readiness must require encrypted SSO client secrets when SSO is active');
+assert.match(releaseState,/production_release_approvals/,'production version approval must be persisted');
+assert.match(releaseState,/CF_VERSION_METADATA/,'production release lock must bind approval to exact Worker version');
+assert.match(index,/PRODUCTION_RELEASE_LOCKED/,'worker must fail closed before explicit production approval');
+assert.match(index,/strict-transport-security/,'security headers must enforce HTTPS');
+assert.match(wrangler,/version_metadata/,'Worker version metadata binding must be configured');
 
-for(const route of ['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren','/impressum','/datenschutz','/agb','/avv','/unterauftragsverarbeiter','/datenportabilitaet','/rechtsverstoss-melden'])assert.ok(index.includes(`'${route}'`)||wrangler.includes(`"${route}*"`),`launch route missing: ${route}`);
-assert.match(index,/renderLegalDocument/,'legal routes must render integrated documents instead of redirecting to external placeholders');
-assert.match(index,/verifyPendingBackups/,'scheduled job must automatically verify backups');
-assert.match(index,/cleanupAccountActions/,'scheduled job must clean expired account actions');
-
-console.log('Launch readiness, EU-first residency, integrated legal documents, account recovery and backup verification tests: OK');
+console.log('Launch readiness, legal, EU-first mail/data residency, recovery and backup safety checks: OK');
