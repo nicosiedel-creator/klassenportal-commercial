@@ -28,6 +28,11 @@ export interface Env {
   EU_WORKER_PROCESSING_ATTESTED?: string;
   EU_METADATA_BOUNDARY_ATTESTED?: string;
   EU_BACKUP_STORAGE_ATTESTED?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_JWK?: string;
+  VAPID_SUBJECT?: string;
+  ERP_WEBHOOK_URL?: string;
+  ERP_WEBHOOK_SIGNING_SECRET?: string;
   CF_VERSION_METADATA?: WorkerVersionMetadataLike;
 }
 
