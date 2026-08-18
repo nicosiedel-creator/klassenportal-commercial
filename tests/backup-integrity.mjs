@@ -9,13 +9,17 @@ assert.equal(etagMatches('abc123','different'),false,'different R2 etags must fa
 
 const backup=await readFile('src/portability/backup.ts','utf8');
 assert.match(backup,/integrity:\{version:1,json:'sha256',files:'r2-etag-size'\}/,'new backups must declare strong integrity metadata');
+assert.match(backup,/data\/__users\.json/,'full user-account snapshot must use a reserved object path that cannot collide with tenant_users resource export');
+assert.doesNotMatch(backup,/usersKey=`\$\{prefix\}\/data\/tenant_users\.json`/,'user snapshot must never reuse the tenant_users resource object');
+assert.match(backup,/BACKUP_RESERVED_RESOURCE_KEY/,'the reserved user snapshot resource key must be protected against future config collisions');
 assert.match(backup,/sha256:await sha256Text\(usersJson\)/,'user snapshot must be hashed');
 assert.match(backup,/sha256:await sha256Text\(json\)/,'every JSON resource snapshot must be hashed');
 assert.match(backup,/etag:copy\.etag/,'backed-up files must persist their R2 etag');
 assert.match(backup,/R2_BACKUP_COPY_SIZE_MISMATCH/,'file copy must be size-verified immediately');
 
 const preflight=await readFile('src/portability/backup-preflight.ts','utf8');
-for(const marker of ['BACKUP_USERS_HASH_MISMATCH','BACKUP_RESOURCE_HASH_MISMATCH','BACKUP_FILE_SIZE_MISMATCH','BACKUP_FILE_ETAG_MISMATCH'])assert.ok(preflight.includes(marker),`restore preflight missing ${marker}`);
+for(const marker of ['BACKUP_USERS_HASH_MISMATCH','BACKUP_RESOURCE_HASH_MISMATCH','BACKUP_FILE_SIZE_MISMATCH','BACKUP_FILE_ETAG_MISMATCH','BACKUP_OBJECT_REFERENCE_DUPLICATE'])assert.ok(preflight.includes(marker),`restore preflight missing ${marker}`);
+assert.match(preflight,/new Set<string>\(manifest\.users\?\[manifest\.users\.objectKey\]:\[\]\)/,'restore preflight must reserve the user snapshot object before validating resource/file objects');
 assert.match(preflight,/manifest\.integrity&&!item\.sha256/,'strong resource backups must not silently downgrade when a hash is missing');
 assert.match(preflight,/manifest\.integrity&&!file\.etag/,'strong file backups must not silently downgrade when an etag is missing');
 
@@ -24,6 +28,7 @@ assert.match(verification,/integrity_level TEXT NOT NULL DEFAULT 'structural'/,'
 assert.match(verification,/ALTER TABLE backup_verifications ADD COLUMN integrity_level/,'existing databases must self-heal the new integrity column');
 assert.match(verification,/catch\(e\)\{const after=await verificationColumns\(env\);if\(!after\.has\('integrity_level'\)\)throw e;\}/,'concurrent schema repair must accept the column if another request created it first');
 for(const marker of ['BACKUP_USERS_ROWCOUNT_MISMATCH','BACKUP_RESOURCE_ROWCOUNT_MISMATCH','BACKUP_FILE_SIZE_MISMATCH','BACKUP_FILE_ETAG_MISMATCH','BACKUP_RESOURCE_HASH_MISMATCH','BACKUP_OBJECT_REFERENCE_DUPLICATE'])assert.ok(verification.includes(marker),`scheduled verification missing ${marker}`);
+assert.match(verification,/manifest\.users\?\[manifest\.users\.objectKey\]:\[\]/,'scheduled verification must include the separate user snapshot in global object collision checks');
 assert.match(verification,/row\.integrity_level!=='strong'/,'launch readiness must reject legacy structural-only verification');
 assert.match(verification,/row\.checked_at<row\.completed_at/,'readiness must reject stale verification results');
 
@@ -36,4 +41,4 @@ assert.match(manifestTypes,/integrity\?: \{ version:1; json:'sha256'; files:'r2-
 assert.match(manifestTypes,/sha256\?: string/,'manifest JSON snapshots must support hashes');
 assert.match(manifestTypes,/etag\?: string/,'manifest files must support etags');
 
-console.log('Backup SHA-256, row-count, size, etag, race-safe schema and strong-readiness integrity checks: OK');
+console.log('Backup SHA-256, row-count, size, etag, object-path collision, race-safe schema and strong-readiness checks: OK');
