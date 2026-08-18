@@ -27,6 +27,9 @@ for(const wording of ['Dokumente hochladen','Organisation & Struktur','Verantwor
   assert.ok(labels.includes(wording),`clarified customer navigation wording missing ${wording}`);
 }
 assert.match(labels,/customerNavSourceLabel/,'visual relabeling must preserve the original module label for grouping');
+assert.match(ui,/function navSourceLabel\(button\)/,'navigation organizer must keep a stable source label for dynamically injected module buttons');
+assert.match(ui,/button\.dataset\.customerNavSourceLabel/,'navigation organizer must read and write the stable source label');
+assert.match(ui,/const label=navSourceLabel\(button\)/,'navigation grouping must use the original source label after visual relabeling');
 assert.match(ui,/aria-controls/,'secondary navigation toggle must be accessible');
 assert.match(ui,/extraActive\|\|storedOpen/,'an active secondary section must remain visible');
 assert.match(ui,/button\.parentElement!==primary/,'existing navigation buttons must be moved rather than recreated so their handlers survive');
