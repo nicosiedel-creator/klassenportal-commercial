@@ -13,6 +13,8 @@ export interface ProductionReleaseAccess {
   reason:string|null;
 }
 
+const WORKER_SERVICE_NAME='klassenportal-commercial';
+
 export function productionOriginStatus(env:Env):ProductionOriginStatus{
   try{
     const u=new URL(String(env.APP_ORIGIN||''));
@@ -23,9 +25,25 @@ export function productionOriginStatus(env:Env):ProductionOriginStatus{
   }catch{return{ok:false,origin:null,reason:'APP_ORIGIN fehlt oder ist ungültig'};}
 }
 
-export function requestLooksLikePreview(request:Request):boolean{
-  try{const h=new URL(request.url).hostname.toLowerCase();return h.endsWith('.workers.dev')||h.endsWith('.pages.dev')||h==='localhost'||h==='127.0.0.1';}catch{return false;}
+export function requestLooksLikeRemotePreview(request:Request):boolean{
+  try{
+    const h=new URL(request.url).hostname.toLowerCase();
+    if(h.endsWith('.pages.dev'))return true;
+    if(!h.endsWith('.workers.dev'))return false;
+    const firstLabel=h.split('.')[0]||'';
+    return firstLabel!==WORKER_SERVICE_NAME&&firstLabel.endsWith(`-${WORKER_SERVICE_NAME}`);
+  }catch{return false;}
 }
+
+export function requestLooksLikePreview(request:Request):boolean{
+  try{
+    const h=new URL(request.url).hostname.toLowerCase();
+    if(h==='localhost'||h==='127.0.0.1')return true;
+    return requestLooksLikeRemotePreview(request);
+  }catch{return false;}
+}
+
+function requestOrigin(request:Request):string|null{try{return new URL(request.url).origin;}catch{return null;}}
 
 export function currentWorkerVersion(env:Env):WorkerVersionInfo|null{
   const raw=env.CF_VERSION_METADATA,id=String(raw?.id||'').trim();if(!id)return null;
@@ -40,10 +58,12 @@ export async function ensureProductionReleaseSchema(env:Env):Promise<void>{
 }
 
 export async function productionReleaseAccess(env:Env,request:Request):Promise<ProductionReleaseAccess>{
-  const origin=productionOriginStatus(env),version=currentWorkerVersion(env),preview=requestLooksLikePreview(request);
+  const origin=productionOriginStatus(env),version=currentWorkerVersion(env),preview=requestLooksLikePreview(request),remotePreview=requestLooksLikeRemotePreview(request),actualOrigin=requestOrigin(request);
+  if(remotePreview)return{production:true,allowed:false,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:'Öffentliche Remote-Preview ist deaktiviert; Vorschau darf keine Produktionsdaten verwenden'};
   if(preview&&!origin.ok)return{production:false,allowed:true,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:null};
   if(preview&&origin.ok)return{production:true,allowed:false,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:'Vorschau-URL verwendet Produktionskonfiguration; Kundenverkehr bleibt aus Sicherheitsgründen gesperrt'};
   if(!origin.ok)return{production:true,allowed:false,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:origin.reason||'Produktionsursprung ist nicht sicher konfiguriert'};
+  if(!actualOrigin||actualOrigin!==origin.origin)return{production:true,allowed:false,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:'Anfrageursprung stimmt nicht mit der freigegebenen Produktionsdomain überein'};
   if(!version)return{production:true,allowed:false,approved:false,origin:origin.origin,version:null,approvedAt:null,approvedBy:null,reason:'Worker-Versionsmetadaten fehlen; Produktion bleibt gesperrt'};
   try{
     const row=await env.DB.prepare(`SELECT approved_at,approved_by FROM production_release_approvals
