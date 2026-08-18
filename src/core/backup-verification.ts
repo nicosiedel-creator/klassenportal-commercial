@@ -5,12 +5,19 @@ import { nowIso } from './utils.js';
 
 type IntegrityLevel='structural'|'strong';
 
+async function verificationColumns(env:Env):Promise<Set<string>>{const rows=await env.DB.prepare('PRAGMA table_info(backup_verifications)').all<{name:string}>();return new Set((rows.results??[]).map(x=>String(x.name)));}
+async function ensureIntegrityLevelColumn(env:Env):Promise<void>{
+  const current=await verificationColumns(env);if(current.has('integrity_level'))return;
+  try{await env.DB.prepare("ALTER TABLE backup_verifications ADD COLUMN integrity_level TEXT NOT NULL DEFAULT 'structural'").run();}
+  catch(e){const after=await verificationColumns(env);if(!after.has('integrity_level'))throw e;}
+}
+
 export async function ensureBackupVerificationSchema(env:Env):Promise<void>{
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS backup_verifications (
     backup_id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('verified','failed')),checked_at TEXT NOT NULL,
     resource_count INTEGER NOT NULL DEFAULT 0,file_count INTEGER NOT NULL DEFAULT 0,missing_objects_json TEXT,error_message TEXT,integrity_level TEXT NOT NULL DEFAULT 'structural',
     FOREIGN KEY(backup_id) REFERENCES portability_backups(id) ON DELETE CASCADE,FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE CASCADE)`).run();
-  const cols=(await env.DB.prepare('PRAGMA table_info(backup_verifications)').all<{name:string}>()).results??[];if(!cols.some(x=>x.name==='integrity_level'))await env.DB.prepare("ALTER TABLE backup_verifications ADD COLUMN integrity_level TEXT NOT NULL DEFAULT 'structural'").run();
+  await ensureIntegrityLevelColumn(env);
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_backup_verification_time ON backup_verifications(status,checked_at DESC)').run();
 }
 async function save(env:Env,backupId:string,tenantId:string,status:'verified'|'failed',resources:number,files:number,issues:string[],integrityLevel:IntegrityLevel,error?:string){await ensureBackupVerificationSchema(env);await env.DB.prepare(`INSERT INTO backup_verifications(backup_id,tenant_id,status,checked_at,resource_count,file_count,missing_objects_json,error_message,integrity_level)
