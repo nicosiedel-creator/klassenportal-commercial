@@ -29,6 +29,7 @@ import { runCommunicationAutomation } from './core/secure-communications.js';
 import { handleAttendanceApi } from './core/attendance-router.js';
 import { runAttendanceAttention } from './core/attendance-classbook.js';
 import { handleParticipant360Api } from './core/participant-360-router.js';
+import { runPlatformAutomationCycle } from './core/automation-cycle.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
@@ -103,6 +104,7 @@ export default{
   async scheduled(controller:{cron?:string},env:Env):Promise<void>{
     await runCommunicationAutomation(env).catch(e=>console.error('Communication automation failed',{error:String((e as Error)?.message||e)}));
     await runAttendanceAttention(env).catch(e=>console.error('Attendance attention automation failed',{error:String((e as Error)?.message||e)}));
+    await runPlatformAutomationCycle(env).catch(e=>console.error('Platform automation cycle failed',{error:String((e as Error)?.message||e)}));
     if(controller?.cron==='*/5 * * * *')return;
     await refreshTrialStates(env);await processScheduledModuleCancellations(env,25);await ensureCustomDomainGuards(env).catch(()=>undefined);await reconcilePendingCustomDomains(env,25).catch(e=>console.error('Custom domain reconciliation failed',{error:String((e as Error)?.message||e)}));await runScheduledTenantBackups(env,portabilityConfig,'system:backup',3);await verifyPendingBackups(env,2).catch(e=>console.error('Backup verification failed',{error:String((e as Error)?.message||e)}));await cleanupAccountActions(env).catch(()=>undefined);await cleanupOidcStates(env).catch(()=>undefined);await cleanupIntake(env).catch(e=>console.error('Intake cleanup failed',{error:String((e as Error)?.message||e)}));
     const now=new Date(),nowIso=now.toISOString();await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(nowIso).run();await env.DB.prepare('DELETE FROM platform_mfa_challenges WHERE expires_at <= ?').bind(nowIso).run().catch(()=>undefined);await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(nowIso).run();await env.DB.prepare('DELETE FROM login_attempts WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run();await env.DB.prepare('DELETE FROM legal_content_report_limits WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run().catch(()=>undefined);await env.DB.prepare('DELETE FROM integration_rate_limits WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run().catch(()=>undefined);await env.DB.prepare("UPDATE org_import_batches SET status='expired' WHERE status='previewed' AND expires_at<=?").bind(nowIso).run().catch(()=>undefined);await env.DB.prepare("DELETE FROM participant_import_batches WHERE (status='preview' AND expires_at<=?) OR (status IN ('applied','cancelled','expired') AND COALESCE(applied_at,created_at)<=?)").bind(nowIso,new Date(now.getTime()-90*86400000).toISOString()).run().catch(()=>undefined);
