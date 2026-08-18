@@ -44,6 +44,7 @@
 /* Kunden-Admin: VFA13-Optik ohne schwebende Navigation. Struktur und Gruppierung kommen aus customer-compact.css/customer-admin-ui.js. */
 .customer-portal-admin .side{position:static!important;top:auto!important;inset:auto!important;z-index:auto!important;max-width:none!important;padding:14px 18px!important;background:#fff!important;border-bottom:1px solid var(--vfa-border)!important;box-shadow:0 1px 0 rgba(15,23,42,.03)!important;display:block!important;overflow:visible!important;white-space:normal!important}
 .customer-portal-admin .side h1{font-size:1rem!important;margin:0 auto 0 0!important}
+.customer-portal-admin .kp-customer-nav-primary{flex-wrap:wrap!important}
 .customer-portal-admin .nav{background:#fff!important;border:1px solid var(--vfa-border)!important;border-radius:9px!important;padding:7px 9px!important;color:#475467!important;font-size:.82rem!important;font-weight:700!important}
 .customer-portal-admin .kp-customer-nav-primary .nav{background:#f8fafc!important}
 .customer-portal-admin .nav:hover,.customer-portal-admin .nav.active{background:var(--vfa-soft)!important;border-color:color-mix(in srgb,var(--portal-primary,#2563eb) 25%,#fff)!important;color:var(--portal-primary,#2563eb)!important}
