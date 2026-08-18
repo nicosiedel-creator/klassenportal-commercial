@@ -26,6 +26,10 @@ for(const marker of ['BACKUP_USERS_ROWCOUNT_MISMATCH','BACKUP_RESOURCE_ROWCOUNT_
 assert.match(verification,/row\.integrity_level!=='strong'/,'launch readiness must reject legacy structural-only verification');
 assert.match(verification,/row\.checked_at<row\.completed_at/,'readiness must reject stale verification results');
 
+const readiness=await readFile('src/core/launch-readiness.ts','utf8');
+assert.match(readiness,/backupReadiness\(env,48\)/,'production readiness must execute the strong backup readiness check');
+assert.match(readiness,/Backup-Sicherheit nicht erfüllt/,'backup integrity failures must block live release');
+
 const manifestTypes=await readFile('src/portability/types.ts','utf8');
 assert.match(manifestTypes,/integrity\?: \{ version:1; json:'sha256'; files:'r2-etag-size' \}/,'manifest must expose versioned integrity metadata');
 assert.match(manifestTypes,/sha256\?: string/,'manifest JSON snapshots must support hashes');
