@@ -47,8 +47,8 @@ async function storedScale(env:Env,tenantId:string,courseId:string){
   const s=await env.DB.prepare('SELECT id,name FROM grading_scales WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) ORDER BY CASE WHEN course_id=? THEN 0 ELSE 1 END,is_default DESC,updated_at DESC LIMIT 1').bind(tenantId,courseId,courseId).first<{id:string;name:string}>();
   if(!s)return null;
   const items=(await env.DB.prepare('SELECT label,min_percent,max_percent FROM grading_scale_items WHERE scale_id=? ORDER BY min_percent DESC').bind(s.id).all<{label:string;min_percent:number;max_percent:number}>()).results??[];
-  try{normalizeGradeScaleItems({items});}catch{throw new Error('GRADING_SCALE_STORED_INVALID');}
-  return{...s,items};
+  let valid=true;try{normalizeGradeScaleItems({items});}catch{valid=false;}
+  return{...s,items,valid};
 }
 
 export async function safeSaveGradebookCategory(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,input:Record<string,unknown>){
@@ -100,14 +100,15 @@ export async function safeOfficialGradeReport(env:Env,auth:CoreAuthContext,tenan
   manager(auth,courseId);const data=await safeAdvancedGradebook(env,auth,tenantId,courseId),scale=await storedScale(env,tenantId,courseId);
   const rows=(data.participants as Record<string,unknown>[]).map(participant=>{
     const raw=participant.final_percent===null||participant.final_percent===undefined?null:Number(participant.final_percent),percent=raw===null?null:roundGradePercent(raw);
-    const label=percent===null?'':scale?.items.find(item=>percent>=roundGradePercent(Number(item.min_percent))&&percent<=roundGradePercent(Number(item.max_percent)))?.label||'';
+    const label=percent===null||!scale?.valid?'':scale.items.find(item=>percent>=roundGradePercent(Number(item.min_percent))&&percent<=roundGradePercent(Number(item.max_percent)))?.label||'';
     return{user_id:participant.id,name:participant.display_name,email:participant.email,percent:percent===null?'':percent,grade:label,weight_complete_basis_points:participant.complete_weight};
   });
-  return{scale:scale?{id:scale.id,name:scale.name}:null,rows};
+  return{scale:scale?{id:scale.id,name:scale.name,items:scale.items,valid:scale.valid}:null,rows};
 }
 
 function escapeCsv(v:unknown){return`"${String(v??'').replace(/"/g,'""')}"`;}
 export async function safeOfficialGradeCsv(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string){
-  const report=await safeOfficialGradeReport(env,auth,tenantId,courseId),columns=['user_id','name','email','percent','grade','weight_complete_basis_points'];
+  const report=await safeOfficialGradeReport(env,auth,tenantId,courseId);if(report.scale&&report.scale.valid===false)throw new Error('GRADING_SCALE_STORED_INVALID');
+  const columns=['user_id','name','email','percent','grade','weight_complete_basis_points'];
   return'\uFEFF'+[columns.map(escapeCsv).join(';'),...report.rows.map(row=>columns.map(column=>escapeCsv((row as Record<string,unknown>)[column])).join(';'))].join('\r\n');
 }
