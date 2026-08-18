@@ -4,7 +4,7 @@ if(PLATFORM_DIRECT_PATH){
   const root=document.querySelector('#app');
   let loading=false;
 
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   async function json(url,opt={}){
     const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt,headers:{'content-type':'application/json',...(opt.headers||{})}});
     let d={};try{d=await r.clone().json();}catch{}
@@ -43,6 +43,7 @@ if(PLATFORM_DIRECT_PATH){
       import('/platform-owner-ui.js?v=20260816-14'),
       import('/platform-offers-ui.js?v=20260817-2'),
       import('/platform-offer-accepted-link-ui.js?v=20260817-1'),
+      import('/platform-accounting-ui.js?v=20260818-1'),
       import('/legal-owner-ui.js?v=20260817-1'),
       import('/owner-security-ui.js?v=20260816-14'),
       import('/launch-readiness-ui.js?v=20260817-2'),
