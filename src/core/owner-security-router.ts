@@ -7,7 +7,7 @@ import { handlePlatformAccountingAutopilotApi } from './platform-accounting-auto
 import { assertSameOrigin, json, noCookie } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown):Response{const code=String((e as Error)?.message||'INTERNAL_ERROR');const status=code==='UNAUTHENTICATED'?401:code==='FORBIDDEN'||code.includes('ADMIN_REQUIRED')||code==='CURRENT_PASSWORD_INVALID'?403:code.includes('NOT_FOUND')?404:code.includes('EXPIRED')?410:code.includes('LOCKED')||code==='LOGIN_RATE_LIMITED'?429:code.includes('ALREADY')||code.includes('GRACE_PERIOD')||code==='ACTIVE_BILLING_MUST_END_FIRST'?409:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('MFA_')?400:500;return json({ok:false,error:code},status);}
+function fail(e:unknown):Response{const code=String((e as Error)?.message||'INTERNAL_ERROR');const status=code==='UNAUTHENTICATED'?401:code==='FORBIDDEN'||code.includes('ADMIN_REQUIRED')||code==='CURRENT_PASSWORD_INVALID'||code==='PLATFORM_ORIGIN_MISMATCH'?403:code.includes('NOT_FOUND')?404:code.includes('EXPIRED')?410:code.includes('LOCKED')||code==='LOGIN_RATE_LIMITED'?429:code.includes('ALREADY')||code.includes('GRACE_PERIOD')||code==='ACTIVE_BILLING_MUST_END_FIRST'?409:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('MFA_')?400:500;return json({ok:false,error:code},status);}
 function administrative(user:{isPlatformAdmin:boolean;tenantRoles:Array<{role:string}>}){return user.isPlatformAdmin||user.tenantRoles.some(x=>x.role==='tenant_admin'||x.role==='class_admin');}
 
 export async function handleOwnerSecurityApi(request:Request,env:Env):Promise<Response|null>{
@@ -15,7 +15,7 @@ export async function handleOwnerSecurityApi(request:Request,env:Env):Promise<Re
   const accounting=await handlePlatformAccountingApi(request,env);if(accounting)return accounting;
   const u=new URL(request.url);
   if(u.pathname==='/api/auth/mfa/verify'&&request.method==='POST'){
-    try{assertSameOrigin(request,env.APP_ORIGIN);const b=await body(request),userId=await verifyMfaChallenge(env,b.challenge_token,b.code),user=await env.DB.prepare("SELECT is_platform_admin,status FROM users WHERE id=?").bind(userId).first<{is_platform_admin:number;status:string}>();if(!user||user.status!=='active')throw new Error('FORBIDDEN');return issueSession(env,userId,!!user.is_platform_admin,'mfa');}catch(e){return fail(e);}
+    try{assertSameOrigin(request,env.APP_ORIGIN);const b=await body(request),userId=await verifyMfaChallenge(env,b.challenge_token,b.code),user=await env.DB.prepare("SELECT is_platform_admin,status FROM users WHERE id=?").bind(userId).first<{is_platform_admin:number;status:string}>();if(!user||user.status!=='active')throw new Error('FORBIDDEN');return issueSession(env,userId,!!user.is_platform_admin,'mfa',undefined,request);}catch(e){return fail(e);}
   }
   if(u.pathname==='/api/auth/mfa/status'&&request.method==='GET'){
     try{const session=await getSession(env,request);if(!session)throw new Error('UNAUTHENTICATED');const status=await ownerMfaStatus(env,session.userId);return json({ok:true,status:{...status,administrative:administrative(session),required:administrative(session)&&!session.isPlatformAdmin&&session.authMethod!=='oidc',authMethod:session.authMethod||'password'}});}catch(e){return fail(e);}
