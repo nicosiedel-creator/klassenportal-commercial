@@ -2,6 +2,7 @@ import type { CoreAuthContext, Env, SessionUser } from './types.js';
 import { id, nowIso } from './utils.js';
 import { processPushOutbox } from './collaboration-reporting.js';
 import { processErpOutbox, syncCommercialAccounting, syncStripeFees } from './platform-accounting.js';
+import { autoMatchBankTransactions, refreshDunningCases } from './platform-accounting-autopilot.js';
 
 function systemAuth():CoreAuthContext{
   const session:SessionUser={userId:'system:accounting',email:'system@localhost.invalid',displayName:'Systemautomation',isPlatformAdmin:true,mustChangePassword:false,tenantRoles:[],authMethod:'api'};
@@ -18,6 +19,8 @@ export async function runPlatformAutomationCycle(env:Env){
   const auth=systemAuth(),result:Record<string,unknown>={};
   try{result.push_queued=await enqueueNewNotificationPushes(env);result.push=await processPushOutbox(env,200);}catch(e){result.push_error=String((e as Error)?.message||e);}
   try{result.accounting=await syncCommercialAccounting(env,auth);}catch(e){result.accounting_error=String((e as Error)?.message||e);}
+  try{result.bank_match=await autoMatchBankTransactions(env,auth);}catch(e){result.bank_match_error=String((e as Error)?.message||e);}
+  try{result.dunning=await refreshDunningCases(env,auth);}catch(e){result.dunning_error=String((e as Error)?.message||e);}
   if(env.STRIPE_SECRET_KEY){try{if(await stripeFeesDue(env)){result.stripe_fees=await syncStripeFees(env,auth);await env.DB.prepare("INSERT INTO accounting_events(id,event_type,actor_user_id,entity_type,entity_id,detail_json,created_at) VALUES(?,'automation.stripe_fees','system:accounting','accounting_sync','stripe',?,?)").bind(id('ace_'),JSON.stringify(result.stripe_fees||{}),nowIso()).run();}}catch(e){result.stripe_fee_error=String((e as Error)?.message||e);}}
   try{result.erp=await processErpOutbox(env,100);}catch(e){result.erp_error=String((e as Error)?.message||e);}
   return result;
