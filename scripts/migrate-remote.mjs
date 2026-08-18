@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { reconcileKnownRuntimeSchemaDrift } from './reconcile-runtime-schema-drift.mjs';
-import { patchD1MigrationFilesForWorkersBuild } from './d1-migration-compat.mjs';
+import { withD1MigrationFilesForWorkersBuild } from './d1-migration-compat.mjs';
 
 const WRANGLER=['wrangler'];
 const npx=process.platform==='win32'?'npx.cmd':'npx';
@@ -42,15 +42,15 @@ function rowsFrom(value){
 
 function queryRows(sql){const out=run(['d1','execute','DB','--remote','--json','--command',sql],{capture:true});return rowsFrom(parseJson(out));}
 function runSql(sql){run(['d1','execute','DB','--remote','--yes','--command',sql]);}
-function applyNormalMigrations(){run(['d1','migrations','apply','DB','--remote']);}
+async function applyNormalMigrations(){
+  const apply=()=>run(['d1','migrations','apply','DB','--remote']);
+  if(workersBuild&&branch===productionBranch)return withD1MigrationFilesForWorkersBuild(apply);
+  return apply();
+}
 
 if(workersBuild&&branch&&branch!==productionBranch){
   console.log(`Skipping remote D1 migrations on non-production Workers Build branch: ${branch}`);
   process.exit(0);
-}
-
-if(workersBuild&&branch===productionBranch){
-  await patchD1MigrationFilesForWorkersBuild();
 }
 
 let currentColumns=[];
@@ -58,7 +58,7 @@ try{
   currentColumns=queryRows("SELECT name FROM pragma_table_info('tenant_settings') WHERE name IN ('accent_color','surface_color','text_color') ORDER BY name;").map(row=>String(row.name||'')).filter(Boolean);
 }catch{
   console.log('Remote tenant_settings schema is not yet queryable; using normal Wrangler migrations.');
-  applyNormalMigrations();process.exit(0);
+  await applyNormalMigrations();process.exit(0);
 }
 
 let brandingApplied=false;
@@ -66,7 +66,7 @@ try{
   brandingApplied=queryRows(`SELECT name FROM d1_migrations WHERE name='${brandingMigration}';`).some(row=>String(row.name||'')===brandingMigration);
 }catch{
   console.log('Remote d1_migrations history is not yet queryable; using normal Wrangler migrations.');
-  applyNormalMigrations();process.exit(0);
+  await applyNormalMigrations();process.exit(0);
 }
 
 const present=new Set(currentColumns);
@@ -84,4 +84,4 @@ if(!brandingApplied&&present.size>0){
 const reconciled=await reconcileKnownRuntimeSchemaDrift({queryRows,run:runSql});
 if(reconciled.length)console.log(`Reconciled runtime schema migration history: ${reconciled.join(', ')}.`);
 
-applyNormalMigrations();
+await applyNormalMigrations();
