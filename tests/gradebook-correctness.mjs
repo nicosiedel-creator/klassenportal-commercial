@@ -52,7 +52,7 @@ assert.match(ui,/form\.dataset\.scaleId/,'existing grading scale must be updated
 assert.match(ui,/hydrateScale/,'stored grading scale must be loaded back into the editor');
 assert.match(ui,/event\.stopImmediatePropagation\(\)/,'hardened gradebook forms must own submission before the legacy handler sends them');
 const customerHtml=await readFile('public/customer-admin.html','utf8'),classHtml=await readFile('public/class-admin.html','utf8');
-assert.ok(customerHtml.includes('/gradebook-policy-ui.js?v=20260818-1'),'customer admin must load gradebook validation UI');
-assert.ok(classHtml.includes('/gradebook-policy-ui.js?v=20260818-1'),'class admin must load gradebook validation UI');
+assert.ok(customerHtml.includes('/gradebook-policy-ui.js?v=20260818-2'),'customer admin must load the final gradebook validation UI');
+assert.ok(classHtml.includes('/gradebook-policy-ui.js?v=20260818-2'),'class admin must load the final gradebook validation UI');
 
 console.log('Official gradebook weighting, category totals, deterministic grading-scale and repairable UI checks: OK');
