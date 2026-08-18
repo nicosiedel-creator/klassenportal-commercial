@@ -28,6 +28,7 @@ import { handleCommunicationsApi } from './core/communications-router.js';
 import { runCommunicationAutomation } from './core/secure-communications.js';
 import { handleAttendanceApi } from './core/attendance-router.js';
 import { runAttendanceAttention } from './core/attendance-classbook.js';
+import { handleParticipant360Api } from './core/participant-360-router.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
@@ -86,6 +87,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   const payment=await handlePaymentApi(request,env);if(payment)return payment;
   const communications=await handleCommunicationsApi(request,env);if(communications)return communications;
   const attendance=await handleAttendanceApi(request,env);if(attendance)return attendance;
+  const participant360Response=await handleParticipant360Api(request,env);if(participant360Response)return participant360Response;
 
   const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);if(onboardingPost){const payload=await request.clone().json().catch(()=>({})) as Record<string,unknown>;if(String(payload.commercial_action||'trial')==='book'&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);}
   const tenantId=url.searchParams.get('tenant_id'),mutating=request.method!=='GET'&&request.method!=='HEAD',exemptMutation=url.pathname==='/api/timetable/preview'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/onboarding/')||url.pathname.startsWith('/api/platform/');if(tenantId&&mutating&&!exemptMutation){try{await assertPaymentWriteAccess(env,tenantId);}catch(e){return accessError(e);}}
