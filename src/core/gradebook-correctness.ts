@@ -55,6 +55,7 @@ export async function safeSaveGradebookCategory(env:Env,auth:CoreAuthContext,ten
   manager(auth,courseId);
   const name=clean(input.name,120),existing=clean(input.id,120),weight=Math.trunc(Number(input.weight_basis_points??0));
   if(!name||!Number.isFinite(weight)||weight<0||weight>10000)throw new Error('CATEGORY_POLICY_INVALID');
+  if(existing){const row=await env.DB.prepare('SELECT name FROM gradebook_categories WHERE id=? AND tenant_id=? AND course_id=?').bind(existing,tenantId,courseId).first<{name:string}>();if(!row)throw new Error('CATEGORY_NOT_FOUND');if(row.name!==name)throw new Error('CATEGORY_RENAME_NOT_ALLOWED');}
   const duplicate=await env.DB.prepare('SELECT id FROM gradebook_categories WHERE tenant_id=? AND course_id=? AND lower(name)=lower(?) AND (?=\'\' OR id<>?) LIMIT 1').bind(tenantId,courseId,name,existing,existing).first();
   if(duplicate)throw new Error('CATEGORY_NAME_DUPLICATE');
   const current=Number(await env.DB.prepare('SELECT COALESCE(SUM(weight_basis_points),0) AS n FROM gradebook_categories WHERE tenant_id=? AND course_id=? AND (?=\'\' OR id<>?)').bind(tenantId,courseId,existing,existing).first<number>('n')||0);
@@ -75,8 +76,7 @@ export async function safeAdvancedGradebook(env:Env,auth:CoreAuthContext,tenantI
   const items=(await env.DB.prepare('SELECT * FROM gradebook_items WHERE tenant_id=? AND course_id=? ORDER BY created_at,title').bind(tenantId,courseId).all<Record<string,unknown>>()).results??[];
   const scores=(await env.DB.prepare("SELECT gs.*,u.display_name,u.email FROM gradebook_scores gs JOIN users u ON u.id=gs.user_id WHERE gs.tenant_id=? AND gs.course_id=? AND gs.status='published'").bind(tenantId,courseId).all<Record<string,unknown>>()).results??[];
   const participants=(await env.DB.prepare("SELECT DISTINCT u.id,u.display_name,u.email FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.tenant_id=? AND m.course_id=? AND m.role='participant' AND u.status='active' ORDER BY u.display_name").bind(tenantId,courseId).all<Record<string,unknown>>()).results??[];
-  const configuredWeight=categories.reduce((sum,c)=>sum+Number(c.weight_basis_points||0),0);
-  if(configuredWeight>10000)throw new Error('CATEGORY_WEIGHT_TOTAL_INVALID');
+  const configuredWeight=categories.reduce((sum,c)=>sum+Number(c.weight_basis_points||0),0),categoryWeightValid=configuredWeight<=10000;
   const result=participants.map(participant=>{
     let weighted=0,weightUsed=0;const details:Record<string,unknown>[]=[];
     for(const category of categories){
@@ -90,10 +90,10 @@ export async function safeAdvancedGradebook(env:Env,auth:CoreAuthContext,tenantI
       const categoryWeight=Number(category.weight_basis_points||0)/10000;weighted+=summary.average*categoryWeight;weightUsed+=categoryWeight;
       details.push({category:categoryName,percent:summary.average,weight_basis_points:category.weight_basis_points,items:summary.items,item_weight_total:summary.itemWeightTotal});
     }
-    const percent=weightUsed>0?weighted/weightUsed:null;
+    const percent=categoryWeightValid&&weightUsed>0?weighted/weightUsed:null;
     return{...participant,final_percent:percent,complete_weight:Math.round(weightUsed*10000),details};
   });
-  return{categories,items,participants:result};
+  return{categories,items,participants:result,policy:{category_weight_basis_points:configuredWeight,category_weight_valid:categoryWeightValid}};
 }
 
 export async function safeOfficialGradeReport(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string){
@@ -103,12 +103,12 @@ export async function safeOfficialGradeReport(env:Env,auth:CoreAuthContext,tenan
     const label=percent===null||!scale?.valid?'':scale.items.find(item=>percent>=roundGradePercent(Number(item.min_percent))&&percent<=roundGradePercent(Number(item.max_percent)))?.label||'';
     return{user_id:participant.id,name:participant.display_name,email:participant.email,percent:percent===null?'':percent,grade:label,weight_complete_basis_points:participant.complete_weight};
   });
-  return{scale:scale?{id:scale.id,name:scale.name,items:scale.items,valid:scale.valid}:null,rows};
+  return{scale:scale?{id:scale.id,name:scale.name,items:scale.items,valid:scale.valid}:null,category_weight_valid:data.policy.category_weight_valid,category_weight_basis_points:data.policy.category_weight_basis_points,rows};
 }
 
 function escapeCsv(v:unknown){return`"${String(v??'').replace(/"/g,'""')}"`;}
 export async function safeOfficialGradeCsv(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string){
-  const report=await safeOfficialGradeReport(env,auth,tenantId,courseId);if(report.scale&&report.scale.valid===false)throw new Error('GRADING_SCALE_STORED_INVALID');
+  const report=await safeOfficialGradeReport(env,auth,tenantId,courseId);if(!report.category_weight_valid)throw new Error('CATEGORY_WEIGHT_TOTAL_INVALID');if(report.scale&&report.scale.valid===false)throw new Error('GRADING_SCALE_STORED_INVALID');
   const columns=['user_id','name','email','percent','grade','weight_complete_basis_points'];
   return'\uFEFF'+[columns.map(escapeCsv).join(';'),...report.rows.map(row=>columns.map(column=>escapeCsv((row as Record<string,unknown>)[column])).join(';'))].join('\r\n');
 }
