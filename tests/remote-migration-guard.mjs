@@ -16,9 +16,7 @@ assert.ok(script.includes("branch!==productionBranch"),'non-production branches 
 assert.ok(script.includes("productionBranch='main'"),'remote production migrations must be pinned to main');
 assert.ok(script.includes("0042_branding_palette.sql"),'known branding migration drift must remain explicit');
 for(const column of ['accent_color','surface_color','text_color'])assert.ok(script.includes(column),`branding reconciliation missing ${column}`);
-assert.deepEqual(reconciledMigrations,[
-  '0044_legal_documents_and_pilot.sql','0045_platform_offers.sql','0046_integrated_legal_documents.sql','0058_assignments_gradebook.sql'
-]);
+assert.deepEqual(reconciledMigrations,['0044_legal_documents_and_pilot.sql','0045_platform_offers.sql','0046_integrated_legal_documents.sql','0058_assignments_gradebook.sql']);
 for(const name of reconciledMigrations)assert.ok(reconciler.includes(name),`runtime drift reconciliation missing ${name}`);
 for(const token of ['representative','commercial_offer_acceptances','documents_enabled','submission_mode','assignment_submissions'])assert.ok(reconciler.includes(token),`runtime reconciliation missing ${token}`);
 assert.ok(reconciler.includes('INSERT INTO d1_migrations (name) SELECT'),'reconciled migration must be recorded only after schema repair');
@@ -26,14 +24,12 @@ assert.ok(reconciler.includes('WHERE NOT EXISTS'),'migration history reconciliat
 assert.ok(script.includes("['d1','migrations','apply','DB','--remote']"),'normal Wrangler migrations must continue after reconciliation');
 assert.ok(!reconciler.includes('DROP TABLE')&&!reconciler.includes('DELETE FROM d1_migrations'),'reconciliation must never destroy schema or migration history');
 
-const preview=spawnSync(process.execPath,['scripts/migrate-remote.mjs'],{
-  cwd:process.cwd(),encoding:'utf8',env:{...process.env,WORKERS_CI:'1',WORKERS_CI_BRANCH:'preview-validation'},
-});
+const preview=spawnSync(process.execPath,['scripts/migrate-remote.mjs'],{cwd:process.cwd(),encoding:'utf8',env:{...process.env,WORKERS_CI:'1',WORKERS_CI_BRANCH:'preview-validation'}});
 assert.equal(preview.status,0,preview.stderr||'preview migration guard failed');
 assert.match(preview.stdout,/Skipping remote D1 migrations on non-production Workers Build branch/,'preview execution must stop before remote D1 access');
 
-// Simulate the exact production drift class: runtime guards already created some
-// columns, while d1_migrations has not recorded their migration files yet.
+// Simulate the production drift class: runtime guards already created schema,
+// while d1_migrations has not recorded the corresponding migration files yet.
 const db=new DatabaseSync(':memory:');
 db.exec(`
   CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,applied_at TEXT DEFAULT CURRENT_TIMESTAMP);
@@ -56,6 +52,7 @@ assert.equal(db.prepare('SELECT representative FROM legal_configuration WHERE id
 assert.equal(db.prepare("SELECT subject FROM commercial_quotes WHERE id='q1'").get().subject,'Bestehendes Angebot');
 assert.equal(db.prepare("SELECT submission_mode FROM homework WHERE id='hw1'").get().submission_mode,'file');
 for(const table of ['pilot_programs','commercial_offer_acceptances','commercial_offer_events','legal_document_events','legal_content_reports','assignment_submissions','assignment_submission_files','gradebook_items','gradebook_scores','gradebook_events'])assert.ok(db.prepare(`SELECT 1 ok FROM sqlite_master WHERE type='table' AND name=?`).get(table)?.ok,`missing reconciled table ${table}`);
+for(const trigger of ['trg_pilot_no_auto_paid_insert','trg_reconcile_quotes_values_insert','trg_reconcile_offer_event_values_insert','trg_reconcile_legal_config_values_insert','trg_reconcile_legal_report_values_insert'])assert.ok(db.prepare(`SELECT 1 ok FROM sqlite_master WHERE type='trigger' AND name=?`).get(trigger)?.ok,`missing reconciled guard trigger ${trigger}`);
 const second=await reconcileKnownRuntimeSchemaDrift({queryRows,run});
 assert.deepEqual(second,[],'reconciliation must be idempotent once migration history is recorded');
 
