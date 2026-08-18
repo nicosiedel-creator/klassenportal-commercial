@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS communication_email_deliveries (
   status TEXT NOT NULL CHECK(status IN ('sent','failed')),
   provider_message_id TEXT,
   error_code TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TEXT,
+  next_retry_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE(message_id,user_id),
@@ -16,4 +19,5 @@ CREATE TABLE IF NOT EXISTS communication_email_deliveries (
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_communication_email_delivery_message ON communication_email_deliveries(message_id,status);
+CREATE INDEX IF NOT EXISTS idx_communication_email_delivery_retry ON communication_email_deliveries(status,next_retry_at,attempts);
 CREATE INDEX IF NOT EXISTS idx_communication_email_delivery_tenant ON communication_email_deliveries(tenant_id,created_at DESC);
