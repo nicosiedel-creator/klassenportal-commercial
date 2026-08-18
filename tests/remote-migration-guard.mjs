@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { reconciledMigrations,reconcileKnownRuntimeSchemaDrift } from '../scripts/reconcile-runtime-schema-drift.mjs';
+import { d1TriggerCompatFiles,patchD1TriggerParserSql } from '../scripts/d1-migration-compat.mjs';
 
 const script=await readFile('scripts/migrate-remote.mjs','utf8');
 const reconciler=await readFile('scripts/reconcile-runtime-schema-drift.mjs','utf8');
@@ -14,6 +15,7 @@ assert.ok(script.includes("process.env.WORKERS_CI_BRANCH"),'Workers Builds branc
 assert.ok(script.includes("process.env.WORKERS_CI"),'Workers Builds execution must be detected');
 assert.ok(script.includes("branch!==productionBranch"),'non-production branches must skip remote D1 migrations');
 assert.ok(script.includes("productionBranch='main'"),'remote production migrations must be pinned to main');
+assert.ok(script.includes('patchD1MigrationFilesForWorkersBuild'),'production Workers build must apply D1 trigger parser compatibility before Wrangler migrations');
 assert.ok(script.includes("0042_branding_palette.sql"),'known branding migration drift must remain explicit');
 for(const column of ['accent_color','surface_color','text_color'])assert.ok(script.includes(column),`branding reconciliation missing ${column}`);
 assert.deepEqual(reconciledMigrations,['0044_legal_documents_and_pilot.sql','0045_platform_offers.sql','0046_integrated_legal_documents.sql','0058_assignments_gradebook.sql']);
@@ -23,6 +25,23 @@ assert.ok(reconciler.includes('INSERT INTO d1_migrations (name) SELECT'),'reconc
 assert.ok(reconciler.includes('WHERE NOT EXISTS'),'migration history reconciliation must be idempotent');
 assert.ok(script.includes("['d1','migrations','apply','DB','--remote']"),'normal Wrangler migrations must continue after reconciliation');
 assert.ok(!reconciler.includes('DROP TABLE')&&!reconciler.includes('DELETE FROM d1_migrations'),'reconciliation must never destroy schema or migration history');
+
+// Cloudflare D1 remote has a known parser failure for unparenthesized CASE..END
+// inside CREATE TRIGGER. Keep historical migrations unchanged in git and patch only
+// the ephemeral production Workers build copies before Wrangler applies them.
+assert.deepEqual(d1TriggerCompatFiles,[
+  {path:'migrations/0048_enterprise_hierarchy_sso_scim_api.sql',expectedCases:4},
+  {path:'migrations/0057_timetable_hierarchy_targeting.sql',expectedCases:2},
+]);
+for(const item of d1TriggerCompatFiles){
+  const source=await readFile(item.path,'utf8');
+  assert.equal((source.match(/SELECT CASE WHEN/g)||[]).length,item.expectedCases,`${item.path} source trigger count changed unexpectedly`);
+  const patched=patchD1TriggerParserSql(source,item.expectedCases);
+  assert.equal((patched.match(/SELECT CASE WHEN/g)||[]).length,0,`${item.path} retains D1-incompatible trigger CASE syntax`);
+  assert.equal((patched.match(/SELECT \(CASE WHEN/g)||[]).length,item.expectedCases,`${item.path} D1 trigger CASE patch count mismatch`);
+  assert.ok(patched.includes('RAISE(ABORT'),`${item.path} trigger protections must remain intact`);
+}
+assert.throws(()=>patchD1TriggerParserSql('SELECT CASE WHEN 1 THEN 1 END;',2),/D1_TRIGGER_COMPAT_UNEXPECTED_CASE_COUNT/,'compatibility patch must fail closed if a migration changes unexpectedly');
 
 const preview=spawnSync(process.execPath,['scripts/migrate-remote.mjs'],{cwd:process.cwd(),encoding:'utf8',env:{...process.env,WORKERS_CI:'1',WORKERS_CI_BRANCH:'preview-validation'}});
 assert.equal(preview.status,0,preview.stderr||'preview migration guard failed');
@@ -56,4 +75,4 @@ for(const trigger of ['trg_pilot_no_auto_paid_insert','trg_reconcile_quotes_valu
 const second=await reconcileKnownRuntimeSchemaDrift({queryRows,run});
 assert.deepEqual(second,[],'reconciliation must be idempotent once migration history is recorded');
 
-console.log('Production-only remote D1 guard and full runtime-schema drift reconciliation checks: OK');
+console.log('Production-only remote D1 guard, runtime-schema drift reconciliation and D1 trigger parser compatibility checks: OK');
