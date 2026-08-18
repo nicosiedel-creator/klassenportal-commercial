@@ -8,6 +8,7 @@ import { requirePlatform } from './permissions.js';
 import { createTenantUser, deleteTenantMembership, listTenantUsers, resetTenantUserPassword, updateTenantMembership } from './users.js';
 import { uploadTenantLogo } from './branding.js';
 import { applyTimetable, getTimetableUpdatePreference, previewTimetable, setTimetableUpdatePreference } from './timetable-v2.js';
+import { prepareHierarchyAwareTimetableRequest } from './timetable-hierarchy-targeting.js';
 import { storeTimetableSource } from './timetable-source.js';
 import { createOnboardingInvitation, getPublicOnboarding, getPublicOnboardingQuote, listOnboardingInvitations, revokeOnboardingInvitation, submitPublicOnboarding } from './onboarding.js';
 import { billingSummary, enforceCourseEntitlement, getSellerProfile, listCommercePlans, quoteExpansion, requestExpansion, updateCommercePlan, updateSellerProfile } from './commerce.js';
@@ -17,7 +18,7 @@ import { listTenantAudit, listUserNotifications, markAllNotificationsRead, markN
 import { closeSurvey, createOrRotateCalendarFeed, createSubstitutionUpdate, createSurvey, deleteSubstitutionUpdate, deleteSurvey, getTeamsIntegration, listCalendarFeeds, listSubstitutionUpdates, listSurveys, saveTeamsIntegration, statisticsSummary, testTeamsIntegration, voteSurvey } from './advanced-modules.js';
 
 function err(e:unknown):Response{
-  const ex=e as Error&{issues?:unknown};const code=ex?.message||'INTERNAL_ERROR';
+  const ex=e as Error&{issues?:unknown;targeting?:unknown};const code=ex?.message||'INTERNAL_ERROR';
   const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
     :code==='PASSWORD_CHANGE_REQUIRED'?428
     :code==='TRIAL_READ_ONLY'?423
@@ -28,7 +29,7 @@ function err(e:unknown):Response{
     :code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413
     :code==='LOGIN_RATE_LIMITED'?429
     :code==='INTERNAL_ERROR'?500:400;
-  return json({ok:false,error:code,issues:ex?.issues},status);
+  return json({ok:false,error:code,issues:ex?.issues,targeting:ex?.targeting},status);
 }
 async function body(request:Request):Promise<Record<string,unknown>>{try{const b=await request.json() as Record<string,unknown>;if(b.course_id==='')b.course_id=null;return b;}catch{return{};}}
 
@@ -98,8 +99,8 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     const mutating=request.method!=='GET'&&request.method!=='HEAD'&&u.pathname!=='/api/timetable/preview';if(mutating)await assertTenantWriteAllowed(env,tenantId);
     if(u.pathname==='/api/timetable/preferences'&&request.method==='PUT')return json({ok:true,...await setTimetableUpdatePreference(env,a,tenantId,await body(request))});
     if(u.pathname==='/api/tenant/logo'&&request.method==='POST')return json({ok:true,...await uploadTenantLogo(env,a,tenantId,request)});
-    if(u.pathname==='/api/timetable/preview'&&request.method==='POST')return json({ok:true,...await previewTimetable(env,a,tenantId,request)});
-    if(u.pathname==='/api/timetable/apply'&&request.method==='POST')return json({ok:true,...await applyTimetable(env,a,tenantId,request)});
+    if(u.pathname==='/api/timetable/preview'&&request.method==='POST'){const h=await prepareHierarchyAwareTimetableRequest(env,a,tenantId,request.clone());const source=h.targeting?h.request:request;return json({ok:true,...await previewTimetable(env,a,tenantId,source),targeting:h.targeting});}
+    if(u.pathname==='/api/timetable/apply'&&request.method==='POST'){const h=await prepareHierarchyAwareTimetableRequest(env,a,tenantId,request.clone());const source=h.targeting?h.request:request;return json({ok:true,...await applyTimetable(env,a,tenantId,source),targeting:h.targeting});}
     if(u.pathname==='/api/timetable/source'&&request.method==='POST')return json({ok:true,...await storeTimetableSource(env,a,tenantId,request)});
     if(u.pathname==='/api/tenant/settings'&&request.method==='GET')return json({ok:true,settings:await getSettings(env,a,tenantId)});
     if(u.pathname==='/api/tenant/settings'&&request.method==='PUT')return json({ok:true,settings:await updateSettings(env,a,tenantId,await body(request))});
