@@ -10,6 +10,12 @@
     "db:migrate": "node scripts/migrate-remote.mjs",
     "deploy": "npm run ci:cloudflare && npm run db:migrate && wrangler deploy"
   },
-  "dependencies": {"pdfjs-dist": "5.7.284"},
-  "devDependencies": {"@types/node": "^24.0.0","typescript": "^5.8.3","wrangler": "^4.0.0"}
+  "dependencies": {
+    "pdfjs-dist": "5.7.284"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.0.0"
+  }
 }
