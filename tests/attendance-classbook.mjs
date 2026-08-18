@@ -9,6 +9,7 @@ const participantUi=await readFile('public/portal-attendance-ui.js','utf8');
 const customerHtml=await readFile('public/customer-admin.html','utf8');
 const classAdminHtml=await readFile('public/class-admin.html','utf8');
 const portalHtml=await readFile('public/class-portal.html','utf8');
+const readiness=await readFile('src/core/launch-readiness.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
 
 for(const table of ['attendance_sessions','attendance_records','absence_notices','classbook_entries','attendance_policies','attendance_events'])assert.ok(migration.includes(`TABLE IF NOT EXISTS ${table}`),`attendance migration missing ${table}`);
@@ -32,5 +33,6 @@ for(const marker of ['Anwesenheit & Klassenbuch','Digitales Klassenbuch ohne Ges
 assert.match(participantUi,/Gesundheits-\/Diagnosedaten werden nicht abgefragt/);assert.match(participantUi,/Abwesenheit einreichen/);
 assert.match(customerHtml,/attendance-classbook-ui\.js/);assert.match(classAdminHtml,/attendance-classbook-ui\.js/);assert.match(portalHtml,/portal-attendance-ui\.js/);
 assert.match(index,/handleAttendanceApi/);assert.match(index,/runAttendanceAttention/);
+for(const table of ['attendance_sessions','attendance_records','absence_notices','classbook_entries','attendance_policies','attendance_events'])assert.ok(readiness.includes(`'${table}'`),`live gate must require ${table}`);
 
-console.log('Privacy-safe attendance, absence self-service, digital classbook and non-automated threshold attention checks: OK');
+console.log('Privacy-safe attendance, absence self-service, digital classbook, live schema guard and non-automated threshold attention checks: OK');
