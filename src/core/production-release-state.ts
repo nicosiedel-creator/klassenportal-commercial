@@ -43,7 +43,24 @@ export function requestLooksLikePreview(request:Request):boolean{
   }catch{return false;}
 }
 
-function requestOrigin(request:Request):string|null{try{return new URL(request.url).origin;}catch{return null;}}
+function requestUrl(request:Request):URL|null{try{return new URL(request.url);}catch{return null;}}
+function requestOrigin(request:Request):string|null{return requestUrl(request)?.origin??null;}
+
+export function requestMatchesConfiguredProductionOrigin(env:Env,request:Request):boolean{
+  const configured=productionOriginStatus(env),actual=requestOrigin(request);return !!configured.ok&&!!configured.origin&&actual===configured.origin;
+}
+
+async function requestUsesVerifiedCustomDomain(env:Env,request:Request):Promise<boolean>{
+  const u=requestUrl(request);if(!u||u.protocol!=='https:')return false;const host=u.hostname.toLowerCase();
+  if(host.endsWith('.workers.dev')||host.endsWith('.pages.dev')||host==='localhost'||host==='127.0.0.1')return false;
+  try{
+    const row=await env.DB.prepare(`SELECT c.tenant_id FROM custom_domain_requests c
+      JOIN tenant_settings s ON s.tenant_id=c.tenant_id AND LOWER(s.custom_domain)=LOWER(c.hostname)
+      WHERE LOWER(c.hostname)=? AND c.status='active' AND c.hostname_status='active' AND c.ssl_status='active'
+        AND c.activated_at IS NOT NULL AND c.removed_at IS NULL LIMIT 1`).bind(host).first<{tenant_id:string}>();
+    return !!row?.tenant_id;
+  }catch{return false;}
+}
 
 export function currentWorkerVersion(env:Env):WorkerVersionInfo|null{
   const raw=env.CF_VERSION_METADATA,id=String(raw?.id||'').trim();if(!id)return null;
@@ -63,8 +80,9 @@ export async function productionReleaseAccess(env:Env,request:Request):Promise<P
   if(preview&&!origin.ok)return{production:false,allowed:true,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:null};
   if(preview&&origin.ok)return{production:true,allowed:false,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:'Vorschau-URL verwendet Produktionskonfiguration; Kundenverkehr bleibt aus Sicherheitsgründen gesperrt'};
   if(!origin.ok)return{production:true,allowed:false,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:origin.reason||'Produktionsursprung ist nicht sicher konfiguriert'};
-  if(!actualOrigin||actualOrigin!==origin.origin)return{production:true,allowed:false,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:'Anfrageursprung stimmt nicht mit der freigegebenen Produktionsdomain überein'};
   if(!version)return{production:true,allowed:false,approved:false,origin:origin.origin,version:null,approvedAt:null,approvedBy:null,reason:'Worker-Versionsmetadaten fehlen; Produktion bleibt gesperrt'};
+  const trustedHost=!!actualOrigin&&(actualOrigin===origin.origin||await requestUsesVerifiedCustomDomain(env,request));
+  if(!trustedHost)return{production:true,allowed:false,approved:false,origin:origin.origin,version,approvedAt:null,approvedBy:null,reason:'Anfrageursprung ist weder Produktionsdomain noch aktiv verifizierte Kundendomain'};
   try{
     const row=await env.DB.prepare(`SELECT approved_at,approved_by FROM production_release_approvals
       WHERE version_id=? AND app_origin=? AND revoked_at IS NULL`).bind(version.id,origin.origin).first<{approved_at:string;approved_by:string}>();
