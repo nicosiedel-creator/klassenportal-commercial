@@ -29,7 +29,7 @@ export async function verifyBackup(env:Env,backupId:string):Promise<{status:'ver
   try{const obj=await env.FILES.get(manifestKey);if(!obj)throw new Error('BACKUP_MANIFEST_MISSING');manifest=JSON.parse(await obj.text()) as BackupManifest;if(manifest.version!==1||manifest.backupId!==row.id||manifest.tenantId!==row.tenant_id||!Array.isArray(manifest.resources)||!Array.isArray(manifest.files))throw new Error('BACKUP_MANIFEST_INVALID');if(manifest.integrity&&!strongManifest(manifest))throw new Error('BACKUP_INTEGRITY_METADATA_INVALID');}
   catch(e){const error=String((e as Error)?.message||'BACKUP_MANIFEST_INVALID').slice(0,500);await save(env,row.id,row.tenant_id,'failed',0,0,[manifestKey],'structural',error);return{status:'failed',tenantId:row.tenant_id,resourceCount:0,fileCount:0,missing:[manifestKey],integrityLevel:'structural',error};}
   const strong=strongManifest(manifest),integrityLevel:IntegrityLevel=strong?'strong':'structural',prefix=row.object_prefix;
-  const referencedObjects=[...manifest.resources.map(x=>x.objectKey),...manifest.files.map(x=>x.backupKey)];if(new Set(referencedObjects).size!==referencedObjects.length)issues.push('BACKUP_OBJECT_REFERENCE_DUPLICATE');
+  const referencedObjects=[...(manifest.users?[manifest.users.objectKey]:[]),...manifest.resources.map(x=>x.objectKey),...manifest.files.map(x=>x.backupKey)];if(new Set(referencedObjects).size!==referencedObjects.length)issues.push('BACKUP_OBJECT_REFERENCE_DUPLICATE');
   if(strong&&!manifest.users)issues.push('BACKUP_USERS_METADATA_MISSING');
   if(manifest.users){
     if(!manifest.users.objectKey.startsWith(`${prefix}/data/`))issues.push('BACKUP_USERS_OBJECT_SCOPE_INVALID');if(strong&&!manifest.users.sha256)issues.push('BACKUP_USERS_HASH_MISSING');
