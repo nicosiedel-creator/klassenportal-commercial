@@ -45,10 +45,11 @@ function jsonOk(data:unknown):Response{return new Response(JSON.stringify({ok:tr
 
 const LEGAL_PATHS=['/impressum','/datenschutz','/agb','/avv','/unterauftragsverarbeiter','/datenportabilitaet','/rechtsverstoss-melden'] as const;
 function releaseGateBypass(path:string):boolean{
-  if(path==='/'||path==='/plattform-admin'||path.startsWith('/api/platform/')||path.startsWith('/api/auth/')||path==='/api/public/legal'||path==='/api/legal/report'||path==='/api/payments/stripe/webhook')return true;
-  if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren',...LEGAL_PATHS].includes(path.replace(/\/$/,'') as any))return true;
-  if(path.startsWith('/brand/logo/'))return true;
-  return /\.(?:js|css|mjs|map|png|jpe?g|webp|svg|ico|woff2?|ttf)$/i.test(path);
+  const normalized=path==='/'?'/':path.replace(/\/+$/,'');
+  if(normalized==='/'||normalized==='/plattform-admin'||normalized==='/api/platform'||normalized.startsWith('/api/platform/')||normalized==='/api/auth'||normalized.startsWith('/api/auth/')||normalized==='/api/public/legal'||normalized==='/api/legal/report'||normalized==='/api/payments/stripe/webhook')return true;
+  if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren',...LEGAL_PATHS].includes(normalized as any))return true;
+  if(normalized.startsWith('/brand/logo/'))return true;
+  return /\.(?:js|css|mjs|map|png|jpe?g|webp|svg|ico|woff2?|ttf)$/i.test(normalized);
 }
 function productionLockedResponse(path:string,reason:string|null):Response{
   const headers={'cache-control':'no-store','retry-after':'300'};
