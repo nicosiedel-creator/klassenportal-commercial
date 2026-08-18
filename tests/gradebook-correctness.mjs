@@ -37,4 +37,12 @@ assert.match(source,/value\.pct\*value\.itemWeight/,'official category result mu
 assert.match(source,/CATEGORY_WEIGHT_TOTAL_INVALID/,'legacy category totals above 100 percent must fail closed at report time');
 assert.match(source,/GRADING_SCALE_STORED_INVALID/,'legacy ambiguous grading scales must fail closed at report time');
 
-console.log('Official gradebook weighting, category totals and deterministic grading-scale checks: OK');
+const ui=await readFile('public/gradebook-policy-ui.js','utf8');
+for(const code of ['CATEGORY_WEIGHT_TOTAL_EXCEEDED','GRADING_SCALE_OVERLAP','GRADING_SCALE_GAP','GRADING_SCALE_STORED_INVALID'])assert.ok(ui.includes(code),`gradebook UI must explain ${code}`);
+assert.ok(ui.includes('6;0;29.99'),'gradebook UI must show a complete 0-100 example scale');
+assert.match(ui,/event\.stopImmediatePropagation\(\)/,'invalid gradebook forms must be stopped before the legacy submit handler sends them');
+const customerHtml=await readFile('public/customer-admin.html','utf8'),classHtml=await readFile('public/class-admin.html','utf8');
+assert.ok(customerHtml.includes('/gradebook-policy-ui.js?v=20260818-1'),'customer admin must load gradebook validation UI');
+assert.ok(classHtml.includes('/gradebook-policy-ui.js?v=20260818-1'),'class admin must load gradebook validation UI');
+
+console.log('Official gradebook weighting, category totals, deterministic grading-scale and UI policy checks: OK');
