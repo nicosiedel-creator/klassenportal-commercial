@@ -1,17 +1,21 @@
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
-import { productionReleaseAccess, requestLooksLikePreview, requestLooksLikeRemotePreview } from '../dist/core/production-release-state.js';
+import { productionReleaseAccess, requestLooksLikePreview, requestLooksLikeRemotePreview, requestMatchesConfiguredProductionOrigin } from '../dist/core/production-release-state.js';
 
 const wrangler=JSON.parse(await readFile('wrangler.jsonc','utf8'));
 const source=await readFile('src/core/production-release-state.ts','utf8');
 assert.equal(wrangler.preview_urls,false,'public version/branch preview URLs must remain disabled');
 assert.ok(source.includes(`WORKER_SERVICE_NAME='${wrangler.name}'`),'runtime preview detection must stay bound to the configured Worker name');
-assert.match(source,/actualOrigin!==origin\.origin/,'production approval must be bound to the exact request origin');
+assert.match(source,/custom_domain_requests/,'release gate must verify customer custom domains');
+assert.match(source,/tenant_settings/,'verified custom domain must also be bound in tenant settings');
+assert.match(source,/hostname_status='active'/,'custom domain hostname must be provider-active');
+assert.match(source,/ssl_status='active'/,'custom domain TLS must be provider-active');
 
 const base='https://klassenportal-commercial.nicosiedel.workers.dev/';
 const versionPreview='https://50c9593e-klassenportal-commercial.nicosiedel.workers.dev/';
 const branchPreview='https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev/';
-const custom='https://portal.example.de/';
+const platform='https://app.example.de/';
+const customer='https://kunde.example.de/';
 const other='https://other.example.de/';
 const local='http://localhost:8787/';
 
@@ -19,7 +23,7 @@ assert.equal(requestLooksLikeRemotePreview(new Request(base)),false,'base worker
 assert.equal(requestLooksLikePreview(new Request(base)),false,'base workers.dev Worker must go through the production release gate');
 assert.equal(requestLooksLikeRemotePreview(new Request(versionPreview)),true,'version-prefixed workers.dev URL must be recognized as remote preview');
 assert.equal(requestLooksLikeRemotePreview(new Request(branchPreview)),true,'branch-alias workers.dev URL must be recognized as remote preview');
-assert.equal(requestLooksLikePreview(new Request(custom)),false,'custom production domain must not be treated as preview');
+assert.equal(requestLooksLikePreview(new Request(platform)),false,'custom production domain must not be treated as preview');
 assert.equal(requestLooksLikePreview(new Request(local)),true,'localhost must remain available as local development preview');
 
 const inertDb={prepare(){throw new Error('DB_MUST_NOT_BE_TOUCHED');}};
@@ -38,17 +42,33 @@ const localAccess=await productionReleaseAccess(env,new Request(local));
 assert.equal(localAccess.production,false,'localhost may remain a local development environment');
 assert.equal(localAccess.allowed,true,'localhost development must remain usable without production approval');
 
-const approvalDb={prepare(){return{bind(){return{async first(){return{approved_at:'2026-08-18T18:00:00.000Z',approved_by:'owner'};}};}};}};
-const productionEnv={DB:approvalDb,APP_ORIGIN:'https://portal.example.de',CF_VERSION_METADATA:{id:'version-live'}};
-const approvedCustom=await productionReleaseAccess(productionEnv,new Request(custom));
-assert.equal(approvedCustom.allowed,true,'approved version must be available on the exact configured production origin');
-assert.equal(approvedCustom.approved,true,'exact production origin must receive the stored version approval');
+const productionDb={prepare(sql){return{bind(...values){return{async first(){
+  if(sql.includes('custom_domain_requests'))return String(values[0]).toLowerCase()==='kunde.example.de'?{tenant_id:'tenant-1'}:null;
+  if(sql.includes('production_release_approvals'))return{approved_at:'2026-08-18T18:00:00.000Z',approved_by:'owner'};
+  throw new Error('UNEXPECTED_QUERY');
+}};}};}};
+const productionEnv={DB:productionDb,APP_ORIGIN:'https://app.example.de',CF_VERSION_METADATA:{id:'version-live'}};
+assert.equal(requestMatchesConfiguredProductionOrigin(productionEnv,new Request(platform)),true,'platform origin must match APP_ORIGIN exactly');
+assert.equal(requestMatchesConfiguredProductionOrigin(productionEnv,new Request(customer)),false,'customer custom domain must not be mistaken for platform APP_ORIGIN');
+
+const approvedPlatform=await productionReleaseAccess(productionEnv,new Request(platform));
+assert.equal(approvedPlatform.allowed,true,'approved version must be available on the configured platform origin');
+assert.equal(approvedPlatform.approved,true,'platform origin must receive the stored version approval');
+
+const approvedCustomer=await productionReleaseAccess(productionEnv,new Request(customer));
+assert.equal(approvedCustomer.allowed,true,'approved version must be available on an active verified customer custom domain');
+assert.equal(approvedCustomer.approved,true,'verified customer custom domain must reuse the exact Worker-version approval');
 
 for(const url of [base,other]){
   const alternate=await productionReleaseAccess(productionEnv,new Request(url));
-  assert.equal(alternate.allowed,false,`approved version must not leak to alternate origin ${url}`);
-  assert.equal(alternate.approved,false,'alternate origin must not inherit production approval');
-  assert.match(String(alternate.reason),/Anfrageursprung stimmt nicht/,'alternate origin must fail with explicit origin mismatch');
+  assert.equal(alternate.allowed,false,`approved version must not leak to untrusted origin ${url}`);
+  assert.equal(alternate.approved,false,'untrusted origin must not inherit production approval');
+  assert.match(String(alternate.reason),/weder Produktionsdomain noch aktiv verifizierte Kundendomain|Remote-Preview/,'untrusted origin must fail explicitly');
 }
 
-console.log('Preview URLs disabled, base workers.dev locked, exact production origin enforced, localhost remains local: OK');
+const brokenDomainDb={prepare(sql){if(sql.includes('custom_domain_requests'))throw new Error('D1_UNAVAILABLE');return productionDb.prepare(sql);}};
+const brokenDomainEnv={...productionEnv,DB:brokenDomainDb};
+const failClosed=await productionReleaseAccess(brokenDomainEnv,new Request(customer));
+assert.equal(failClosed.allowed,false,'custom-domain verification failure must fail closed');
+
+console.log('Preview URLs disabled, base workers.dev locked, verified customer domains allowed, unknown hosts fail closed: OK');
