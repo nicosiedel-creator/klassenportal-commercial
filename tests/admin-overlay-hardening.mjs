@@ -12,6 +12,8 @@ assert.match(css,/grid-template-columns:1fr!important/,'modal form rows must col
 
 for(const file of ['public/customer-admin.html','public/class-admin.html','public/platform-admin.html']){
   const html=await readFile(file,'utf8');
-  assert.ok(html.includes('/admin-overlay-hardening.css?v=20260818-1'),`${file} must load overlay hardening after its main styles`);
+  const base=html.lastIndexOf('/styles.css'),hardening=html.indexOf('/admin-overlay-hardening.css?v=20260818-1');
+  assert.ok(hardening>=0,`${file} must load overlay hardening`);
+  assert.ok(hardening>base,`${file} must load overlay hardening after its normal stylesheet stack`);
 }
-console.log('Admin overlay stacking, scrolling and mobile viewport checks: OK');
+console.log('Admin overlay stacking, scrolling, cascade order and mobile viewport checks: OK');
