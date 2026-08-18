@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
-import { assertCategoryWeightTotal, normalizeGradeScaleItems, roundGradePercent, weightedCategoryAverage } from '../dist/core/gradebook-correctness.js';
+import { assertCategoryWeightTotal, csvSafeCell, normalizeGradeScaleItems, roundGradePercent, weightedCategoryAverage } from '../dist/core/gradebook-correctness.js';
 
 const validScale={items:[
   {label:'1',min_percent:92,max_percent:100},
@@ -30,6 +30,11 @@ assert.equal(dropped?.average,90,'drop-lowest must remove the lowest percentage 
 assert.doesNotThrow(()=>assertCategoryWeightTotal(7000,3000),'category weights may total exactly 100 percent');
 assert.throws(()=>assertCategoryWeightTotal(7000,3001),/CATEGORY_WEIGHT_TOTAL_EXCEEDED/,'category weights above 100 percent must be rejected');
 
+assert.equal(csvSafeCell('Normaler Name'),'"Normaler Name"','normal CSV values must remain unchanged apart from quoting');
+assert.equal(csvSafeCell('=HYPERLINK("https://example.test")'),'"\'=HYPERLINK(""https://example.test"")"','formula-like CSV values must be neutralised before spreadsheet import');
+assert.equal(csvSafeCell('  +1+1'),'"\'  +1+1"','formula prefixes after leading whitespace must be neutralised');
+assert.equal(csvSafeCell('@SUM(A1:A2)'),'"\'@SUM(A1:A2)"','at-sign formula syntax must be neutralised');
+
 const router=await readFile('src/core/learning-suite-router.ts','utf8');
 for(const fn of ['safeAdvancedGradebook','safeOfficialGradeReport','safeOfficialGradeCsv','safeSaveGradebookCategory','safeSaveGradingScale'])assert.ok(router.includes(fn),`live learning-suite route must use ${fn}`);
 const source=await readFile('src/core/gradebook-correctness.ts','utf8');
@@ -40,6 +45,7 @@ assert.match(source,/if\(!report\.category_weight_valid\)throw new Error\('CATEG
 assert.match(source,/report\.scale&&report\.scale\.valid===false/,'official CSV export must fail closed when a legacy scale is ambiguous');
 assert.match(source,/CATEGORY_RENAME_NOT_ALLOWED/,'category rename must be blocked until item references can be migrated atomically');
 assert.match(source,/items:scale\.items,valid:scale\.valid/,'interactive report must expose stored scale details so an invalid legacy scale remains repairable');
+assert.match(source,/\^\[\\s\]\*\[=\+\\-@\]/,'CSV export must detect spreadsheet formula prefixes');
 
 const ui=await readFile('public/gradebook-policy-ui.js','utf8');
 for(const code of ['CATEGORY_WEIGHT_TOTAL_EXCEEDED','CATEGORY_WEIGHT_TOTAL_INVALID','CATEGORY_RENAME_NOT_ALLOWED','GRADING_SCALE_OVERLAP','GRADING_SCALE_GAP','GRADING_SCALE_STORED_INVALID'])assert.ok(ui.includes(code),`gradebook UI must explain ${code}`);
@@ -55,4 +61,4 @@ const customerHtml=await readFile('public/customer-admin.html','utf8'),classHtml
 assert.ok(customerHtml.includes('/gradebook-policy-ui.js?v=20260818-2'),'customer admin must load the final gradebook validation UI');
 assert.ok(classHtml.includes('/gradebook-policy-ui.js?v=20260818-2'),'class admin must load the final gradebook validation UI');
 
-console.log('Official gradebook weighting, category totals, deterministic grading-scale and repairable UI checks: OK');
+console.log('Official gradebook weighting, category totals, deterministic grading-scale, CSV safety and repairable UI checks: OK');
