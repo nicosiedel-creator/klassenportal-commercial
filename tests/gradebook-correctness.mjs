@@ -57,8 +57,14 @@ assert.match(ui,/hydrateCategories/,'stored categories and invalid totals must b
 assert.match(ui,/form\.dataset\.scaleId/,'existing grading scale must be updated in place rather than duplicated on every correction');
 assert.match(ui,/hydrateScale/,'stored grading scale must be loaded back into the editor');
 assert.match(ui,/event\.stopImmediatePropagation\(\)/,'hardened gradebook forms must own submission before the legacy handler sends them');
+const defaultScaleUi=await readFile('public/gradebook-default-scale-ui.js','utf8');
+assert.ok(defaultScaleUi.includes("const legacy='1;92;100\\n2;81;91.99\\n3;67;80.99'"),'legacy incomplete 1-3 scale must be matched exactly before replacement');
+assert.ok(defaultScaleUi.includes("6;0;29.99"),'legacy scale upgrade must provide a complete 1-6 example');
+assert.match(defaultScaleUi,/normalized\(textarea\.value\)===legacy/,'only the untouched legacy example may be replaced automatically');
 const customerHtml=await readFile('public/customer-admin.html','utf8'),classHtml=await readFile('public/class-admin.html','utf8');
 assert.ok(customerHtml.includes('/gradebook-policy-ui.js?v=20260818-2'),'customer admin must load the final gradebook validation UI');
 assert.ok(classHtml.includes('/gradebook-policy-ui.js?v=20260818-2'),'class admin must load the final gradebook validation UI');
+assert.ok(customerHtml.includes('/gradebook-default-scale-ui.js?v=20260818-1'),'customer admin must upgrade the incomplete legacy example');
+assert.ok(classHtml.includes('/gradebook-default-scale-ui.js?v=20260818-1'),'class admin must upgrade the incomplete legacy example');
 
 console.log('Official gradebook weighting, category totals, deterministic grading-scale, CSV safety and repairable UI checks: OK');
