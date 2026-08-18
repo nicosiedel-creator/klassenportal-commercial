@@ -41,7 +41,7 @@ assert.match(source,/items:scale\.items,valid:scale\.valid/,'interactive report 
 const ui=await readFile('public/gradebook-policy-ui.js','utf8');
 for(const code of ['CATEGORY_WEIGHT_TOTAL_EXCEEDED','GRADING_SCALE_OVERLAP','GRADING_SCALE_GAP','GRADING_SCALE_STORED_INVALID'])assert.ok(ui.includes(code),`gradebook UI must explain ${code}`);
 assert.ok(ui.includes('6;0;29.99'),'gradebook UI must show a complete 0-100 example scale');
-assert.match(ui,/replace\(','\.\'\)/,'German decimal comma must be accepted in gradebook percentage inputs');
+assert.ok(ui.includes("replace(',','.')"),'German decimal comma must be accepted in gradebook percentage inputs');
 assert.match(ui,/form\.dataset\.scaleId/,'existing grading scale must be updated in place rather than duplicated on every correction');
 assert.match(ui,/hydrateScale/,'stored grading scale must be loaded back into the editor');
 assert.match(ui,/event\.stopImmediatePropagation\(\)/,'hardened gradebook forms must own submission before the legacy handler sends them');
