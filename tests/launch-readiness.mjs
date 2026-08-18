@@ -74,6 +74,7 @@ assert.match(readiness,/Rechtliche Unterlagen/,'production readiness must requir
 assert.match(readiness,/Backup-Sicherheit nicht erfüllt/,'production readiness must require verified backups');
 assert.match(readiness,/Datenbankschema unvollständig/,'production readiness must require schema completion');
 assert.match(readiness,/TENANT_SECRETS_ENCRYPTION_KEY/,'production readiness must require encrypted SSO client secrets when SSO is active');
+for(const table of ['quiz_attempts','course_templates','push_subscriptions','report_definitions','accounting_entries','accounting_bank_transactions','accounting_dunning_cases','accounting_close_checks'])assert.ok(readiness.includes(`'${table}'`),`production readiness must require final schema table ${table}`);
 assert.match(releaseState,/production_release_approvals/,'production version approval must be persisted');
 assert.match(releaseState,/CF_VERSION_METADATA/,'production release lock must bind approval to exact Worker version');
 assert.match(index,/PRODUCTION_RELEASE_LOCKED/,'worker must fail closed before explicit production approval');
