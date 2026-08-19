@@ -50,6 +50,10 @@ assert.match(index,/normalized==='\/plattform-admin'/,'platform admin must remai
 assert.match(index,/normalized==='\/api\/platform'/,'platform release/readiness APIs must remain reachable while production is locked');
 assert.match(index,/normalized==='\/api\/auth'/,'owner authentication APIs must remain reachable while production is locked');
 assert.match(index,/normalized==='\/api\/payments\/stripe\/webhook'/,'Stripe webhooks must remain reachable while customer traffic is locked');
+assert.match(index,/async function releaseGateAllowsLockedRequest/,'locked production must have an authenticated owner-only API escape hatch');
+assert.match(index,/await getSession\(env,request\)/,'owner-only release bypass must verify the active session');
+assert.match(index,/\.isPlatformAdmin/,'owner-only release bypass must require the platform-admin role');
+assert.ok(!index.includes("normalized==='/api/courses'"),'tenant APIs must never be blanket-whitelisted just to make the owner shell work');
 assert.ok(index.indexOf('productionReleaseAccess(env,request)')<index.indexOf("const calendarFeed=url.pathname.match"),'production lock must run before tenant calendar/public content routes');
 
 assert.match(ui,/Jede neue Worker-Version ist automatisch wieder gesperrt/,'owner UI must explain version-bound release behavior');

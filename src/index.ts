@@ -51,6 +51,11 @@ function releaseGateBypass(path:string):boolean{
   if(normalized.startsWith('/brand/logo/'))return true;
   return /\.(?:js|css|mjs|map|png|jpe?g|webp|svg|ico|woff2?|ttf)$/i.test(normalized);
 }
+async function releaseGateAllowsLockedRequest(path:string,request:Request,env:Env):Promise<boolean>{
+  if(releaseGateBypass(path))return true;
+  if(!path.startsWith('/api/'))return false;
+  try{return !!(await getSession(env,request))?.isPlatformAdmin;}catch{return false;}
+}
 function productionLockedResponse(path:string,reason:string|null):Response{
   const headers={'cache-control':'no-store','retry-after':'300'};
   if(path.startsWith('/api/')||path.startsWith('/public/')||path.startsWith('/calendar/')||path.startsWith('/scim/'))return new Response(JSON.stringify({ok:false,error:'PRODUCTION_RELEASE_LOCKED'}),{status:503,headers:{...headers,'content-type':'application/json; charset=utf-8'}});
@@ -60,7 +65,7 @@ function productionLockedResponse(path:string,reason:string|null):Response{
 
 async function routeRequest(request:Request,env:Env):Promise<Response>{
   const url=new URL(request.url),clean=url.pathname.replace(/\/$/,'');
-  const release=await productionReleaseAccess(env,request);if(release.production&&!release.allowed&&!releaseGateBypass(url.pathname))return productionLockedResponse(url.pathname,release.reason);
+  const release=await productionReleaseAccess(env,request);if(release.production&&!release.allowed&&!await releaseGateAllowsLockedRequest(url.pathname,request,env))return productionLockedResponse(url.pathname,release.reason);
 
   const intakePublic=await handlePublicIntakeRoute(request,env);if(intakePublic)return intakePublic;
   const enterprisePublic=url.pathname.startsWith('/sso/')||url.pathname.startsWith('/scim/')||url.pathname.startsWith('/api/v1/');
