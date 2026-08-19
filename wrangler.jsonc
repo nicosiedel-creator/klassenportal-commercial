@@ -1,48 +1,12 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "klassenportal-commercial",
-  "main": "src/index.ts",
+  "main": "scripts/diagnostic-worker.ts",
   "compatibility_date": "2026-08-14",
   "compatibility_flags": ["nodejs_compat"],
-  "preview_urls": false,
+  "preview_urls": true,
   "build": {
-    "command": "node scripts/workers-ci-guard.mjs"
-  },
-  "version_metadata": {
-    "binding": "CF_VERSION_METADATA"
-  },
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": [
-      "/api/*",
-      "/scim/*",
-      "/sso/*",
-      "/eingang/*",
-      "/public/*",
-      "/brand/*",
-      "/calendar/*",
-      "/portal/*",
-      "/einrichtung/*",
-      "/angebot/*",
-      "/produkt*",
-      "/plattform-admin*",
-      "/kunden-admin*",
-      "/klassen-admin*",
-      "/dozentenportal*",
-      "/zahlung/*",
-      "/passwort-vergessen*",
-      "/passwort-zuruecksetzen*",
-      "/konto-aktivieren*",
-      "/impressum*",
-      "/datenschutz*",
-      "/agb*",
-      "/avv*",
-      "/unterauftragsverarbeiter*",
-      "/datenportabilitaet*",
-      "/rechtsverstoss-melden*"
-    ]
+    "command": "node scripts/cloudflare-diagnostic-capture.mjs"
   },
   "d1_databases": [
     {
@@ -50,14 +14,5 @@
       "database_name": "klassenportal-commercial",
       "database_id": "beaf2c0a-d671-4468-a989-b9932c48f43f"
     }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "FILES",
-      "bucket_name": "klassenportal-commercial-files"
-    }
-  ],
-  "triggers": {
-    "crons": ["*/5 * * * *", "17 */6 * * *"]
-  }
+  ]
 }
