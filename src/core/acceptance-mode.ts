@@ -19,9 +19,10 @@ export function isLockedAcceptanceEnvironment(env:Env,request:Request):boolean{
 
 function publicAcceptanceCapability(request:Request):boolean{
   const path=normalizedPath(new URL(request.url).pathname),read=READ_METHODS.has(request.method);
-  if(read&&['/produkt','/kunden-admin','/klassen-admin','/zahlung/erfolg','/zahlung/abgebrochen'].includes(path))return true;
+  if(read&&['/produkt','/kunden-admin','/klassen-admin','/zahlung/erfolg','/zahlung/abgebrochen','/api/public/product'].includes(path))return true;
   if(read&&(/^\/portal\/[^/]+\/[^/]+$/.test(path)||/^\/einrichtung\/[^/]+$/.test(path)||/^\/angebot\/[^/]+$/.test(path)||/^\/eingang\/[^/]+$/.test(path)))return true;
   if(read&&(path.startsWith('/public/')||path.startsWith('/calendar/')||path.startsWith('/sso/')))return true;
+  if(/^\/api\/offers\/[^/]+$/.test(path))return request.method==='GET'||request.method==='POST';
   if(/^\/api\/onboarding\/[^/]+\/quote$/.test(path))return request.method==='GET';
   if(/^\/api\/onboarding\/[^/]+$/.test(path))return request.method==='GET'||request.method==='POST';
   if(/^\/api\/intake\/upload\/[^/]+$/.test(path))return request.method==='POST';
