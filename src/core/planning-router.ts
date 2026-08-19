@@ -6,8 +6,9 @@ import { assertSameOrigin, json } from './utils.js';
 import {
   getCourseSchedulingRules,linkPlanEntryResource,listPlanningBlackouts,listPlanningResources,listTeacherUnavailability,
   planningSuggestions,publishAdvancedTimetablePlan,saveCourseSchedulingRules,savePlanningBlackout,savePlanningResource,
-  saveResourceUnavailability,saveTeacherUnavailability,saveTeacherWorkloadRules,substituteSuggestions,validateAdvancedTimetablePlan,
+  saveResourceUnavailability,saveTeacherWorkloadRules,substituteSuggestions,validateAdvancedTimetablePlan,
 } from './planning-constraints.js';
+import { saveTeacherUnavailabilityWithSubstitutions } from './planning-automation.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function fail(e:unknown){const code=String((e as Error)?.message||'PLANNING_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('MFA_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('CONFLICT')||code.includes('LOCKED')?409:code.includes('REQUIRED')||code.includes('INVALID')?400:500;return json({ok:false,error:code},status);}
@@ -24,7 +25,7 @@ export async function handlePlanningApi(request:Request,env:Env):Promise<Respons
     if(path==='/api/education/planning/resources'&&request.method==='POST')return json({ok:true,...await savePlanningResource(env,auth,tenantId,await body(request))},201);
     if(path==='/api/education/planning/resources/unavailability'&&request.method==='POST')return json({ok:true,...await saveResourceUnavailability(env,auth,tenantId,await body(request))},201);
     if(path==='/api/education/planning/teacher-unavailability'&&request.method==='GET')return json({ok:true,blocks:await listTeacherUnavailability(env,auth,tenantId)});
-    if(path==='/api/education/planning/teacher-unavailability'&&request.method==='POST')return json({ok:true,...await saveTeacherUnavailability(env,auth,tenantId,await body(request))},201);
+    if(path==='/api/education/planning/teacher-unavailability'&&request.method==='POST')return json({ok:true,...await saveTeacherUnavailabilityWithSubstitutions(env,auth,tenantId,await body(request))},201);
     if(path==='/api/education/planning/blackouts'&&request.method==='GET')return json({ok:true,blackouts:await listPlanningBlackouts(env,auth,tenantId)});
     if(path==='/api/education/planning/blackouts'&&request.method==='POST')return json({ok:true,...await savePlanningBlackout(env,auth,tenantId,await body(request))},201);
     const courseRules=path.match(/^\/api\/education\/planning\/courses\/([^/]+)\/rules$/);if(courseRules&&request.method==='GET')return json({ok:true,rules:await getCourseSchedulingRules(env,auth,tenantId,decodeURIComponent(courseRules[1]))});if(courseRules&&request.method==='PUT')return json({ok:true,rules:await saveCourseSchedulingRules(env,auth,tenantId,decodeURIComponent(courseRules[1]),await body(request))});
