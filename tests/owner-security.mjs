@@ -21,6 +21,13 @@ assert.match(auth,/MFA_ENROLLMENT_REQUIRED/,'local administrative accounts must 
 assert.match(auth,/session\.authMethod==='oidc'/,'SSO sessions may rely on the customer identity-provider policy instead of local password MFA');
 assert.match(auth,/session\.authMethod!=='mfa'/,'local administrative sessions must be MFA-authenticated');
 assert.match(auth,/PLATFORM_ORIGIN_MISMATCH/,'platform-admin sessions must be bound to the configured platform origin');
+assert.match(auth,/tableExists\(env,'tenant_users'\)/,'modern tenant access must be detected explicitly before any legacy fallback');
+assert.match(auth,/if\(!tenantUsersTable\)\{const m=await env\.DB\.prepare\('SELECT tenant_id,course_id,role FROM memberships WHERE user_id=\?'/,'legacy membership fallback is allowed only when tenant_users is proven absent');
+assert.doesNotMatch(auth,/\}catch\{\s*const m=await env\.DB\.prepare\('SELECT tenant_id,course_id,role FROM memberships WHERE user_id=\?'/,'tenant access query failures must never silently downgrade to legacy memberships');
+assert.match(auth,/Promise\.all\(\['org_permission_grants','org_units','course_org_units'\]\.map\(name=>tableExists\(env,name\)\)\)/,'delegated access must explicitly detect its schema before use');
+assert.match(auth,/if\(orgTables\.every\(Boolean\)\)/,'missing delegated-access schema must fail closed by granting no extra delegated roles');
+assert.match(auth,/if\(!await tableExists\(env,'tenant_sso_configs'\)\)return/,'legacy databases may skip SSO only when the SSO table is proven absent');
+assert.doesNotMatch(auth,/enforceTenantSso[\s\S]{0,700}catch\(e\)/,'SSO configuration query failures must propagate instead of disabling SSO enforcement');
 assert.match(mfa,/AES-GCM/,'TOTP seed must be encrypted at rest');
 assert.match(mfa,/OWNER_MFA_ENCRYPTION_KEY/,'MFA encryption must use a dedicated server secret');
 assert.match(mfa,/TOTP_STEP=30/,'TOTP must use a 30 second step');
@@ -55,4 +62,4 @@ assert.match(cockpit,/confirm_name/,'tenant deletion must require exact tenant-n
 assert.match(ui,/14-tägigen Schutzfrist/,'owner UI must explain the protected deletion grace period');
 assert.match(ui,/System & Sicherheit/,'owner cockpit must be visible only inside platform admin');
 
-console.log('Owner/admin MFA, cockpit, platform-origin binding and direct-platform-login regression tests: OK');
+console.log('Owner/admin MFA, fail-closed tenant access, fail-closed SSO, cockpit, platform-origin binding and direct-platform-login regression tests: OK');
