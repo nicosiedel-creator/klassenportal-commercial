@@ -34,13 +34,11 @@ for(const id of ['vertretungen','umfragen','microsoft365'])assert.ok(layout.incl
 const index=read('src/index.ts');
 assert.match(index,/calendarFeedResponse/);
 assert.match(index,/publicAdvancedBySlug/);
-const classAdmin=read('public/class-admin-portal.js');
-for(const key of ['statistics','surveys','substitution_updates','microsoft_365','microsoft_teams'])assert.ok(classAdmin.includes(`${key}:`)||classAdmin.includes(`'${key}'`),`class workspace missing ${key}`);
-assert.match(classAdmin,/data-module/,'class workspace must expose active advanced modules');
-assert.match(classAdmin,/openStatistics/);
-assert.match(classAdmin,/openSurveys/);
-assert.match(classAdmin,/openSubstitutions/);
-assert.match(classAdmin,/openM365/);
+const portalHtml=read('public/class-portal.html'),classEntry=read('public/class-admin.html');
+assert.match(portalHtml,/portal-advanced-ui\.js/,'advanced participant modules must be shared by students and class admins');
+assert.match(portalHtml,/class-admin-student-tools\.js/,'class admin extras must be layered into that same portal');
+assert.match(classEntry,/class-admin-entry\.js/,'class admin route must redirect into the shared student portal');
+assert.doesNotMatch(classEntry,/class-admin-portal\.js/,'legacy class-admin workspace must no longer be active');
 
 const data=read('src/core/data.ts');
 assert.match(data,/MODULE_MANAGED_BY_BILLING/,'paid add-ons must not be toggled through the generic tenant module API');
@@ -55,8 +53,8 @@ assert.match(adminEntry,/\/plattform-admin/);
 assert.match(adminEntry,/\/kunden-admin/);
 assert.match(adminEntry,/\/klassen-admin/);
 const rootHtml=read('public/index.html');
-assert.match(rootHtml,/admin-entry-route-ui\.js/,'generic root must route admins to their dedicated area');
+assert.match(rootHtml,/admin-entry-route-ui\.js/,'generic root may use the class-admin entry route to resolve the concrete student portal');
 const localization=read('public/localization.js');
 for(const key of ['learning_materials','microsoft_365','substitution_updates','custom_domain','weekly_overview'])assert.ok(localization.includes(`'${key}'`),`missing German localization for ${key}`);
 
-console.log('Advanced modules + self-service add-on acceptance checks: OK');
+console.log('Advanced modules + shared class-admin/student portal + self-service add-on acceptance checks: OK');
