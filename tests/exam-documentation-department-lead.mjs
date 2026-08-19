@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 const migration=await readFile('migrations/0069_exam_documentation_profiles.sql','utf8');
 const core=await readFile('src/core/exam-documentation.ts','utf8');
 const quality=await readFile('src/core/department-quality.ts','utf8');
+const delegated=await readFile('src/core/delegated-privilege.ts','utf8');
 const router=await readFile('src/core/collaboration-reporting-router.ts','utf8');
 const teacherUi=await readFile('public/teacher-classbook-export-ui.js','utf8');
 const adminUi=await readFile('public/exam-documentation-admin-ui.js','utf8');
@@ -38,7 +39,11 @@ assert.ok(!quality.includes('LEFT JOIN exams'),'exam rows must not multiply clas
 assert.match(quality,/SELECT MIN\(e.starts_at\) FROM exams/,'next exam must be a correlated aggregate');
 assert.match(quality,/hasPermission\(auth,'reports.view'\)/,'Fachbereich overview requires reporting access');
 
+assert.match(delegated,/MFA_ENROLLMENT_REQUIRED/,'delegated quality roles must enroll MFA');
+assert.match(delegated,/MFA_REQUIRED/,'delegated quality roles must use an MFA-authenticated session');
+assert.match(delegated,/method==='oidc'/,'tenant OIDC sessions may satisfy delegated strong authentication');
 assert.match(router,/forbidClassAdminStudentData\(auth\)/,'student class-admin must remain blocked from reporting APIs');
+assert.match(router,/requireDelegatedPrivilegeMfa\(env,auth\)/,'reporting APIs must enforce strong authentication for delegated roles');
 assert.match(router,/\/api\/reports\/classbook\/export\.csv/,'CSV classbook evidence route must exist');
 assert.match(router,/\/api\/reports\/classbook\/export\.html/,'print/PDF classbook evidence route must exist');
 assert.match(router,/\/api\/reports\/department\/overview/,'Fachbereich quality route must exist');
