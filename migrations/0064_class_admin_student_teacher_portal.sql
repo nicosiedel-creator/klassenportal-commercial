@@ -27,13 +27,16 @@ END;
 
 -- The teacher portal is deliberately independent from class_admin. A teacher
 -- account is linked to an existing teacher master-data record and explicitly to
--- the courses whose attendance/classbook data it may manage.
+-- the courses whose attendance/classbook data it may manage. auth_membership_id
+-- records only a guest membership created by this assignment so revocation can
+-- remove that technical access without touching an independently granted role.
 CREATE TABLE IF NOT EXISTS teacher_portal_assignments (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
   teacher_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
   course_id TEXT NOT NULL,
+  auth_membership_id TEXT,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked')),
   granted_by TEXT,
   created_at TEXT NOT NULL,
@@ -42,6 +45,7 @@ CREATE TABLE IF NOT EXISTS teacher_portal_assignments (
   FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+  FOREIGN KEY(auth_membership_id) REFERENCES memberships(id) ON DELETE SET NULL,
   FOREIGN KEY(granted_by) REFERENCES users(id) ON DELETE SET NULL,
   UNIQUE(tenant_id,teacher_id,user_id,course_id)
 );
