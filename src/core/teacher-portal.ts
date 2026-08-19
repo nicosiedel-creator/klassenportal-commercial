@@ -41,21 +41,22 @@ export async function saveTeacherPortalAssignment(env:Env,auth:CoreAuthContext,t
   if(!user)throw new Error('TEACHER_USER_NOT_FOUND');
   if(!course)throw new Error('COURSE_NOT_FOUND');
   if(studentRole)throw new Error('TEACHER_STUDENT_ROLE_CONFLICT');
-  const ts=nowIso(),existing=await env.DB.prepare('SELECT id FROM teacher_portal_assignments WHERE tenant_id=? AND teacher_id=? AND user_id=? AND course_id=?').bind(tenantId,teacherId,userId,courseId).first<{id:string}>();
-  const assignmentId=existing?.id||id('tpa_');
-  if(existing)await env.DB.prepare("UPDATE teacher_portal_assignments SET status='active',granted_by=?,updated_at=? WHERE id=? AND tenant_id=?").bind(auth.userId,ts,assignmentId,tenantId).run();
-  else await env.DB.prepare("INSERT INTO teacher_portal_assignments(id,tenant_id,teacher_id,user_id,course_id,status,granted_by,created_at,updated_at) VALUES(?,?,?,?,?,'active',?,?,?)").bind(assignmentId,tenantId,teacherId,userId,courseId,auth.userId,ts,ts).run();
-  const membership=await env.DB.prepare('SELECT id FROM memberships WHERE tenant_id=? AND course_id=? AND user_id=? LIMIT 1').bind(tenantId,courseId,userId).first();
-  if(!membership)await env.DB.prepare("INSERT INTO memberships(id,tenant_id,course_id,user_id,role,created_at) VALUES(?,?,?,?, 'guest',?)").bind(id('mem_teacher_'),tenantId,courseId,userId,ts).run();
+  const ts=nowIso(),existing=await env.DB.prepare('SELECT id,auth_membership_id FROM teacher_portal_assignments WHERE tenant_id=? AND teacher_id=? AND user_id=? AND course_id=?').bind(tenantId,teacherId,userId,courseId).first<{id:string;auth_membership_id:string|null}>(),membership=await env.DB.prepare('SELECT id FROM memberships WHERE tenant_id=? AND course_id=? AND user_id=? LIMIT 1').bind(tenantId,courseId,userId).first<{id:string}>();
+  const assignmentId=existing?.id||id('tpa_');let authMembershipId=existing?.auth_membership_id||null;
+  if(!membership){authMembershipId=id('mem_teacher_');await env.DB.prepare("INSERT INTO memberships(id,tenant_id,course_id,user_id,role,created_at) VALUES(?,?,?,?, 'guest',?)").bind(authMembershipId,tenantId,courseId,userId,ts).run();}
+  if(existing)await env.DB.prepare("UPDATE teacher_portal_assignments SET status='active',auth_membership_id=?,granted_by=?,updated_at=? WHERE id=? AND tenant_id=?").bind(authMembershipId,auth.userId,ts,assignmentId,tenantId).run();
+  else await env.DB.prepare("INSERT INTO teacher_portal_assignments(id,tenant_id,teacher_id,user_id,course_id,auth_membership_id,status,granted_by,created_at,updated_at) VALUES(?,?,?,?,?,?,'active',?,?,?)").bind(assignmentId,tenantId,teacherId,userId,courseId,authMembershipId,auth.userId,ts,ts).run();
   await audit(env.DB,auth.userId,'teacher_portal.assignment_saved',tenantId,courseId,'teacher_portal_assignment',assignmentId,{teacherId,userId});
   return env.DB.prepare('SELECT id,teacher_id,user_id,course_id,status,created_at,updated_at FROM teacher_portal_assignments WHERE id=? AND tenant_id=?').bind(assignmentId,tenantId).first();
 }
 
 export async function revokeTeacherPortalAssignment(env:Env,auth:CoreAuthContext,tenantId:string,assignmentId:string){
   requireRole(auth,'tenant_admin');
-  const row=await env.DB.prepare('SELECT id,course_id,teacher_id,user_id FROM teacher_portal_assignments WHERE id=? AND tenant_id=?').bind(assignmentId,tenantId).first<Record<string,unknown>>();
+  const row=await env.DB.prepare('SELECT id,course_id,teacher_id,user_id,auth_membership_id FROM teacher_portal_assignments WHERE id=? AND tenant_id=?').bind(assignmentId,tenantId).first<Record<string,unknown>>();
   if(!row)throw new Error('TEACHER_ASSIGNMENT_NOT_FOUND');
-  await env.DB.prepare("UPDATE teacher_portal_assignments SET status='revoked',updated_at=? WHERE id=? AND tenant_id=?").bind(nowIso(),assignmentId,tenantId).run();
+  const statements=[env.DB.prepare("UPDATE teacher_portal_assignments SET status='revoked',auth_membership_id=NULL,updated_at=? WHERE id=? AND tenant_id=?").bind(nowIso(),assignmentId,tenantId)];
+  if(row.auth_membership_id)statements.push(env.DB.prepare("DELETE FROM memberships WHERE id=? AND tenant_id=? AND user_id=? AND course_id=? AND role='guest'").bind(String(row.auth_membership_id),tenantId,String(row.user_id),String(row.course_id)));
+  await env.DB.batch(statements);
   await audit(env.DB,auth.userId,'teacher_portal.assignment_revoked',tenantId,String(row.course_id),'teacher_portal_assignment',assignmentId,{teacherId:row.teacher_id,userId:row.user_id});
 }
 
