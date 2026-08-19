@@ -1,0 +1,93 @@
+const KP_LESSON_HUB_PORTAL=/^\/portal\/[^/]+\/[^/]+\/?$/.test(location.pathname);
+
+if(KP_LESSON_HUB_PORTAL){
+  const E=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  const path=location.pathname.split('/').filter(Boolean),tenantSlug=decodeURIComponent(path[1]||''),courseCode=decodeURIComponent(path[2]||'');
+  const codeKey=`kp_access_${tenantSlug}_${courseCode}`;
+  let data=null,loading=false,openLessonId=null,observerQueued=false;
+
+  async function fetchOverview(){
+    const code=sessionStorage.getItem(codeKey)||'';
+    const response=await fetch(`/public/${encodeURIComponent(tenantSlug)}/${encodeURIComponent(courseCode)}/overview`,{credentials:'same-origin',cache:'no-store',headers:code?{'X-Klassenportal-Access-Code':code}:{}});
+    if(!response.ok)throw new Error('LESSON_HUB_OVERVIEW_FAILED');return response.json();
+  }
+  const dt=value=>{const d=new Date(String(value||''));return Number.isNaN(d.getTime())?null:d;};
+  const when=value=>{const d=dt(value);return d?d.toLocaleString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';};
+  const time=value=>{const d=dt(value);return d?d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'—';};
+  const modeLabel=value=>({onsite:'Präsenz',remote:'Online',hybrid:'Hybrid'})[String(value||'')]||'';
+  const lessonById=id=>(data?.lessons||[]).find(x=>String(x.id)===String(id));
+
+  function subjectContext(lesson){
+    if(!lesson?.subject_id)return{homework:[],exams:[]};
+    const start=dt(lesson.starts_at)?.getTime()||0,limit=start+28*86400000;
+    const homework=(data.homework||[]).filter(x=>String(x.subject_id||'')===String(lesson.subject_id)&&(!x.due_at||((dt(x.due_at)?.getTime()||0)>=start-86400000&&(dt(x.due_at)?.getTime()||0)<=limit))).slice(0,4);
+    const exams=(data.exams||[]).filter(x=>String(x.subject_id||'')===String(lesson.subject_id)&&(dt(x.starts_at)?.getTime()||0)>=start-86400000).slice(0,3);
+    return{homework,exams};
+  }
+  function signals(lesson){
+    const out=[];
+    if(lesson.planned_topic)out.push('<span class="kp-hub-signal">Thema</span>');
+    const info=[lesson.info_text,lesson.notes].filter(Boolean).length;if(info)out.push('<span class="kp-hub-signal">Info</span>');
+    const files=(lesson.lesson_materials||[]).length;if(files)out.push(`<span class="kp-hub-signal">📎 ${files}</span>`);
+    const links=(lesson.lesson_links||[]).length;if(links)out.push(`<span class="kp-hub-signal">↗ ${links}</span>`);
+    return out.join('');
+  }
+  function decorate(){
+    if(!data)return;
+    document.querySelectorAll('.kp-week-lesson[data-kp-lesson-id]').forEach(tile=>{
+      const lesson=lessonById(tile.dataset.kpLessonId);if(!lesson)return;
+      tile.classList.add('kp-hub-clickable');tile.setAttribute('role','button');tile.tabIndex=0;tile.setAttribute('aria-expanded',String(openLessonId===String(lesson.id)));tile.title='Unterrichtsdetails öffnen';
+      let sig=tile.querySelector('.kp-hub-signals');const html=signals(lesson);
+      if(html){if(!sig){sig=document.createElement('span');sig.className='kp-hub-signals';tile.append(sig);}sig.innerHTML=html;}else sig?.remove();
+      if(tile.dataset.kpHubBound==='1')return;tile.dataset.kpHubBound='1';
+      const activate=e=>{if(e.type==='keydown'&&!['Enter',' '].includes(e.key))return;if(e.type==='keydown')e.preventDefault();toggleLesson(String(lesson.id));};
+      tile.addEventListener('click',activate);tile.addEventListener('keydown',activate);
+    });
+  }
+  function block(title,body,wide=false,cls=''){return `<section class="kp-hub-block ${wide?'wide ':''}${cls}"><h4>${E(title)}</h4>${body}</section>`;}
+  function contextRows(items,type){
+    if(!items.length)return'';
+    return items.map(x=>`<div class="kp-hub-context-item"><strong>${E(x.title||type)}</strong><div class="meta">${type==='Aufgabe'?(x.due_at?`Fällig ${E(when(x.due_at))}`:'ohne Frist'):`${E(when(x.starts_at))}${x.room?` · ${E(x.room)}`:''}`}</div></div>`).join('');
+  }
+  function renderPanel(lesson){
+    document.querySelector('.kp-lesson-hub-panel')?.remove();document.querySelectorAll('.kp-week-lesson.kp-hub-open').forEach(x=>x.classList.remove('kp-hub-open'));
+    const tile=document.querySelector(`.kp-week-lesson[data-kp-lesson-id="${CSS.escape(String(lesson.id))}"]`);tile?.classList.add('kp-hub-open');
+    const card=tile?.closest('.kp-week-card');if(!card)return;
+    const info=[lesson.info_text,lesson.notes].filter(Boolean).join('\n\n'),links=lesson.lesson_links||[],materials=lesson.lesson_materials||[],context=subjectContext(lesson),mode=modeLabel(lesson.delivery_mode);
+    const topic=lesson.planned_topic||lesson.subject_name||lesson.subject_short_name||'Unterricht';
+    const pieces=[];
+    pieces.push(block('Unterrichtsthema',lesson.planned_topic?`<p>${E(lesson.planned_topic)}</p>`:`<div class="kp-hub-empty-detail">Noch kein gesondertes Unterrichtsthema hinterlegt.</div>`));
+    pieces.push(block('Rahmen',`<p>${E([lesson.teacher_name,lesson.room,mode].filter(Boolean).join(' · ')||'Keine weiteren Angaben')}</p>`));
+    if(info)pieces.push(block('Hinweise & Informationen',`<p>${E(info)}</p>`,true));
+    if(materials.length)pieces.push(block('Dateien',materials.map(x=>`<a class="kp-hub-resource" href="#" data-kp-material="${E(x.id)}" data-kp-filename="${E(x.original_name||x.title||'material')}"><strong>${E(x.title||x.original_name||'Datei')}</strong><span>Herunterladen</span></a>`).join('')));
+    if(links.length)pieces.push(block('Links',links.map(x=>`<a class="kp-hub-resource" href="${E(x.url)}" target="_blank" rel="noopener noreferrer"><strong>${E(x.title||'Link')}</strong><span>Öffnen ↗</span></a>`).join('')));
+    const related=contextRows(context.homework,'Aufgabe')+contextRows(context.exams,'Prüfung');if(related)pieces.push(block('Zum Fach demnächst',related,true));
+    if(data.viewer?.authenticated&&data.viewer?.role==='participant')pieces.push(block('Meine private Notiz',`<div class="kp-hub-note"><textarea data-kp-note maxlength="6000" placeholder="Nur für dich sichtbar …"></textarea><div class="kp-hub-note-actions"><button class="portal-btn secondary" type="button" data-kp-note-save>Notiz speichern</button><span class="kp-hub-note-status" data-kp-note-status></span></div></div>`,true,'kp-hub-note-block'));
+    const panel=document.createElement('div');panel.className='kp-lesson-hub-panel';panel.dataset.lessonId=String(lesson.id);panel.innerHTML=`<div class="kp-lesson-hub-head"><div><h3>${E(topic)}</h3><div class="meta">${E(when(lesson.starts_at))}–${E(time(lesson.ends_at))}${lesson.subject_name&&lesson.planned_topic?` · ${E(lesson.subject_name)}`:''}</div></div><button class="kp-lesson-hub-close" type="button" aria-label="Unterrichtsdetails schließen">×</button></div><div class="kp-lesson-hub-body">${pieces.join('')}</div>`;
+    card.append(panel);panel.querySelector('.kp-lesson-hub-close').onclick=()=>toggleLesson(String(lesson.id));
+    panel.querySelectorAll('[data-kp-material]').forEach(link=>link.addEventListener('click',downloadMaterial));
+    const save=panel.querySelector('[data-kp-note-save]');if(save){loadNote(lesson,panel);save.onclick=()=>saveNote(lesson,panel);}
+    requestAnimationFrame(()=>panel.scrollIntoView({behavior:'smooth',block:'nearest'}));
+  }
+  function toggleLesson(id){
+    if(openLessonId===id){openLessonId=null;document.querySelector('.kp-lesson-hub-panel')?.remove();document.querySelectorAll('.kp-week-lesson').forEach(x=>{x.classList.remove('kp-hub-open');x.setAttribute('aria-expanded','false');});return;}
+    const lesson=lessonById(id);if(!lesson)return;openLessonId=id;document.querySelectorAll('.kp-week-lesson').forEach(x=>x.setAttribute('aria-expanded',String(x.dataset.kpLessonId===id)));renderPanel(lesson);
+  }
+  async function downloadMaterial(e){
+    e.preventDefault();const link=e.currentTarget,id=link.dataset.kpMaterial,code=sessionStorage.getItem(codeKey)||'';link.setAttribute('aria-busy','true');
+    try{const r=await fetch(`/public/${encodeURIComponent(tenantSlug)}/${encodeURIComponent(courseCode)}/materials/${encodeURIComponent(id)}`,{credentials:'same-origin',headers:code?{'X-Klassenportal-Access-Code':code}:{}});if(!r.ok)throw new Error();const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=link.dataset.kpFilename||'material';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{alert('Die Datei konnte nicht geladen werden.');}finally{link.removeAttribute('aria-busy');}
+  }
+  function noteUrl(lesson){return `/api/attendance/lesson-hub/${encodeURIComponent(lesson.id)}/my-note?tenant_id=${encodeURIComponent(data.viewer.tenantId)}&course_id=${encodeURIComponent(data.course.id)}`;}
+  async function loadNote(lesson,panel){
+    const area=panel.querySelector('[data-kp-note]'),status=panel.querySelector('[data-kp-note-status]');status.textContent='Lädt …';
+    try{const r=await fetch(noteUrl(lesson),{credentials:'same-origin',cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||'Fehler');area.value=j.note?.note||'';status.textContent=j.note?.updated_at?'Gespeicherte Notiz geladen.':'';}catch{status.textContent='Notiz konnte nicht geladen werden.';}
+  }
+  async function saveNote(lesson,panel){
+    const area=panel.querySelector('[data-kp-note]'),status=panel.querySelector('[data-kp-note-status]'),button=panel.querySelector('[data-kp-note-save]');button.disabled=true;status.textContent='Speichert …';
+    try{const r=await fetch(noteUrl(lesson),{method:'PUT',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({note:area.value})}),j=await r.json();if(!r.ok)throw new Error(j.error||'Fehler');status.textContent='Gespeichert · nur für dich sichtbar.';}catch{status.textContent='Speichern nicht möglich.';}finally{button.disabled=false;}
+  }
+  async function refresh(){if(loading)return;loading=true;try{data=await fetchOverview();decorate();if(openLessonId){const lesson=lessonById(openLessonId);if(lesson)renderPanel(lesson);}}catch{}finally{loading=false;}}
+  function schedule(){if(observerQueued)return;observerQueued=true;setTimeout(()=>{observerQueued=false;if(document.querySelector('.kp-week-card')){if(data)decorate();else refresh();}},80);}
+  new MutationObserver(schedule).observe(document.querySelector('#class-portal')||document.body,{subtree:true,childList:true});schedule();
+  document.addEventListener('kp:assignments-updated',()=>refresh());
+}
