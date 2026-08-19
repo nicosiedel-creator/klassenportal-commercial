@@ -42,7 +42,7 @@ export async function saveTeacherPortalAssignment(env:Env,auth:CoreAuthContext,t
   if(!course)throw new Error('COURSE_NOT_FOUND');
   if(studentRole)throw new Error('TEACHER_STUDENT_ROLE_CONFLICT');
   const ts=nowIso(),existing=await env.DB.prepare('SELECT id FROM teacher_portal_assignments WHERE tenant_id=? AND teacher_id=? AND user_id=? AND course_id=?').bind(tenantId,teacherId,userId,courseId).first<{id:string}>();
-  let assignmentId=existing?.id||id('tpa_');
+  const assignmentId=existing?.id||id('tpa_');
   if(existing)await env.DB.prepare("UPDATE teacher_portal_assignments SET status='active',granted_by=?,updated_at=? WHERE id=? AND tenant_id=?").bind(auth.userId,ts,assignmentId,tenantId).run();
   else await env.DB.prepare("INSERT INTO teacher_portal_assignments(id,tenant_id,teacher_id,user_id,course_id,status,granted_by,created_at,updated_at) VALUES(?,?,?,?,?,'active',?,?,?)").bind(assignmentId,tenantId,teacherId,userId,courseId,auth.userId,ts,ts).run();
   const membership=await env.DB.prepare('SELECT id FROM memberships WHERE tenant_id=? AND course_id=? AND user_id=? LIMIT 1').bind(tenantId,courseId,userId).first();
@@ -73,7 +73,7 @@ export async function myTeacherPortalCourses(env:Env,session:SessionUser){
 
 export async function teacherAttendanceAuth(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string):Promise<CoreAuthContext>{
   if(auth.isPlatformAdmin||auth.role==='tenant_admin')return auth;
-  const assignment=await env.DB.prepare(`SELECT id FROM teacher_portal_assignments WHERE tenant_id=? AND course_id=? AND user_id=? AND ${activeClause()} LIMIT 1`).bind(tenantId,courseId,auth.userId).first();
+  const assignment=await env.DB.prepare(`SELECT id FROM teacher_portal_assignments WHERE tenant_id=? AND course_id=? AND user_id=? AND ${activeClause('teacher_portal_assignments')} LIMIT 1`).bind(tenantId,courseId,auth.userId).first();
   if(!assignment)throw new Error('FORBIDDEN_TEACHER_COURSE');
   return{...auth,role:'class_admin',tenantIds:[...new Set([...auth.tenantIds,tenantId])],courseIds:[...new Set([...auth.courseIds,courseId])]};
 }
