@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 
 const auth=await readFile('src/core/auth.ts','utf8');
+const enterprise=await readFile('src/core/enterprise-access.ts','utf8');
 const mfa=await readFile('src/core/mfa.ts','utf8');
 const cockpit=await readFile('src/core/owner-cockpit.ts','utf8');
 const router=await readFile('src/core/owner-security-router.ts','utf8');
@@ -28,6 +29,9 @@ assert.match(auth,/Promise\.all\(\['org_permission_grants','org_units','course_o
 assert.match(auth,/if\(orgTables\.every\(Boolean\)\)/,'missing delegated-access schema must fail closed by granting no extra delegated roles');
 assert.match(auth,/if\(!await tableExists\(env,'tenant_sso_configs'\)\)return/,'legacy databases may skip SSO only when the SSO table is proven absent');
 assert.doesNotMatch(auth,/enforceTenantSso[\s\S]{0,700}catch\(e\)/,'SSO configuration query failures must propagate instead of disabling SSO enforcement');
+assert.match(enterprise,/sqlite_master WHERE type='table' AND name='tenant_users'/,'tenant user status may fall back only after proving the modern table is absent');
+assert.doesNotMatch(enterprise,/tenantUserActive[\s\S]{0,350}catch\{return true;\}/,'tenant user status query failures must never be treated as active access');
+assert.match(enterprise,/if\(!table\)return true;const x=await env\.DB\.prepare\("SELECT status FROM tenant_users/,'legacy tenant-user compatibility must be limited to a proven missing table');
 assert.match(mfa,/AES-GCM/,'TOTP seed must be encrypted at rest');
 assert.match(mfa,/OWNER_MFA_ENCRYPTION_KEY/,'MFA encryption must use a dedicated server secret');
 assert.match(mfa,/TOTP_STEP=30/,'TOTP must use a 30 second step');
@@ -62,4 +66,4 @@ assert.match(cockpit,/confirm_name/,'tenant deletion must require exact tenant-n
 assert.match(ui,/14-tägigen Schutzfrist/,'owner UI must explain the protected deletion grace period');
 assert.match(ui,/System & Sicherheit/,'owner cockpit must be visible only inside platform admin');
 
-console.log('Owner/admin MFA, fail-closed tenant access, fail-closed SSO, cockpit, platform-origin binding and direct-platform-login regression tests: OK');
+console.log('Owner/admin MFA, fail-closed tenant access/status, fail-closed SSO, cockpit, platform-origin binding and direct-platform-login regression tests: OK');
