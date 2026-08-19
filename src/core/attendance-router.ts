@@ -6,7 +6,7 @@ import { handleAssignmentsApi } from './assignments-router.js';
 import { handleLearningSuiteApi } from './learning-suite-router.js';
 import { handleCollaborationReportingApi } from './collaboration-reporting-router.js';
 import { asStudentView, forbidClassAdminStudentData } from './student-role.js';
-import { listTeacherPortalAssignments, myTeacherPortalCourses, revokeTeacherPortalAssignment, saveTeacherPortalAssignment, teacherAttendanceAuth, teacherPortalOptions } from './teacher-portal.js';
+import { createTeacherPortalTeacher, listTeacherPortalAssignments, myTeacherPortalCourses, revokeTeacherPortalAssignment, saveTeacherPortalAssignment, teacherAttendanceAuth, teacherPortalOptions } from './teacher-portal.js';
 import { assertSameOrigin, json } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -25,6 +25,9 @@ export async function handleAttendanceApi(request:Request,env:Env):Promise<Respo
     const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)throw new Error('ATTENDANCE_SCOPE_REQUIRED');
     if(path==='/api/attendance/teacher/options'&&request.method==='GET'){
       const auth=await resolveCoreAuth(env,request,tenantId);return json({ok:true,...await teacherPortalOptions(env,auth,tenantId)});
+    }
+    if(path==='/api/attendance/teacher/master'&&request.method==='POST'){
+      await assertTenantWriteAllowed(env,tenantId);const auth=await resolveCoreAuth(env,request,tenantId);return json({ok:true,teacher:await createTeacherPortalTeacher(env,auth,tenantId,await body(request))},201);
     }
     if(path==='/api/attendance/teacher/assignments'&&request.method==='GET'){
       const auth=await resolveCoreAuth(env,request,tenantId);return json({ok:true,assignments:await listTeacherPortalAssignments(env,auth,tenantId)});
