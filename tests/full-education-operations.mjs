@@ -18,6 +18,7 @@ const signatureComposer=await readFile('public/education-signature-compose-ui.js
 const participant=await readFile('public/class-portal.html','utf8');
 const reportbook=await readFile('public/portal-report-book-ui.js','utf8');
 const participantModes=await readFile('public/portal-learning-mode-ui.js','utf8');
+const signatureInbox=await readFile('public/portal-signature-inbox-ui.js','utf8');
 const teacher=await readFile('public/dozentenportal.html','utf8');
 const teacherLearning=await readFile('public/teacher-learning-operations-ui.js','utf8');
 const teacherModes=await readFile('public/teacher-learning-mode-display.js','utf8');
@@ -63,6 +64,7 @@ assert.match(bridge,/handleSecureSignatureMine/,'signature request list must go 
 assert.match(bridge,/handleCourseSignatureApi/,'course-wide confirmation route must be isolated before the generic education router');
 assert.match(signatureAccess,/teacher_portal_assignments/,'unassigned teacher signatures must be course-scoped');
 assert.match(signatureAccess,/r\.signer_user_id=\?/,'own assigned signature requests missing');
+assert.match(signatureAccess,/snapshot_json/,'assigned signer must be able to review the exact immutable snapshot');
 assert.match(courseSignatures,/role IN \('participant','class_admin'\)/,'course confirmation audience must be the students of exactly one course');
 assert.match(courseSignatures,/snapshot_sha256/,'course confirmations need an immutable digest');
 assert.match(courseSignatures,/external_qualified/,'course confirmations must support an external QES level without mislabelling portal confirmation');
@@ -86,11 +88,16 @@ assert.match(signatureComposer,/Portal-authentifizierte Bestätigung/,'built-in 
 assert.match(participant,/portal-curriculum-ui\.js/,'participant curriculum progress missing');
 assert.match(participant,/portal-report-book-ui\.js/,'participant digital report book missing');
 assert.match(participant,/portal-learning-mode-ui\.js/,'participant timetable must expose structured learning modes');
+assert.match(participant,/portal-signature-inbox-ui\.js/,'participant confirmation inbox must be loaded');
 assert.match(reportbook,/Selbstlernphase · Homeoffice/,'participant report book must support home-office self-study');
 assert.match(reportbook,/Aus Stundenplan ergänzen/,'report book must support automated schedule prefill');
 assert.match(reportbook,/digital bestätigen/,'participant digital confirmation UI missing');
 assert.ok(!reportbook.includes('participant_name'),'participant report book UI must not render peer identities');
 assert.match(participantModes,/Self|self_study_home|Selbstlernphase/,'participant timetable learning-mode decoration missing');
+assert.match(signatureInbox,/Digitale Bestätigungen/,'participant needs a visible digital confirmation inbox');
+assert.match(signatureInbox,/snapshot_json/,'participant must see the exact snapshot before confirming');
+assert.match(signatureInbox,/Externe qualifizierte Signatur \(QES\)/,'QES requests must be visually distinguished from portal confirmation');
+assert.match(signatureInbox,/Das Portal erzeugt nicht selbst eine fortgeschrittene oder qualifizierte Signatur/,'portal must not misrepresent built-in confirmation as advanced or qualified signature');
 
 assert.match(teacher,/teacher-learning-operations-ui\.js/,'teacher learning operations workspace missing');
 assert.match(teacher,/teacher-learning-mode-display\.js/,'teacher calendar learning-mode display missing');
@@ -103,6 +110,7 @@ assert.match(teacherModes,/self_study_home/,'teacher calendar must visibly ident
 assert.ok(!platform.includes('education-operations-admin-ui.js'),'platform admin must remain visually untouched');
 assert.ok(!platform.includes('education-operations-extended-ui.js'),'platform admin must not load customer education workspace');
 assert.ok(!platform.includes('portal-report-book-ui.js'),'platform admin must not load participant report book UI');
+assert.ok(!platform.includes('portal-signature-inbox-ui.js'),'platform admin must not load participant confirmation inbox');
 assert.ok(!platform.includes('education-signature-compose-ui.js'),'platform admin must not load customer signature composer');
 
 console.log('full education operations regression ok');
