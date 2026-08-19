@@ -1,27 +1,395 @@
 const KP_ASSIGN_PORTAL=/^\/portal\/[^/]+\/[^/]+\/?$/.test(location.pathname);
+
 if(KP_ASSIGN_PORTAL){
-  const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  async function api(url,opt={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt,headers:{...(opt.body&&!(opt.body instanceof FormData)?{'content-type':'application/json'}:{}),...(opt.headers||{})}});let d={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(d.error||`HTTP_${r.status}`);return d;}
-  const path=location.pathname.split('/').filter(Boolean),tenantSlug=decodeURIComponent(path[1]||''),courseCode=decodeURIComponent(path[2]||'');
-  let filter='open',loading=false,lastContext=null,lastItems=[];
-  async function ctx(){const me=(await api('/api/auth/me')).user;if(!me)return null;const d=await api(`/public/${encodeURIComponent(tenantSlug)}/${encodeURIComponent(courseCode)}/overview`);if(!['participant','class_admin'].includes(d.viewer?.role)||!d.viewer?.tenantId||!d.course?.id)return null;return{tenantId:d.viewer.tenantId,courseId:d.course.id};}
-  const q=(p,c)=>`${p}${p.includes('?')?'&':'?'}tenant_id=${encodeURIComponent(c.tenantId)}&course_id=${encodeURIComponent(c.courseId)}`;
-  const dt=v=>v?new Date(v).toLocaleString('de-DE'):'—';
-  const submissionStatus=s=>({draft:'Entwurf',submitted:'Eingereicht',returned:'Zur Überarbeitung',graded:'Bewertet',withdrawn:'Zurückgezogen'})[s]||'Noch nicht begonnen';
-  const friendly=e=>({ASSIGNMENT_COMPLETION_REQUIRES_SUBMISSION:'Diese Aufgabe wird erst durch verbindliches Einreichen erledigt.',ASSIGNMENT_DEADLINE_PASSED:'Die Abgabefrist ist abgelaufen.',SUBMISSION_TEXT_REQUIRED:'Bitte zuerst eine Textabgabe speichern.',SUBMISSION_FILE_REQUIRED:'Bitte zuerst eine Datei hochladen.',SUBMISSION_CONTENT_REQUIRED:'Bitte zuerst Text oder eine Datei hinterlegen.'})[e]||e;
-  function effective(a){const s=a.my_submission||{},personal=a.my_state||{},files=s.files||[],hasDraft=!!String(s.text_content||'').trim()||files.length>0;if(['submitted','graded'].includes(s.status))return{key:'completed',done:true,label:s.status==='graded'?'Bewertet · erledigt':'Eingereicht · erledigt'};if(s.status==='returned')return{key:'in_progress',done:false,label:'Überarbeitung erforderlich'};if(a.submission_mode==='info'){if(personal.progress==='completed')return{key:'completed',done:true,label:'Erledigt'};if(personal.progress==='in_progress')return{key:'in_progress',done:false,label:'In Arbeit'};return{key:'open',done:false,label:'Offen'};}if(hasDraft||personal.progress==='in_progress')return{key:'in_progress',done:false,label:'In Arbeit · noch nicht eingereicht'};return{key:'open',done:false,label:'Offen'};}
-  function taskType(a){return a.submission_mode==='info'?'Lese-/Arbeitsaufgabe':a.submission_mode==='text'?'Textabgabe':a.submission_mode==='file'?'Dateiabgabe':'Text- oder Dateiabgabe';}
-  function notifyChange(){window.dispatchEvent(new CustomEvent('kp-assignment-change'));}
-  function sectionParts(){let host=document.querySelector('#aufgaben');if(!host){host=document.createElement('section');host.id='aufgaben';host.className='portal-section wide';host.innerHTML='<div class="portal-section-head"><h2>Aufgaben</h2><span></span></div>';document.querySelector('.portal-grid,.portal-main')?.append(host);}host.dataset.assignmentWorkspace='1';const head=host.querySelector(':scope > .portal-section-head');if(head){const h=head.querySelector('h2');if(h)h.textContent='Aufgaben & persönlicher Arbeitsbereich';}let body=host.querySelector(':scope > .portal-compact-body');if(!body){[...host.children].filter(x=>x!==head&&!x.classList.contains('portal-compact-preview')&&!x.classList.contains('portal-compact-actions')).forEach(x=>x.remove());body=document.createElement('div');body.className='kp-assignment-workspace';host.append(body);}return{host,head,body};}
-  async function load(){if(loading)return;loading=true;let c;try{c=await ctx();}catch{loading=false;return;}if(!c){loading=false;return;}try{const [a,g,p]=await Promise.all([api(q('/api/assignments',c)),api(q('/api/gradebook/my',c)),api(q('/api/assignments/my-state',c))]);const byState=new Map((p.states||[]).map(x=>[String(x.homework_id),x]));lastContext=c;lastItems=(a.assignments||[]).map(x=>({...x,my_state:byState.get(String(x.id))||null}));render(c,lastItems,g.grades||[]);}catch(e){console.warn('Aufgabenbereich konnte nicht geladen werden',e);}finally{loading=false;}}
-  function render(c,items,grades){const {host,head,body}=sectionParts(),states=items.map(a=>effective(a)),openCount=states.filter(x=>!x.done).length,doneCount=states.filter(x=>x.done).length;if(head){const count=head.querySelector('span');if(count)count.textContent=`${openCount} offen · ${doneCount} erledigt`;}const preview=host.querySelector(':scope > .portal-compact-preview');if(preview)preview.textContent=openCount?`${openCount} offene Aufgabe${openCount===1?'':'n'} · persönliche Notizen & Abgaben`:'Alles erledigt · persönliche Notizen & Abgaben';const visible=items.filter(a=>filter==='all'||(filter==='completed'?effective(a).done:!effective(a).done));body.innerHTML=`<div class="kp-assignment-summary"><div><strong>${openCount}</strong><span>offen</span></div><div><strong>${doneCount}</strong><span>erledigt</span></div><div><strong>${items.length}</strong><span>gesamt</span></div></div><div class="toolbar kp-assignment-filters" role="group" aria-label="Aufgaben filtern"><button class="portal-btn ${filter==='open'?'':'secondary'}" type="button" data-filter="open">Offen (${openCount})</button><button class="portal-btn ${filter==='completed'?'':'secondary'}" type="button" data-filter="completed">Erledigt (${doneCount})</button><button class="portal-btn ${filter==='all'?'':'secondary'}" type="button" data-filter="all">Alle (${items.length})</button></div>${visible.length?`<div class="portal-list kp-assignment-list">${visible.map(a=>taskRow(a)).join('')}</div>`:`<div class="portal-empty">${filter==='open'?'Keine offenen Aufgaben.':'Hier gibt es aktuell keine Aufgaben.'}</div>`}${grades.length?`<details class="kp-assignment-grades"><summary>Veröffentlichte Bewertungen (${grades.length})</summary><div class="portal-list">${grades.map(g=>`<div class="portal-item"><div><strong>${E(g.title)}</strong><div class="meta">${g.published_at?E(dt(g.published_at)):''}</div>${g.feedback?`<div class="body">${E(g.feedback)}</div>`:''}</div><strong>${g.grade_value?E(g.grade_value):g.points!==null&&g.points!==undefined?`${E(g.points)}${g.max_points!==null&&g.max_points!==undefined?` / ${E(g.max_points)}`:''}`:'—'}</strong></div>`).join('')}</div></details>`:''}`;bind(c,body,items);}
-  function taskRow(a){const s=a.my_submission||{},state=effective(a),note=String(a.my_state?.private_note||'').trim(),score=a.my_score,info=a.submission_mode==='info';return `<div class="portal-item kp-assignment-item${state.done?' is-done':''}" data-task-id="${E(a.id)}"><div class="kp-assignment-check" aria-hidden="true">${state.done?'✓':state.key==='in_progress'?'◐':'○'}</div><div class="kp-assignment-copy"><div class="portal-item-top"><div><strong>${E(a.title)}</strong><div class="meta">${a.due_at?`Fällig: ${E(dt(a.due_at))}`:'Keine feste Frist'} · ${E(taskType(a))} · <b>${E(state.label)}</b></div></div>${a.max_points!==null&&a.max_points!==undefined?`<span class="portal-pill">max. ${E(a.max_points)} P.</span>`:''}</div>${a.description?`<div class="body">${E(a.description)}</div>`:''}${note?`<div class="kp-private-note-preview">📝 ${E(note.length>150?note.slice(0,147)+'…':note)}</div>`:''}${s.return_note?`<div class="notice warn"><strong>Rückmeldung:</strong> ${E(s.return_note)}</div>`:''}${score?`<div class="notice ok"><strong>Bewertung:</strong> ${score.points!==null&&score.points!==undefined?`${E(score.points)}${a.max_points!==null&&a.max_points!==undefined?` / ${E(a.max_points)}`:''} Punkte`:''}${score.grade_value?` · ${E(score.grade_value)}`:''}${score.feedback?`<div>${E(score.feedback)}</div>`:''}</div>`:''}</div><div class="kp-assignment-actions">${info?`<button class="portal-btn ${state.done?'secondary':''}" type="button" data-toggle-done="${E(a.id)}">${state.done?'Wieder öffnen':'✓ Erledigt'}</button>`:`<button class="portal-btn" type="button" data-open="${E(a.id)}">Abgabe öffnen</button>`}<button class="portal-btn secondary" type="button" data-note="${E(a.id)}">${note?'Notiz bearbeiten':'Notiz'}</button></div></div>`;}
-  function bind(c,root,items){root.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;render(c,items,[]);load();});root.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openTask(c,items.find(x=>String(x.id)===String(b.dataset.open))));root.querySelectorAll('[data-note]').forEach(b=>b.onclick=()=>openNote(c,items.find(x=>String(x.id)===String(b.dataset.note))));root.querySelectorAll('[data-toggle-done]').forEach(b=>b.onclick=async()=>{const a=items.find(x=>String(x.id)===String(b.dataset.toggleDone));if(!a)return;b.disabled=true;const next=effective(a).done?'open':'completed';try{await saveState(c,a,{progress:next});}catch(e){alert(friendly(e.message));b.disabled=false;}});}
-  function modal(title,html){const w=document.createElement('div');w.className='modal-back';w.innerHTML=`<div class="modal" style="width:min(780px,96vw);max-height:94vh;overflow:auto"><div class="top"><h3 style="margin:0">${E(title)}</h3><button class="btn secondary" type="button" data-close aria-label="Schließen">×</button></div><div data-body>${html}</div></div>`;document.body.append(w);w.querySelector('[data-close]').onclick=()=>w.remove();w.addEventListener('click',e=>{if(e.target===w)w.remove()});return w;}
-  async function saveState(c,a,patch,keepModal=false,statusNode=null){if(statusNode)statusNode.textContent='Speichert …';const r=await api(q(`/api/assignments/${encodeURIComponent(a.id)}/my-state`,c),{method:'PUT',body:JSON.stringify(patch)});a.my_state=r.state||a.my_state;notifyChange();if(statusNode)statusNode.textContent='Gespeichert.';if(!keepModal)await load();return r.state;}
-  function noteBlock(a){return `<div class="kp-private-note"><label class="field"><strong>Meine private Notiz</strong><span class="muted">Nur für dich sichtbar – nicht für Dozenten, Klassen- oder Kundenadministration.</span><textarea data-private-note rows="4" maxlength="6000" placeholder="Eigene Stichpunkte, Fragen, Merkhilfen …">${E(a.my_state?.private_note||'')}</textarea></label><div class="toolbar"><button class="btn secondary" type="button" data-save-note>Notiz speichern</button><span class="muted" data-note-status></span></div></div>`;}
-  function openNote(c,a){if(!a)return;const state=effective(a),w=modal(`Notiz · ${a.title}`,`${a.description?`<p>${E(a.description)}</p>`:''}<p class="muted">Status: ${E(state.label)}${a.due_at?` · Fällig: ${E(dt(a.due_at))}`:''}</p>${noteBlock(a)}`),st=w.querySelector('[data-note-status]');w.querySelector('[data-save-note]').onclick=async()=>{try{await saveState(c,a,{private_note:w.querySelector('[data-private-note]').value},true,st);await load();}catch(e){st.textContent=friendly(e.message);}};}
-  function openTask(c,a){if(!a)return;if(a.submission_mode==='info'){openInfoTask(c,a);return;}const s=a.my_submission||{},files=s.files||[],textAllowed=['text','text_file'].includes(a.submission_mode),fileAllowed=['file','text_file'].includes(a.submission_mode),locked=s.status==='graded'||(s.status==='submitted'&&!a.allow_resubmission),state=effective(a),w=modal(a.title,`${a.description?`<p>${E(a.description)}</p>`:''}<div class="notice ${state.done?'ok':''}"><strong>${E(state.label)}</strong><div class="muted">${E(taskType(a))}${a.due_at?` · Fällig: ${E(dt(a.due_at))}`:' · Keine feste Frist'}</div>${!state.done?'<div style="margin-top:5px">Gespeicherter Text oder ein Upload zählt als <strong>In Arbeit</strong>. Erst „Verbindlich einreichen“ erledigt die Aufgabe.</div>':''}</div>${textAllowed?`<label class="field">Textabgabe<textarea data-text rows="8" ${locked?'disabled':''}>${E(s.text_content||'')}</textarea></label><button class="btn secondary" type="button" data-save-text ${locked?'disabled':''}>Text speichern</button>`:''}${fileAllowed?`<div class="field"><label>Dateien <span class="muted">PDF, DOCX, ODT, XLSX, CSV, TXT oder Bild; max. 15 MB je Datei</span></label><input data-file type="file" ${locked?'disabled':''}><button class="btn secondary" type="button" data-upload ${locked?'disabled':''}>Datei hochladen</button></div>`:''}<div data-files>${files.length?files.map(f=>`<div class="item"><a href="${E(q(`/api/assignments/files/${encodeURIComponent(f.id)}`,c))}" target="_blank" rel="noopener">${E(f.filename)}</a>${!locked?` <button class="btn secondary" type="button" data-del="${E(f.id)}">Entfernen</button>`:''}</div>`).join(''):'<p class="muted">Keine Datei hochgeladen.</p>'}</div>${s.return_note?`<div class="notice warn"><strong>Zur Überarbeitung:</strong> ${E(s.return_note)}</div>`:''}${noteBlock(a)}<div class="toolbar" style="margin-top:14px">${s.status==='submitted'&&a.allow_resubmission?'<button class="btn secondary" type="button" data-withdraw>Abgabe zurückziehen</button>':''}<button class="btn" type="button" data-submit ${locked?'disabled':''}>${state.done?'Erneut verbindlich einreichen':'Verbindlich einreichen'}</button><span data-status class="muted"></span></div>`),st=w.querySelector('[data-status]'),noteSt=w.querySelector('[data-note-status]');const reload=async()=>{w.remove();notifyChange();await load();};w.querySelector('[data-save-note]').onclick=async()=>{try{await saveState(c,a,{private_note:w.querySelector('[data-private-note]').value},true,noteSt);}catch(e){noteSt.textContent=friendly(e.message);}};const save=w.querySelector('[data-save-text]');if(save)save.onclick=async()=>{st.textContent='Speichert …';try{await api(q(`/api/assignments/${encodeURIComponent(a.id)}/my`,c),{method:'PUT',body:JSON.stringify({text_content:w.querySelector('[data-text]').value})});await saveState(c,a,{progress:'in_progress'},true);st.textContent='Gespeichert · Aufgabe ist in Arbeit.';notifyChange();}catch(e){st.textContent=friendly(e.message);}};const up=w.querySelector('[data-upload]');if(up)up.onclick=async()=>{const f=w.querySelector('[data-file]').files?.[0];if(!f)return st.textContent='Bitte Datei auswählen.';const form=new FormData();form.append('file',f);st.textContent='Lädt hoch …';try{await api(q(`/api/assignments/${encodeURIComponent(a.id)}/my/files`,c),{method:'POST',body:form});await saveState(c,a,{progress:'in_progress'},true);await reload();}catch(e){st.textContent=friendly(e.message);}};w.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await api(q(`/api/assignments/${encodeURIComponent(a.id)}/my/files/${encodeURIComponent(b.dataset.del)}`,c),{method:'DELETE'});await reload();}catch(e){st.textContent=friendly(e.message);b.disabled=false;}});const wd=w.querySelector('[data-withdraw]');if(wd)wd.onclick=async()=>{st.textContent='Wird zurückgezogen …';try{await api(q(`/api/assignments/${encodeURIComponent(a.id)}/my/withdraw`,c),{method:'POST',body:'{}'});await saveState(c,a,{progress:'in_progress'},true);await reload();}catch(e){st.textContent=friendly(e.message);}};w.querySelector('[data-submit]').onclick=async()=>{st.textContent='Wird verbindlich eingereicht …';try{await api(q(`/api/assignments/${encodeURIComponent(a.id)}/my/submit`,c),{method:'POST',body:'{}'});await reload();}catch(e){st.textContent=friendly(e.message);}};}
-  function openInfoTask(c,a){const state=effective(a),w=modal(a.title,`${a.description?`<p>${E(a.description)}</p>`:''}<p class="muted">${a.due_at?`Fällig: ${E(dt(a.due_at))}`:'Keine feste Frist'} · ${E(taskType(a))}</p><div class="notice ${state.done?'ok':''}"><strong>${E(state.label)}</strong><div>Diese Aufgabe hat keine digitale Abgabe. Du verwaltest deinen Bearbeitungsstand selbst.</div></div><div class="toolbar"><button class="btn secondary" type="button" data-progress="open">Offen</button><button class="btn secondary" type="button" data-progress="in_progress">In Arbeit</button><button class="btn" type="button" data-progress="completed">✓ Erledigt</button></div>${noteBlock(a)}<div class="muted" data-state-status></div>`),st=w.querySelector('[data-state-status]'),noteSt=w.querySelector('[data-note-status]');w.querySelectorAll('[data-progress]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await saveState(c,a,{progress:b.dataset.progress},true,st);w.remove();notifyChange();await load();}catch(e){st.textContent=friendly(e.message);b.disabled=false;}});w.querySelector('[data-save-note]').onclick=async()=>{try{await saveState(c,a,{private_note:w.querySelector('[data-private-note]').value},true,noteSt);await load();}catch(e){noteSt.textContent=friendly(e.message);}};}
-  const observer=new MutationObserver(()=>{if(document.querySelector('.portal-main')&&!document.querySelector('#aufgaben[data-assignment-workspace="1"]'))load();});observer.observe(document.querySelector('#class-portal')||document.body,{subtree:true,childList:true});window.addEventListener('kp-assignment-refresh',()=>load());load();
+  const E=value=>String(value??'').replace(/[&<>"']/g,char=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[char]);
+  const parts=location.pathname.split('/').filter(Boolean);
+  const tenantSlug=decodeURIComponent(parts[1]||'');
+  const courseCode=decodeURIComponent(parts[2]||'');
+  let filter='open';
+  let loading=false;
+  let context=null;
+  let assignments=[];
+  let grades=[];
+
+  async function api(url,opt={}){
+    const response=await fetch(url,{
+      credentials:'same-origin',
+      cache:'no-store',
+      ...opt,
+      headers:{
+        ...(opt.body&&!(opt.body instanceof FormData)?{'content-type':'application/json'}:{}),
+        ...(opt.headers||{}),
+      },
+    });
+    let data={};
+    try{data=await response.json();}catch{}
+    if(!response.ok)throw new Error(data.error||`HTTP_${response.status}`);
+    return data;
+  }
+
+  const scoped=(path,c)=>`${path}${path.includes('?')?'&':'?'}tenant_id=${encodeURIComponent(c.tenantId)}&course_id=${encodeURIComponent(c.courseId)}`;
+  const dateTime=value=>value?new Date(value).toLocaleString('de-DE'):'—';
+  const friendly=code=>({
+    ASSIGNMENT_COMPLETION_REQUIRES_SUBMISSION:'Diese Aufgabe wird erst durch verbindliches Einreichen erledigt.',
+    ASSIGNMENT_DEADLINE_PASSED:'Die Abgabefrist ist abgelaufen.',
+    SUBMISSION_TEXT_REQUIRED:'Bitte zuerst eine Textabgabe speichern.',
+    SUBMISSION_FILE_REQUIRED:'Bitte zuerst eine Datei hochladen.',
+    SUBMISSION_CONTENT_REQUIRED:'Bitte zuerst Text oder eine Datei hinterlegen.',
+    VALUE_TOO_LONG:'Die Notiz ist zu lang.',
+  })[code]||code;
+
+  async function resolveContext(){
+    const me=(await api('/api/auth/me')).user;
+    if(!me)return null;
+    const data=await api(`/public/${encodeURIComponent(tenantSlug)}/${encodeURIComponent(courseCode)}/overview`);
+    if(!['participant','class_admin'].includes(data.viewer?.role)||!data.viewer?.tenantId||!data.course?.id)return null;
+    return{tenantId:data.viewer.tenantId,courseId:data.course.id};
+  }
+
+  function taskType(a){
+    return ({
+      info:'Lese-/Arbeitsaufgabe',
+      text:'Textabgabe',
+      file:'Dateiabgabe',
+      text_file:'Text- oder Dateiabgabe',
+    })[a.submission_mode]||'Aufgabe';
+  }
+
+  function stateOf(a){
+    const submission=a.my_submission||{};
+    const personal=a.my_state||{};
+    const files=submission.files||[];
+    const hasDraft=Boolean(String(submission.text_content||'').trim())||files.length>0;
+    if(['submitted','graded'].includes(submission.status)){
+      return{key:'completed',done:true,label:submission.status==='graded'?'Bewertet · erledigt':'Eingereicht · erledigt'};
+    }
+    if(submission.status==='returned')return{key:'in_progress',done:false,label:'Überarbeitung erforderlich'};
+    if(a.submission_mode==='info'){
+      if(personal.progress==='completed')return{key:'completed',done:true,label:'Erledigt'};
+      if(personal.progress==='in_progress')return{key:'in_progress',done:false,label:'In Arbeit'};
+      return{key:'open',done:false,label:'Offen'};
+    }
+    if(hasDraft||personal.progress==='in_progress')return{key:'in_progress',done:false,label:'In Arbeit · noch nicht eingereicht'};
+    return{key:'open',done:false,label:'Offen'};
+  }
+
+  function emitChange(){window.dispatchEvent(new CustomEvent('kp-assignment-change'));}
+
+  function workspace(){
+    const host=document.querySelector('#aufgaben');
+    if(!host)return null;
+    host.dataset.assignmentWorkspace='1';
+    const head=host.querySelector(':scope > .portal-section-head');
+    if(head?.querySelector('h2'))head.querySelector('h2').textContent='Aufgaben & persönlicher Arbeitsbereich';
+    const compactBody=host.querySelector(':scope > .portal-compact-body');
+    let target=compactBody?.querySelector(':scope > .kp-assignment-workspace')||null;
+    if(!target){
+      target=document.createElement('div');
+      target.className='kp-assignment-workspace';
+      if(compactBody){
+        compactBody.replaceChildren(target);
+      }else{
+        [...host.children].filter(node=>node!==head).forEach(node=>node.remove());
+        host.append(target);
+      }
+    }
+    return{host,head,target};
+  }
+
+  async function refresh(){
+    if(loading)return;
+    loading=true;
+    try{
+      context=await resolveContext();
+      if(!context)return;
+      const [assignmentData,gradeData,stateData]=await Promise.all([
+        api(scoped('/api/assignments',context)),
+        api(scoped('/api/gradebook/my',context)),
+        api(scoped('/api/assignments/my-state',context)),
+      ]);
+      const stateMap=new Map((stateData.states||[]).map(row=>[String(row.homework_id),row]));
+      assignments=(assignmentData.assignments||[]).map(row=>({...row,my_state:stateMap.get(String(row.id))||null}));
+      grades=gradeData.grades||[];
+      render();
+    }catch(error){
+      console.warn('Aufgabenbereich konnte nicht geladen werden',error);
+    }finally{
+      loading=false;
+    }
+  }
+
+  function render(){
+    const ui=workspace();
+    if(!ui||!context)return;
+    const states=assignments.map(stateOf);
+    const openCount=states.filter(state=>!state.done).length;
+    const doneCount=states.filter(state=>state.done).length;
+    const visible=assignments.filter(a=>filter==='all'||(filter==='completed'?stateOf(a).done:!stateOf(a).done));
+    const count=ui.head?.querySelector('span');
+    if(count)count.textContent=`${openCount} offen · ${doneCount} erledigt`;
+    const preview=ui.host.querySelector(':scope > .portal-compact-preview');
+    if(preview)preview.textContent=openCount?`${openCount} offene Aufgabe${openCount===1?'':'n'} · persönliche Notizen & Abgaben`:'Alles erledigt · persönliche Notizen & Abgaben';
+
+    ui.target.innerHTML=`
+      <div class="kp-assignment-summary">
+        <div><strong>${openCount}</strong><span>offen</span></div>
+        <div><strong>${doneCount}</strong><span>erledigt</span></div>
+        <div><strong>${assignments.length}</strong><span>gesamt</span></div>
+      </div>
+      <div class="toolbar kp-assignment-filters" role="group" aria-label="Aufgaben filtern">
+        <button class="portal-btn ${filter==='open'?'':'secondary'}" type="button" data-filter="open">Offen (${openCount})</button>
+        <button class="portal-btn ${filter==='completed'?'':'secondary'}" type="button" data-filter="completed">Erledigt (${doneCount})</button>
+        <button class="portal-btn ${filter==='all'?'':'secondary'}" type="button" data-filter="all">Alle (${assignments.length})</button>
+      </div>
+      ${visible.length?`<div class="portal-list kp-assignment-list">${visible.map(taskRow).join('')}</div>`:`<div class="portal-empty">${filter==='open'?'Keine offenen Aufgaben.':'Hier gibt es aktuell keine Aufgaben.'}</div>`}
+      ${grades.length?gradeBlock():''}
+    `;
+
+    ui.target.querySelectorAll('[data-filter]').forEach(button=>{
+      button.addEventListener('click',()=>{filter=button.dataset.filter||'open';render();});
+    });
+    ui.target.querySelectorAll('[data-open]').forEach(button=>{
+      button.addEventListener('click',()=>openTask(assignments.find(a=>String(a.id)===String(button.dataset.open))));
+    });
+    ui.target.querySelectorAll('[data-note]').forEach(button=>{
+      button.addEventListener('click',()=>openNote(assignments.find(a=>String(a.id)===String(button.dataset.note))));
+    });
+    ui.target.querySelectorAll('[data-toggle-done]').forEach(button=>{
+      button.addEventListener('click',async()=>{
+        const a=assignments.find(item=>String(item.id)===String(button.dataset.toggleDone));
+        if(!a)return;
+        button.disabled=true;
+        try{
+          await saveState(a,{progress:stateOf(a).done?'open':'completed'});
+          emitChange();
+          await refresh();
+        }catch(error){
+          alert(friendly(error.message));
+          button.disabled=false;
+        }
+      });
+    });
+  }
+
+  function taskRow(a){
+    const submission=a.my_submission||{};
+    const state=stateOf(a);
+    const note=String(a.my_state?.private_note||'').trim();
+    const score=a.my_score;
+    const info=a.submission_mode==='info';
+    return `
+      <div class="portal-item kp-assignment-item${state.done?' is-done':''}" data-task-id="${E(a.id)}">
+        <div class="kp-assignment-check" aria-hidden="true">${state.done?'✓':state.key==='in_progress'?'◐':'○'}</div>
+        <div class="kp-assignment-copy">
+          <div class="portal-item-top">
+            <div>
+              <strong>${E(a.title)}</strong>
+              <div class="meta">${a.due_at?`Fällig: ${E(dateTime(a.due_at))}`:'Keine feste Frist'} · ${E(taskType(a))} · <b>${E(state.label)}</b></div>
+            </div>
+            ${a.max_points!==null&&a.max_points!==undefined?`<span class="portal-pill">max. ${E(a.max_points)} P.</span>`:''}
+          </div>
+          ${a.description?`<div class="body">${E(a.description)}</div>`:''}
+          ${note?`<div class="kp-private-note-preview">📝 ${E(note.length>150?`${note.slice(0,147)}…`:note)}</div>`:''}
+          ${submission.return_note?`<div class="notice warn"><strong>Rückmeldung:</strong> ${E(submission.return_note)}</div>`:''}
+          ${score?scoreBlock(a,score):''}
+        </div>
+        <div class="kp-assignment-actions">
+          ${info
+            ? `<button class="portal-btn ${state.done?'secondary':''}" type="button" data-toggle-done="${E(a.id)}">${state.done?'Wieder öffnen':'✓ Erledigt'}</button>`
+            : `<button class="portal-btn" type="button" data-open="${E(a.id)}">Abgabe öffnen</button>`}
+          <button class="portal-btn secondary" type="button" data-note="${E(a.id)}">${note?'Notiz bearbeiten':'Notiz'}</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function scoreBlock(a,score){
+    const points=score.points!==null&&score.points!==undefined
+      ? `${E(score.points)}${a.max_points!==null&&a.max_points!==undefined?` / ${E(a.max_points)}`:''} Punkte`
+      : '';
+    return `<div class="notice ok"><strong>Bewertung:</strong> ${points}${score.grade_value?` · ${E(score.grade_value)}`:''}${score.feedback?`<div>${E(score.feedback)}</div>`:''}</div>`;
+  }
+
+  function gradeBlock(){
+    return `
+      <details class="kp-assignment-grades">
+        <summary>Veröffentlichte Bewertungen (${grades.length})</summary>
+        <div class="portal-list">
+          ${grades.map(g=>`<div class="portal-item"><div><strong>${E(g.title)}</strong><div class="meta">${g.published_at?E(dateTime(g.published_at)):''}</div>${g.feedback?`<div class="body">${E(g.feedback)}</div>`:''}</div><strong>${g.grade_value?E(g.grade_value):g.points!==null&&g.points!==undefined?`${E(g.points)}${g.max_points!==null&&g.max_points!==undefined?` / ${E(g.max_points)}`:''}`:'—'}</strong></div>`).join('')}
+        </div>
+      </details>
+    `;
+  }
+
+  function modal(title,html){
+    const wrapper=document.createElement('div');
+    wrapper.className='modal-back';
+    wrapper.innerHTML=`<div class="modal" style="width:min(780px,96vw);max-height:94vh;overflow:auto"><div class="top"><h3 style="margin:0">${E(title)}</h3><button class="btn secondary" type="button" data-close aria-label="Schließen">×</button></div><div data-body>${html}</div></div>`;
+    document.body.append(wrapper);
+    wrapper.querySelector('[data-close]').addEventListener('click',()=>wrapper.remove());
+    wrapper.addEventListener('click',event=>{if(event.target===wrapper)wrapper.remove();});
+    return wrapper;
+  }
+
+  function noteMarkup(a){
+    return `
+      <div class="kp-private-note">
+        <label class="field">
+          <strong>Meine private Notiz</strong>
+          <span class="muted">Nur für dich sichtbar – nicht für Dozenten, Klassen- oder Kundenadministration.</span>
+          <textarea data-private-note rows="4" maxlength="6000" placeholder="Eigene Stichpunkte, Fragen, Merkhilfen …">${E(a.my_state?.private_note||'')}</textarea>
+        </label>
+        <div class="toolbar"><button class="btn secondary" type="button" data-save-note>Notiz speichern</button><span class="muted" data-note-status></span></div>
+      </div>
+    `;
+  }
+
+  async function saveState(a,patch){
+    const result=await api(scoped(`/api/assignments/${encodeURIComponent(a.id)}/my-state`,context),{
+      method:'PUT',
+      body:JSON.stringify(patch),
+    });
+    a.my_state=result.state||a.my_state;
+    return result.state;
+  }
+
+  function wireNote(wrapper,a){
+    const status=wrapper.querySelector('[data-note-status]');
+    wrapper.querySelector('[data-save-note]')?.addEventListener('click',async()=>{
+      status.textContent='Speichert …';
+      try{
+        await saveState(a,{private_note:wrapper.querySelector('[data-private-note]').value});
+        status.textContent='Gespeichert.';
+        emitChange();
+        await refresh();
+      }catch(error){status.textContent=friendly(error.message);}
+    });
+  }
+
+  function openNote(a){
+    if(!a||!context)return;
+    const state=stateOf(a);
+    const wrapper=modal(`Notiz · ${a.title}`,`${a.description?`<p>${E(a.description)}</p>`:''}<p class="muted">Status: ${E(state.label)}${a.due_at?` · Fällig: ${E(dateTime(a.due_at))}`:''}</p>${noteMarkup(a)}`);
+    wireNote(wrapper,a);
+  }
+
+  function openInfoTask(a){
+    if(!a||!context)return;
+    const state=stateOf(a);
+    const wrapper=modal(a.title,`
+      ${a.description?`<p>${E(a.description)}</p>`:''}
+      <p class="muted">${a.due_at?`Fällig: ${E(dateTime(a.due_at))}`:'Keine feste Frist'} · ${E(taskType(a))}</p>
+      <div class="notice ${state.done?'ok':''}"><strong>${E(state.label)}</strong><div>Diese Aufgabe hat keine digitale Abgabe. Du verwaltest deinen Bearbeitungsstand selbst.</div></div>
+      <div class="toolbar"><button class="btn secondary" type="button" data-progress="open">Offen</button><button class="btn secondary" type="button" data-progress="in_progress">In Arbeit</button><button class="btn" type="button" data-progress="completed">✓ Erledigt</button></div>
+      ${noteMarkup(a)}
+      <div class="muted" data-state-status></div>
+    `);
+    const status=wrapper.querySelector('[data-state-status]');
+    wrapper.querySelectorAll('[data-progress]').forEach(button=>{
+      button.addEventListener('click',async()=>{
+        button.disabled=true;
+        status.textContent='Speichert …';
+        try{
+          await saveState(a,{progress:button.dataset.progress});
+          wrapper.remove();
+          emitChange();
+          await refresh();
+        }catch(error){status.textContent=friendly(error.message);button.disabled=false;}
+      });
+    });
+    wireNote(wrapper,a);
+  }
+
+  function openTask(a){
+    if(!a||!context)return;
+    if(a.submission_mode==='info'){openInfoTask(a);return;}
+    const submission=a.my_submission||{};
+    const files=submission.files||[];
+    const textAllowed=['text','text_file'].includes(a.submission_mode);
+    const fileAllowed=['file','text_file'].includes(a.submission_mode);
+    const locked=submission.status==='graded'||(submission.status==='submitted'&&!a.allow_resubmission);
+    const state=stateOf(a);
+    const wrapper=modal(a.title,`
+      ${a.description?`<p>${E(a.description)}</p>`:''}
+      <div class="notice ${state.done?'ok':''}">
+        <strong>${E(state.label)}</strong>
+        <div class="muted">${E(taskType(a))}${a.due_at?` · Fällig: ${E(dateTime(a.due_at))}`:' · Keine feste Frist'}</div>
+        ${!state.done?'<div style="margin-top:5px">Gespeicherter Text oder ein Upload zählt als <strong>In Arbeit</strong>. Erst „Verbindlich einreichen“ erledigt die Aufgabe.</div>':''}
+      </div>
+      ${textAllowed?`<label class="field">Textabgabe<textarea data-text rows="8" ${locked?'disabled':''}>${E(submission.text_content||'')}</textarea></label><button class="btn secondary" type="button" data-save-text ${locked?'disabled':''}>Text speichern</button>`:''}
+      ${fileAllowed?`<div class="field"><label>Dateien <span class="muted">PDF, DOCX, ODT, XLSX, CSV, TXT oder Bild; max. 15 MB je Datei</span></label><input data-file type="file" ${locked?'disabled':''}><button class="btn secondary" type="button" data-upload ${locked?'disabled':''}>Datei hochladen</button></div>`:''}
+      <div data-files>${files.length?files.map(file=>`<div class="item"><a href="${E(scoped(`/api/assignments/files/${encodeURIComponent(file.id)}`,context))}" target="_blank" rel="noopener">${E(file.filename)}</a>${!locked?` <button class="btn secondary" type="button" data-del="${E(file.id)}">Entfernen</button>`:''}</div>`).join(''):'<p class="muted">Keine Datei hochgeladen.</p>'}</div>
+      ${submission.return_note?`<div class="notice warn"><strong>Zur Überarbeitung:</strong> ${E(submission.return_note)}</div>`:''}
+      ${noteMarkup(a)}
+      <div class="toolbar" style="margin-top:14px">
+        ${submission.status==='submitted'&&a.allow_resubmission?'<button class="btn secondary" type="button" data-withdraw>Abgabe zurückziehen</button>':''}
+        <button class="btn" type="button" data-submit ${locked?'disabled':''}>Verbindlich einreichen</button>
+        <span data-status class="muted"></span>
+      </div>
+    `);
+    const status=wrapper.querySelector('[data-status]');
+    const closeAndRefresh=async()=>{wrapper.remove();emitChange();await refresh();};
+    wireNote(wrapper,a);
+
+    wrapper.querySelector('[data-save-text]')?.addEventListener('click',async()=>{
+      status.textContent='Speichert …';
+      try{
+        await api(scoped(`/api/assignments/${encodeURIComponent(a.id)}/my`,context),{method:'PUT',body:JSON.stringify({text_content:wrapper.querySelector('[data-text]').value})});
+        await saveState(a,{progress:'in_progress'});
+        status.textContent='Gespeichert · Aufgabe ist in Arbeit.';
+        emitChange();
+      }catch(error){status.textContent=friendly(error.message);}
+    });
+
+    wrapper.querySelector('[data-upload]')?.addEventListener('click',async()=>{
+      const file=wrapper.querySelector('[data-file]').files?.[0];
+      if(!file){status.textContent='Bitte Datei auswählen.';return;}
+      const form=new FormData();form.append('file',file);
+      status.textContent='Lädt hoch …';
+      try{
+        await api(scoped(`/api/assignments/${encodeURIComponent(a.id)}/my/files`,context),{method:'POST',body:form});
+        await saveState(a,{progress:'in_progress'});
+        await closeAndRefresh();
+      }catch(error){status.textContent=friendly(error.message);}
+    });
+
+    wrapper.querySelectorAll('[data-del]').forEach(button=>{
+      button.addEventListener('click',async()=>{
+        button.disabled=true;
+        try{
+          await api(scoped(`/api/assignments/${encodeURIComponent(a.id)}/my/files/${encodeURIComponent(button.dataset.del)}`,context),{method:'DELETE'});
+          await closeAndRefresh();
+        }catch(error){status.textContent=friendly(error.message);button.disabled=false;}
+      });
+    });
+
+    wrapper.querySelector('[data-withdraw]')?.addEventListener('click',async()=>{
+      status.textContent='Wird zurückgezogen …';
+      try{
+        await api(scoped(`/api/assignments/${encodeURIComponent(a.id)}/my/withdraw`,context),{method:'POST',body:'{}'});
+        await saveState(a,{progress:'in_progress'});
+        await closeAndRefresh();
+      }catch(error){status.textContent=friendly(error.message);}
+    });
+
+    wrapper.querySelector('[data-submit]')?.addEventListener('click',async()=>{
+      status.textContent='Wird verbindlich eingereicht …';
+      try{
+        await api(scoped(`/api/assignments/${encodeURIComponent(a.id)}/my/submit`,context),{method:'POST',body:'{}'});
+        await closeAndRefresh();
+      }catch(error){status.textContent=friendly(error.message);}
+    });
+  }
+
+  let queued=false;
+  function schedule(){
+    if(queued)return;
+    queued=true;
+    setTimeout(()=>{queued=false;if(document.querySelector('.portal-main'))refresh();},50);
+  }
+  new MutationObserver(schedule).observe(document.querySelector('#class-portal')||document.body,{subtree:true,childList:true});
+  window.addEventListener('kp-assignment-refresh',refresh);
+  schedule();
 }
