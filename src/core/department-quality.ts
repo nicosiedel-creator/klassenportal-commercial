@@ -2,6 +2,8 @@ import type { CoreAuthContext, Env } from './types.js';
 import { hasPermission } from './enterprise-access.js';
 import { nowIso } from './utils.js';
 
+type DepartmentSummary={courses:number;sessions:number;completed:number;missing_topic:number;revision_required:number};
+
 export async function departmentQualityOverviewSafe(env:Env,auth:CoreAuthContext,tenantId:string){
   if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'&&!hasPermission(auth,'reports.view'))throw new Error('FORBIDDEN_DEPARTMENT_REPORT');
   const courseIds=auth.isPlatformAdmin||auth.role==='tenant_admin'?null:[...new Set(auth.courseIds)];
@@ -19,7 +21,7 @@ export async function departmentQualityOverviewSafe(env:Env,auth:CoreAuthContext
   if(courseIds){sql+=` AND c.id IN (${courseIds.map(()=>'?').join(',')})`;args.push(...courseIds);}
   sql+=' ORDER BY c.name';
   const rows=(await env.DB.prepare(sql).bind(...args).all<Record<string,unknown>>()).results??[];
-  const summary=rows.reduce((a,x)=>({
+  const summary=rows.reduce<DepartmentSummary>((a,x)=>({
     courses:a.courses+1,
     sessions:a.sessions+Number(x.sessions||0),
     completed:a.completed+Number(x.completed||0),
