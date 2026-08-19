@@ -3,7 +3,7 @@ PRAGMA foreign_keys = ON;
 -- Keep repeated revision cycles compatible with the current unique status key
 -- without deleting evidence. An older superseded revision is moved to a unique
 -- historical entity reference before a newer revision is superseded.
-CREATE TRIGGER IF NOT EXISTS trg_signature_superseded_preserve
+CREATE TRIGGER IF NOT EXISTS trg_signature_superseded_cleanup
 BEFORE UPDATE OF status ON signature_documents
 WHEN NEW.status='superseded' AND OLD.status<>NEW.status
 BEGIN
