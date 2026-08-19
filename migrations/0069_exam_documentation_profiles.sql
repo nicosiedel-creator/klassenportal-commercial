@@ -32,11 +32,14 @@ CREATE TABLE IF NOT EXISTS course_exam_authority_profiles (
 );
 
 -- Audit trail only. The export deliberately stores no attendance/grade/person rows.
+-- The exact profile snapshot is retained so later profile changes cannot make an old
+-- export impossible to reconstruct or explain.
 CREATE TABLE IF NOT EXISTS classbook_export_runs (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
   course_id TEXT NOT NULL,
   profile_ref TEXT NOT NULL,
+  profile_snapshot_json TEXT NOT NULL,
   period_from TEXT,
   period_to TEXT,
   format TEXT NOT NULL CHECK(format IN ('preview','csv','html')),
