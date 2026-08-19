@@ -1,0 +1,253 @@
+/* Eigenständige Dashboard-Sprache: inspiriert von klaren Lern-/Verwaltungsportalen, ohne fremde Gestaltung zu kopieren. */
+.customer-portal-admin{
+  --kp-nav-w:258px;
+  --kp-dashboard-bg:#f5f7fb;
+  --kp-dashboard-card:#fff;
+  --kp-dashboard-line:color-mix(in srgb,var(--portal-secondary,#0f172a) 10%,#fff);
+  --kp-dashboard-soft:color-mix(in srgb,var(--portal-primary,#2563eb) 7%,#fff);
+  --kp-dashboard-soft-strong:color-mix(in srgb,var(--portal-primary,#2563eb) 13%,#fff);
+  --kp-dashboard-muted:#6b7280;
+  background:var(--kp-dashboard-bg)!important;
+}
+
+@media(min-width:961px){
+  .customer-portal-admin .layout{
+    display:grid!important;
+    grid-template-columns:var(--kp-nav-w) minmax(0,1fr)!important;
+    align-items:start!important;
+    min-height:100vh!important;
+  }
+  .customer-portal-admin .side{
+    position:static!important;
+    inset:auto!important;
+    z-index:auto!important;
+    width:auto!important;
+    min-height:100vh!important;
+    padding:22px 16px!important;
+    border:0!important;
+    border-right:1px solid var(--kp-dashboard-line)!important;
+    background:rgba(255,255,255,.94)!important;
+    box-shadow:none!important;
+    display:flex!important;
+    flex-direction:column!important;
+    gap:12px!important;
+    overflow:visible!important;
+  }
+  .customer-portal-admin .side>.kp-customer-nav-head,
+  .customer-portal-admin .side>.kp-customer-nav-primary,
+  .customer-portal-admin .side>.kp-customer-nav-more-panel{
+    width:100%!important;
+    max-width:none!important;
+    margin:0!important;
+  }
+  .customer-portal-admin .kp-customer-nav-head{
+    min-height:56px!important;
+    padding:4px 6px 14px!important;
+    border-bottom:1px solid var(--kp-dashboard-line)!important;
+    align-items:flex-start!important;
+  }
+  .customer-portal-admin .kp-customer-nav-head:before{
+    content:'KP';
+    display:grid;
+    place-items:center;
+    width:38px;
+    height:38px;
+    flex:0 0 38px;
+    border-radius:12px;
+    background:var(--portal-primary,#2563eb);
+    color:#fff;
+    font-size:.78rem;
+    font-weight:850;
+    letter-spacing:.04em;
+    box-shadow:0 6px 18px color-mix(in srgb,var(--portal-primary,#2563eb) 24%,transparent);
+  }
+  .customer-portal-admin .side h1{
+    margin:2px 0 0!important;
+    font-size:.95rem!important;
+    line-height:1.25!important;
+  }
+  .customer-portal-admin .side h1:after{
+    content:'Verwaltung';
+    display:block;
+    margin-top:3px;
+    color:var(--kp-dashboard-muted);
+    font-size:.72rem;
+    font-weight:600;
+  }
+  .customer-portal-admin .kp-customer-nav-actions{
+    margin-left:auto!important;
+    gap:5px!important;
+  }
+  .customer-portal-admin .kp-customer-nav-primary{
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:stretch!important;
+    gap:4px!important;
+  }
+  .customer-portal-admin .nav,
+  .customer-portal-admin .kp-customer-nav-primary .nav{
+    width:100%!important;
+    min-height:39px!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-start!important;
+    text-align:left!important;
+    padding:9px 11px!important;
+    border:1px solid transparent!important;
+    border-radius:10px!important;
+    background:transparent!important;
+    color:#475569!important;
+    font-size:.82rem!important;
+    font-weight:720!important;
+  }
+  .customer-portal-admin .nav:hover{
+    background:#f8fafc!important;
+    border-color:var(--kp-dashboard-line)!important;
+    color:#0f172a!important;
+  }
+  .customer-portal-admin .nav.active{
+    background:var(--kp-dashboard-soft)!important;
+    border-color:color-mix(in srgb,var(--portal-primary,#2563eb) 20%,#fff)!important;
+    color:var(--portal-primary,#2563eb)!important;
+    box-shadow:inset 3px 0 0 var(--portal-primary,#2563eb)!important;
+  }
+  .customer-portal-admin .kp-customer-more-toggle{
+    width:100%!important;
+    justify-content:space-between!important;
+    margin-top:2px!important;
+    border-color:var(--kp-dashboard-line)!important;
+    background:#fff!important;
+    text-align:left!important;
+  }
+  .customer-portal-admin .kp-customer-nav-more-panel{
+    padding:8px!important;
+    border:1px solid var(--kp-dashboard-line)!important;
+    border-radius:12px!important;
+    background:#fafbfc!important;
+  }
+  .customer-portal-admin .kp-customer-nav-groups{
+    display:grid!important;
+    grid-template-columns:1fr!important;
+    gap:7px!important;
+  }
+  .customer-portal-admin .kp-customer-nav-group{
+    padding:8px!important;
+    border:0!important;
+    border-radius:9px!important;
+    background:transparent!important;
+  }
+  .customer-portal-admin .kp-customer-nav-group-title{
+    padding:0 3px!important;
+    margin:0 0 5px!important;
+    font-size:.66rem!important;
+  }
+  .customer-portal-admin .kp-customer-nav-group-items{
+    display:flex!important;
+    flex-direction:column!important;
+    gap:3px!important;
+  }
+  .customer-portal-admin .content{
+    width:100%!important;
+    max-width:1360px!important;
+    margin:0!important;
+    padding:28px clamp(22px,3vw,44px) 54px!important;
+  }
+}
+
+.customer-portal-admin .content>.top{
+  min-height:58px;
+  margin-bottom:20px!important;
+  padding:0!important;
+}
+.customer-portal-admin .content>.top h2{
+  margin:0!important;
+  font-size:clamp(1.35rem,2vw,1.75rem)!important;
+  letter-spacing:-.025em!important;
+}
+.customer-portal-admin .content>.top .muted{
+  margin-top:4px;
+  color:var(--kp-dashboard-muted)!important;
+  font-size:.84rem!important;
+}
+.customer-portal-admin #tenantPick{
+  min-width:230px;
+  border:1px solid var(--kp-dashboard-line)!important;
+  border-radius:11px!important;
+  background:#fff!important;
+  box-shadow:0 2px 8px rgba(15,23,42,.035)!important;
+}
+.customer-portal-admin .grid,
+.customer-portal-admin #kp-module-catalog .grid{
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:14px!important;
+}
+.customer-portal-admin .card,
+.customer-portal-admin .table-wrap{
+  border:1px solid var(--kp-dashboard-line)!important;
+  border-radius:17px!important;
+  background:var(--kp-dashboard-card)!important;
+  box-shadow:0 8px 30px rgba(15,23,42,.045)!important;
+}
+.customer-portal-admin .card{
+  padding:17px!important;
+}
+.customer-portal-admin .card>.muted:first-child{
+  color:var(--kp-dashboard-muted)!important;
+  font-size:.76rem!important;
+  font-weight:750!important;
+  letter-spacing:.015em!important;
+}
+.customer-portal-admin .stat{
+  margin-top:5px!important;
+  font-size:1.65rem!important;
+  line-height:1.15!important;
+  letter-spacing:-.03em!important;
+}
+.customer-portal-admin .notice{
+  border:1px solid color-mix(in srgb,var(--portal-primary,#2563eb) 12%,#e2e8f0)!important;
+  background:var(--kp-dashboard-soft)!important;
+}
+.customer-portal-admin .btn{
+  border-radius:10px!important;
+  box-shadow:none!important;
+}
+.customer-portal-admin .btn:not(.secondary){
+  background:var(--portal-primary,#2563eb)!important;
+}
+.customer-portal-admin .btn.secondary{
+  background:#fff!important;
+  border-color:var(--kp-dashboard-line)!important;
+}
+.customer-portal-admin #kp-setup-progress,
+.customer-portal-admin #kp-setup-preparation{
+  margin-top:16px!important;
+}
+.customer-portal-admin #kp-setup-preparation>.grid{
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+}
+.customer-portal-admin #kp-setup-preparation>.grid>.card{
+  box-shadow:none!important;
+  background:#fbfcfe!important;
+}
+.customer-portal-admin #kp-setup-preparation code{
+  padding:2px 5px;
+  border-radius:6px;
+  background:#fff;
+  border:1px solid var(--kp-dashboard-line);
+}
+
+@media(max-width:1180px) and (min-width:961px){
+  .customer-portal-admin{--kp-nav-w:232px}
+  .customer-portal-admin .grid,.customer-portal-admin #kp-module-catalog .grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
+@media(max-width:960px){
+  .customer-portal-admin .layout{display:block!important}
+  .customer-portal-admin .side{position:static!important;min-height:0!important;border-right:0!important;border-bottom:1px solid var(--kp-dashboard-line)!important}
+  .customer-portal-admin .content{max-width:1180px!important;margin:auto!important;padding:18px 16px 44px!important}
+  .customer-portal-admin #kp-setup-preparation>.grid{grid-template-columns:1fr!important}
+}
+@media(max-width:720px){
+  .customer-portal-admin .grid,.customer-portal-admin #kp-module-catalog .grid{grid-template-columns:1fr!important}
+  .customer-portal-admin .content>.top{align-items:flex-start!important}
+  .customer-portal-admin #tenantPick{width:100%!important;min-width:0!important}
+}
