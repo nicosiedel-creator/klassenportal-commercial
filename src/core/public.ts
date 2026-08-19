@@ -60,7 +60,7 @@ async function optionalRows<T>(label:string,query:()=>Promise<{results?:T[]}>):P
 
 export async function publicOverview(env:Env,tenantSlug:string,courseCode:string,session:SessionUser|null,accessCode?:string){
   const access=await authorizePortal(env,tenantSlug,courseCode,session,accessCode),{row,tenantId,courseId}=access;
-  const past=new Date(Date.now()-14*86400000).toISOString();
+  const past=new Date(Date.now()-28*86400000).toISOString();
 
   const [homework,appointments,announcements,links,exams,lessons,features,materials]=await Promise.all([
     optionalRows<Record<string,unknown>>('homework',()=>env.DB.prepare(`SELECT h.id,h.course_id,h.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
