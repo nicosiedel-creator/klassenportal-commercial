@@ -17,11 +17,14 @@ assert.match(js,/MutationObserver/,'overlay guard must watch dynamically created
 assert.match(js,/el\.parentElement!==document\.body\)document\.body\.append\(el\)/,'nested backdrops must be reparented to document.body');
 assert.match(js,/kp-admin-modal-open/,'overlay guard must maintain the body modal-open state');
 
-for(const file of ['public/customer-admin.html','public/class-admin.html','public/platform-admin.html']){
+for(const file of ['public/customer-admin.html','public/platform-admin.html']){
   const html=await readFile(file,'utf8');
   const base=html.lastIndexOf('/styles.css'),hardening=html.indexOf('/admin-overlay-hardening.css?v=20260818-2'),guard=html.indexOf('/admin-overlay-hardening.js?v=20260818-2');
   assert.ok(hardening>=0,`${file} must load viewport overlay hardening`);
   assert.ok(hardening>base,`${file} must load overlay hardening after its normal stylesheet stack`);
   assert.ok(guard>=0,`${file} must load the DOM overlay guard`);
 }
-console.log('Admin overlays cover the full viewport, escape stacking contexts, lock background scroll and stay mobile-safe: OK');
+const classAdmin=await readFile('public/class-admin.html','utf8');
+assert.match(classAdmin,/class-admin-entry\.js/,'class admin must be a student-portal entry, not an admin workspace');
+assert.doesNotMatch(classAdmin,/admin-overlay-hardening\.js|class-admin-portal\.js/,'class admin entry must not load the old admin workspace stack');
+console.log('Admin overlays cover admin workspaces; class admin remains a student-portal entry: OK');
