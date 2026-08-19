@@ -15,6 +15,7 @@ const customerHtml=await readFile('public/customer-admin.html','utf8');
 assert.match(migration,/CREATE TABLE IF NOT EXISTS exam_authority_profiles/,'custom authority requirements need persistence');
 assert.match(migration,/CREATE TABLE IF NOT EXISTS course_exam_authority_profiles/,'courses need a selectable documentation profile');
 assert.match(migration,/CREATE TABLE IF NOT EXISTS classbook_export_runs/,'exports need an audit trail');
+assert.match(migration,/profile_snapshot_json TEXT NOT NULL/,'export audit must retain the exact authority/profile rules used');
 assert.match(migration,/CREATE TABLE IF NOT EXISTS classbook_entry_reviews/,'Fachbereich review state needs persistence');
 assert.match(migration,/authority_type IN \('ihk','hwk','vak','internal','custom','other'\)/,'authority types must be constrained');
 
@@ -28,7 +29,9 @@ assert.ok(!core.includes('attendance_records'),'topics-only export core must not
 assert.ok(!core.includes('gradebook_scores'),'topics-only export core must not query grades');
 assert.ok(!core.includes('JOIN users'),'topics-only export core must not join participant users');
 assert.match(core,/keine Teilnehmernamen, Anwesenheiten, Fehlzeiten oder Noten/,'printed evidence must state the privacy boundary');
-assert.match(core,/content_digest/,'export runs must be integrity-auditable');
+assert.match(core,/profileSnapshot=JSON\.stringify\(data\.profile\)/,'export audit must snapshot profile settings');
+assert.match(core,/digest\(\{profile:data\.profile,period:data\.period,rows:data\.rows\}\)/,'integrity digest must cover the actual profile rules as well as rows');
+assert.match(core,/grouping==='subject'/,'custom profile grouping must affect output ordering');
 
 assert.match(quality,/SELECT COUNT\(\*\) FROM attendance_sessions/,'Fachbereich summary must aggregate sessions independently');
 assert.ok(!quality.includes('LEFT JOIN exams'),'exam rows must not multiply classbook session counts');
