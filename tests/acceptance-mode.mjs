@@ -19,7 +19,8 @@ assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/api/offers/of
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/api/offers/offer_token','POST')),true,'tokenized offer acceptance must remain testable');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/kunden-admin')),true,'customer admin shell must load during controlled acceptance');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/klassen-admin')),true,'class admin student entry must load during controlled acceptance');
-assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/dozentenportal.html')),true,'teacher portal shell must load during controlled acceptance');
+assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/dozentenportal')),true,'canonical teacher portal route must load during controlled acceptance');
+assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/dozentenportal.html')),true,'teacher portal html shell must load during controlled acceptance');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/einrichtung/invite_token')),true,'tokenized onboarding page must load during acceptance');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/api/onboarding/invite_token')),true,'tokenized onboarding API must be reachable during acceptance');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/api/onboarding/invite_token','POST')),true,'test-mode onboarding submission must be allowed');
