@@ -3,6 +3,7 @@ import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { assertSameOrigin, json } from './utils.js';
 import { createDiscussionThread, listDiscussionMessages, listDiscussionThreads, listReportDefinitions, moderateDiscussionMessage, postDiscussionMessage, registerPushSubscription, revokePushSubscription, runSafeReport, saveDiscussionSettings, saveReportDefinition } from './collaboration-reporting.js';
+import { forbidClassAdminStudentData } from './student-role.js';
 
 async function body(r:Request):Promise<Record<string,unknown>>{try{return await r.json() as Record<string,unknown>;}catch{return{};}}
 function fail(e:unknown){const code=String((e as Error)?.message||'COLLABORATION_ERROR');const status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('REQUIRED')||code.includes('DISABLED')?403:code.includes('NOT_FOUND')?404:code.includes('LOCKED')||code.includes('RATE_LIMIT')||code.includes('OWNED')?409:400;return json({ok:false,error:code},status);}
@@ -17,6 +18,7 @@ export async function handleCollaborationReportingApi(request:Request,env:Env):P
     if(p==='/api/collaboration/threads'&&request.method==='POST')return json({ok:true,...await createDiscussionThread(env,auth,tenantId,courseId||null,await body(request))},201);
     const messages=p.match(/^\/api\/collaboration\/threads\/([^/]+)\/messages$/);if(messages&&request.method==='GET')return json({ok:true,messages:await listDiscussionMessages(env,auth,tenantId,decodeURIComponent(messages[1]))});if(messages&&request.method==='POST'){const b=await body(request);return json({ok:true,...await postDiscussionMessage(env,auth,tenantId,decodeURIComponent(messages[1]),String(b.body||''))},201);}
     const hide=p.match(/^\/api\/collaboration\/threads\/([^/]+)\/messages\/([^/]+)\/hide$/);if(hide&&request.method==='POST'){const b=await body(request);await moderateDiscussionMessage(env,auth,tenantId,decodeURIComponent(hide[1]),decodeURIComponent(hide[2]),String(b.reason||''));return json({ok:true});}
+    if(p.startsWith('/api/reports/'))forbidClassAdminStudentData(auth);
     if(p==='/api/reports/definitions'&&request.method==='GET')return json({ok:true,reports:await listReportDefinitions(env,auth,tenantId)});
     if(p==='/api/reports/definitions'&&request.method==='POST')return json({ok:true,...await saveReportDefinition(env,auth,tenantId,await body(request))},201);
     if(p==='/api/reports/run'&&request.method==='POST'){const result=await runSafeReport(env,auth,tenantId,await body(request));return json({ok:true,...result});}
