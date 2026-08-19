@@ -13,17 +13,18 @@ const seed=await readFile('scripts/seed-demo-nico-teacher.mjs','utf8');
 
 assert.match(migration,/CREATE TABLE IF NOT EXISTS teacher_messages/,'teacher messages need persistence');
 assert.match(migration,/CREATE TABLE IF NOT EXISTS teacher_message_reads/,'teacher messages need read state');
-assert.match(core,/Date\.now\(\)-28\*86400000/,'teacher calendar must retain four weeks');
-assert.match(core,/Date\.now\(\)\+30\*86400000/,'teacher calendar must show thirty days ahead');
+assert.ok(core.includes('now.getTime()-28*86400000'),'teacher calendar must retain four weeks');
+assert.ok(core.includes('now.getTime()+30*86400000'),'teacher calendar must show thirty days ahead');
 assert.match(core,/lesson_hub_details/,'teacher calendar must integrate lesson hub details');
 assert.match(core,/attendance_session_id/,'timetable lessons must link to classbook sessions');
-assert.match(core,/source_ref:`lesson:\$\{lessonId\}`/,'opening classbook from timetable must use stable lesson linkage');
+assert.ok(core.includes('source_ref:`lesson:${lessonId}`'),'opening classbook from timetable must use stable lesson linkage');
 assert.match(core,/teacher_messages/,'teacher workspace must include internal messages');
 assert.match(core,/requireRole\(auth,'tenant_admin'\)/,'internal teacher messages must be managed by tenant admins');
 
-assert.match(router,/\/api\/communications\/teacher\/workspace/,'teacher workspace API must be routed');
+assert.ok(router.includes("path==='/api/communications/teacher/workspace'"),'teacher workspace API must be routed');
 assert.match(router,/teacherAttendanceAuth/,'teacher workspace must use explicit teacher assignment auth');
-assert.match(router,/teacher\/lessons\/\(\[\^\/\]\+\)\\\/classbook/,'calendar-to-classbook route must exist');
+assert.ok(router.includes('teacherLessonClassbook'),'calendar-to-classbook route must exist');
+assert.ok(router.includes('ensureLessonClassbookSession'),'calendar-to-classbook route must create/reuse a linked classbook session');
 
 assert.match(ui,/Mein Kalender · 4 Wochen zurück \/ 30 Tage voraus/,'teacher UI must expose the calendar');
 assert.match(ui,/Heute & demnächst/,'teacher calendar needs forward filter');
