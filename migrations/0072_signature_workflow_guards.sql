@@ -1,13 +1,14 @@
 PRAGMA foreign_keys = ON;
 
--- Keep repeated revision cycles compatible with the unique status key: only the
--- newest superseded snapshot is retained. The original signed/complete snapshot
--- is never touched by this trigger.
-CREATE TRIGGER IF NOT EXISTS trg_signature_superseded_cleanup
+-- Keep repeated revision cycles compatible with the current unique status key
+-- without deleting evidence. An older superseded revision is moved to a unique
+-- historical entity reference before a newer revision is superseded.
+CREATE TRIGGER IF NOT EXISTS trg_signature_superseded_preserve
 BEFORE UPDATE OF status ON signature_documents
 WHEN NEW.status='superseded' AND OLD.status<>NEW.status
 BEGIN
-  DELETE FROM signature_documents
+  UPDATE signature_documents
+     SET entity_id=entity_id || ':superseded:' || id
    WHERE tenant_id=NEW.tenant_id
      AND document_type=NEW.document_type
      AND entity_type=NEW.entity_type
@@ -32,6 +33,17 @@ WHEN EXISTS (
 )
 BEGIN
   SELECT RAISE(ABORT,'SIGNATURE_ORDER_PENDING');
+END;
+
+-- Built-in portal confirmation is intentionally not allowed to mint an advanced
+-- or qualified electronic signature. Those levels stay reserved for a future
+-- trusted provider callback/integration instead of accepting a user-typed
+-- provider reference as proof.
+CREATE TRIGGER IF NOT EXISTS trg_external_signature_provider_required
+BEFORE INSERT ON digital_signatures
+WHEN NEW.method IN ('external_advanced','external_qualified')
+BEGIN
+  SELECT RAISE(ABORT,'EXTERNAL_SIGNATURE_PROVIDER_REQUIRED');
 END;
 
 -- A teacher may only countersign a report book after the explicit professional
