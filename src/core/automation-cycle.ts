@@ -7,6 +7,7 @@ import { runSafeEducationAutomation } from './education-automation-safe.js';
 import { runLearningOperationsAutomation } from './learning-operations.js';
 import { runFutureRadarAllTenants } from './education-radar.js';
 import { runConsistencyAllTenants } from './education-consistency.js';
+import { runReadinessSnapshots } from './education-readiness-automation.js';
 
 function systemAuth():CoreAuthContext{
   const session:SessionUser={userId:'system:accounting',email:'system@localhost.invalid',displayName:'Systemautomation',isPlatformAdmin:true,mustChangePassword:false,tenantRoles:[],authMethod:'api'};
@@ -25,6 +26,7 @@ export async function runPlatformAutomationCycle(env:Env){
   try{await runLearningOperationsAutomation(env);result.learning_operations='ok';}catch(e){result.learning_operations_error=String((e as Error)?.message||e);}
   try{result.future_radar=await runFutureRadarAllTenants(env);}catch(e){result.future_radar_error=String((e as Error)?.message||e);}
   try{result.consistency=await runConsistencyAllTenants(env);}catch(e){result.consistency_error=String((e as Error)?.message||e);}
+  try{result.readiness=await runReadinessSnapshots(env);}catch(e){result.readiness_error=String((e as Error)?.message||e);}
   try{result.push_queued=await enqueueNewNotificationPushes(env);result.push=await processPushOutbox(env,200);}catch(e){result.push_error=String((e as Error)?.message||e);}
   try{result.accounting=await syncCommercialAccounting(env,auth);}catch(e){result.accounting_error=String((e as Error)?.message||e);}
   try{result.bank_match=await autoMatchBankTransactions(env,auth);}catch(e){result.bank_match_error=String((e as Error)?.message||e);}
