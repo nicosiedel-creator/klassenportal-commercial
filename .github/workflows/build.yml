@@ -3,7 +3,7 @@ name: Secondary build check
 on:
   workflow_dispatch:
   push:
-    branches: [main, fix/class-admin-student-teacher-portal]
+    branches: [main]
 
 jobs:
   build:
