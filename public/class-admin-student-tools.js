@@ -1,6 +1,6 @@
 const CA_PORTAL=/^\/portal\/[^/]+\/[^/]+\/?$/.test(location.pathname);
 if(CA_PORTAL){
-  const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+  const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const parts=location.pathname.split('/').filter(Boolean),tenantSlug=decodeURIComponent(parts[1]||''),courseCode=decodeURIComponent(parts[2]||''),codeKey=`kp_access_${tenantSlug}_${courseCode}`;
   let ctx=null,busy=false;
   async function api(url,opt={}){const isForm=opt.body instanceof FormData,r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt,headers:{...(opt.body&&!isForm?{'content-type':'application/json'}:{}),...(opt.headers||{})}});let d={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(d.error||`HTTP_${r.status}`);return d;}
