@@ -12,6 +12,11 @@ assert.equal(isLockedAcceptanceEnvironment(testEnv,new Request('https://abc-klas
 assert.equal(isLockedAcceptanceEnvironment(testEnv,new Request('https://other-service.nicosiedel.workers.dev/kunden-admin')),false,'other workers must not inherit acceptance access');
 assert.equal(isLockedAcceptanceEnvironment(productionEnv,req('/kunden-admin')),false,'configured production origin must disable workers.dev acceptance mode');
 
+assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/produkt')),true,'public product page must remain testable');
+assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/api/public/product')),true,'public product pricing endpoint must remain testable');
+assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/angebot/offer_token')),true,'tokenized offer page must load during acceptance');
+assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/api/offers/offer_token')),true,'tokenized offer API must be readable during acceptance');
+assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/api/offers/offer_token','POST')),true,'tokenized offer acceptance must remain testable');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/kunden-admin')),true,'customer admin shell must load during controlled acceptance');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/klassen-admin')),true,'class admin shell must load during controlled acceptance');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/einrichtung/invite_token')),true,'tokenized onboarding page must load during acceptance');
