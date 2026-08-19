@@ -8,7 +8,8 @@ function viewerRole(session:SessionUser|null,tenantId:string,courseId:string):st
   if(session.isPlatformAdmin)return 'platform_admin';
   const rank:Record<string,number>={tenant_admin:4,class_admin:3,participant:2,guest:1};
   const matches=session.tenantRoles.filter(x=>x.tenantId===tenantId&&(x.courseId===null||x.courseId===courseId));
-  return [...matches].sort((a,b)=>(rank[b.role]||0)-(rank[a.role]||0))[0]?.role||null;
+  const best=[...matches].sort((a,b)=>(rank[b.role]||0)-(rank[a.role]||0))[0]?.role||null;
+  return best==='class_admin'?'participant':best;
 }
 
 async function coursePortalRow(env:Env,tenantSlug:string,courseCode:string){
