@@ -67,6 +67,10 @@ assert.match(sso,/jwks_uri/,'OIDC signatures must be validated through discovery
 assert.match(sso,/SSO_AUDIENCE_INVALID/);assert.match(sso,/SSO_ISSUER_MISMATCH/);assert.match(sso,/SSO_USER_NOT_PROVISIONED/,'SSO must not create privileged users just from an external claim');
 assert.match(auth,/authTenantId!==tenantId/,'SSO for tenant A must not satisfy SSO enforcement for tenant B');
 assert.match(sso,/SSO_BREAK_GLASS_REQUIRED/,'enforced SSO must retain a deliberate emergency admin');
+assert.match(sso,/ensureTenantUser, tenantUserActive/,'OIDC access decisions must use the tenant relationship status before any provisioning update');
+assert.match(sso,/userHasTenantAccess[\s\S]{0,240}if\(!await tenantUserActive\(env,tenantId,userId\)\)return false/,'a suspended tenant user must be rejected before membership/grant checks');
+const accessCheck=sso.indexOf('userHasTenantAccess(env,s.tenant_id,user.id)'),reactivate=sso.indexOf("ensureTenantUser(env,s.tenant_id,userId,'sso')");
+assert.ok(accessCheck>=0&&reactivate>accessCheck,'OIDC must prove tenant access and active tenant-user status before linking/upserting the relationship');
 const getSsoBody=(sso.match(/export async function getTenantSso[\s\S]*?\n}\n/)||[''])[0];
 assert.ok(getSsoBody,'tenant SSO read function must exist');
 assert.doesNotMatch(getSsoBody,/client_secret_ciphertext\s*:/i,'OIDC secret ciphertext must not be serialized to the browser');
@@ -74,6 +78,7 @@ assert.match(getSsoBody,/has_client_secret/,'browser may receive only a boolean 
 
 assert.match(scim,/token_hash/,'SCIM tokens must be authenticated by stored hashes');
 assert.match(scim,/expires_at>/,'SCIM tokens must expire');
+assert.match(scim,/t\.status='active'/,'SCIM tokens must stop working while their tenant is suspended');
 assert.match(scim,/members\\s\*\\\[/,'SCIM must understand filtered member removal paths');
 assert.match(scim,/action==='add'/,'SCIM group PATCH add must be supported');
 assert.match(scim,/source='scim'/,'SCIM group mappings must create identifiable delegated grants');
@@ -83,6 +88,8 @@ assert.match(scim,/tenant_users SET status='suspended'/,'SCIM delete must suspen
 for(const scope of ['org.read','org.write','courses.read','courses.write','users.read','users.write','content.read','content.write','reports.read'])assert.ok(api.includes(`'${scope}'`),`API scope missing: ${scope}`);
 assert.match(api,/token_hash/,'API tokens must be stored as hashes');
 assert.match(api,/org_unit_id/,'API tokens must support subtree restriction');
+assert.match(api,/JOIN tenants t ON t\.id=at\.tenant_id/,'API token authentication must bind the token to its current tenant state');
+assert.match(api,/t\.status='active'/,'API tokens must stop working while their tenant is suspended');
 assert.match(api,/API_SCOPE_REQUIRED/,'every API operation must enforce scopes');
 assert.match(api,/reports\/summary/,'reports.read must have a real endpoint');
 assert.match(api,/upsertApiOrgGrant/,'API provisioning grants must use explicit idempotent reconciliation');
@@ -101,4 +108,4 @@ for(const t of ['org_units','org_permission_grants','tenant_sso_configs','api_to
 assert.ok(index.includes("url.pathname.startsWith('/sso/')")&&index.includes("url.pathname.startsWith('/scim/')")&&index.includes("url.pathname.startsWith('/api/v1/')"));
 assert.ok(wrangler.includes('"/sso/*"')&&wrangler.includes('"/scim/*"'));
 
-console.log('Enterprise hierarchy, responsibilities/deputies, delegated access, OIDC SSO, SCIM 2.0, scoped API and portability security checks: OK');
+console.log('Enterprise hierarchy, responsibilities/deputies, delegated access, fail-closed OIDC/SCIM/API tenant state, scoped API and portability security checks: OK');
