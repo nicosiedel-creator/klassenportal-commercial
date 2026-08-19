@@ -4,7 +4,8 @@ import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { assertSameOrigin, json } from './utils.js';
 import { createDiscussionThread, listDiscussionMessages, listDiscussionThreads, listReportDefinitions, moderateDiscussionMessage, postDiscussionMessage, registerPushSubscription, revokePushSubscription, runSafeReport, saveDiscussionSettings, saveReportDefinition } from './collaboration-reporting.js';
 import { asStudentView, forbidClassAdminStudentData } from './student-role.js';
-import { classbookExportCsv, classbookExportHtml, deleteExamAuthorityProfile, departmentQualityOverview, listExamAuthorityProfiles, previewClassbookExport, reviewClassbookEntry, saveCourseExamAuthorityProfile, saveExamAuthorityProfile } from './exam-documentation.js';
+import { classbookExportCsv, classbookExportHtml, deleteExamAuthorityProfile, listExamAuthorityProfiles, previewClassbookExport, reviewClassbookEntry, saveCourseExamAuthorityProfile, saveExamAuthorityProfile } from './exam-documentation.js';
+import { departmentQualityOverviewSafe } from './department-quality.js';
 
 async function body(r:Request):Promise<Record<string,unknown>>{try{return await r.json() as Record<string,unknown>;}catch{return{};}}
 function fail(e:unknown){const code=String((e as Error)?.message||'COLLABORATION_ERROR');const status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('REQUIRED')||code.includes('DISABLED')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('LOCKED')||code.includes('RATE_LIMIT')||code.includes('OWNED')?409:code.includes('TOO_LARGE')?413:400;return json({ok:false,error:code},status);}
@@ -29,7 +30,7 @@ export async function handleCollaborationReportingApi(request:Request,env:Env):P
     if(p==='/api/reports/classbook/preview'&&request.method==='POST'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,...await previewClassbookExport(env,auth,tenantId,courseId,await body(request))});}
     if(p==='/api/reports/classbook/export.csv'&&request.method==='POST'){if(!courseId)throw new Error('COURSE_REQUIRED');const x=await classbookExportCsv(env,auth,tenantId,courseId,await body(request));return new Response(x.text,{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':`attachment; filename="${x.filename}"`,'cache-control':'no-store','x-content-digest':x.digest}});}
     if(p==='/api/reports/classbook/export.html'&&request.method==='POST'){if(!courseId)throw new Error('COURSE_REQUIRED');const x=await classbookExportHtml(env,auth,tenantId,courseId,await body(request));return new Response(x.html,{headers:{'content-type':'text/html; charset=utf-8','content-disposition':`inline; filename="${x.filename}"`,'cache-control':'no-store','x-content-digest':x.digest}});}
-    if(p==='/api/reports/department/overview'&&request.method==='GET')return json({ok:true,...await departmentQualityOverview(env,auth,tenantId)});
+    if(p==='/api/reports/department/overview'&&request.method==='GET')return json({ok:true,...await departmentQualityOverviewSafe(env,auth,tenantId)});
     const classbookReview=p.match(/^\/api\/reports\/classbook\/sessions\/([^/]+)\/review$/);if(classbookReview&&request.method==='PUT'){if(!courseId)throw new Error('COURSE_REQUIRED');return json({ok:true,review:await reviewClassbookEntry(env,auth,tenantId,courseId,decodeURIComponent(classbookReview[1]),await body(request))});}
 
     if(p==='/api/reports/definitions'&&request.method==='GET')return json({ok:true,reports:await listReportDefinitions(env,auth,tenantId)});
