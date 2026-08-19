@@ -6,6 +6,7 @@ import { assertSameOrigin, json } from './utils.js';
 import { handleEducationOperationsApi } from './education-operations-router.js';
 import { handleEducationOsApi } from './education-os-router.js';
 import { handleEducationRoleInsightsApi } from './education-role-insights-router.js';
+import { handleAdaptiveRecoveryApi } from './adaptive-recovery-router.js';
 import { handleLearningAdminApi } from './learning-admin-router.js';
 import { handleSecureSignatureMine } from './signature-request-access.js';
 import { handleCourseSignatureApi } from './course-signatures.js';
@@ -15,6 +16,7 @@ function fail(e:unknown){const code=String((e as Error)?.message||'PARTICIPANT_3
 export async function handleParticipant360Api(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;
   const roleInsight=await handleEducationRoleInsightsApi(request,env);if(roleInsight)return roleInsight;
+  const recovery=await handleAdaptiveRecoveryApi(request,env);if(recovery)return recovery;
   if(path.startsWith('/api/education-os/'))return handleEducationOsApi(request,env);
   if(path==='/api/education/signatures/mine')return handleSecureSignatureMine(request,env);
   if(path==='/api/education/course-signatures')return handleCourseSignatureApi(request,env);
