@@ -32,6 +32,9 @@ assert.doesNotMatch(backup,/tenant_sso_configs SET enabled=0[\s\S]{0,180}\.run\(
 assert.doesNotMatch(backup,/scim_tokens SET revoked_at[\s\S]{0,180}\.run\(\)\.catch\(\(\)=>undefined\)/,'restore must never ignore SCIM revocation failures');
 assert.doesNotMatch(backup,/api_tokens SET revoked_at[\s\S]{0,180}\.run\(\)\.catch\(\(\)=>undefined\)/,'restore must never ignore API token revocation failures');
 assert.match(backup,/integrationSafety:'sso_disabled_tokens_revoked',securityTables/,'restore audit must record the integration-safety state tied to the atomic reset');
+const r2RestoreIndex=backup.indexOf('for(const f of checked.manifest.files)'),successAuditIndex=backup.indexOf('const completedAt='),restoreAuditIndex=backup.indexOf("'backup.restore'");
+assert.ok(r2RestoreIndex>=0&&successAuditIndex>r2RestoreIndex&&restoreAuditIndex>r2RestoreIndex,'restore success audit must only be written after all R2 file restoration work completes');
+assert.match(backup,/successAudit\]\);return\{restored:true/,'restore success audit must commit with staging cleanup and tenant reactivation');
 
 const preflight=await readFile('src/portability/backup-preflight.ts','utf8');
 for(const marker of ['BACKUP_USERS_HASH_MISMATCH','BACKUP_RESOURCE_HASH_MISMATCH','BACKUP_FILE_SIZE_MISMATCH','BACKUP_FILE_ETAG_MISMATCH','BACKUP_OBJECT_REFERENCE_DUPLICATE','BACKUP_MEMBERSHIP_USER_MISSING'])assert.ok(preflight.includes(marker),`restore preflight missing ${marker}`);
@@ -57,4 +60,4 @@ assert.match(manifestTypes,/integrity\?: \{ version:1; json:'sha256'; files:'r2-
 assert.match(manifestTypes,/sha256\?: string/,'manifest JSON snapshots must support hashes');
 assert.match(manifestTypes,/etag\?: string/,'manifest files must support etags');
 
-console.log('Backup SHA-256, row-count, size, etag, object-path collision, membership consistency, restore-key, fail-closed user snapshot, atomic integration reset, race-safe schema and strong-readiness checks: OK');
+console.log('Backup SHA-256, row-count, size, etag, object-path collision, membership consistency, restore-key, fail-closed user snapshot, atomic integration reset, post-R2 success audit, race-safe schema and strong-readiness checks: OK');
