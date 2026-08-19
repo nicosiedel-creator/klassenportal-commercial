@@ -23,6 +23,13 @@ WHEN NEW.role='class_admin' AND NEW.course_id IS NOT NULL
 BEGIN
   INSERT OR IGNORE INTO memberships(id,tenant_id,course_id,user_id,role,created_at)
   VALUES('mem_student_' || lower(hex(randomblob(16))),NEW.tenant_id,NEW.course_id,NEW.user_id,'participant',COALESCE(NEW.created_at,datetime('now')));
+  DELETE FROM memberships
+  WHERE OLD.role='class_admin'
+    AND OLD.course_id IS NOT NEW.course_id
+    AND tenant_id=OLD.tenant_id
+    AND course_id=OLD.course_id
+    AND user_id=OLD.user_id
+    AND role='participant';
 END;
 
 -- The teacher portal is deliberately independent from class_admin. A teacher
