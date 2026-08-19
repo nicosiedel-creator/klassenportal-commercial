@@ -25,6 +25,9 @@ assert.match(auth,/PLATFORM_ORIGIN_MISMATCH/,'platform-admin sessions must be bo
 assert.match(auth,/tableExists\(env,'tenant_users'\)/,'modern tenant access must be detected explicitly before any legacy fallback');
 assert.match(auth,/if\(!tenantUsersTable\)\{const m=await env\.DB\.prepare\('SELECT tenant_id,course_id,role FROM memberships WHERE user_id=\?'/,'legacy membership fallback is allowed only when tenant_users is proven absent');
 assert.doesNotMatch(auth,/\}catch\{\s*const m=await env\.DB\.prepare\('SELECT tenant_id,course_id,role FROM memberships WHERE user_id=\?'/,'tenant access query failures must never silently downgrade to legacy memberships');
+assert.match(auth,/FROM memberships m JOIN tenant_users tu ON tu\.tenant_id=m\.tenant_id AND tu\.user_id=m\.user_id WHERE m\.user_id=\? AND tu\.status='active'/,'modern membership access must require an explicit active tenant relationship');
+assert.match(auth,/FROM org_permission_grants g JOIN tenant_users tu ON tu\.tenant_id=g\.tenant_id AND tu\.user_id=g\.user_id/,'delegated grants must require an explicit tenant relationship');
+assert.doesNotMatch(auth,/COALESCE\(tu\.status,'active'\)/,'missing tenant-user rows must never be interpreted as active');
 assert.match(auth,/Promise\.all\(\['org_permission_grants','org_units','course_org_units'\]\.map\(name=>tableExists\(env,name\)\)\)/,'delegated access must explicitly detect its schema before use');
 assert.match(auth,/if\(orgTables\.every\(Boolean\)\)/,'missing delegated-access schema must fail closed by granting no extra delegated roles');
 assert.match(auth,/if\(!await tableExists\(env,'tenant_sso_configs'\)\)return/,'legacy databases may skip SSO only when the SSO table is proven absent');
@@ -32,6 +35,8 @@ assert.doesNotMatch(auth,/enforceTenantSso[\s\S]{0,700}catch\(e\)/,'SSO configur
 assert.match(enterprise,/sqlite_master WHERE type='table' AND name='tenant_users'/,'tenant user status may fall back only after proving the modern table is absent');
 assert.doesNotMatch(enterprise,/tenantUserActive[\s\S]{0,350}catch\{return true;\}/,'tenant user status query failures must never be treated as active access');
 assert.match(enterprise,/if\(!table\)return true;const x=await env\.DB\.prepare\("SELECT status FROM tenant_users/,'legacy tenant-user compatibility must be limited to a proven missing table');
+assert.match(enterprise,/return !!x&&x\.status==='active'/,'modern tenant access must require an existing active tenant_users row');
+assert.doesNotMatch(enterprise,/return !x\|\|x\.status==='active'/,'missing modern tenant relationships must not grant access');
 assert.match(mfa,/AES-GCM/,'TOTP seed must be encrypted at rest');
 assert.match(mfa,/OWNER_MFA_ENCRYPTION_KEY/,'MFA encryption must use a dedicated server secret');
 assert.match(mfa,/TOTP_STEP=30/,'TOTP must use a 30 second step');
@@ -66,4 +71,4 @@ assert.match(cockpit,/confirm_name/,'tenant deletion must require exact tenant-n
 assert.match(ui,/14-tägigen Schutzfrist/,'owner UI must explain the protected deletion grace period');
 assert.match(ui,/System & Sicherheit/,'owner cockpit must be visible only inside platform admin');
 
-console.log('Owner/admin MFA, fail-closed tenant access/status, fail-closed SSO, cockpit, platform-origin binding and direct-platform-login regression tests: OK');
+console.log('Owner/admin MFA, explicit tenant relationships, fail-closed tenant access/status, fail-closed SSO, cockpit, platform-origin binding and direct-platform-login regression tests: OK');
