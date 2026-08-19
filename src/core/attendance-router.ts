@@ -7,10 +7,11 @@ import { handleLearningSuiteApi } from './learning-suite-router.js';
 import { handleCollaborationReportingApi } from './collaboration-reporting-router.js';
 import { asStudentView, forbidClassAdminStudentData } from './student-role.js';
 import { createTeacherPortalTeacher, listTeacherPortalAssignments, myTeacherPortalCourses, revokeTeacherPortalAssignment, saveTeacherPortalAssignment, teacherAttendanceAuth, teacherPortalOptions } from './teacher-portal.js';
+import { getMyLessonNote, listLessonHub, saveLessonHub, saveMyLessonNote, uploadLessonHubMaterial } from './lesson-hub.js';
 import { assertSameOrigin, json } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'ATTENDANCE_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('CONFLICT')||code.includes('CANCELLED')||code.includes('NOT_PENDING')?409:code.includes('TOO_LONG')?413:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=String((e as Error)?.message||'ATTENDANCE_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code.includes('MFA_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('CONFLICT')||code.includes('CANCELLED')||code.includes('NOT_PENDING')?409:code.includes('TOO_LONG')||code.includes('TOO_MANY')?413:400;return json({ok:false,error:code},status);}
 export async function handleAttendanceApi(request:Request,env:Env):Promise<Response|null>{
   const assignments=await handleAssignmentsApi(request,env);if(assignments)return assignments;
   const learning=await handleLearningSuiteApi(request,env);if(learning)return learning;
@@ -43,6 +44,16 @@ export async function handleAttendanceApi(request:Request,env:Env):Promise<Respo
     const courseId=u.searchParams.get('course_id')||'';if(!courseId)throw new Error('ATTENDANCE_SCOPE_REQUIRED');
     const auth=await resolveCoreAuth(env,request,tenantId,courseId),studentAuth=asStudentView(auth);
     const managerAuth=async()=>{forbidClassAdminStudentData(auth);return teacherAttendanceAuth(env,auth,tenantId,courseId);};
+
+    const myLessonNote=path.match(/^\/api\/attendance\/lesson-hub\/([^/]+)\/my-note$/);
+    if(myLessonNote&&request.method==='GET')return json({ok:true,note:await getMyLessonNote(env,studentAuth,tenantId,courseId,decodeURIComponent(myLessonNote[1]))});
+    if(myLessonNote&&request.method==='PUT'){await assertTenantWriteAllowed(env,tenantId);return json({ok:true,note:await saveMyLessonNote(env,studentAuth,tenantId,courseId,decodeURIComponent(myLessonNote[1]),await body(request))});}
+
+    if(path==='/api/attendance/lesson-hub'&&request.method==='GET')return json({ok:true,...await listLessonHub(env,await managerAuth(),tenantId,courseId,u.searchParams.get('from')||undefined,u.searchParams.get('to')||undefined)});
+    const hubMaterial=path.match(/^\/api\/attendance\/lesson-hub\/([^/]+)\/material$/);
+    if(hubMaterial&&request.method==='POST'){await assertTenantWriteAllowed(env,tenantId);return json({ok:true,material:await uploadLessonHubMaterial(env,await managerAuth(),tenantId,courseId,decodeURIComponent(hubMaterial[1]),request)},201);}
+    const hubLesson=path.match(/^\/api\/attendance\/lesson-hub\/([^/]+)$/);
+    if(hubLesson&&request.method==='PUT'){await assertTenantWriteAllowed(env,tenantId);return json({ok:true,lesson:await saveLessonHub(env,await managerAuth(),tenantId,courseId,decodeURIComponent(hubLesson[1]),await body(request))});}
 
     if(path==='/api/attendance/sessions'&&request.method==='GET')return json({ok:true,sessions:await listAttendanceSessions(env,await managerAuth(),tenantId,courseId,u.searchParams.get('from')||undefined,u.searchParams.get('to')||undefined)});
     if(path==='/api/attendance/sessions'&&request.method==='POST'){await assertTenantWriteAllowed(env,tenantId);return json({ok:true,...await createAttendanceSession(env,await managerAuth(),tenantId,courseId,await body(request))},201);}
