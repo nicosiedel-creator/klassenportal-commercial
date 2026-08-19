@@ -1,10 +1,12 @@
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 
-const [css,student,teacher,classPortal,classAdmin,teacherHtml,customerAdmin,platformAdmin]=await Promise.all([
+const [css,polish,student,teacher,dropdown,classPortal,classAdmin,teacherHtml,customerAdmin,platformAdmin]=await Promise.all([
   readFile('public/role-dashboard.css','utf8'),
+  readFile('public/role-dashboard-polish.css','utf8'),
   readFile('public/student-dashboard-ui.js','utf8'),
   readFile('public/teacher-dashboard-ui.js','utf8'),
+  readFile('public/customer-nav-dropdown.js','utf8'),
   readFile('public/class-portal.html','utf8'),
   readFile('public/class-admin.html','utf8'),
   readFile('public/dozentenportal.html','utf8'),
@@ -22,13 +24,27 @@ assert.match(student,/safeHref/,'student dashboard links must be protocol-saniti
 assert.match(student,/class-admin-student-tools/,'class admin tools must remain in the student portal');
 assert.match(teacher,/teacher-main-card/,'teacher dashboard must classify its main working area');
 assert.match(teacher,/teacher-wide-card/,'teacher attendance overview must use the shared dashboard layout');
+
+assert.match(polish,/\.kp-now-count\{display:none!important\}/,'student countdown must stay hidden');
+assert.match(polish,/\.kp-week-lesson strong\{font-size:\.82rem!important/,'weekly timetable text must stay readable at 100% zoom');
+assert.match(polish,/\.customer-portal-admin \.kp-customer-nav-more-panel\{position:absolute!important/,'extra customer navigation must behave like an overlay dropdown');
+assert.doesNotMatch(polish,/\.platform-admin/,'readability polish must never target platform admin');
+assert.match(dropdown,/closest\('#kp-customer-more-toggle'\)/,'dropdown toggle click must not immediately close itself');
+assert.match(dropdown,/Escape/,'customer dropdown must close with Escape');
+assert.match(dropdown,/sessionStorage\.removeItem\('kp_customer_nav_more'\)/,'expanded extra navigation must not remain sticky across views');
+
 assert.match(classPortal,/role-dashboard\.css/);
+assert.match(classPortal,/role-dashboard-polish\.css/);
 assert.match(classPortal,/student-dashboard-ui\.js/);
 assert.match(classAdmin,/role-dashboard\.css/);
+assert.match(classAdmin,/role-dashboard-polish\.css/);
 assert.match(teacherHtml,/role-dashboard\.css/);
+assert.match(teacherHtml,/role-dashboard-polish\.css/);
 assert.match(teacherHtml,/teacher-dashboard-ui\.js/);
 assert.match(customerAdmin,/role-dashboard\.css/);
-assert.doesNotMatch(platformAdmin,/role-dashboard\.css/,'platform admin must remain visually untouched');
-assert.doesNotMatch(platformAdmin,/student-dashboard-ui|teacher-dashboard-ui/,'platform admin must not load role-specific dashboard scripts');
+assert.match(customerAdmin,/role-dashboard-polish\.css/);
+assert.match(customerAdmin,/customer-nav-dropdown\.js/);
+assert.doesNotMatch(platformAdmin,/role-dashboard(?:-polish)?\.css/,'platform admin must remain visually untouched');
+assert.doesNotMatch(platformAdmin,/student-dashboard-ui|teacher-dashboard-ui|customer-nav-dropdown/,'platform admin must not load role-specific dashboard scripts');
 
 console.log('Role dashboard UI scope tests: OK');
