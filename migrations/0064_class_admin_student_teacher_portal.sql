@@ -30,6 +30,7 @@ END;
 -- the courses whose attendance/classbook data it may manage. auth_membership_id
 -- records only a guest membership created by this assignment so revocation can
 -- remove that technical access without touching an independently granted role.
+-- One portal user has exactly one teacher identity per course.
 CREATE TABLE IF NOT EXISTS teacher_portal_assignments (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
@@ -47,7 +48,7 @@ CREATE TABLE IF NOT EXISTS teacher_portal_assignments (
   FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
   FOREIGN KEY(auth_membership_id) REFERENCES memberships(id) ON DELETE SET NULL,
   FOREIGN KEY(granted_by) REFERENCES users(id) ON DELETE SET NULL,
-  UNIQUE(tenant_id,teacher_id,user_id,course_id)
+  UNIQUE(tenant_id,user_id,course_id)
 );
 CREATE INDEX IF NOT EXISTS idx_teacher_portal_user ON teacher_portal_assignments(tenant_id,user_id,status,course_id);
 CREATE INDEX IF NOT EXISTS idx_teacher_portal_course ON teacher_portal_assignments(tenant_id,course_id,status,teacher_id);
