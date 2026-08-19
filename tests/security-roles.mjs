@@ -42,6 +42,8 @@ const users=await readFile('src/core/users.ts','utf8');
 assert.match(users,/CLASS_ADMIN_PARTICIPANT_MANAGED/,'automatic participant companion must be protected from independent mutation');
 assert.match(users,/NOT \(m\.role='participant' AND EXISTS/,'automatic participant companion must be hidden from tenant-admin membership listing');
 assert.match(users,/classAdminCapabilityRemoved:true/,'class-admin demotion must remove only the extra capability while preserving the requested resulting role');
+const classAdminMigration=await readFile('migrations/0064_class_admin_student_teacher_portal.sql','utf8');
+assert.match(classAdminMigration,/OLD\.role='class_admin'[\s\S]*OLD\.course_id IS NOT NEW\.course_id[\s\S]*role='participant'/,'moving a class-admin capability must remove the stale participant companion from the old course');
 
 assert.doesNotThrow(()=>assertSameOrigin(new Request('https://portal.example/api/x',{method:'POST',headers:{origin:'https://portal.example','sec-fetch-site':'same-origin'}}),'https://portal.example'));
 assert.throws(()=>assertSameOrigin(new Request('https://portal.example/api/x',{method:'POST',headers:{origin:'https://evil.example','sec-fetch-site':'cross-site'}}),'https://portal.example'),/CSRF_ORIGIN_MISMATCH/);
