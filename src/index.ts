@@ -16,6 +16,7 @@ import { handleLaunchReadinessApi } from './core/launch-readiness-router.js';
 import { renderLegalDocument } from './core/legal-documents-eu.js';
 import { verifyPendingBackups } from './core/backup-verification.js';
 import { productionReleaseAccess } from './core/production-release-state.js';
+import { acceptanceModeAllowsLockedRequest } from './core/acceptance-mode.js';
 import { publicMaterialDownload, publicOverview, publicPortalMetadata } from './core/public.js';
 import { publicAdvancedBySlug } from './core/public-advanced.js';
 import { calendarFeedResponse } from './core/advanced-modules.js';
@@ -53,6 +54,7 @@ function releaseGateBypass(path:string):boolean{
 }
 async function releaseGateAllowsLockedRequest(path:string,request:Request,env:Env):Promise<boolean>{
   if(releaseGateBypass(path))return true;
+  if(await acceptanceModeAllowsLockedRequest(env,request))return true;
   if(!path.startsWith('/api/'))return false;
   try{return !!(await getSession(env,request))?.isPlatformAdmin;}catch{return false;}
 }
