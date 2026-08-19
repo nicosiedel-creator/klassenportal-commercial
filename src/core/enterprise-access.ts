@@ -93,5 +93,5 @@ export async function ensureTenantUser(env:Env,tenantId:string,userId:string,sou
 }
 
 export async function tenantUserActive(env:Env,tenantId:string,userId:string):Promise<boolean>{
-  try{const x=await env.DB.prepare("SELECT status FROM tenant_users WHERE tenant_id=? AND user_id=?").bind(tenantId,userId).first<{status:string}>();return !x||x.status==='active';}catch{return true;}
+  const table=await env.DB.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name='tenant_users'").first();if(!table)return true;const x=await env.DB.prepare("SELECT status FROM tenant_users WHERE tenant_id=? AND user_id=?").bind(tenantId,userId).first<{status:string}>();return !x||x.status==='active';
 }
