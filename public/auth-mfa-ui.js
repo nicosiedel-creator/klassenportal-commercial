@@ -2,7 +2,7 @@
   const nativeFetch=window.fetch.bind(window);
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function isLogin(input,init){try{const url=typeof input==='string'?new URL(input,location.href):new URL(input.url,location.href);return url.origin===location.origin&&url.pathname==='/api/auth/login'&&String(init?.method||input?.method||'GET').toUpperCase()==='POST';}catch{return false;}}
-  function safeArea(value){try{if(!value)return'';const u=new URL(value,location.origin);if(u.origin!==location.origin)return'';const p=u.pathname.replace(/\/$/,'')||'/';if(['/plattform-admin','/kunden-admin','/klassen-admin'].includes(p))return p+u.search;if(/^\/portal\/[^/]+\/[^/?#]+$/.test(p))return p+u.search;return'';}catch{return'';}}
+  function safeArea(value){try{if(!value)return'';const u=new URL(value,location.origin);if(u.origin!==location.origin)return'';const p=u.pathname.replace(/\/$/,'')||'/';if(['/plattform-admin','/kunden-admin','/klassen-admin','/dozentenportal.html'].includes(p))return p+u.search;if(/^\/portal\/[^/]+\/[^/?#]+$/.test(p))return p+u.search;return'';}catch{return'';}}
   function requestedArea(){const query=safeArea(new URLSearchParams(location.search).get('continue')||'');if(query)return query;return safeArea(location.pathname+location.search);}
   function roleHome(user){if(user?.isPlatformAdmin)return'/plattform-admin';const roles=Array.isArray(user?.tenantRoles)?user.tenantRoles:[];if(roles.some(x=>x?.role==='tenant_admin'))return'/kunden-admin';if(roles.some(x=>x?.role==='class_admin'))return'/klassen-admin';return'';}
   function navigateAndWait(target){location.replace(target);return new Promise(()=>{});}

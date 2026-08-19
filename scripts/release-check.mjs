@@ -24,8 +24,13 @@ const utils=await text('src/core/utils.ts');
 const pkg=JSON.parse(await text('package.json'));
 const classPortalHtml=await text('public/class-portal.html');
 const classAdminHtml=await text('public/class-admin.html');
-const classAdminPortal=await text('public/class-admin-portal.js');
-const classWorkspace=await text('public/class-admin-workspace.js');
+const classAdminEntry=await text('public/class-admin-entry.js');
+const classAdminStudentTools=await text('public/class-admin-student-tools.js');
+const teacherPortalHtml=await text('public/dozentenportal.html');
+const teacherPortal=await text('public/teacher-portal.js');
+const teacherAssignmentUi=await text('public/teacher-assignment-ui.js');
+const studentRole=await text('src/core/student-role.ts');
+const attendanceRouter=await text('src/core/attendance-router.ts');
 const customerAdminHtml=await text('public/customer-admin.html');
 const platformAdminHtml=await text('public/platform-admin.html');
 const platformDirectLogin=await text('public/platform-direct-login.js');
@@ -52,8 +57,8 @@ const brandingSchema=await text('src/core/branding-schema.ts');
 const dataBrandingGuard=()=>dataSource.includes('WHITE_BACKGROUND_NOT_ALLOWED')&&dataSource.includes('BRANDING_CONTRAST_TOO_LOW')&&dataSource.includes('accent_color')&&dataSource.includes('surface_color')&&dataSource.includes('text_color');
 
 for(const route of ['/api/*','/public/*','/brand/*','/calendar/*','/portal/*','/einrichtung/*','/plattform-admin*','/kunden-admin*','/klassen-admin*','/zahlung/*','/passwort-vergessen*','/passwort-zuruecksetzen*','/konto-aktivieren*','/impressum*','/datenschutz*','/agb*','/avv*'])assert.ok(wrangler.includes(`"${route}"`),`missing worker-first route ${route}`);
-for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/portal-compact.css','public/portal-compact.js','public/vfa13-reference.css','public/customer-admin.html','public/customer-compact.css','public/participant-import-ui.js','public/platform-admin.html','public/platform-direct-login.js','public/platform-owner-ui.js','public/owner-security-ui.js','public/launch-readiness-ui.js','public/auth-mfa-ui.js','public/account-mail-ui.js','public/account-action.html','public/account-action.js','public/legal-footer-ui.js','public/class-admin.html','public/class-admin-portal.js','public/class-admin-portal.css','public/class-admin-workspace.js','public/payment-result.html'])await readFile(asset);
-assert.ok(index.includes("clean==='/klassen-admin'?'/class-admin.html'"),'class admin route must serve class-admin.html');
+for(const asset of ['public/class-portal.html','public/class-portal.js','public/class-portal.css','public/class-admin-student-tools.js','public/class-admin-entry.js','public/portal-compact.css','public/portal-compact.js','public/vfa13-reference.css','public/customer-admin.html','public/customer-compact.css','public/teacher-assignment-ui.js','public/dozentenportal.html','public/teacher-portal.js','public/participant-import-ui.js','public/platform-admin.html','public/platform-direct-login.js','public/platform-owner-ui.js','public/owner-security-ui.js','public/launch-readiness-ui.js','public/auth-mfa-ui.js','public/account-mail-ui.js','public/account-action.html','public/account-action.js','public/legal-footer-ui.js','public/class-admin.html','public/payment-result.html'])await readFile(asset);
+assert.ok(index.includes("clean==='/klassen-admin'?'/class-admin.html'"),'class admin route must serve the student-portal entry shell');
 assert.ok(index.includes("['/plattform-admin','/kunden-admin','/klassen-admin'].includes(clean)")&&index.includes("'/platform-admin.html'"),'platform admin route must serve the dedicated platform login/admin shell');
 assert.ok(platformAdminHtml.includes('/platform-direct-login.js')&&!platformAdminHtml.includes('/boot.js'),'platform admin shell must not race the generic app startup');
 assert.ok(platformDirectLogin.includes("if(user?.isPlatformAdmin)await loadPlatform()")&&platformDirectLogin.includes("if(!d?.user?.isPlatformAdmin)")&&platformDirectLogin.includes('await logout()'),'platform direct login must verify owner role before loading privileged modules');
@@ -89,7 +94,7 @@ assert.ok(accountRecovery.includes("is_platform_admin===1)return{accepted:true}"
 assert.ok(accountRouter.includes('SELECT id FROM memberships WHERE tenant_id=? AND user_id=?'),'activation resends must stay tenant-scoped');
 assert.ok(users.includes('createActivationForUser')&&users.includes('createAdminPasswordReset'),'user lifecycle must use emailed activation/reset links');
 assert.ok(!users.includes('temporary_password:'),'user APIs must not return temporary passwords');
-assert.ok(!provision.includes('temporaryPassword:'),'tenant provisioning must not return temporary admin passwords');
+assert.ok(!provision.includes('temporaryPassword:'),'tenant provisioning must not return a temporary admin password');
 assert.ok(mail.includes('https://api.resend.com/emails')&&mail.includes('user-agent')&&mail.includes('idempotency-key'),'transactional email must use authenticated, identifiable, idempotent provider calls');
 assert.ok(accountActionHtml.includes('/account-action.js')&&accountActionJs.includes('/api/auth/password-reset/request'),'secure account action page must exist');
 assert.ok(accountMailUi.includes('/passwort-vergessen'),'login surfaces must expose secure password recovery');
@@ -106,9 +111,18 @@ assert.ok(!index.includes('BOOTSTRAP_SECRET'),'runtime must not use BOOTSTRAP_SE
 assert.ok(!publicApi.includes('access_code_hash:row.access_code_hash'),'access code hash must never be serialized deliberately');
 
 assert.ok(classPortalHtml.includes('/portal-compact.css')&&classPortalHtml.includes('/vfa13-reference.css'),'participant portal must use compact VFA13 visual system');
-assert.ok(classAdminHtml.includes('/class-portal.css')&&classAdminHtml.includes('/portal-compact.css')&&classAdminHtml.includes('/vfa13-reference.css'),'Klassen-Admin must share participant portal visual system');
-assert.ok(classAdminHtml.includes('/class-admin-workspace.js')&&classAdminHtml.includes('/class-admin-portal.js'),'Klassen-Admin must use dedicated scoped controllers');
-assert.ok(!classAdminHtml.includes('/boot.js')&&!classAdminHtml.includes('/app.js'),'Klassen-Admin must not fall back to generic admin SPA');
+assert.ok(classPortalHtml.includes('/class-admin-student-tools.js'),'class admin extras must be layered into the same participant portal');
+assert.ok(publicApi.includes("best==='class_admin'?'participant':best"),'public class portal must expose class admins as participants');
+assert.ok(classAdminHtml.includes('/class-portal.css')&&classAdminHtml.includes('/portal-compact.css')&&classAdminHtml.includes('/vfa13-reference.css'),'class admin entry must share participant portal visual system');
+assert.ok(classAdminHtml.includes('/class-admin-entry.js')&&!classAdminHtml.includes('/class-admin-portal.js')&&!classAdminHtml.includes('/class-admin-workspace.js'),'class admin route must enter the shared student portal and must not load a separate admin workspace');
+assert.ok(classAdminEntry.includes('/portal/')&&classAdminEntry.includes("x.role==='class_admin'"),'class admin entry must resolve its own course and redirect into that portal');
+assert.ok(classAdminStudentTools.includes('Klasse verwalten')&&classAdminStudentTools.includes('Noten, Fehlzeiten, Anwesenheiten und Abgaben anderer Schüler sind nicht zugänglich'),'class admin additions must stay safe and in-context');
+assert.ok(studentRole.includes('FORBIDDEN_CLASS_ADMIN_STUDENT_DATA')&&studentRole.includes("role:'participant'"),'server-side class admin privacy guard must exist');
+assert.ok(teacherPortalHtml.includes('/teacher-portal.js')&&teacherPortal.includes('Unterrichtsklassen')&&teacherPortal.includes('Digitales Klassenbuch'),'dedicated teacher portal must own attendance and classbook workflow');
+assert.ok(teacherAssignmentUi.includes('TEACHER_STUDENT_ROLE_CONFLICT')&&customerAdminHtml.includes('/teacher-assignment-ui.js'),'tenant admin must explicitly assign teacher accounts and prevent same-course student/teacher conflicts');
+assert.ok(!customerAdminHtml.includes('/attendance-classbook-ui.js'),'customer admin must not host the operational teacher attendance/classbook workspace');
+assert.ok(attendanceRouter.includes('teacherAttendanceAuth')&&attendanceRouter.includes('forbidClassAdminStudentData(auth)'),'attendance management must require teacher assignment and explicitly deny class admins');
+assert.ok(!classAdminHtml.includes('/boot.js')&&!classAdminHtml.includes('/app.js'),'class admin must not fall back to generic admin SPA');
 assert.ok(customerAdminHtml.includes('customer-portal-admin')&&customerAdminHtml.includes('/customer-compact.css')&&customerAdminHtml.includes('/vfa13-reference.css'),'customer admin must share compact VFA13 visual language');
 assert.ok(vfaReferenceCss.includes('#stundenplan,#aufgaben')&&vfaReferenceCss.includes('flex-wrap:wrap'),'VFA13 priorities and wrapped customer navigation must stay intact');
 assert.ok(vfaRefinementCss.includes('--portal-surface')&&vfaRefinementCss.includes('--portal-accent'),'portal must consume the complete six-color tenant theme');
@@ -121,16 +135,14 @@ assert.ok(compactCss.includes('.portal-stats,.portal-nav{display:none!important}
 assert.ok(customerCompactCss.includes('flex-wrap:wrap')&&!customerCompactCss.includes('overflow-x:auto;white-space:nowrap'),'customer navigation must wrap instead of forcing one long row');
 assert.ok(!areaMode.includes('Zur Plattform-Adminseite'),'no customer/class/student UI may advertise the owner platform route');
 
-assert.ok(classAdminPortal.includes('exactRows')&&classAdminPortal.includes('Noch nicht aktiv'),'Klassen-Admin must keep exact class scope and extension teasers');
-assert.ok(!classAdminPortal.includes('newCourse'),'Klassen-Admin must never expose course creation');
-assert.ok(classWorkspace.includes('[data-action="add-participant"]')&&classWorkspace.includes('[data-user-reset]')&&classWorkspace.includes('[data-member-remove]'),'Klassen-Admin must strip participant-account mutation controls');
-assert.ok(classWorkspace.includes('/api/timetable/preview')&&classWorkspace.includes('/api/timetable/apply')&&classWorkspace.includes('/api/content/lessons/'),'Klassen-Admin must support scoped timetable management');
 assert.ok(
   users.includes("hasPermission(auth,'participants.manage')")&&
   users.includes("!['participant','guest'].includes(role)")&&
   users.includes("m.role IN ('participant','guest')"),
   'delegated participant managers must stay course-scoped and may create/update only participant or guest memberships, never admin roles'
 );
+assert.ok(users.includes('CLASS_ADMIN_PARTICIPANT_MANAGED')&&users.includes("ca.role='class_admin'"),'class admin companion student membership must not be independently removed or repurposed');
+assert.ok(users.includes("NOT (m.role='participant' AND EXISTS"),'tenant administration must hide the technical duplicate participant row for class admins');
 assert.ok(participantImport.includes('PARTICIPANT_IMPORT_PREVIEW_CHANGED')&&participantImport.includes('SPECIAL_CATEGORY_DATA_DETECTED_NOT_IMPORTED'),'participant document imports must be immutable and data-minimising');
 assert.ok(participantImportUi.includes('vendor/pdfjs/pdf.mjs')&&participantImportUi.includes('Markierte Teilnehmer übernehmen & einladen'),'customer participant imports must locally extract PDF text and require explicit confirmation');
 
@@ -142,7 +154,7 @@ assert.ok(platformOwner.includes('j<20')&&platformOwner.includes('week<6'),'demo
 
 assert.ok(String(pkg.scripts?.test||'').includes('tests/security-roles.mjs')&&String(pkg.scripts?.test||'').includes('tests/enterprise-hierarchy-sso-scim-api.mjs')&&String(pkg.scripts?.test||'').includes('tests/participant-document-import.mjs')&&String(pkg.scripts?.test||'').includes('tests/owner-security.mjs')&&String(pkg.scripts?.test||'').includes('tests/custom-domains.mjs')&&String(pkg.scripts?.test||'').includes('tests/launch-readiness.mjs')&&String(pkg.scripts?.test||'').includes('tests/password-kdf-runtime.mjs'),'full security/enterprise/import/launch/password regression suite must run in CI');
 const migrations=(await readdir('migrations')).filter(x=>/^\d+_.*\.sql$/.test(x)).sort();
-for(const required of ['0035_notifications.sql','0038_module_cancellations.sql','0039_owner_security.sql','0040_custom_domains.sql','0041_launch_readiness.sql','0042_branding_palette.sql','0048_enterprise_hierarchy_sso_scim_api.sql','0049_participant_document_import.sql'])assert.ok(migrations.includes(required),`required migration missing: ${required}`);
+for(const required of ['0035_notifications.sql','0038_module_cancellations.sql','0039_owner_security.sql','0040_custom_domains.sql','0041_launch_readiness.sql','0042_branding_palette.sql','0048_enterprise_hierarchy_sso_scim_api.sql','0049_participant_document_import.sql','0064_class_admin_student_teacher_portal.sql'])assert.ok(migrations.includes(required),`required migration missing: ${required}`);
 for(let i=1;i<migrations.length;i++)assert.ok(migrations[i]>migrations[i-1],'migration order must be deterministic');
 
 console.log('Release readiness checks: OK');

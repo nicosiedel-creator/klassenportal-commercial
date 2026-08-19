@@ -12,7 +12,6 @@ function roleDestination(user){
   if(!user||user.isPlatformAdmin)return null;
   const roles=Array.isArray(user.tenantRoles)?user.tenantRoles:[];
   if(roles.some(x=>x?.role==='tenant_admin'))return{label:'Kundenbereich',href:'/kunden-admin'};
-  if(roles.some(x=>x?.role==='class_admin'))return{label:'Klassenbereich',href:'/klassen-admin'};
   return null;
 }
 async function refineHeader(){

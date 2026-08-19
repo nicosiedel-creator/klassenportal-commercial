@@ -36,8 +36,11 @@ assert.match(pwa,/serviceWorker\.register/,'PWA must register a service worker')
 assert.match(pwa,/Notification\.requestPermission/,'push must remain explicit opt-in');
 assert.match(sw,/u\.pathname\.startsWith\('\/api\/'\)/,'service worker must not cache API responses');
 assert.match(sw,/event\.request\.mode==='navigate'/,'service worker must not offline-cache authenticated page navigations');
-for(const html of [customer,classAdmin])assert.match(html,/learning-report-collab-admin-ui\.js/,'learning/report admin workspace must be loaded');
+assert.match(customer,/learning-report-collab-admin-ui\.js/,'customer admin must load learning/report admin workspace');
+assert.doesNotMatch(classAdmin,/learning-report-collab-admin-ui\.js/,'class admin must not load administrative learner reporting');
+assert.match(classAdmin,/class-admin-entry\.js/,'class admin page must be only an entry into the student portal');
 for(const html of [customer,classAdmin,portal])assert.match(html,/pwa-client\.js/,'PWA client must be loaded');
 assert.match(portal,/portal-learning-collaboration-ui\.js/,'participant quiz/forum UI must be loaded');
+assert.match(portal,/class-admin-student-tools\.js/,'class admin extras must be layered into participant portal');
 assert.match(ciGuard,/WORKERS_CI_GUARD_ACTIVE/,'Cloudflare nested Wrangler recursion guard required');
-console.log('Final platform learning/PWA/reporting/accounting security checks: OK');
+console.log('Final platform learning/PWA/reporting/accounting security and class-admin student-portal checks: OK');

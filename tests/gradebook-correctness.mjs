@@ -25,16 +25,18 @@ assert.equal(csvSafeCell('Normaler Name'),'"Normaler Name"');
 assert.equal(csvSafeCell('=HYPERLINK("https://example.test")'),'"\'=HYPERLINK(""https://example.test"")"');
 assert.equal(csvSafeCell('  +1+1'),'"\'  +1+1"');assert.equal(csvSafeCell('@SUM(A1:A2)'),'"\'@SUM(A1:A2)"');
 const router=await readFile('src/core/learning-suite-router.ts','utf8');for(const fn of ['safeAdvancedGradebook','safeOfficialGradeReport','safeOfficialGradeCsv','safeSaveGradebookCategory','safeSaveGradingScale'])assert.ok(router.includes(fn));
+assert.match(router,/forbidClassAdminStudentData\(auth\)/,'class admin must never reach class-wide gradebook/report administration');
+assert.match(router,/asStudentView\(auth\)/,'class admin learning activity must use participant context');
 const source=await readFile('src/core/gradebook-correctness.ts','utf8');
 assert.match(source,/value\.pct\*value\.itemWeight/);assert.match(source,/category_weight_valid:categoryWeightValid/);assert.match(source,/categoryWeightValid&&weightUsed>0/);assert.match(source,/CATEGORY_WEIGHT_TOTAL_INVALID/);assert.match(source,/GRADING_SCALE_STORED_INVALID/);assert.match(source,/CATEGORY_RENAME_NOT_ALLOWED/);assert.match(source,/items:scale\.items,valid:scale\.valid/);assert.match(source,/\^\[\\s\]\*\[=\+\\-@\]/);
 const ui=await readFile('public/gradebook-policy-ui.js','utf8');for(const code of ['CATEGORY_WEIGHT_TOTAL_EXCEEDED','CATEGORY_WEIGHT_TOTAL_INVALID','CATEGORY_RENAME_NOT_ALLOWED','GRADING_SCALE_OVERLAP','GRADING_SCALE_GAP','GRADING_SCALE_STORED_INVALID'])assert.ok(ui.includes(code));
 assert.ok(ui.includes('6;0;29.99'));assert.ok(ui.includes("replace(',','.')"));assert.match(ui,/form\.dataset\.categoryId/);assert.match(ui,/form\.elements\.name\.readOnly=true/);assert.match(ui,/hydrateCategories/);assert.match(ui,/form\.dataset\.scaleId/);assert.match(ui,/hydrateScale/);assert.match(ui,/event\.stopImmediatePropagation\(\)/);
 const defaultScaleUi=await readFile('public/gradebook-default-scale-ui.js','utf8');assert.ok(defaultScaleUi.includes("const legacy='1;92;100\\n2;81;91.99\\n3;67;80.99'"));assert.ok(defaultScaleUi.includes('6;0;29.99'));assert.match(defaultScaleUi,/normalized\(textarea\.value\)===legacy/);
 const customerHtml=await readFile('public/customer-admin.html','utf8'),classHtml=await readFile('public/class-admin.html','utf8');
-for(const html of [customerHtml,classHtml]){
-  assert.ok(html.includes('/gradebook-policy-ui.js?v=20260818-2'),'admin surface must load the final gradebook validation UI');
-  assert.ok(html.includes('/gradebook-default-scale-ui.js?v=20260818-1'),'admin surface must upgrade the incomplete legacy scale example');
-  assert.ok(html.includes('/admin-overlay-hardening.css?v=20260818-2'),'gradebook integration must preserve viewport-wide hardened admin dialog/overlay behavior');
-  assert.ok(html.includes('/admin-overlay-hardening.js?v=20260818-2'),'gradebook integration must preserve the DOM overlay guard');
-}
-console.log('Official gradebook weighting, category totals, deterministic grading-scale, CSV safety, overlay integration and repairable UI checks: OK');
+assert.ok(customerHtml.includes('/gradebook-policy-ui.js?v=20260818-2'),'customer admin must load the final gradebook validation UI');
+assert.ok(customerHtml.includes('/gradebook-default-scale-ui.js?v=20260818-1'),'customer admin must upgrade the incomplete legacy scale example');
+assert.ok(customerHtml.includes('/admin-overlay-hardening.css?v=20260818-2'),'customer gradebook integration must preserve hardened admin dialogs');
+assert.ok(customerHtml.includes('/admin-overlay-hardening.js?v=20260818-2'),'customer gradebook integration must preserve the DOM overlay guard');
+assert.doesNotMatch(classHtml,/gradebook-policy-ui\.js|gradebook-default-scale-ui\.js|admin-overlay-hardening\.js/,'class admin student entry must never load administrative gradebook UI');
+assert.match(classHtml,/class-admin-entry\.js/,'class admin must enter through the student portal');
+console.log('Official gradebook correctness for customer administration and class-admin student privacy checks: OK');

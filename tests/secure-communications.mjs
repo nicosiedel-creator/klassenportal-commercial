@@ -71,11 +71,14 @@ assert.doesNotMatch(adminUi,/\['participant','guest'\]/,'guest accounts must nev
 assert.match(adminUi,/Kein CC\/BCC/,'bulk email UX must explicitly describe private individual delivery');
 assert.match(participantUi,/Für Dich/);assert.match(participantUi,/Gelesen & verbindlich bestätigen/);assert.match(participantUi,/Nur für die festgelegten Empfänger/);
 assert.match(participantUi,/api\/communications\/my/);
-assert.match(customerHtml,/communication-admin-ui\.js/);assert.match(classAdminHtml,/communication-admin-ui\.js/);assert.match(classPortalHtml,/portal-targeted-messages\.js/);
+assert.match(customerHtml,/communication-admin-ui\.js/,'customer admin must load communication administration');
+assert.doesNotMatch(classAdminHtml,/communication-admin-ui\.js/,'class admin student entry must not load the separate communication admin workspace');
+assert.match(classAdminHtml,/class-admin-entry\.js/,'class admin must enter through the normal class portal');
+assert.match(classPortalHtml,/portal-targeted-messages\.js/,'class admin and classmates must receive targeted messages through the same student portal');
 
 for(const table of ['communication_messages','communication_targets','communication_recipients','communication_events','communication_email_deliveries'])assert.ok(readiness.includes(`'${table}'`),`live gate must require ${table}`);
 assert.match(index,/runCommunicationAutomation/);
 assert.match(index,/controller\?\.cron==='\*\/5 \* \* \* \*'/,'five-minute cron must return before heavy maintenance work');
 assert.ok(wrangler.includes('"*/5 * * * *"')&&wrangler.includes('"17 */6 * * *"'),'Worker must use separate lightweight and heavy cron schedules');
 
-console.log('Secure granular audiences, private email fanout, retries, read/ack tracking and communication automation checks: OK');
+console.log('Secure granular audiences, private email fanout, retries, class-admin student delivery and communication automation checks: OK');
