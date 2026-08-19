@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 
 const auth=await readFile('src/core/auth.ts','utf8');
 const enterprise=await readFile('src/core/enterprise-access.ts','utf8');
+const provision=await readFile('src/core/provision.ts','utf8');
+const tenantUserBackfill=await readFile('migrations/0063_tenant_user_access_integrity.sql','utf8');
 const mfa=await readFile('src/core/mfa.ts','utf8');
 const cockpit=await readFile('src/core/owner-cockpit.ts','utf8');
 const router=await readFile('src/core/owner-security-router.ts','utf8');
@@ -37,6 +39,12 @@ assert.doesNotMatch(enterprise,/tenantUserActive[\s\S]{0,350}catch\{return true;
 assert.match(enterprise,/if\(!table\)return true;const x=await env\.DB\.prepare\("SELECT status FROM tenant_users/,'legacy tenant-user compatibility must be limited to a proven missing table');
 assert.match(enterprise,/return !!x&&x\.status==='active'/,'modern tenant access must require an existing active tenant_users row');
 assert.doesNotMatch(enterprise,/return !x\|\|x\.status==='active'/,'missing modern tenant relationships must not grant access');
+const provisionTenantUser=provision.indexOf('INSERT INTO tenant_users'),provisionMembership=provision.indexOf('INSERT INTO memberships');
+assert.ok(provisionTenantUser>=0&&provisionMembership>provisionTenantUser,'tenant provisioning must create the active tenant_users relationship before its tenant-admin membership');
+assert.match(provision,/ON CONFLICT\(tenant_id,user_id\) DO UPDATE SET status='active'/,'tenant provisioning must reconcile an existing relationship explicitly');
+assert.match(tenantUserBackfill,/INSERT OR IGNORE INTO tenant_users/,'access-integrity migration must backfill relationships idempotently');
+assert.match(tenantUserBackfill,/SELECT DISTINCT[\s\S]*m\.tenant_id[\s\S]*m\.user_id[\s\S]*FROM memberships m/,'access-integrity migration must repair historical memberships without tenant_users rows');
+assert.doesNotMatch(tenantUserBackfill,/UPDATE tenant_users SET status='active'/,'backfill must never reactivate an existing suspended relationship');
 assert.match(mfa,/AES-GCM/,'TOTP seed must be encrypted at rest');
 assert.match(mfa,/OWNER_MFA_ENCRYPTION_KEY/,'MFA encryption must use a dedicated server secret');
 assert.match(mfa,/TOTP_STEP=30/,'TOTP must use a 30 second step');
@@ -71,4 +79,4 @@ assert.match(cockpit,/confirm_name/,'tenant deletion must require exact tenant-n
 assert.match(ui,/14-tägigen Schutzfrist/,'owner UI must explain the protected deletion grace period');
 assert.match(ui,/System & Sicherheit/,'owner cockpit must be visible only inside platform admin');
 
-console.log('Owner/admin MFA, explicit tenant relationships, fail-closed tenant access/status, fail-closed SSO, cockpit, platform-origin binding and direct-platform-login regression tests: OK');
+console.log('Owner/admin MFA, tenant-user provisioning/backfill integrity, explicit tenant relationships, fail-closed tenant access/status, fail-closed SSO, cockpit, platform-origin binding and direct-platform-login regression tests: OK');
