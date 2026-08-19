@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 
 const migration70=await readFile('migrations/0070_education_operations_suite.sql','utf8');
 const migration71=await readFile('migrations/0071_learning_modes_planner_signatures_legacy.sql','utf8');
+const migration72=await readFile('migrations/0072_signature_workflow_guards.sql','utf8');
 const operations=await readFile('src/core/education-operations.ts','utf8');
 const learning=await readFile('src/core/learning-operations.ts','utf8');
 const router=await readFile('src/core/education-operations-router.ts','utf8');
@@ -21,6 +22,12 @@ const platform=await readFile('public/platform-admin.html','utf8');
 for(const table of ['curriculum_frameworks','curriculum_items','practice_phases','exam_workflows','operational_deadlines','teacher_qualifications','substitution_cases','quality_actions','course_lifecycle','education_document_registry'])assert.match(migration70,new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`),`${table} data model missing`);
 for(const table of ['instruction_activity_details','excursion_events','timetable_plan_versions','timetable_plan_entries','signature_documents','signature_requests','digital_signatures','report_book_periods','report_book_entries','legacy_import_batches','legacy_import_rows'])assert.match(migration71,new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`),`${table} data model missing`);
 for(const mode of ['self_study_home','self_study_school','self_study_other','excursion','project','practice'])assert.ok(migration71.includes(`'${mode}'`),`activity mode ${mode} missing`);
+assert.match(migration72,/trg_signature_superseded_cleanup/,'repeated report-book revision snapshots must not collide');
+assert.match(migration72,/trg_digital_signature_order/,'signature ordering must be enforced at the database boundary');
+assert.match(migration72,/SIGNATURE_ORDER_PENDING/,'later signers must be blocked until earlier signatures exist');
+assert.match(migration72,/REPORT_BOOK_APPROVAL_REQUIRED/,'teacher countersignature must require explicit report-book approval');
+assert.match(migration72,/trg_report_book_signature_complete/,'completed signatures must finalize the report book');
+assert.match(migration72,/SET status='signed'/,'report book status must become signed automatically');
 
 assert.match(operations,/curriculum_session_links/,'curriculum coverage must link classbook sessions to framework items');
 assert.match(operations,/practice_phases/,'practice workflow missing');
