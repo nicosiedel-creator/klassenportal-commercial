@@ -1,5 +1,7 @@
 import { strict as assert } from 'node:assert';
+import { readFile } from 'node:fs/promises';
 import { authForTenant, hashPassword, verifyPassword } from '../dist/core/auth.js';
+import { asStudentView, forbidClassAdminStudentData } from '../dist/core/student-role.js';
 import { assertSameOrigin, b64, cookie, randomBytes, toArrayBuffer } from '../dist/core/utils.js';
 
 async function legacyHash(password,iterations=100000){
@@ -21,7 +23,10 @@ assert.equal(await verifyPassword('Nicht-Lauffähig-2026!',unsupportedHigh),fals
 
 const base={userId:'u1',email:'u@example.de',displayName:'U',isPlatformAdmin:false,mustChangePassword:false};
 const classAdmin={...base,tenantRoles:[{tenantId:'t1',courseId:'c1',role:'class_admin'}]};
-assert.equal(authForTenant(classAdmin,'t1','c1').role,'class_admin');
+const classAdminAuth=authForTenant(classAdmin,'t1','c1');
+assert.equal(classAdminAuth.role,'class_admin');
+assert.equal(asStudentView(classAdminAuth).role,'participant','class admin self-service must use the same student role as classmates');
+assert.throws(()=>forbidClassAdminStudentData(classAdminAuth),/FORBIDDEN_CLASS_ADMIN_STUDENT_DATA/,'class admin must fail closed on cross-student data APIs');
 assert.throws(()=>authForTenant(classAdmin,'t1','c2'),/FORBIDDEN/,'class admin must not see another class');
 assert.throws(()=>authForTenant(classAdmin,'t2','c1'),/FORBIDDEN/,'class admin must not see another tenant');
 const participant={...base,tenantRoles:[{tenantId:'t1',courseId:'c1',role:'participant'}]};
@@ -33,10 +38,15 @@ assert.throws(()=>authForTenant(tenantAdmin,'t2','c99'),/FORBIDDEN/,'tenant admi
 const owner={...base,isPlatformAdmin:true,tenantRoles:[]};
 assert.equal(authForTenant(owner,'t2','c99').role,'platform_admin');
 
+const users=await readFile('src/core/users.ts','utf8');
+assert.match(users,/CLASS_ADMIN_PARTICIPANT_MANAGED/,'automatic participant companion must be protected from independent mutation');
+assert.match(users,/NOT \(m\.role='participant' AND EXISTS/,'automatic participant companion must be hidden from tenant-admin membership listing');
+assert.match(users,/classAdminCapabilityRemoved:true/,'class-admin demotion must remove only the extra capability while preserving the requested resulting role');
+
 assert.doesNotThrow(()=>assertSameOrigin(new Request('https://portal.example/api/x',{method:'POST',headers:{origin:'https://portal.example','sec-fetch-site':'same-origin'}}),'https://portal.example'));
 assert.throws(()=>assertSameOrigin(new Request('https://portal.example/api/x',{method:'POST',headers:{origin:'https://evil.example','sec-fetch-site':'cross-site'}}),'https://portal.example'),/CSRF_ORIGIN_MISMATCH/);
 assert.throws(()=>assertSameOrigin(new Request('https://portal.example/api/x',{method:'POST',headers:{origin:'https://evil.example'}}),'https://portal.example'),/CSRF_ORIGIN_MISMATCH/);
 assert.doesNotThrow(()=>assertSameOrigin(new Request('https://portal.example/api/x',{method:'GET',headers:{origin:'https://evil.example'}}),'https://portal.example'));
 assert.match(cookie('kp_session','abc',60),/HttpOnly; Secure; SameSite=Strict/);
 
-console.log('Security hardening + role isolation tests: OK');
+console.log('Security hardening + class-admin-as-student role isolation tests: OK');
