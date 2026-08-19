@@ -16,12 +16,12 @@ assert.match(migration,/CREATE TABLE IF NOT EXISTS exam_authority_profiles/,'cus
 assert.match(migration,/CREATE TABLE IF NOT EXISTS course_exam_authority_profiles/,'courses need a selectable documentation profile');
 assert.match(migration,/CREATE TABLE IF NOT EXISTS classbook_export_runs/,'exports need an audit trail');
 assert.match(migration,/CREATE TABLE IF NOT EXISTS classbook_entry_reviews/,'Fachbereich review state needs persistence');
+assert.match(migration,/authority_type IN \('ihk','hwk','vak','internal','custom','other'\)/,'authority types must be constrained');
 
 assert.match(core,/builtin:ihk-berlin-umschulung/,'IHK Berlin documentation template must exist');
 assert.match(core,/builtin:hwk-berlin/,'HWK Berlin documentation template must exist');
 assert.match(core,/builtin:vak-berlin-vfa/,'VAk Berlin documentation template must exist');
 assert.match(core,/builtin:topics/,'neutral topics-only profile must exist');
-assert.match(core,/authority_type IN \('ihk','hwk','vak','internal','custom','other'\)/,'authority types must be constrained in migration/code contract');
 assert.match(core,/teacherAttendanceAuth/,'teachers may export only through explicit teacher assignment auth');
 assert.match(core,/hasPermission\(auth,'reports.view'\)/,'delegated quality roles require reporting permission');
 assert.ok(!core.includes('attendance_records'),'topics-only export core must not query individual attendance records');
