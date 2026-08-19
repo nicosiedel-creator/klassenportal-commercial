@@ -7,6 +7,7 @@ const guard=await readFile('scripts/workers-ci-guard.mjs','utf8');
 const workflows=await Promise.all(['build.yml','forced-password-flow.yml','portal-ux-check.yml','restore-safety.yml','portal-live-smoke.yml'].map(async n=>[n,await readFile(`.github/workflows/${n}`,'utf8')]));
 
 assert.equal(pkg.scripts['ci:cloudflare'].includes('npm test'),true,'Cloudflare CI must run full tests');
+assert.equal(pkg.scripts.test.includes('tests/planning-constraints.mjs'),true,'full regression suite must execute planning constraints coverage');
 assert.equal(pkg.scripts['ci:cloudflare'].includes('release-check.mjs'),true,'Cloudflare CI must run release checks');
 assert.equal(pkg.scripts['ci:cloudflare'].includes('d1 migrations apply DB --local'),true,'Cloudflare CI must validate every D1 migration');
 assert.match(wrangler,/"build"\s*:\s*\{[\s\S]*workers-ci-guard\.mjs/,'Wrangler deploy/preview must invoke the Cloudflare CI guard');
