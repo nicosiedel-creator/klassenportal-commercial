@@ -2,15 +2,34 @@ import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { acknowledgeCommunication, closeCommunication, createCommunication, getCommunication, listCommunications, markCommunicationRead, myCommunications, publishCommunication } from './secure-communications.js';
+import { teacherAttendanceAuth } from './teacher-portal.js';
+import { createTeacherMessage, deleteTeacherMessage, ensureLessonClassbookSession, listTeacherMessagesAdmin, markTeacherMessageRead, teacherWorkspace } from './teacher-workspace.js';
 import { assertSameOrigin, json } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'COMMUNICATION_ERROR'),status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('NOT_PUBLISHABLE')||code.includes('ACK_NOT_AVAILABLE')?409:code.includes('TOO_MANY')?413:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=String((e as Error)?.message||'COMMUNICATION_ERROR'),status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code.includes('MFA_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('NOT_PUBLISHABLE')||code.includes('ACK_NOT_AVAILABLE')?409:code.includes('TOO_MANY')?413:400;return json({ok:false,error:code},status);}
 
 export async function handleCommunicationsApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;if(!path.startsWith('/api/communications'))return null;
   try{
     assertSameOrigin(request,env.APP_ORIGIN);const tenantId=u.searchParams.get('tenant_id')||'',courseId=u.searchParams.get('course_id')||undefined;if(!tenantId)throw new Error('TENANT_ID_REQUIRED');const auth=await resolveCoreAuth(env,request,tenantId,courseId);
+
+    if(path==='/api/communications/teacher/messages/admin'&&request.method==='GET')return json({ok:true,messages:await listTeacherMessagesAdmin(env,auth,tenantId)});
+    if(path==='/api/communications/teacher/messages/admin'&&request.method==='POST'){await assertTenantWriteAllowed(env,tenantId);return json({ok:true,message:await createTeacherMessage(env,auth,tenantId,await body(request))},201);}
+    const teacherAdminMessage=path.match(/^\/api\/communications\/teacher\/messages\/admin\/([^/]+)$/);
+    if(teacherAdminMessage&&request.method==='DELETE'){await assertTenantWriteAllowed(env,tenantId);await deleteTeacherMessage(env,auth,tenantId,decodeURIComponent(teacherAdminMessage[1]));return json({ok:true});}
+    if(path==='/api/communications/teacher/workspace'&&request.method==='GET'){
+      if(!courseId)throw new Error('COURSE_ID_REQUIRED');const teacherAuth=await teacherAttendanceAuth(env,auth,tenantId,courseId);return json({ok:true,...await teacherWorkspace(env,teacherAuth,tenantId,courseId)});
+    }
+    const teacherMessageRead=path.match(/^\/api\/communications\/teacher\/messages\/([^/]+)\/read$/);
+    if(teacherMessageRead&&request.method==='POST'){
+      if(!courseId)throw new Error('COURSE_ID_REQUIRED');const teacherAuth=await teacherAttendanceAuth(env,auth,tenantId,courseId);return json({ok:true,read:await markTeacherMessageRead(env,teacherAuth,tenantId,courseId,decodeURIComponent(teacherMessageRead[1]))});
+    }
+    const teacherLessonClassbook=path.match(/^\/api\/communications\/teacher\/lessons\/([^/]+)\/classbook$/);
+    if(teacherLessonClassbook&&request.method==='POST'){
+      if(!courseId)throw new Error('COURSE_ID_REQUIRED');await assertTenantWriteAllowed(env,tenantId);const teacherAuth=await teacherAttendanceAuth(env,auth,tenantId,courseId);return json({ok:true,...await ensureLessonClassbookSession(env,teacherAuth,tenantId,courseId,decodeURIComponent(teacherLessonClassbook[1]))},201);
+    }
+
     if(path==='/api/communications/my'&&request.method==='GET')return json({ok:true,messages:await myCommunications(env,auth,tenantId,courseId)});
     const read=path.match(/^\/api\/communications\/([^/]+)\/read$/);if(read&&request.method==='PATCH')return json({ok:true,...await markCommunicationRead(env,auth,tenantId,decodeURIComponent(read[1]))});
     const ack=path.match(/^\/api\/communications\/([^/]+)\/ack$/);if(ack&&request.method==='POST')return json({ok:true,...await acknowledgeCommunication(env,auth,tenantId,decodeURIComponent(ack[1]))});

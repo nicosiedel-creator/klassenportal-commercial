@@ -69,7 +69,7 @@ const augustDays=weekdays('2026-08-20','2026-08-31');
 const septemberDays=weekdays('2026-09-01','2026-09-30');
 const augustTimes=['13:00','14:45','16:30'];
 const septemberTimes=['08:15','10:00'];
-let assigned=0,skipped=0;
+let assigned=0,skipped=0,hubSeeded=0;
 
 for(let index=0;index<courses.length;index++){
   const course=courses[index],courseId=String(course.id),courseName=String(course.name||course.code||courseId);
@@ -87,19 +87,27 @@ for(let index=0;index<courses.length;index++){
 
   const augDay=augustDays[Math.floor(index/augustTimes.length)%augustDays.length],augTime=augustTimes[index%augustTimes.length],aug=localWindow(augDay,augTime);
   const sepDay=septemberDays[Math.floor(index/septemberTimes.length)%septemberDays.length],sepTime=septemberTimes[index%septemberTimes.length],sep=localWindow(sepDay,sepTime);
-  const sessions=[
-    {tag:'2026-08',...aug},
-    {tag:'2026-09',...sep},
-  ];
-  for(const session of sessions){
+  for(const session of [{tag:'2026-08',...aug},{tag:'2026-09',...sep}]){
     const sessionId=`ats_demo_nico_${session.tag}_${courseId}`,sourceRef=`demo_nico_klassenportal_${session.tag}_${courseId}`;
     exec(`INSERT OR IGNORE INTO attendance_sessions(id,tenant_id,course_id,session_date,starts_at,ends_at,subject,room,instructor_text,delivery_mode,status,source,source_ref,created_by,created_at,updated_at) VALUES('${esc(sessionId)}','${esc(tenantId)}','${esc(courseId)}','${esc(session.sessionDate)}','${esc(session.startsAt)}','${esc(session.endsAt)}','Arbeit für Klassenportal',NULL,'Nico Pfeiffer-Siedel','onsite','planned','import','${esc(sourceRef)}','${esc(userId)}',datetime('now'),datetime('now'))`);
   }
+
+  const lesson=query(`SELECT id FROM lessons WHERE tenant_id='${esc(tenantId)}' AND course_id='${esc(courseId)}' AND starts_at>='2026-08-17T00:00:00.000Z' AND starts_at<='2026-09-30T23:59:59.999Z' ORDER BY starts_at LIMIT 1`)[0];
+  if(lesson?.id){
+    const lessonId=String(lesson.id),linkId=`lhl_demo_nico_${courseId}`;
+    exec(`INSERT INTO lesson_hub_details(lesson_id,tenant_id,course_id,planned_topic,info_text,delivery_mode,updated_by,updated_at) VALUES('${esc(lessonId)}','${esc(tenantId)}','${esc(courseId)}','Klassenportal – integrierter Unterrichts-Hub','Demo-Inhalt: Thema, Hinweise, Links, Dateien und später behandelte Inhalte sind direkt mit dieser Unterrichtsstunde verknüpft.','onsite','${esc(userId)}',datetime('now')) ON CONFLICT(lesson_id) DO UPDATE SET planned_topic=excluded.planned_topic,info_text=excluded.info_text,updated_by=excluded.updated_by,updated_at=datetime('now')`);
+    exec(`INSERT OR IGNORE INTO lesson_hub_links(id,tenant_id,course_id,lesson_id,title,url,sort_order,created_by,created_at,updated_at) VALUES('${esc(linkId)}','${esc(tenantId)}','${esc(courseId)}','${esc(lessonId)}','IHK Berlin','https://www.ihk.de/berlin/',10,'${esc(userId)}',datetime('now'),datetime('now'))`);
+    hubSeeded++;
+  }
+
   assigned++;
   console.log(`Demo-Dozent: ${courseName} -> August ${aug.sessionDate} ${augTime}, September ${sep.sessionDate} ${sepTime}, jeweils 90 Min.`);
 }
 
 if(!assigned)throw new Error(`NICO_DEMO_ASSIGNMENTS_NONE (skipped=${skipped})`);
+exec(`INSERT OR IGNORE INTO teacher_messages(id,tenant_id,course_id,title,body,source_label,priority,starts_at,ends_at,created_by,created_at,updated_at) VALUES('tmsg_demo_school_${esc(tenantId)}','${esc(tenantId)}',NULL,'Willkommen im neuen Dozentenportal','Bitte prüfe deine zugeordneten Klassen und öffne Unterrichtstermine künftig direkt über den Kalender. Klassenbuch, Anwesenheit und Unterrichtsinfos sind dort miteinander verknüpft.','Schulleitung','important',NULL,NULL,'${esc(userId)}',datetime('now'),datetime('now'))`);
+exec(`INSERT OR IGNORE INTO teacher_messages(id,tenant_id,course_id,title,body,source_label,priority,starts_at,ends_at,created_by,created_at,updated_at) VALUES('tmsg_demo_office_${esc(tenantId)}','${esc(tenantId)}',NULL,'Anwesenheitsdokumentation','Bitte Anwesenheit und Klassenbucheintrag möglichst am Unterrichtstag abschließen. Diese Meldung dient als Test für interne Hinweise im Dozentenportal.','Sekretariat','normal',NULL,NULL,'${esc(userId)}',datetime('now'),datetime('now'))`);
+
 const verification=query(`SELECT COUNT(*) AS assignments FROM teacher_portal_assignments WHERE tenant_id='${esc(tenantId)}' AND user_id='${esc(userId)}' AND status='active'`)[0];
 const sessions=query(`SELECT COUNT(*) AS sessions FROM attendance_sessions WHERE tenant_id='${esc(tenantId)}' AND created_by='${esc(userId)}' AND source='import' AND source_ref LIKE 'demo_nico_klassenportal_%'`)[0];
-console.log(`Nico demo fixtures complete: ${verification?.assignments||0} active teacher assignments, ${sessions?.sessions||0} demo work sessions, ${skipped} skipped conflicts.`);
+console.log(`Nico demo fixtures complete: ${verification?.assignments||0} active teacher assignments, ${sessions?.sessions||0} demo work sessions, ${hubSeeded} lesson hubs seeded, ${skipped} skipped conflicts.`);
