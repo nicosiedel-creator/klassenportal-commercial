@@ -18,8 +18,9 @@ assert.match(migration,/PRIMARY KEY\(user_id,lesson_id\)/,'private lesson notes 
 assert.match(hub,/requireRole\(auth,'class_admin'\)/,'lesson hub editing must require manager/teacher authority');
 assert.match(hub,/requireRole\(auth,'participant'\)/,'private lesson notes must be participant-only');
 assert.match(hub,/m\.role='participant'/,'private note access must verify real participant membership');
-assert.match(hub,/lesson_note\.updated[\s\S]*hasNote/,'private note audit must never store note content');
-assert.doesNotMatch(hub,/lesson_note\.updated[\s\S]{0,160}note:/,'private note content must not leak into audit metadata');
+const noteAudit=hub.match(/audit\(env\.DB,auth\.userId,'lesson_note\.updated'[^;]+;/)?.[0]||'';
+assert.match(noteAudit,/\{hasNote:!!note\}/,'private note audit must record only whether a note exists');
+assert.doesNotMatch(noteAudit,/\{\s*note:/,'private note content must not leak into audit metadata');
 assert.match(hub,/\['https:','http:'\]/,'lesson links must be restricted to web URLs');
 assert.match(hub,/lesson_hub_materials/,'teacher must be able to attach existing learning materials to one lesson');
 assert.match(hub,/uploadLearningMaterial/,'teacher must be able to upload a file directly from the lesson hub');
