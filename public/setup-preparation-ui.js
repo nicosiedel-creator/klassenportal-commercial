@@ -1,4 +1,4 @@
-const ONBOARDING_PATH=location.pathname.startsWith('/einrichten/')||location.pathname.startsWith('/onboarding/');
+const ONBOARDING_PATH=location.pathname.startsWith('/einrichtung/');
 const CUSTOMER_PATH=location.pathname.replace(/\/$/,'')==='/kunden-admin';
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -37,7 +37,7 @@ function checklistHtml(customer=false){
       <div class="card"><strong>3. Organisation / Organigramm</strong><div class="muted">Standorte, Bereiche, Hierarchie, Kürzel, Verantwortliche und Rollen. Bevorzugt CSV/XLSX.</div><div class="toolbar"><button type="button" class="btn secondary kp-prep-template" data-template="organisation">CSV-Vorlage</button>${action('organization','Struktur öffnen')}</div></div>
       <div class="card"><strong>4. Klassen / Kurse</strong><div class="muted">Bezeichnungen, Kürzel, Start-/Enddaten und ggf. Zuordnung zu Standort/Bereich.</div>${action('courses','Klassen/Kurse öffnen')}</div>
       <div class="card"><strong>5. Personal & Zuständigkeiten</strong><div class="muted">Administratoren, Klassenverantwortliche, Lehrkräfte/Dozenten und Vertretungen mit Namen, E-Mail und Rolle.</div>${action('users','Benutzer & Rollen öffnen')}</div>
-      <div class="card"><strong>6. Teilnehmer / Schüler</strong><div class="muted">Name, E-Mail, Teilnehmer-/Schülernummer, Klasse/Kurs sowie optional Beginn/Ende. CSV/XLSX/JSON/TXT; PDF kann über die Importoberfläche ausgewertet werden.</div><div class="toolbar"><button type="button" class="btn secondary kp-prep-template" data-template="participants">CSV-Vorlage</button>${action('users','Teilnehmer importieren','data-participants="1"')}</div></div>
+      <div class="card"><strong>6. Teilnehmer / Schüler</strong><div class="muted">Name, E-Mail, Teilnehmer-/Schülernummer, Klasse/Kurs sowie optional Beginn/Ende. CSV/XLSX/JSON/TXT; PDF kann über die Importoberfläche ausgewertet werden.</div><div class="toolbar"><button type="button" class="btn secondary kp-prep-template" data-template="participants">CSV-Vorlage</button>${action('participants','Teilnehmer importieren')}</div></div>
       <div class="card"><strong>7. Stundenplan</strong><div class="muted">Klasse, Datum, Beginn, Ende, Fach, Dozent, Raum, Unterrichtsart und Hinweise. CSV/XLSX direkt importierbar; PDF kann als Stundenplanquelle hinterlegt werden.</div><div class="toolbar"><button type="button" class="btn secondary kp-prep-template" data-template="timetable">CSV-Vorlage</button>${action('content','Stundenplan importieren','data-action="timetable"')}</div></div>
       <div class="card"><strong>8. Optional für erweiterte Automatisierung</strong><div class="muted">Eigene Domain, SSO/SCIM, bestehende IDs, Mail-/Eingangskanäle, Modulwünsche sowie vorhandene Exportdateien aus Altsystemen.</div></div>
     </div>
@@ -45,13 +45,15 @@ function checklistHtml(customer=false){
   </section>`;
 }
 
+function findNav(view){
+  if(view==='organization')return document.querySelector('#enterprise-structure-nav')||[...document.querySelectorAll('.nav')].find(x=>String(x.textContent||'').includes('Struktur'));
+  if(view==='participants')return [...document.querySelectorAll('.nav')].find(x=>String(x.textContent||'').includes('Teilnehmer importieren'));
+  return document.querySelector(`[data-v="${CSS.escape(view||'')}"]`);
+}
 function wire(root=document){
   root.querySelectorAll?.('.kp-prep-template').forEach(b=>{if(b.dataset.prepBound)return;b.dataset.prepBound='1';b.addEventListener('click',()=>downloadTemplate(b.dataset.template));});
   root.querySelectorAll?.('.kp-prep-go').forEach(b=>{if(b.dataset.prepBound)return;b.dataset.prepBound='1';b.addEventListener('click',()=>{
-    if(b.dataset.participants==='1'){
-      const nav=[...document.querySelectorAll('.nav')].find(x=>String(x.textContent||'').includes('Teilnehmer importieren'));if(nav){nav.click();return;}
-    }
-    const nav=document.querySelector(`[data-v="${CSS.escape(b.dataset.view||'')}"]`);if(!nav)return;nav.click();
+    const nav=findNav(b.dataset.view||'');if(!nav)return;nav.click();
     if(b.dataset.action==='timetable'){let tries=0;const timer=setInterval(()=>{const open=document.querySelector('#timetable-import-open');if(open){clearInterval(timer);open.click();}else if(++tries>30)clearInterval(timer);},50);}
   });});
 }
