@@ -2,7 +2,7 @@ const KP_ASSIGN_PORTAL=/^\/portal\/[^/]+\/[^/]+\/?$/.test(location.pathname);
 
 if(KP_ASSIGN_PORTAL){
   const E=value=>String(value??'').replace(/[&<>"']/g,char=>({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   })[char]);
   const parts=location.pathname.split('/').filter(Boolean);
   const tenantSlug=decodeURIComponent(parts[1]||'');
@@ -328,7 +328,7 @@ if(KP_ASSIGN_PORTAL){
         <button class="btn" type="button" data-submit ${locked?'disabled':''}>Verbindlich einreichen</button>
         <span data-status class="muted"></span>
       </div>
-    `;
+    `);
     const status=wrapper.querySelector('[data-status]');
     const closeAndRefresh=async()=>{wrapper.remove();emitChange();await refresh();};
     wireNote(wrapper,a);
