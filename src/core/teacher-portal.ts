@@ -15,6 +15,12 @@ export async function teacherPortalOptions(env:Env,auth:CoreAuthContext,tenantId
   return{teachers:teachers.results??[],users:users.results??[],courses:courses.results??[]};
 }
 
+export async function createTeacherPortalTeacher(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
+  requireRole(auth,'tenant_admin');const name=safeString(input.name,200),email=safeString(input.email,320).toLowerCase();if(!name)throw new Error('TEACHER_NAME_REQUIRED');if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw new Error('TEACHER_EMAIL_INVALID');
+  const existing=email?await env.DB.prepare('SELECT id,name,email FROM teachers WHERE tenant_id=? AND email=? COLLATE NOCASE').bind(tenantId,email).first<Record<string,unknown>>():null;if(existing)return existing;
+  const teacherId=id('tch_'),ts=nowIso();await env.DB.prepare('INSERT INTO teachers(id,tenant_id,name,email,created_at) VALUES(?,?,?,?,?)').bind(teacherId,tenantId,name,email||null,ts).run();await audit(env.DB,auth.userId,'teacher.created',tenantId,undefined,'teacher',teacherId,{name,email:email||null});return env.DB.prepare('SELECT id,name,email FROM teachers WHERE id=? AND tenant_id=?').bind(teacherId,tenantId).first();
+}
+
 export async function listTeacherPortalAssignments(env:Env,auth:CoreAuthContext,tenantId:string){
   requireRole(auth,'tenant_admin');
   const rows=await env.DB.prepare(`SELECT a.id,a.teacher_id,a.user_id,a.course_id,a.status,a.created_at,a.updated_at,
