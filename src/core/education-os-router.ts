@@ -5,8 +5,8 @@ import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { buildEducationTwin, captureEducationTwinSnapshot, getEducationTwinSnapshot, twinSummary } from './education-twin.js';
 import { getEducationScenario, listEducationScenarios, simulateEducationScenario } from './education-scenarios.js';
 import { previewEducationIntent, simulateEducationIntent } from './education-intent.js';
-import { getAutopilotPolicy, listAutopilotExecutions, rollbackAutopilotExecution, saveAutopilotPolicy } from './education-autopilot.js';
-import { approveGuardedScenarioOption, executeGuardedScenarioOption } from './education-autopilot-guarded.js';
+import { getAutopilotPolicy, listAutopilotExecutions, saveAutopilotPolicy } from './education-autopilot.js';
+import { approveGuardedScenarioOption, executeGuardedScenarioOption, rollbackGuardedAutopilotExecution } from './education-autopilot-guarded.js';
 import { listEducationRisks, scanTenantFutureRadar, updateRiskStatus } from './education-radar.js';
 import { listConsistencyFindings, scanTenantConsistency, updateConsistencyFinding } from './education-consistency.js';
 import { buildCourseProofGraph, createCourseProofPackage, getCourseProofPackage, listCourseProofPackages } from './education-proof-graph.js';
@@ -42,7 +42,7 @@ export async function handleEducationOsApi(request:Request,env:Env):Promise<Resp
     if(path==='/api/education-os/policy'&&request.method==='GET')return json({ok:true,policy:await getAutopilotPolicy(env,auth,tenantId)});
     if(path==='/api/education-os/policy'&&request.method==='PUT')return json({ok:true,policy:await saveAutopilotPolicy(env,auth,tenantId,await body(request))});
     if(path==='/api/education-os/executions'&&request.method==='GET')return json({ok:true,executions:await listAutopilotExecutions(env,auth,tenantId,Number(url.searchParams.get('limit')||50))});
-    const rollback=path.match(/^\/api\/education-os\/executions\/([^/]+)\/rollback$/);if(rollback&&request.method==='POST')return json({ok:true,...await rollbackAutopilotExecution(env,auth,tenantId,decodeURIComponent(rollback[1]))});
+    const rollback=path.match(/^\/api\/education-os\/executions\/([^/]+)\/rollback$/);if(rollback&&request.method==='POST')return json({ok:true,...await rollbackGuardedAutopilotExecution(env,auth,tenantId,decodeURIComponent(rollback[1]))});
 
     if(path==='/api/education-os/risks'&&request.method==='GET')return json({ok:true,risks:await listEducationRisks(env,auth,tenantId,url.searchParams.get('status')||'open')});
     if(path==='/api/education-os/risks/scan'&&request.method==='POST'){await requireAutopilotTenantAdminMfa(env,auth);return json({ok:true,scan:await scanTenantFutureRadar(env,tenantId)});}
