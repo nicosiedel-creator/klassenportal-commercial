@@ -8,12 +8,15 @@ const tenantUserBackfill=await readFile('migrations/0063_tenant_user_access_inte
 const mfa=await readFile('src/core/mfa.ts','utf8');
 const cockpit=await readFile('src/core/owner-cockpit.ts','utf8');
 const router=await readFile('src/core/owner-security-router.ts','utf8');
+const teacherCore=await readFile('src/core/teacher-portal.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
 const ui=await readFile('public/owner-security-ui.js','utf8');
 const mfaUi=await readFile('public/auth-mfa-ui.js','utf8');
 const adminMfaUi=await readFile('public/admin-mfa-enrollment-ui.js','utf8');
 const customerHtml=await readFile('public/customer-admin.html','utf8');
 const classHtml=await readFile('public/class-admin.html','utf8');
+const classPortalHtml=await readFile('public/class-portal.html','utf8');
+const teacherHtml=await readFile('public/dozentenportal.html','utf8');
 const platformHtml=await readFile('public/platform-admin.html','utf8');
 const platformLogin=await readFile('public/platform-direct-login.js','utf8');
 
@@ -55,15 +58,21 @@ assert.match(mfa,/MAX_CHALLENGE_ATTEMPTS=5/,'MFA challenge must be rate limited'
 assert.match(mfa,/used_at IS NULL/,'recovery codes must be single-use');
 assert.match(router,/\/api\/auth\/mfa\/verify/,'MFA verification endpoint must be routed before generic auth');
 assert.match(router,/\/api\/auth\/mfa\/setup/,'administrative users need a self-service MFA enrollment route');
+assert.match(router,/teacher_portal_assignments WHERE user_id=\? AND status='active'/,'assigned teacher accounts must be treated as protected administrative access for MFA enrollment');
 assert.match(router,/verifyPassword/,'password-based MFA enrollment must reauthenticate with the current password');
 assert.match(router,/issueSession\(env,userId,!!user\.is_platform_admin,'mfa',undefined,request\)/,'successful MFA must mark the new session as MFA-authenticated and bind platform sessions to the request origin');
+assert.match(teacherCore,/MFA_ENROLLMENT_REQUIRED/,'teacher attendance access must fail closed until MFA is enrolled');
+assert.match(teacherCore,/method!=='mfa'/,'local teacher attendance access must require an MFA-authenticated session');
 assert.match(index,/handleOwnerSecurityApi/,'owner security router must be wired into the worker');
 assert.match(mfaUi,/challenge_token/,'login UI must complete the MFA challenge before normal app startup');
 assert.match(mfaUi,/requested==='\/plattform-admin'&&!user\?\.isPlatformAdmin/,'non-platform users must not be redirected into platform admin');
-assert.match(adminMfaUi,/Für administrative Zugänge verpflichtend/,'local admin UI must explain mandatory MFA');
+assert.match(mfaUi,/\/dozentenportal\.html/,'MFA continuation must preserve the teacher portal destination');
+assert.match(adminMfaUi,/Für administrative und Dozenten-Zugänge verpflichtend/,'MFA enrollment UI must explain protection for local admins and teachers');
 assert.match(adminMfaUi,/Wiederherstellungscodes jetzt sicher speichern/,'admin MFA enrollment must surface one-time recovery codes');
 assert.match(customerHtml,/admin-mfa-enrollment-ui\.js/,'customer admin must load MFA enrollment protection');
-assert.match(classHtml,/admin-mfa-enrollment-ui\.js/,'class admin must load MFA enrollment protection');
+assert.match(classHtml,/admin-mfa-enrollment-ui\.js/,'class admin entry must load MFA enrollment protection');
+assert.match(classPortalHtml,/admin-mfa-enrollment-ui\.js/,'shared student portal must support MFA enrollment when the signed-in student is a class admin');
+assert.match(teacherHtml,/auth-mfa-ui\.js/);assert.match(teacherHtml,/admin-mfa-enrollment-ui\.js/,'teacher portal must load MFA challenge and enrollment protection');
 
 assert.match(index,/const asset=clean==='\/kunden-admin'\?'\/customer-admin\.html':clean==='\/klassen-admin'\?'\/class-admin\.html':'\/platform-admin\.html'/,'platform admin route must serve its login shell without requiring a pre-existing owner session');
 assert.doesNotMatch(platformHtml,/src="\/boot\.js/,'platform admin shell must not start generic boot before platform authentication is resolved');
@@ -81,4 +90,4 @@ assert.match(cockpit,/confirm_name/,'tenant deletion must require exact tenant-n
 assert.match(ui,/14-tägigen Schutzfrist/,'owner UI must explain the protected deletion grace period');
 assert.match(ui,/System & Sicherheit/,'owner cockpit must be visible only inside platform admin');
 
-console.log('Owner/admin MFA, platform-admin tenant bypass, tenant-user provisioning/backfill integrity, explicit tenant relationships, fail-closed tenant access/status, fail-closed SSO, cockpit, platform-origin binding and direct-platform-login regression tests: OK');
+console.log('Owner/admin/teacher MFA, platform-admin tenant bypass, tenant-user provisioning/backfill integrity, explicit tenant relationships, fail-closed tenant access/status, fail-closed SSO, cockpit, platform-origin binding and direct-platform-login regression tests: OK');
