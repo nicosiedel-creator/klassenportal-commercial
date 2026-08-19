@@ -30,6 +30,7 @@
       "/plattform-admin*",
       "/kunden-admin*",
       "/klassen-admin*",
+      "/dozentenportal*",
       "/zahlung/*",
       "/passwort-vergessen*",
       "/passwort-zuruecksetzen*",
