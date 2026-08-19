@@ -4,6 +4,7 @@ import { requireRole } from './permissions.js';
 import { id, nowIso, safeString } from './utils.js';
 
 function activeClause(alias='a'){return `${alias}.status='active'`;}
+async function requireTeacherMfa(env:Env,auth:CoreAuthContext){const method=auth.session?.authMethod||'password';if(method==='oidc')return;const row=await env.DB.prepare('SELECT enabled_at FROM platform_mfa WHERE user_id=?').bind(auth.userId).first<{enabled_at:string|null}>().catch(()=>null);if(!row?.enabled_at)throw new Error('MFA_ENROLLMENT_REQUIRED');if(method!=='mfa')throw new Error('MFA_REQUIRED');}
 
 export async function teacherPortalOptions(env:Env,auth:CoreAuthContext,tenantId:string){
   requireRole(auth,'tenant_admin');
@@ -82,5 +83,6 @@ export async function teacherAttendanceAuth(env:Env,auth:CoreAuthContext,tenantI
   if(auth.isPlatformAdmin||auth.role==='tenant_admin')return auth;
   const assignment=await env.DB.prepare(`SELECT id FROM teacher_portal_assignments WHERE tenant_id=? AND course_id=? AND user_id=? AND ${activeClause('teacher_portal_assignments')} LIMIT 1`).bind(tenantId,courseId,auth.userId).first();
   if(!assignment)throw new Error('FORBIDDEN_TEACHER_COURSE');
+  await requireTeacherMfa(env,auth);
   return{...auth,role:'class_admin',tenantIds:[...new Set([...auth.tenantIds,tenantId])],courseIds:[...new Set([...auth.courseIds,courseId])]};
 }
