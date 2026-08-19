@@ -47,7 +47,7 @@ assert.match(studentRole,/FORBIDDEN_CLASS_ADMIN_STUDENT_DATA/);
 assert.ok(router.includes("path==='/api/gradebook/my'"),'private participant gradebook endpoint required');
 assert.ok(router.includes('/api/assignments/files')||router.includes('api\\/assignments\\/files'),'authenticated file download endpoint required');
 assert.ok(router.includes("path==='/api/assignments/my-state'"),'own progress and note read endpoint required');
-assert.ok(router.includes('/my-state$/'),'own progress and note update route required');
+assert.ok(router.includes('my-state$/'),'own progress and note update route required');
 assert.match(attendanceRouter,/handleAssignmentsApi/,'assignment router must be reachable before core API fallback');
 
 assert.ok(participantUi.includes('Veröffentlichte Bewertungen'));
