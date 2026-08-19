@@ -11,6 +11,7 @@ const adminUi=await readFile('public/assignment-gradebook-ui.js','utf8');
 const portal=await readFile('public/class-portal.html','utf8');
 const customer=await readFile('public/customer-admin.html','utf8');
 const classAdmin=await readFile('public/class-admin.html','utf8');
+const studentRole=await readFile('src/core/student-role.ts','utf8');
 
 for(const table of ['assignment_submissions','assignment_submission_files','gradebook_items','gradebook_scores','gradebook_events'])assert.ok(migration.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`missing ${table}`);
 for(const state of ['draft','submitted','returned','graded','withdrawn'])assert.ok(migration.includes(`'${state}'`),`missing submission state ${state}`);
@@ -27,6 +28,10 @@ assert.match(core,/SUBMISSION_GRADED_LOCKED/,'published grading must lock partic
 assert.match(core,/allow_resubmission/,'resubmission policy required');
 assert.match(core,/ASSIGNMENT_DEADLINE_PASSED/,'deadline policy required');
 assert.match(router,/assertTenantWriteAllowed/,'commercial read-only/payment lock must apply to assignment writes');
+assert.match(router,/asStudentView\(auth\)/,'class admin own assignment operations must run as participant');
+assert.match(router,/forbidClassAdminStudentData\(auth\)/,'class admin must be blocked from foreign submissions and course gradebook');
+assert.match(router,/auth\.role==='class_admin'\?studentAuth:auth/,'class admin assignment list/download must use own student view');
+assert.match(studentRole,/FORBIDDEN_CLASS_ADMIN_STUDENT_DATA/);
 assert.match(router,/\/api\/gradebook\/my/,'private participant gradebook endpoint required');
 assert.ok(router.includes('api\\/assignments\\/files')||router.includes('/api/assignments/files'),'authenticated file download endpoint required');
 assert.match(attendanceRouter,/handleAssignmentsApi/,'assignment router must be reachable before core API fallback');
@@ -34,6 +39,9 @@ assert.match(participantUi,/Veröffentlichte Bewertungen/);
 assert.match(participantUi,/Verbindlich einreichen/);
 assert.match(adminUi,/Offizielle Bewertungen sind getrennt von privaten Teilnehmernotizen/);
 assert.match(adminUi,/Sofort für diesen Teilnehmer veröffentlichen/);
-for(const html of [portal,customer,classAdmin])assert.match(html,/assignment(?:-gradebook|s)-ui\.js/,'assignment UI must be loaded in relevant portal');
+assert.match(portal,/portal-assignments-ui\.js/,'student portal must load own assignment/grade UI');
+assert.match(customer,/assignment-gradebook-ui\.js/,'customer admin may retain administrative gradebook');
+assert.doesNotMatch(classAdmin,/assignment-gradebook-ui\.js/,'class admin must never load other-student gradebook UI');
+assert.match(classAdmin,/class-admin-entry\.js/,'class admin must enter through the student portal');
 
-console.log('Secure assignment submissions and official gradebook checks: OK');
+console.log('Secure assignment submissions, own class-admin grades, and foreign-student gradebook privacy checks: OK');
