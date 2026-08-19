@@ -5,10 +5,12 @@ import { forbidClassAdminStudentData } from './student-role.js';
 import { assertSameOrigin, json } from './utils.js';
 import { handleEducationOperationsApi } from './education-operations-router.js';
 import { handleLearningAdminApi } from './learning-admin-router.js';
+import { handleSecureSignatureMine } from './signature-request-access.js';
 
 function fail(e:unknown){const code=String((e as Error)?.message||'PARTICIPANT_360_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:400;return json({ok:false,error:code},status);}
 export async function handleParticipant360Api(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;
+  if(path==='/api/education/signatures/mine')return handleSecureSignatureMine(request,env);
   if(path.startsWith('/api/education/'))return handleEducationOperationsApi(request,env);
   if(path.startsWith('/api/learning-admin/'))return handleLearningAdminApi(request,env);
   if(!path.startsWith('/api/participant-360'))return null;
