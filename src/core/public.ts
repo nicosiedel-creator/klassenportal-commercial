@@ -62,7 +62,7 @@ export async function publicOverview(env:Env,tenantSlug:string,courseCode:string
   const access=await authorizePortal(env,tenantSlug,courseCode,session,accessCode),{row,tenantId,courseId}=access;
   const past=new Date(Date.now()-28*86400000).toISOString();
 
-  const [homework,appointments,announcements,links,exams,lessons,features,materials]=await Promise.all([
+  const [homework,appointments,announcements,links,exams,lessons,features,materials,hubDetails,hubLinks,hubMaterials]=await Promise.all([
     optionalRows<Record<string,unknown>>('homework',()=>env.DB.prepare(`SELECT h.id,h.course_id,h.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
         h.title,h.description,h.due_at,h.submission_info,h.created_at,h.updated_at
       FROM homework h LEFT JOIN subjects s ON s.id=h.subject_id AND s.tenant_id=h.tenant_id
@@ -93,6 +93,12 @@ export async function publicOverview(env:Env,tenantSlug:string,courseCode:string
     optionalRows<Record<string,unknown>>('materials',()=>env.DB.prepare(`SELECT id,course_id,title,description,original_name,content_type,size_bytes,created_at,updated_at
       FROM portability_files WHERE tenant_id=? AND purpose='learning_material' AND visible=1 AND (course_id=? OR course_id IS NULL)
       ORDER BY created_at DESC LIMIT 200`).bind(tenantId,courseId).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('lesson_hub_details',()=>env.DB.prepare(`SELECT lesson_id,planned_topic,info_text,delivery_mode,updated_at FROM lesson_hub_details WHERE tenant_id=? AND course_id=?`).bind(tenantId,courseId).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('lesson_hub_links',()=>env.DB.prepare(`SELECT id,lesson_id,title,url,sort_order FROM lesson_hub_links WHERE tenant_id=? AND course_id=? ORDER BY lesson_id,sort_order,title`).bind(tenantId,courseId).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('lesson_hub_materials',()=>env.DB.prepare(`SELECT hm.lesson_id,p.id,p.title,p.description,p.original_name,p.content_type,p.size_bytes,hm.sort_order
+      FROM lesson_hub_materials hm JOIN portability_files p ON p.id=hm.material_id AND p.tenant_id=hm.tenant_id
+      WHERE hm.tenant_id=? AND hm.course_id=? AND p.purpose='learning_material' AND p.visible=1
+      ORDER BY hm.lesson_id,hm.sort_order,p.title`).bind(tenantId,courseId).all<Record<string,unknown>>()),
   ]);
 
   let notifications:Record<string,unknown>[]=[];
@@ -104,10 +110,18 @@ export async function publicOverview(env:Env,tenantSlug:string,courseCode:string
 
   const modules:Record<string,boolean>={};for(const f of features)modules[String(f.feature_key)]=Number(f.enabled)===1;
   const materialsEnabled=modules.files!==false||modules.learning_materials===true;
+  const detailByLesson=new Map(hubDetails.map(x=>[String(x.lesson_id),x]));
+  const linksByLesson=new Map<string,Record<string,unknown>[]>(),materialsByLesson=new Map<string,Record<string,unknown>[]>();
+  for(const x of hubLinks){const key=String(x.lesson_id),items=linksByLesson.get(key)||[];items.push(x);linksByLesson.set(key,items);}
+  for(const x of hubMaterials){const key=String(x.lesson_id),items=materialsByLesson.get(key)||[];items.push(x);materialsByLesson.set(key,items);}
+  const richLessons=lessons.map(lesson=>{
+    const key=String(lesson.id),detail=detailByLesson.get(key)||{};
+    return {...lesson,planned_topic:detail.planned_topic??null,info_text:detail.info_text??null,delivery_mode:detail.delivery_mode??null,hub_updated_at:detail.updated_at??null,lesson_links:linksByLesson.get(key)||[],lesson_materials:materialsEnabled?(materialsByLesson.get(key)||[]):[]};
+  });
   return {
     course:safeCourse(row),modules,accessGrantedBy:access.accessGrantedBy,
     viewer:{authenticated:access.hasLogin,role:access.role,displayName:access.hasLogin?session?.displayName??null:null,tenantId:access.hasLogin?tenantId:null},
-    homework,appointments,announcements,links,exams,lessons,materials:materialsEnabled?materials:[],notifications,
+    homework,appointments,announcements,links,exams,lessons:richLessons,materials:materialsEnabled?materials:[],notifications,
   };
 }
 
