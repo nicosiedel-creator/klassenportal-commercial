@@ -1,0 +1,97 @@
+import type { CoreAuthContext, Env } from './types.js';
+import { hasPermission } from './enterprise-access.js';
+import { id, nowIso, sha256Text } from './utils.js';
+
+export type TwinScopeType='tenant'|'course'|'org';
+export interface TwinScope{scope_type:TwinScopeType;scope_id?:string|null;}
+export interface EducationTwinResult{scope:TwinScope;captured_at:string;schema_version:number;payload:Record<string,unknown>;digest:string;entity_counts:Record<string,number>;source_clock:Record<string,string|null>;}
+
+function admin(auth:CoreAuthContext){return auth.isPlatformAdmin||auth.role==='tenant_admin';}
+function requireRead(auth:CoreAuthContext){if(!admin(auth)&&!hasPermission(auth,'reports.view')&&!hasPermission(auth,'courses.view'))throw new Error('FORBIDDEN_TWIN_READ');}
+function stable(value:unknown):unknown{
+  if(Array.isArray(value))return value.map(stable);
+  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value as Record<string,unknown>).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,stable(v)]));
+  return value;
+}
+export function stableStringify(value:unknown){return JSON.stringify(stable(value));}
+async function rows<T extends Record<string,unknown>>(env:Env,sql:string,args:unknown[]=[]):Promise<T[]>{try{return((await env.DB.prepare(sql).bind(...args).all<T>()).results??[]);}catch(error){console.error('Education twin optional source failed',{error:String((error as Error)?.message||error),sql:sql.slice(0,80)});return[];}}
+function maxClock(items:Record<string,unknown>[],fields=['updated_at','created_at','captured_at','starts_at']){let best:string|null=null;for(const row of items)for(const field of fields){const v=row[field];if(typeof v==='string'&&(!best||v>best))best=v;}return best;}
+function countBy<T extends Record<string,unknown>>(items:T[],key:string){const out:Record<string,number>={};for(const item of items){const v=String(item[key]??'unknown');out[v]=(out[v]||0)+1;}return out;}
+
+async function allowedCourseIds(env:Env,auth:CoreAuthContext,tenantId:string,scope:TwinScope):Promise<string[]>{
+  requireRead(auth);
+  if(scope.scope_type==='course'){
+    const courseId=String(scope.scope_id||'');if(!courseId)throw new Error('TWIN_COURSE_REQUIRED');
+    const exists=await env.DB.prepare('SELECT 1 ok FROM courses WHERE tenant_id=? AND id=?').bind(tenantId,courseId).first();if(!exists)throw new Error('COURSE_NOT_FOUND');
+    if(!admin(auth)&&!auth.courseIds.includes(courseId))throw new Error('FORBIDDEN_COURSE_SCOPE');return[courseId];
+  }
+  if(scope.scope_type==='org'){
+    const orgId=String(scope.scope_id||'');if(!orgId)throw new Error('TWIN_ORG_REQUIRED');
+    if(!admin(auth)&&!(auth.orgUnitIds||[]).includes(orgId))throw new Error('FORBIDDEN_ORG_SCOPE');
+    const r=await rows<{course_id:string}>(env,`WITH RECURSIVE tree(id) AS (SELECT id FROM org_units WHERE tenant_id=? AND id=? UNION ALL SELECT o.id FROM org_units o JOIN tree t ON o.parent_id=t.id WHERE o.tenant_id=? AND o.status='active') SELECT DISTINCT c.course_id FROM course_org_units c JOIN tree t ON t.id=c.org_unit_id WHERE c.tenant_id=?`,[tenantId,orgId,tenantId,tenantId]);
+    const ids=r.map(x=>String(x.course_id));return admin(auth)?ids:ids.filter(x=>auth.courseIds.includes(x));
+  }
+  if(admin(auth))return(await rows<{id:string}>(env,"SELECT id FROM courses WHERE tenant_id=? AND is_active=1 ORDER BY id",[tenantId])).map(x=>String(x.id));
+  return [...new Set(auth.courseIds)].filter(Boolean);
+}
+function inClause(ids:string[]){return ids.length?ids.map(()=>'?').join(','):"''";}
+
+export async function buildEducationTwin(env:Env,auth:CoreAuthContext,tenantId:string,scope:TwinScope={scope_type:'tenant'}):Promise<EducationTwinResult>{
+  if(!auth.isPlatformAdmin&&!auth.tenantIds.includes(tenantId))throw new Error('FORBIDDEN_TENANT');
+  const courseIds=await allowedCourseIds(env,auth,tenantId,scope),marks=inClause(courseIds),courseArgs=[tenantId,...courseIds],captured=nowIso();
+  const from=new Date(Date.now()-28*86400000).toISOString(),to=new Date(Date.now()+270*86400000).toISOString();
+
+  const [courses,participantCounts,teachers,subjects,lessons,resources,resourceBlocks,teacherBlocks,blackouts,qualifications,classbook,curriculum,exams,examWorkflowCounts,practiceCounts,deadlineCounts,reportBookCounts,signatureCounts,substitutions,lifecycle,qualityCounts]=await Promise.all([
+    rows(env,`SELECT id,name,code,start_date,end_date,is_active FROM courses WHERE tenant_id=? AND id IN (${marks}) ORDER BY id`,courseArgs),
+    rows(env,`SELECT course_id,COUNT(DISTINCT user_id) participant_count FROM memberships WHERE tenant_id=? AND course_id IN (${marks}) AND role IN ('participant','class_admin') GROUP BY course_id ORDER BY course_id`,courseArgs),
+    rows(env,`SELECT DISTINCT t.id,t.name FROM teachers t JOIN lessons l ON l.teacher_id=t.id AND l.tenant_id=t.tenant_id WHERE t.tenant_id=? AND l.course_id IN (${marks}) ORDER BY t.id`,courseArgs),
+    rows(env,`SELECT DISTINCT s.id,s.name,s.short_name FROM subjects s JOIN lessons l ON l.subject_id=s.id AND l.tenant_id=s.tenant_id WHERE s.tenant_id=? AND l.course_id IN (${marks}) ORDER BY s.id`,courseArgs),
+    rows(env,`SELECT l.id,l.course_id,l.subject_id,l.teacher_id,l.starts_at,l.ends_at,l.room,s.name subject_name,t.name teacher_name,a.activity_type,a.location_label,a.supervision_mode,a.attendance_expected FROM lessons l LEFT JOIN subjects s ON s.id=l.subject_id AND s.tenant_id=l.tenant_id LEFT JOIN teachers t ON t.id=l.teacher_id AND t.tenant_id=l.tenant_id LEFT JOIN instruction_activity_details a ON a.tenant_id=l.tenant_id AND a.lesson_id=l.id WHERE l.tenant_id=? AND l.course_id IN (${marks}) AND l.ends_at>=? AND l.starts_at<=? ORDER BY l.starts_at,l.id`,[...courseArgs,from,to]),
+    rows(env,"SELECT id,resource_type,name,code,location,capacity,features_json,status,updated_at FROM planning_resources WHERE tenant_id=? ORDER BY resource_type,name",[tenantId]),
+    rows(env,"SELECT id,resource_id,starts_at,ends_at,source,updated_at FROM planning_resource_unavailability WHERE tenant_id=? AND ends_at>=? AND starts_at<=? ORDER BY starts_at",[tenantId,from,to]),
+    rows(env,"SELECT id,teacher_id,starts_at,ends_at,source,updated_at FROM teacher_unavailability WHERE tenant_id=? AND ends_at>=? AND starts_at<=? ORDER BY starts_at",[tenantId,from,to]),
+    rows(env,`SELECT id,course_id,title,starts_at,ends_at,blackout_type,blocks_teaching,updated_at FROM planning_blackouts WHERE tenant_id=? AND (course_id IS NULL OR course_id IN (${marks})) AND ends_at>=? AND starts_at<=? ORDER BY starts_at`,[tenantId,...courseIds,from,to]),
+    rows(env,"SELECT id,teacher_id,subject_id,qualification_type,title,valid_from,valid_until,status,updated_at FROM teacher_qualifications WHERE tenant_id=? ORDER BY teacher_id,valid_until",[tenantId]),
+    rows(env,`SELECT s.id,s.course_id,s.session_date,s.starts_at,s.ends_at,s.subject,s.instructor_text,s.status,CASE WHEN cb.session_id IS NULL THEN 0 ELSE 1 END has_classbook,COALESCE(cb.completed,0) completed,cb.updated_at FROM attendance_sessions s LEFT JOIN classbook_entries cb ON cb.session_id=s.id WHERE s.tenant_id=? AND s.course_id IN (${marks}) AND s.ends_at>=? AND s.starts_at<=? ORDER BY s.starts_at`,[...courseArgs,from,to]),
+    rows(env,`SELECT b.course_id,i.id item_id,i.framework_id,i.code,i.title,i.target_minutes,i.exam_relevant,i.mandatory,COALESCE(SUM(l.actual_minutes),0) actual_minutes,COALESCE(SUM(l.planned_minutes),0) planned_minutes,MAX(l.updated_at) updated_at FROM course_curriculum_bindings b JOIN curriculum_items i ON i.tenant_id=b.tenant_id AND i.framework_id=b.framework_id LEFT JOIN curriculum_session_links l ON l.tenant_id=b.tenant_id AND l.course_id=b.course_id AND l.curriculum_item_id=i.id WHERE b.tenant_id=? AND b.course_id IN (${marks}) GROUP BY b.course_id,i.id ORDER BY b.course_id,i.sort_order,i.id`,courseArgs),
+    rows(env,`SELECT id,course_id,subject_id,title,starts_at,ends_at,room,visible_to_students,updated_at FROM exams WHERE tenant_id=? AND course_id IN (${marks}) AND starts_at>=? AND starts_at<=? ORDER BY starts_at`,[...courseArgs,from,to]),
+    rows(env,`SELECT course_id,status,COUNT(*) count,MIN(registration_deadline) next_registration_deadline,MIN(exam_date) next_exam_date,MAX(updated_at) updated_at FROM exam_workflows WHERE tenant_id=? AND course_id IN (${marks}) GROUP BY course_id,status ORDER BY course_id,status`,courseArgs),
+    rows(env,`SELECT course_id,status,evidence_status,COUNT(*) count,MIN(starts_on) next_start,MIN(visit_due_on) next_visit_due,MAX(updated_at) updated_at FROM practice_phases WHERE tenant_id=? AND course_id IN (${marks}) GROUP BY course_id,status,evidence_status ORDER BY course_id,status`,courseArgs),
+    rows(env,`SELECT course_id,category,priority,status,COUNT(*) count,MIN(due_at) next_due,MAX(updated_at) updated_at FROM operational_deadlines WHERE tenant_id=? AND (course_id IS NULL OR course_id IN (${marks})) GROUP BY course_id,category,priority,status ORDER BY course_id,category`,[tenantId,...courseIds]),
+    rows(env,`SELECT course_id,status,COUNT(*) count,MIN(period_end) oldest_period_end,MAX(updated_at) updated_at FROM report_book_periods WHERE tenant_id=? AND course_id IN (${marks}) GROUP BY course_id,status ORDER BY course_id,status`,courseArgs),
+    rows(env,`SELECT d.course_id,r.status,COUNT(*) count,MIN(r.due_at) next_due,MAX(r.updated_at) updated_at FROM signature_requests r JOIN signature_documents d ON d.id=r.document_id AND d.tenant_id=r.tenant_id WHERE r.tenant_id=? AND d.course_id IN (${marks}) GROUP BY d.course_id,r.status ORDER BY d.course_id,r.status`,courseArgs),
+    rows(env,`SELECT id,course_id,lesson_id,absent_teacher_id,substitute_teacher_id,status,replacement_starts_at,replacement_ends_at,updated_at FROM substitution_cases WHERE tenant_id=? AND course_id IN (${marks}) AND status IN ('open','assigned','rescheduled') ORDER BY updated_at DESC`,courseArgs),
+    rows(env,`SELECT course_id,stage,readiness_status,stage_started_at,expected_completion_at,updated_at FROM course_lifecycle WHERE tenant_id=? AND course_id IN (${marks}) ORDER BY course_id`,courseArgs),
+    rows(env,`SELECT course_id,category,priority,status,COUNT(*) count,MIN(due_at) next_due,MAX(updated_at) updated_at FROM quality_actions WHERE tenant_id=? AND (course_id IS NULL OR course_id IN (${marks})) GROUP BY course_id,category,priority,status ORDER BY course_id,category`,[tenantId,...courseIds]),
+  ]);
+
+  const payload:Record<string,unknown>={
+    schema:'education-twin/v1',tenant_id:tenantId,scope:{...scope,effective_course_ids:courseIds},horizon:{from,to},
+    courses,participant_counts:participantCounts,teachers,subjects,lessons,resources,resource_blocks:resourceBlocks,teacher_unavailability:teacherBlocks,planning_blackouts:blackouts,
+    teacher_qualifications:qualifications,classbook,curriculum,exams,exam_workflow_counts:examWorkflowCounts,practice_counts:practiceCounts,deadline_counts:deadlineCounts,
+    report_book_counts:reportBookCounts,signature_counts:signatureCounts,substitutions,lifecycle,quality_counts:qualityCounts,
+    privacy:{contains_private_participant_notes:false,contains_personal_grades:false,contains_individual_attendance:false,participant_data:'aggregated_counts_only'},
+  };
+  const entityCounts:Record<string,number>={courses:courses.length,participants:Number(participantCounts.reduce((n,r)=>n+Number(r.participant_count||0),0)),teachers:teachers.length,subjects:subjects.length,lessons:lessons.length,resources:resources.length,classbook_sessions:classbook.length,curriculum_items:curriculum.length,exams:exams.length,open_substitutions:substitutions.length};
+  const sourceClock:Record<string,string|null>={lessons:maxClock(lessons),resources:maxClock(resources),resource_blocks:maxClock(resourceBlocks),teacher_unavailability:maxClock(teacherBlocks),blackouts:maxClock(blackouts),qualifications:maxClock(qualifications),classbook:maxClock(classbook),curriculum:maxClock(curriculum),exams:maxClock(exams),exam_workflows:maxClock(examWorkflowCounts),practice:maxClock(practiceCounts),deadlines:maxClock(deadlineCounts),report_books:maxClock(reportBookCounts),signatures:maxClock(signatureCounts),substitutions:maxClock(substitutions),lifecycle:maxClock(lifecycle),quality:maxClock(qualityCounts)};
+  const digest=await sha256Text(stableStringify(payload));
+  return{scope,captured_at:captured,schema_version:1,payload,digest,entity_counts:entityCounts,source_clock:sourceClock};
+}
+
+export async function captureEducationTwinSnapshot(env:Env,auth:CoreAuthContext,tenantId:string,scope:TwinScope={scope_type:'tenant'}){
+  const twin=await buildEducationTwin(env,auth,tenantId,scope),snapshotId=id('twin_'),expiresAt=new Date(Date.now()+24*3600000).toISOString();
+  await env.DB.prepare('INSERT INTO education_twin_snapshots(id,tenant_id,scope_type,scope_id,schema_version,captured_at,captured_by,payload_json,payload_sha256,entity_counts_json,source_clock_json,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(snapshotId,tenantId,scope.scope_type,scope.scope_id||null,twin.schema_version,twin.captured_at,auth.userId,stableStringify(twin.payload),twin.digest,JSON.stringify(twin.entity_counts),JSON.stringify(twin.source_clock),expiresAt).run();
+  return{snapshot_id:snapshotId,expires_at:expiresAt,...twin};
+}
+
+export async function getEducationTwinSnapshot(env:Env,auth:CoreAuthContext,tenantId:string,snapshotId:string){
+  requireRead(auth);const row=await env.DB.prepare('SELECT * FROM education_twin_snapshots WHERE tenant_id=? AND id=?').bind(tenantId,snapshotId).first<Record<string,unknown>>();if(!row)throw new Error('TWIN_SNAPSHOT_NOT_FOUND');
+  if(!admin(auth)&&String(row.scope_type)==='course'&&!auth.courseIds.includes(String(row.scope_id||'')))throw new Error('FORBIDDEN_COURSE_SCOPE');
+  const payload=JSON.parse(String(row.payload_json));return{...row,payload,entity_counts:JSON.parse(String(row.entity_counts_json||'{}')),source_clock:JSON.parse(String(row.source_clock_json||'{}'))};
+}
+
+export function twinSummary(twin:EducationTwinResult){
+  const lessons=twin.payload.lessons as Record<string,unknown>[]||[],classbook=twin.payload.classbook as Record<string,unknown>[]||[],curriculum=twin.payload.curriculum as Record<string,unknown>[]||[];
+  const futureLessons=lessons.filter(x=>Date.parse(String(x.starts_at||''))>=Date.now()).length,missingClassbook=classbook.filter(x=>Date.parse(String(x.ends_at||''))<Date.now()&&!Number(x.completed)).length,target=curriculum.reduce((n,x)=>n+Number(x.target_minutes||0),0),actual=curriculum.reduce((n,x)=>n+Number(x.actual_minutes||0),0);
+  return{...twin.entity_counts,future_lessons:futureLessons,incomplete_classbook:missingClassbook,curriculum_target_minutes:target,curriculum_actual_minutes:actual,curriculum_coverage_percent:target?Math.round(actual/target*1000)/10:null,lesson_types:countBy(lessons,'activity_type')};
+}
