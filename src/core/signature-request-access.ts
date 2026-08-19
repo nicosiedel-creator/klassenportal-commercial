@@ -5,7 +5,7 @@ import { assertSameOrigin, json } from './utils.js';
 export async function handleSecureSignatureMine(request:Request,env:Env):Promise<Response|null>{
   const url=new URL(request.url);if(url.pathname!=='/api/education/signatures/mine')return null;
   try{assertSameOrigin(request,env.APP_ORIGIN);if(request.method!=='GET')return json({ok:false,error:'METHOD_NOT_ALLOWED'},405);const tenantId=url.searchParams.get('tenant_id')||'';if(!tenantId)throw new Error('TENANT_REQUIRED');const auth=await resolveCoreAuth(env,request,tenantId,url.searchParams.get('course_id')||undefined);
-    const rows=(await env.DB.prepare(`SELECT r.*,d.course_id,d.document_type,d.entity_type,d.entity_id,d.title,d.snapshot_sha256,d.signature_level,d.status document_status
+    const rows=(await env.DB.prepare(`SELECT r.*,d.course_id,d.document_type,d.entity_type,d.entity_id,d.title,d.snapshot_json,d.snapshot_sha256,d.signature_level,d.status document_status
       FROM signature_requests r JOIN signature_documents d ON d.id=r.document_id AND d.tenant_id=r.tenant_id
       WHERE r.tenant_id=? AND r.status='pending' AND (
         r.signer_user_id=?
