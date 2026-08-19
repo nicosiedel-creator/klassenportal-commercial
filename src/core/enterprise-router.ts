@@ -8,6 +8,8 @@ import { createScimTokenV2, handleScimRequestV2, listScimGroupsForAdminV2, listS
 import { finishTenantSso, getTenantSso, saveTenantSso, startTenantSso } from './enterprise-sso.js';
 import { applyParticipantImport, previewParticipantImport } from './participant-document-import.js';
 import { previewParticipantImportFile } from './participant-import-file.js';
+import { applyOrganizationImport, previewOrganizationImport } from './organization-import.js';
+import { previewOrganizationImportFile } from './organization-import-file.js';
 import { createResponsibility, listResponsibilities, revokeResponsibility } from './responsibilities.js';
 import { handleEnterpriseIntakeRoute } from './intake-router.js';
 
@@ -46,6 +48,9 @@ export async function handleEnterpriseRouter(request:Request,env:Env):Promise<Re
     if(path==='/api/enterprise/participants/import/preview'&&request.method==='POST')return json({ok:true,preview:await previewParticipantImport(env,auth,tenantId,await body(request))});
     if(path==='/api/enterprise/participants/import/file-preview'&&request.method==='POST')return json({ok:true,preview:await previewParticipantImportFile(env,auth,tenantId,request)});
     if(path==='/api/enterprise/participants/import/apply'&&request.method==='POST')return json({ok:true,result:await applyParticipantImport(env,auth,tenantId,await body(request))});
+    if(path==='/api/enterprise/organization/import/preview'&&request.method==='POST')return json({ok:true,preview:await previewOrganizationImport(env,auth,tenantId,await body(request))});
+    if(path==='/api/enterprise/organization/import/file-preview'&&request.method==='POST')return json({ok:true,preview:await previewOrganizationImportFile(env,auth,tenantId,request)});
+    if(path==='/api/enterprise/organization/import/apply'&&request.method==='POST')return json({ok:true,result:await applyOrganizationImport(env,auth,tenantId,await body(request))});
     if(path==='/api/enterprise/sso'&&request.method==='GET'){const c=await getTenantSso(env,auth,tenantId),t=await env.DB.prepare('SELECT slug FROM tenants WHERE id=?').bind(tenantId).first<{slug:string}>();return json({ok:true,sso:c,start_url:t?`${env.APP_ORIGIN||u.origin}/sso/${encodeURIComponent(t.slug)}`:null,callback_url:`${env.APP_ORIGIN||u.origin}/sso/callback`});}
     if(path==='/api/enterprise/sso'&&request.method==='PUT')return json({ok:true,sso:await saveTenantSso(env,auth,tenantId,await body(request))});
     if(path==='/api/enterprise/scim/tokens'&&request.method==='GET')return json({ok:true,tokens:await listScimTokensV2(env,auth,tenantId)});
