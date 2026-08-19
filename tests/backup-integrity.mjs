@@ -22,6 +22,16 @@ assert.match(backup,/sha256:await sha256Text\(usersJson\)/,'user snapshot must b
 assert.match(backup,/sha256:await sha256Text\(json\)/,'every JSON resource snapshot must be hashed');
 assert.match(backup,/etag:copy\.etag/,'backed-up files must persist their R2 etag');
 assert.match(backup,/R2_BACKUP_COPY_SIZE_MISMATCH/,'file copy must be size-verified immediately');
+assert.match(backup,/tableExists\(env,'tenant_sso_configs'\)/,'restore must explicitly detect whether SSO security state exists');
+assert.match(backup,/tableExists\(env,'scim_tokens'\)/,'restore must explicitly detect whether SCIM tokens exist');
+assert.match(backup,/tableExists\(env,'api_tokens'\)/,'restore must explicitly detect whether API tokens exist');
+assert.match(backup,/if\(securityTables\.sso\)stmts\.push\(env\.DB\.prepare\('UPDATE tenant_sso_configs SET enabled=0,enforce_sso=0/,'SSO disablement must be part of the restore D1 batch');
+assert.match(backup,/if\(securityTables\.scim\)stmts\.push\(env\.DB\.prepare\('UPDATE scim_tokens SET revoked_at=COALESCE\(revoked_at,\?\)/,'SCIM revocation must be part of the restore D1 batch');
+assert.match(backup,/if\(securityTables\.api\)stmts\.push\(env\.DB\.prepare\('UPDATE api_tokens SET revoked_at=COALESCE\(revoked_at,\?\)/,'API token revocation must be part of the restore D1 batch');
+assert.doesNotMatch(backup,/tenant_sso_configs SET enabled=0[\s\S]{0,180}\.run\(\)\.catch\(\(\)=>undefined\)/,'restore must never ignore SSO disablement failures');
+assert.doesNotMatch(backup,/scim_tokens SET revoked_at[\s\S]{0,180}\.run\(\)\.catch\(\(\)=>undefined\)/,'restore must never ignore SCIM revocation failures');
+assert.doesNotMatch(backup,/api_tokens SET revoked_at[\s\S]{0,180}\.run\(\)\.catch\(\(\)=>undefined\)/,'restore must never ignore API token revocation failures');
+assert.match(backup,/integrationSafety:'sso_disabled_tokens_revoked',securityTables/,'restore audit must record the integration-safety state tied to the atomic reset');
 
 const preflight=await readFile('src/portability/backup-preflight.ts','utf8');
 for(const marker of ['BACKUP_USERS_HASH_MISMATCH','BACKUP_RESOURCE_HASH_MISMATCH','BACKUP_FILE_SIZE_MISMATCH','BACKUP_FILE_ETAG_MISMATCH','BACKUP_OBJECT_REFERENCE_DUPLICATE','BACKUP_MEMBERSHIP_USER_MISSING'])assert.ok(preflight.includes(marker),`restore preflight missing ${marker}`);
@@ -47,4 +57,4 @@ assert.match(manifestTypes,/integrity\?: \{ version:1; json:'sha256'; files:'r2-
 assert.match(manifestTypes,/sha256\?: string/,'manifest JSON snapshots must support hashes');
 assert.match(manifestTypes,/etag\?: string/,'manifest files must support etags');
 
-console.log('Backup SHA-256, row-count, size, etag, object-path collision, membership consistency, restore-key, fail-closed user snapshot, race-safe schema and strong-readiness checks: OK');
+console.log('Backup SHA-256, row-count, size, etag, object-path collision, membership consistency, restore-key, fail-closed user snapshot, atomic integration reset, race-safe schema and strong-readiness checks: OK');
