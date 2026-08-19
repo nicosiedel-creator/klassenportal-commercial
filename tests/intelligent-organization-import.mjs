@@ -13,7 +13,9 @@ assert.match(migration,/preview_digest TEXT NOT NULL/,'organization import previ
 assert.match(migration,/expires_at TEXT NOT NULL/,'organization previews must expire');
 assert.match(service,/OrganizationCandidateType='course'\|'subject'\|'participant'\|'class_admin'\|'guest'\|'teacher'\|'tenant_admin_review'/,'all safe organization entity types must be recognized');
 assert.match(service,/TENANT_ADMIN_CONFIRMATION_REQUIRED/,'tenant admin rights must never be silently imported');
-assert.match(service,/type==='class_admin'[\s\S]*role:'participant'[\s\S]*role:'class_admin'/,'class admin import must preserve student baseline plus capability');
+assert.match(service,/type==='class_admin'/,'class admin candidates must have a dedicated import path');
+assert.match(service,/baseRole=type==='guest'\?'guest':'participant'/,'class admin must inherit the participant baseline rather than a teacher or guest baseline');
+assert.match(service,/role:'class_admin'/,'class admin capability must be added after the participant baseline');
 assert.match(service,/type==='guest'/,'guest memberships must be importable as an explicit safe role');
 assert.match(service,/createTeacherPortalTeacher/,'teacher master data must be created through the teacher service');
 assert.match(service,/saveTeacherPortalAssignment/,'teacher course access must use explicit teacher portal assignments');
