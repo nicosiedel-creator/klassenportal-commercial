@@ -1,0 +1,36 @@
+name: Education OS deep security
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: education-os-deep-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-depth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Full suite
+        run: npm test
+      - name: Deep Education OS regression
+        run: node tests/education-os-operational-depth.mjs
+      - name: Readiness and guardrail regression
+        run: node tests/education-os-readiness-guardrails.mjs
+      - name: Browser JavaScript parse
+        run: find public -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: D1 migrations
+        run: npx wrangler d1 migrations apply DB --local

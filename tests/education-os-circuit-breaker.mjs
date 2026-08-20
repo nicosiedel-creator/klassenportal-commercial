@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+const a=await readFile('migrations/0080_autopilot_circuit_breaker.sql','utf8');
+const b=await readFile('migrations/0081_autopilot_circuit_event_retention.sql','utf8');
+assert.match(a,/education_autopilot_circuit_events/,'circuit event ledger missing');
+assert.match(a,/three_failed_executions_15m/,'three-failure circuit breaker missing');
+assert.match(a,/execution_rolled_back/,'rollback circuit breaker missing');
+assert.match(a,/SET mode='recommend_only'/,'circuit breaker must fail closed to recommend-only');
+assert.match(a,/15 minute/,'failure burst window missing');
+assert.match(a,/IMMUTABLE/,'circuit evidence must be immutable');
+assert.match(b,/historical reference/,'execution reference retention rationale missing');
+assert.ok(!/FOREIGN KEY\(execution_id\)/.test(b),'circuit event must outlive execution retention without FK nulling');
+console.log('Education OS circuit-breaker regression ok');

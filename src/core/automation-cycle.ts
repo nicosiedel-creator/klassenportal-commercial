@@ -3,6 +3,12 @@ import { id, nowIso } from './utils.js';
 import { processPushOutbox } from './collaboration-reporting.js';
 import { processErpOutbox, syncCommercialAccounting, syncStripeFees } from './platform-accounting.js';
 import { autoMatchBankTransactions, refreshDunningCases } from './platform-accounting-autopilot.js';
+import { runSafeEducationAutomation } from './education-automation-safe.js';
+import { runLearningOperationsAutomation } from './learning-operations.js';
+import { runFutureRadarAllTenants } from './education-radar.js';
+import { runConsistencyAllTenants } from './education-consistency.js';
+import { runReadinessSnapshots } from './education-readiness-automation.js';
+import { runEducationOsMaintenance } from './education-os-maintenance.js';
 
 function systemAuth():CoreAuthContext{
   const session:SessionUser={userId:'system:accounting',email:'system@localhost.invalid',displayName:'Systemautomation',isPlatformAdmin:true,mustChangePassword:false,tenantRoles:[],authMethod:'api'};
@@ -17,6 +23,12 @@ async function enqueueNewNotificationPushes(env:Env,limit=500){
 async function stripeFeesDue(env:Env){const last=await env.DB.prepare("SELECT created_at FROM accounting_events WHERE event_type='automation.stripe_fees' ORDER BY created_at DESC LIMIT 1").first<{created_at:string}>();return !last||Date.parse(last.created_at)<Date.now()-6*3600000;}
 export async function runPlatformAutomationCycle(env:Env){
   const auth=systemAuth(),result:Record<string,unknown>={};
+  try{result.education_os_maintenance=await runEducationOsMaintenance(env);}catch(e){result.education_os_maintenance_error=String((e as Error)?.message||e);}
+  try{await runSafeEducationAutomation(env);result.education_operations='ok';}catch(e){result.education_operations_error=String((e as Error)?.message||e);}
+  try{await runLearningOperationsAutomation(env);result.learning_operations='ok';}catch(e){result.learning_operations_error=String((e as Error)?.message||e);}
+  try{result.future_radar=await runFutureRadarAllTenants(env);}catch(e){result.future_radar_error=String((e as Error)?.message||e);}
+  try{result.consistency=await runConsistencyAllTenants(env);}catch(e){result.consistency_error=String((e as Error)?.message||e);}
+  try{result.readiness=await runReadinessSnapshots(env);}catch(e){result.readiness_error=String((e as Error)?.message||e);}
   try{result.push_queued=await enqueueNewNotificationPushes(env);result.push=await processPushOutbox(env,200);}catch(e){result.push_error=String((e as Error)?.message||e);}
   try{result.accounting=await syncCommercialAccounting(env,auth);}catch(e){result.accounting_error=String((e as Error)?.message||e);}
   try{result.bank_match=await autoMatchBankTransactions(env,auth);}catch(e){result.bank_match_error=String((e as Error)?.message||e);}
