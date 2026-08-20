@@ -11,10 +11,14 @@ import { handleLearningAdminApi } from './learning-admin-router.js';
 import { handleSecureSignatureMine } from './signature-request-access.js';
 import { handleCourseSignatureApi } from './course-signatures.js';
 import { handlePlanningApi } from './planning-router.js';
+import { handlePersonalCompassApi } from './education-personal-compass-router.js';
+import { handleTrainingMoatApi } from './training-moat-router.js';
 
 function fail(e:unknown){const code=String((e as Error)?.message||'PARTICIPANT_360_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:400;return json({ok:false,error:code},status);}
 export async function handleParticipant360Api(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;
+  const moat=await handleTrainingMoatApi(request,env);if(moat)return moat;
+  const compass=await handlePersonalCompassApi(request,env);if(compass)return compass;
   const roleInsight=await handleEducationRoleInsightsApi(request,env);if(roleInsight)return roleInsight;
   const recovery=await handleAdaptiveRecoveryApi(request,env);if(recovery)return recovery;
   if(path.startsWith('/api/education-os/'))return handleEducationOsApi(request,env);
