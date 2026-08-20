@@ -3,6 +3,7 @@ import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { assertSameOrigin, json } from './utils.js';
 import { cancelTeamsMeeting, createOrSyncTeamsMeeting, disconnectMicrosoftAccount, finishMicrosoftConnection, getLessonMeeting, getMicrosoftConnectionStatus, linkTeamsMeeting, listCourseMeetings, startMicrosoftConnection } from './microsoft-graph.js';
+import { listMeetingReadyLessons } from './microsoft-meeting-lessons.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function errorResponse(error:unknown):Response{
@@ -39,7 +40,10 @@ export async function handleMicrosoftGraphApi(request:Request,env:Env):Promise<R
     if(p==='/api/integrations/microsoft/status'&&request.method==='GET')return json({ok:true,...await getMicrosoftConnectionStatus(env,auth,tenantId,courseId||undefined)});
     if(p==='/api/integrations/microsoft/connect'&&request.method==='POST')return json({ok:true,...await startMicrosoftConnection(env,auth,tenantId,courseId||undefined)});
     if(p==='/api/integrations/microsoft/connect'&&request.method==='DELETE')return json({ok:true,...await disconnectMicrosoftAccount(env,auth,tenantId,courseId||undefined)});
-
+    if(p==='/api/integrations/microsoft/lessons'&&request.method==='GET'){
+      if(!courseId)throw new Error('COURSE_ID_REQUIRED');
+      return json({ok:true,lessons:await listMeetingReadyLessons(env,auth,tenantId,courseId)});
+    }
     if(p==='/api/integrations/microsoft/meetings'&&request.method==='GET'){
       if(!courseId)throw new Error('COURSE_ID_REQUIRED');
       return json({ok:true,meetings:await listCourseMeetings(env,auth,tenantId,courseId,u.searchParams.get('from')||undefined,u.searchParams.get('to')||undefined)});
