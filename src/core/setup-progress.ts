@@ -27,17 +27,20 @@ export async function customerSetupProgress(env:Env,auth:CoreAuthContext,tenantI
   const timetableReady=lessonCount>0||importCount>0;
   const steps=[
     {key:'courses',label:'Mindestens eine Klasse / einen Kurs anlegen',done:courseCount>0,required:true,target:'courses'},
-    {key:'branding',label:'Logo und Branding festlegen',done:brandingReady,required:false,target:'branding'},
+    {key:'participants',label:'Teilnehmer / Schüler anlegen oder importieren',done:participantCount>0,required:true,target:'participants'},
     {key:'timetable',label:'Stundenplan automatisch einlesen',done:timetableReady,required:true,target:'content',action:'timetable'},
-    {key:'class_admin',label:'Klassenverantwortliche festlegen',done:classAdminCount>0,required:false,target:'users'},
+    {key:'branding',label:'Logo und Branding festlegen',done:brandingReady,required:false,target:'branding'},
+    {key:'class_admin',label:'Klassen-Admin bei Bedarf festlegen',done:classAdminCount>0,required:false,target:'users'},
   ];
   const completed=steps.filter(x=>x.done).length;
   const requiredReady=steps.filter(x=>x.required).every(x=>x.done);
+  const finished=managed?managed.status==='completed':requiredReady;
 
   return {
     mode:managed?'managed':'self_service',
+    finished,
     managedSetup:managed??null,
-    progress:{completed,total:steps.length,percent:Math.round((completed/steps.length)*100),requiredReady},
+    progress:{completed,total:steps.length,percent:Math.round((completed/steps.length)*100),requiredReady,finished},
     steps,
     counts:{courses:courseCount,lessons:lessonCount,timetableImports:importCount,classAdmins:classAdminCount,participants:participantCount},
   };
