@@ -11,3 +11,6 @@
   navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).then(async()=>{const user=await me();if(!user)return;const tenant=currentTenant(user);if(tenant&&'Notification'in window&&Notification.permission!=='denied'){const b=button('kp-push',Notification.permission==='granted'?'Benachrichtigungen aktiv':'Push aktivieren');b.onclick=()=>subscribe().catch(e=>alert(esc(e.message)));}}).catch(()=>{});
   addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvent=e;const b=button('kp-install','App installieren');b.style.bottom=document.querySelector('#kp-push')?'64px':'18px';b.onclick=async()=>{if(!installEvent)return;await installEvent.prompt();installEvent=null;b.remove();};});
 })();
+
+if(/^\/portal\/[^/]+\/[^/]+\/?$/.test(location.pathname))import('/participant-moat-ui.js?v=20260820-1').catch(()=>{});
+if(location.pathname.replace(/\/$/,'')==='/kunden-admin')import('/customer-moat-ui.js?v=20260820-1').catch(()=>{});
