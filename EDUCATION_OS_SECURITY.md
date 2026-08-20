@@ -29,7 +29,7 @@ Das System behauptet keine absolute Unverwundbarkeit. Sicherheitsziel ist ein ko
 - MFA ist für Freigabe, Policy-Änderung, Risikostatus und Ausführung verpflichtend.
 - Hohes Risiko benötigt zwei verschiedene Kundenadmins.
 
-### Plattformadmin
+### Plattformadmin – kein Ersatz-Kundenadmin
 - Kann die Plattform betreiben, ist aber **ausdrücklich kein Ersatz-Kundenadmin im Autopiloten**.
 - `requireAutopilotTenantAdminMfa` blockiert Plattformadmin als Tenant-Autopilot-Akteur.
 - Plattformadmin-UI wird durch Education OS nicht umgebaut.
