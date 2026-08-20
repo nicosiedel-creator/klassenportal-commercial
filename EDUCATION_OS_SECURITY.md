@@ -49,7 +49,7 @@ Der Betriebszwilling enthält:
 
 Der Betriebszwilling enthält standardmäßig **nicht**:
 - Teilnehmernamen im Betriebsmodell
-- individuelle Anwesenheitsdatensätze
+- keine individuellen Anwesenheitsdatensätze
 - persönliche Noten
 - keine privaten Teilnehmernotizen
 - persönliche Aufgaben-Notiztexte
