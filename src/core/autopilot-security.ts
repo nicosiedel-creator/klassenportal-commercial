@@ -22,6 +22,10 @@ export function safeAutopilotActionType(type:string){
   ]).has(type);
 }
 
+const forbiddenAutopilotNamespaces=[
+  'auth','account','role','membership','permission','billing','payment','grade','attendance','signature.sign','platform','tenant.delete','course.delete'
+] as const;
+
 export function forbiddenAutopilotNamespace(type:string){
-  return /^(?:auth|account|role|membership|permission|billing|payment|grade|attendance|signature\.sign|platform|tenant\.delete|course\.delete)/.test(type);
+  return forbiddenAutopilotNamespaces.some((namespace)=>type.startsWith(namespace));
 }
