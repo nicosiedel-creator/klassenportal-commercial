@@ -1,0 +1,71 @@
+name: Temporary release type repair
+
+on:
+  push:
+    branches: [release/education-os-final-v3-20260819]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/education-os-final-v3-20260819
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply narrowly scoped type repairs
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected source fragment not found: {path}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "src/core/adaptive-recovery.ts",
+              "const gaps=items.map(x=>({...x,gap:Math.max(0,Number(x.target_minutes||0)-Number(x.actual_minutes||0)-Number(x.linked_planned_minutes||0))})).filter(x=>x.gap>0);",
+              "const gaps=(items.map(x=>({...x,gap:Math.max(0,Number(x.target_minutes||0)-Number(x.actual_minutes||0)-Number(x.linked_planned_minutes||0))}) as Record<string,unknown>&{gap:number})).filter(x=>x.gap>0);"
+          )
+
+          replace_once(
+              "src/core/education-operations.ts",
+              "const summary=mapped.reduce((a,row:any)=>({courses:a.courses+1,attention:a.attention+(row.readiness_status==='attention'?1:0),blocked:a.blocked+(row.readiness_status==='blocked'?1:0),curriculum_percent:a.curriculum_percent+Number(row.curriculum_percent||0),overdue_deadlines:a.overdue_deadlines+Number(row.overdue_deadlines||0),open_quality:a.open_quality+Number(row.open_quality||0),open_exam_workflows:a.open_exam_workflows+Number(row.open_exam_workflows||0),active_practice:a.active_practice+Number(row.active_practice||0)}),{courses:0,attention:0,blocked:0,curriculum_percent:0,overdue_deadlines:0,open_quality:0,open_exam_workflows:0,active_practice:0});",
+              "const summary=mapped.reduce<{courses:number;attention:number;blocked:number;curriculum_percent:number;overdue_deadlines:number;open_quality:number;open_exam_workflows:number;active_practice:number}>((a,row:any)=>({courses:a.courses+1,attention:a.attention+(row.readiness_status==='attention'?1:0),blocked:a.blocked+(row.readiness_status==='blocked'?1:0),curriculum_percent:a.curriculum_percent+Number(row.curriculum_percent||0),overdue_deadlines:a.overdue_deadlines+Number(row.overdue_deadlines||0),open_quality:a.open_quality+Number(row.open_quality||0),open_exam_workflows:a.open_exam_workflows+Number(row.open_exam_workflows||0),active_practice:a.active_practice+Number(row.active_practice||0)}),{courses:0,attention:0,blocked:0,curriculum_percent:0,overdue_deadlines:0,open_quality:0,open_exam_workflows:0,active_practice:0});"
+          )
+
+          replace_once(
+              "src/core/education-readiness.ts",
+              "const report=(p.report_book_counts||[]).reduce((acc:any,x:any)=>(acc[String(x.status)]=Number(x.count||0),acc),{}),unfinished=Object.entries(report).filter(([k])=>!['signed','archived'].includes(k)).reduce((n,[,v])=>n+Number(v),0),reportTotal=Object.values(report).reduce((n:any,v:any)=>n+Number(v),0),evidenceScore=reportTotal?clamp((reportTotal-unfinished)/reportTotal*100):100;const overdueSignatures=(p.signature_counts||[]).filter((x:any)=>String(x.status)==='pending'&&x.next_due&&Date.parse(String(x.next_due))<now).reduce((n:number,x:any)=>n+Number(x.count||0),0);if(overdueSignatures)evidenceScore=Math.max(0,evidenceScore-Math.min(35,overdueSignatures*4));",
+              "const report:Record<string,number>=(p.report_book_counts||[]).reduce((acc:Record<string,number>,x:any)=>(acc[String(x.status)]=Number(x.count||0),acc),{} as Record<string,number>),unfinished=Object.entries(report).filter(([k])=>!['signed','archived'].includes(k)).reduce((n,[,v])=>n+v,0),reportTotal=Object.values(report).reduce((n,v)=>n+v,0);let evidenceScore=reportTotal?clamp((reportTotal-unfinished)/reportTotal*100):100;const overdueSignatures=(p.signature_counts||[]).filter((x:any)=>String(x.status)==='pending'&&x.next_due&&Date.parse(String(x.next_due))<now).reduce((n:number,x:any)=>n+Number(x.count||0),0);if(overdueSignatures)evidenceScore=Math.max(0,evidenceScore-Math.min(35,overdueSignatures*4));"
+          )
+
+          replace_once(
+              "src/core/learning-operations.ts",
+              "function detect(headers:string[],key:keyof typeof CLASSBOOK_ALIASES){const aliases=CLASSBOOK_ALIASES[key];return headers.find(h=>aliases.includes(normalizeHeader(h) as any))||headers.find(h=>aliases.some(a=>normalizeHeader(h).includes(a)))||null;}",
+              "function detect(headers:string[],key:keyof typeof CLASSBOOK_ALIASES){const aliases=CLASSBOOK_ALIASES[key] as readonly string[];return headers.find(h=>aliases.includes(normalizeHeader(h)))||headers.find(h=>aliases.some(a=>normalizeHeader(h).includes(a)))||null;}"
+          )
+
+          Path(".github/workflows/release-repair.yml").unlink()
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Verify typecheck before committing
+        run: npm run typecheck
+      - name: Commit verified repairs and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- src/core/adaptive-recovery.ts src/core/education-operations.ts src/core/education-readiness.ts src/core/learning-operations.ts .github/workflows/release-repair.yml
+          git commit -m "Fix Education OS TypeScript release blockers"
+          git push origin HEAD:release/education-os-final-v3-20260819
