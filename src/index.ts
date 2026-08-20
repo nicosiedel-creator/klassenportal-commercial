@@ -32,6 +32,7 @@ import { runAttendanceAttention } from './core/attendance-classbook.js';
 import { handleParticipant360Api } from './core/participant-360-router.js';
 import { runPlatformAutomationCycle } from './core/automation-cycle.js';
 import { handleMicrosoftGraphApi } from './core/microsoft-graph-router.js';
+import { handleCollaborationReportingApi } from './core/collaboration-reporting-router.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
@@ -90,6 +91,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   const classOverview=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);if(classOverview){if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});try{const tenantSlug=decodeURIComponent(classOverview[1]),courseCode=decodeURIComponent(classOverview[2]),session=await getSession(env,request),accessCode=request.headers.get('X-Klassenportal-Access-Code')||url.searchParams.get('access_code')||undefined,base=await publicOverview(env,tenantSlug,courseCode,session,accessCode),advanced=await publicAdvancedBySlug(env,tenantSlug,courseCode,session,env.APP_ORIGIN||url.origin);return jsonOk({...base,...advanced});}catch(e){return publicError(e);}}
 
   const microsoftGraph=await handleMicrosoftGraphApi(request,env);if(microsoftGraph)return microsoftGraph;
+  const collaboration=await handleCollaborationReportingApi(request,env);if(collaboration)return collaboration;
   const accountRecovery=await handleAccountRecoveryApi(request,env);if(accountRecovery)return accountRecovery;
   const launch=await handleLaunchReadinessApi(request,env);if(launch)return launch;
   const ownerSecurity=await handleOwnerSecurityApi(request,env);if(ownerSecurity)return ownerSecurity;
