@@ -13,9 +13,11 @@ WHERE feature_key IN ('microsoft_365','microsoft_teams');
 -- Existing legacy ICS/webhook functionality remains available to every tenant without an upsell.
 INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at)
 SELECT id,'microsoft_365',1,'manual',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM tenants
+WHERE 1
 ON CONFLICT(tenant_id,feature_key) DO UPDATE SET enabled=1,updated_at=excluded.updated_at;
 INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at)
 SELECT id,'microsoft_teams',1,'manual',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM tenants
+WHERE 1
 ON CONFLICT(tenant_id,feature_key) DO UPDATE SET enabled=1,updated_at=excluded.updated_at;
 
 -- One-time OAuth state. Only a SHA-256 digest of the browser state is stored.
