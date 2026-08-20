@@ -51,7 +51,7 @@ Der Betriebszwilling enthält standardmäßig **nicht**:
 - Teilnehmernamen im Betriebsmodell
 - individuelle Anwesenheitsdatensätze
 - persönliche Noten
-- private Teilnehmernotizen
+- keine privaten Teilnehmernotizen
 - persönliche Aufgaben-Notiztexte
 - Signaturgeheimnisse oder Zahlungsdaten
 
