@@ -1,3 +1,4 @@
+# Exact-head release gate for PR validation
 name: Education OS release gate
 
 on:
