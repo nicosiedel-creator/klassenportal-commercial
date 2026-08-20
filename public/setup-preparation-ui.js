@@ -36,7 +36,7 @@ function checklistHtml(customer=false){
       <div class="card"><strong>2. Branding</strong><div class="muted">Logo, Portalname, Wunschfarben, Willkommenstext und optional eigene Domain.</div>${action('branding','Branding öffnen')}</div>
       <div class="card"><strong>3. Organisation / Organigramm</strong><div class="muted">Standorte, Bereiche, Hierarchie, Kürzel, Verantwortliche und Rollen. Bevorzugt CSV/XLSX.</div><div class="toolbar"><button type="button" class="btn secondary kp-prep-template" data-template="organisation">CSV-Vorlage</button>${action('organization','Struktur öffnen')}</div></div>
       <div class="card"><strong>4. Klassen / Kurse</strong><div class="muted">Bezeichnungen, Kürzel, Start-/Enddaten und ggf. Zuordnung zu Standort/Bereich.</div>${action('courses','Klassen/Kurse öffnen')}</div>
-      <div class="card"><strong>5. Personal & Zuständigkeiten</strong><div class="muted">Administratoren, Klassenverantwortliche, Lehrkräfte/Dozenten und Vertretungen mit Namen, E-Mail und Rolle.</div>${action('users','Benutzer & Rollen öffnen')}</div>
+      <div class="card"><strong>5. Personal & Zuständigkeiten</strong><div class="muted">Administratoren, Klassen-Admins als Teilnehmer mit Zusatzrechten sowie Lehrkräfte/Dozenten über das separate Dozentenportal.</div>${action('users','Benutzer & Rollen öffnen')}</div>
       <div class="card"><strong>6. Teilnehmer / Schüler</strong><div class="muted">Name, E-Mail, Teilnehmer-/Schülernummer, Klasse/Kurs sowie optional Beginn/Ende. CSV/XLSX/JSON/TXT; PDF kann über die Importoberfläche ausgewertet werden.</div><div class="toolbar"><button type="button" class="btn secondary kp-prep-template" data-template="participants">CSV-Vorlage</button>${action('participants','Teilnehmer importieren')}</div></div>
       <div class="card"><strong>7. Stundenplan</strong><div class="muted">Klasse, Datum, Beginn, Ende, Fach, Dozent, Raum, Unterrichtsart und Hinweise. CSV/XLSX direkt importierbar; PDF kann als Stundenplanquelle hinterlegt werden.</div><div class="toolbar"><button type="button" class="btn secondary kp-prep-template" data-template="timetable">CSV-Vorlage</button>${action('content','Stundenplan importieren','data-action="timetable"')}</div></div>
       <div class="card"><strong>8. Optional für erweiterte Automatisierung</strong><div class="muted">Eigene Domain, SSO/SCIM, bestehende IDs, Mail-/Eingangskanäle, Modulwünsche sowie vorhandene Exportdateien aus Altsystemen.</div></div>
@@ -66,6 +66,8 @@ function injectOnboarding(){
 
 function injectCustomer(){
   const content=document.querySelector('.content');if(!content)return;
+  const tenant=document.querySelector('#tenantPick')?.value||'';
+  if(tenant&&document.documentElement.dataset.kpSetupFinishedTenant===tenant){content.querySelector('#kp-setup-preparation')?.remove();return;}
   const title=content.querySelector(':scope > .top h2')?.textContent?.trim();if(title!=='Kundenübersicht')return;
   if(content.querySelector('#kp-setup-preparation'))return;
   const progress=content.querySelector('#kp-setup-progress'),grid=content.querySelector(':scope > .grid');
