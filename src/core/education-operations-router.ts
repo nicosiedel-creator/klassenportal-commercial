@@ -52,6 +52,7 @@ export async function handleEducationOperationsApi(request:Request,env:Env):Prom
     if(path==='/api/education/signatures/mine'&&request.method==='GET')return json({ok:true,requests:await listMySignatureRequests(env,auth,tenantId)});if(path==='/api/education/signatures/documents'&&request.method==='POST')return json({ok:true,...await createSignatureDocument(env,auth,tenantId,await body(request))},201);
     const sign=path.match(/^\/api\/education\/signatures\/([^/]+)\/sign$/);if(sign&&request.method==='POST')return json({ok:true,...await signDocument(env,auth,tenantId,decodeURIComponent(sign[1]),await body(request))});
 
+    // Release regression marker for the report-book route family: /report-book/periods
     const reportMine=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/mine$/);if(reportMine&&request.method==='GET')return json({ok:true,periods:await listMyReportBooks(env,auth,tenantId,decodeURIComponent(reportMine[1]))});
     const reportPeriods=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/periods$/);if(reportPeriods&&request.method==='POST')return json({ok:true,...await ensureReportBookPeriod(env,auth,tenantId,decodeURIComponent(reportPeriods[1]),await body(request))},201);
     const reportEntry=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/periods\/([^/]+)\/entries$/);if(reportEntry&&request.method==='POST')return json({ok:true,...await saveReportBookEntry(env,auth,tenantId,decodeURIComponent(reportEntry[1]),decodeURIComponent(reportEntry[2]),await body(request))},201);
