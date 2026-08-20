@@ -9,6 +9,7 @@ import { runFutureRadarAllTenants } from './education-radar.js';
 import { runConsistencyAllTenants } from './education-consistency.js';
 import { runReadinessSnapshots } from './education-readiness-automation.js';
 import { runEducationOsMaintenance } from './education-os-maintenance.js';
+import { runComplianceRadarBounded } from './training-moat-hardening.js';
 
 function systemAuth():CoreAuthContext{
   const session:SessionUser={userId:'system:accounting',email:'system@localhost.invalid',displayName:'Systemautomation',isPlatformAdmin:true,mustChangePassword:false,tenantRoles:[],authMethod:'api'};
@@ -27,6 +28,7 @@ export async function runPlatformAutomationCycle(env:Env){
   try{await runSafeEducationAutomation(env);result.education_operations='ok';}catch(e){result.education_operations_error=String((e as Error)?.message||e);}
   try{await runLearningOperationsAutomation(env);result.learning_operations='ok';}catch(e){result.learning_operations_error=String((e as Error)?.message||e);}
   try{result.future_radar=await runFutureRadarAllTenants(env);}catch(e){result.future_radar_error=String((e as Error)?.message||e);}
+  try{result.compliance_radar=await runComplianceRadarBounded(env,25);}catch(e){result.compliance_radar_error=String((e as Error)?.message||e);}
   try{result.consistency=await runConsistencyAllTenants(env);}catch(e){result.consistency_error=String((e as Error)?.message||e);}
   try{result.readiness=await runReadinessSnapshots(env);}catch(e){result.readiness_error=String((e as Error)?.message||e);}
   try{result.push_queued=await enqueueNewNotificationPushes(env);result.push=await processPushOutbox(env,200);}catch(e){result.push_error=String((e as Error)?.message||e);}
