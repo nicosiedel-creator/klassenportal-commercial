@@ -55,6 +55,6 @@ assert.match(adminEntry,/\/klassen-admin/);
 const rootHtml=read('public/index.html');
 assert.match(rootHtml,/admin-entry-route-ui\.js/,'generic root may use the class-admin entry route to resolve the concrete student portal');
 const localization=read('public/localization.js');
-for(const key of ['learning_materials','microsoft_365','substitution_updates','custom_domain','weekly_overview'])assert.ok(localization.includes(`'${key}'`),`missing German localization for ${key}`);
+for(const key of ['learning_materials','microsoft_365','substitution_updates','custom_domain','weekly_overview'])assert.match(localization,new RegExp(`(?:['\"]${key}['\"]|\\b${key}\\b)\\s*:`),`missing German localization for ${key}`);
 
 console.log('Advanced modules + shared class-admin/student portal + self-service add-on acceptance checks: OK');

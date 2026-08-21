@@ -1,4 +1,5 @@
 const root=document.querySelector('#app');
+const APP_ASSET_VERSION='20260821-final-pretest-1';
 
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function safeContinuation(){const value=new URLSearchParams(location.search).get('continue')||'';try{if(!value)return'';const u=new URL(value,location.origin);if(u.origin!==location.origin)return'';const p=u.pathname.replace(/\/$/,'')||'/';if(['/plattform-admin','/kunden-admin','/klassen-admin'].includes(p))return p+u.search;if(/^\/portal\/[^/]+\/[^/?#]+$/.test(p))return p+u.search;return'';}catch{return'';}}
@@ -9,6 +10,8 @@ async function getMe(){
   const d=await r.json();
   return d.user||null;
 }
+
+async function loadApp(){return import(`/app.js?v=${APP_ASSET_VERSION}`);}
 
 function passwordChange(user){
   root.innerHTML=`<main class="center"><form class="login" id="password-change"><div class="brand">Passwort ändern</div><p class="muted">Hallo ${esc(user.displayName)}. Das temporäre Passwort muss vor der ersten Nutzung geändert werden.</p><label class="field">Temporäres Passwort<input name="current_password" type="password" autocomplete="current-password" required></label><label class="field">Neues Passwort<input name="new_password" type="password" minlength="10" autocomplete="new-password" required></label><label class="field">Neues Passwort wiederholen<input name="confirm_password" type="password" minlength="10" autocomplete="new-password" required></label><button class="btn" type="submit">Passwort ändern und weiter</button><p class="error" id="pw-error"></p></form></main>`;
@@ -24,7 +27,7 @@ function passwordChange(user){
       if(!r.ok)throw new Error(d.error||`HTTP_${r.status}`);
       const continuation=safeContinuation();
       if(continuation){location.replace(continuation);return;}
-      await import(`/app.js?v=${Date.now()}`);
+      await loadApp();
     }catch(x){
       const messages={CURRENT_PASSWORD_INVALID:'Das temporäre Passwort ist nicht korrekt.',PASSWORD_LENGTH_INVALID:'Das neue Passwort muss mindestens 10 Zeichen lang sein.',PASSWORD_MUST_CHANGE:'Das neue Passwort muss sich vom temporären Passwort unterscheiden.',PASSWORD_FIELDS_REQUIRED:'Bitte alle Felder ausfüllen.'};
       msg.textContent=messages[x.message]||x.message;
@@ -38,7 +41,7 @@ try{
   else {
     const continuation=safeContinuation();
     if(me&&continuation){location.replace(continuation);}
-    else await import(`/app.js?v=${Date.now()}`);
+    else await loadApp();
   }
 }catch(e){
   root.innerHTML=`<main class="center"><div class="login"><h2>Fehler</h2><p class="error">${esc(e?.message||'START_FAILED')}</p><button class="btn" onclick="location.reload()">Neu laden</button></div></main>`;
