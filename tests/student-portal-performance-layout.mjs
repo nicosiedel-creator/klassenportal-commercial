@@ -21,10 +21,12 @@ assert.match(perf,/X-Klassenportal-Access-Code/,'prefetch must preserve access-c
 const overviewSource=dash.slice(dash.indexOf('async function overview(){'),dash.indexOf('async function enrichAssignments'));
 assert.match(dash,/const data=await overview\(\);if\(!data\?\.course\)return;render\(data\);enrichAssignments\(data\)/,'weekly dashboard must render before personal assignment enrichment');
 assert.doesNotMatch(overviewSource,/api\/assignments/,'overview must not block the timetable on assignment APIs');
+assert.match(dash,/function queue\(\)\{if\(queued\|\|root\.querySelector\('\.kp2-dashboard'\)\)return;/,'dashboard mutation observer must never refetch because of its own rendered dashboard');
+assert.match(dash,/new MutationObserver\(queue\)/,'portal shell changes may still trigger one guarded dashboard build');
 assert.match(dash,/taskCounts/,'weekly plan must visually surface due-task counts');
 assert.match(dash,/kp2-mosaic/,'week, tasks and agenda must form one cohesive dashboard block');
 assert.match(css,/grid-template-columns:minmax\(0,2\.15fr\) minmax\(300px,.85fr\)/,'desktop dashboard must prioritize the weekly plan');
 assert.match(css,/@media\(max-width:980px\)/,'dashboard must collapse cleanly for tablets');
 assert.match(css,/@media\(max-width:680px\)/,'dashboard must be mobile responsive');
 
-console.log('Student portal immediate-week-plan and polished mosaic layout checks: OK');
+console.log('Student portal immediate-week-plan, request-storm guard and polished mosaic layout checks: OK');
