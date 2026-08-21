@@ -16,7 +16,8 @@ assert.match(ui,/findNav\(view\)/,'setup actions must resolve dynamic module nav
 assert.match(ui,/enterprise-structure-nav/,'organisation shortcut must resolve the dynamically injected enterprise structure control');
 assert.match(ui,/Teilnehmer importieren/,'participant shortcut must target the dedicated participant import area');
 assert.ok(onboarding.includes('/setup-preparation-ui.js?v=20260819-1'),'onboarding must load setup preparation guidance');
-assert.ok(customer.includes('/setup-preparation-ui.js?v=20260819-1'),'customer admin must load setup preparation guidance');
+assert.ok(customer.includes('/setup-preparation-ui.js?v=20260821-2'),'customer admin must use the deterministic setup-status version');
+assert.match(ui,/const progress=content\.querySelector\('#kp-setup-progress'\);[\s\S]*if\(!progress\)\{content\.querySelector\('#kp-setup-preparation'\)\?\.remove\(\);return;\}/,'customer checklist must not appear until the server setup status is explicitly available');
 
 for(const required of ['Stammdaten & Ansprechpartner','Branding','Organisation / Organigramm','Klassen / Kurse','Personal & Zuständigkeiten','Teilnehmer / Schüler','Stundenplan','Optional für erweiterte Automatisierung']){
   assert.ok(ui.includes(required),`setup checklist missing ${required}`);
