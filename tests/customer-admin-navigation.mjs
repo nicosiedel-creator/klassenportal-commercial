@@ -59,7 +59,7 @@ assert.ok(html.includes('/customer-admin-nav-labels.js?v=20260818-1'),'clarified
 assert.ok(html.includes('/vfa13-reference.css?v=20260818-3'),'later customer theme cache key must reflect the final non-sticky theme');
 assert.ok(html.includes('/customer-dashboard-refresh.css?v=20260819-1'),'original dashboard refresh must be loaded after the base customer styles');
 assert.ok(html.includes('/setup-preparation-ui.js?v=20260819-1'),'customer setup preparation UI must be loaded');
-assert.ok(html.includes('/customer-enterprise.css?v=20260821-1'),'enterprise customer-admin override must be loaded last');
-assert.ok(html.includes('/customer-enterprise-ux.js?v=20260821-1'),'actionable Education OS intent UX must be loaded');
+assert.ok(html.includes('/customer-enterprise.css?v=20260821-2'),'enterprise customer-admin override must be loaded last');
+assert.ok(html.includes('/customer-enterprise-ux.js?v=20260821-2'),'actionable Education OS intent UX must be loaded');
 
 console.log('Customer admin enterprise navigation, actionable intent UX and non-overlap checks: OK');
