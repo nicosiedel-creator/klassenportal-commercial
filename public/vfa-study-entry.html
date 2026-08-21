@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>VFA 13 – Quiz</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+:root{color-scheme:light;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#eef3ff;color:#172033}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at top,#dfe8ff 0,#f7f9ff 55%,#fff 100%)}
+main{width:min(620px,100%);background:#fff;border:1px solid #dbe3f3;border-radius:24px;padding:30px;box-shadow:0 18px 50px rgba(37,55,110,.14);text-align:center}
+.badge{display:inline-block;background:#e9efff;color:#2948b4;padding:7px 12px;border-radius:999px;font-weight:800;font-size:.9rem}.spinner{width:54px;height:54px;border:6px solid #e5eaf6;border-top-color:#3156d3;border-radius:50%;margin:26px auto 18px;animation:spin .9s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}h1{font-size:clamp(28px,6vw,44px);line-height:1.08;margin:16px 0 8px}p{font-size:1.08rem;line-height:1.55}.muted{color:#667085}.error{color:#b42318;font-weight:700}.hidden{display:none}.btn{display:inline-block;margin-top:12px;border:0;background:#3156d3;color:#fff;padding:13px 18px;border-radius:12px;font-weight:800;text-decoration:none;cursor:pointer}
+</style>
+</head>
+<body>
+<main>
+  <span class="badge">VFA 13 · anonymes Quiz</span>
+  <h1 id="title">Quiz wird vorbereitet</h1>
+  <div id="spinner" class="spinner" aria-hidden="true"></div>
+  <p id="status">Diese Seite verbindet dich automatisch mit der aktuellen Quiz-Sitzung, sobald sie vom Beamer freigegeben wurde.</p>
+  <p class="muted">Du brauchst keinen Namen, kein Konto und keinen Raumcode. Diese Seite einfach geöffnet lassen.</p>
+  <button id="retry" class="btn hidden" type="button">Erneut versuchen</button>
+</main>
+<script>
+const statusEl=document.getElementById('status');const titleEl=document.getElementById('title');const spinner=document.getElementById('spinner');const retry=document.getElementById('retry');let timer=null;
+async function check(){
+  try{
+    const r=await fetch('/api/live-study/current',{headers:{accept:'application/json'},cache:'no-store'});const d=await r.json();
+    if(r.ok&&d.ok&&d.ready&&d.participantUrl){titleEl.textContent='Quiz ist bereit';statusEl.textContent='Du wirst jetzt weitergeleitet …';location.replace(d.participantUrl);return;}
+    titleEl.textContent='Quiz wird vorbereitet';statusEl.textContent='Noch nicht freigegeben. Sobald der QR-Quiz-Bildschirm am Beamer aktiv ist, geht es hier automatisch weiter.';spinner.classList.remove('hidden');retry.classList.add('hidden');
+  }catch(e){titleEl.textContent='Verbindung unterbrochen';statusEl.textContent='Kurz warten – wir versuchen es automatisch erneut.';spinner.classList.remove('hidden');}
+  clearTimeout(timer);timer=setTimeout(check,2000);
+}
+retry.onclick=check;check();
+</script>
+</body>
+</html>
