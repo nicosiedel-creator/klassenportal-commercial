@@ -64,9 +64,17 @@ function injectOnboarding(){
   form.insertAdjacentHTML('beforebegin',checklistHtml(false));wire(root);
 }
 
+function customerSetupReady(content){
+  if(!content)return false;
+  if(content.querySelector('#kp-operations-hub'))return true;
+  const progress=content.querySelector('#kp-setup-progress');if(!progress)return false;
+  if(progress.dataset.setupReady==='1'||progress.dataset.setupComplete==='1')return true;
+  return /Grundkonfiguration einsatzbereit|4\s+von\s+4\s+Schritten erledigt|100\s*%|Einrichtung abgeschlossen/i.test(String(progress.textContent||''));
+}
 function injectCustomer(){
   const content=document.querySelector('.content');if(!content)return;
   const title=content.querySelector(':scope > .top h2')?.textContent?.trim();if(title!=='Kundenübersicht')return;
+  if(customerSetupReady(content)){content.querySelector('#kp-setup-preparation')?.remove();return;}
   if(content.querySelector('#kp-setup-preparation'))return;
   const progress=content.querySelector('#kp-setup-progress'),grid=content.querySelector(':scope > .grid');
   const anchor=progress||grid;if(!anchor)return;
@@ -74,4 +82,9 @@ function injectCustomer(){
 }
 
 function apply(){if(ONBOARDING_PATH)injectOnboarding();if(CUSTOMER_PATH)injectCustomer();}
-if(ONBOARDING_PATH||CUSTOMER_PATH){new MutationObserver(()=>queueMicrotask(apply)).observe(document.querySelector('#setup-app')||document.querySelector('#app')||document.body,{subtree:true,childList:true});apply();}
+if(ONBOARDING_PATH||CUSTOMER_PATH){
+  let frame=0;
+  const target=document.querySelector('#setup-app')||document.querySelector('#app')||document.body;
+  new MutationObserver(()=>{if(frame)return;frame=requestAnimationFrame(()=>{frame=0;apply();});}).observe(target,{subtree:true,childList:true});
+  apply();
+}
