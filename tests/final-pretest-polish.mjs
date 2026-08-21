@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 const boot=await readFile('public/boot.js','utf8');
 const i18n=await readFile('public/localization.js','utf8');
 const polish=await readFile('public/customer-pretest-polish.js','utf8');
+const preparation=await readFile('public/setup-preparation-ui.js','utf8');
 const customer=await readFile('public/customer-admin.html','utf8');
 const student=await readFile('public/class-portal.html','utf8');
 const teacher=await readFile('public/dozentenportal.html','utf8');
@@ -25,11 +26,18 @@ assert.ok(teacher.includes('/localization.js?v=20260821-1'),'teacher portal must
 assert.ok(department.includes('/localization.js?v=20260821-1'),'department lead portal must load the locale layer');
 
 assert.match(polish,/Planung & Daten/,'completed customer setup must be replaced by an operational planning/data area');
-assert.match(polish,/kp-setup-preparation/,'completed setup checklist must be removed from the operational dashboard');
+assert.match(polish,/progress\.dataset\.setupReady='1'/,'completed setup state must be marked before the preparation checklist is removed');
+assert.match(polish,/requestAnimationFrame/,'customer polish observer must be frame-coalesced instead of running a microtask feedback loop');
 assert.match(polish,/Arbeitsassistent/,'floating Vorsprung action must use the clearer assistant name');
 assert.match(polish,/TENANT_ADMIN_REQUIRED/,'raw tenant-admin context error must be humanized');
 assert.match(polish,/const inflight=new Map/,'customer admin must deduplicate concurrent identical GET boot requests');
 assert.match(polish,/department-lead\.html/,'legacy department-lead links must be repaired defensively');
+
+assert.match(preparation,/function customerSetupReady\(/,'setup preparation must understand the completed customer state');
+assert.match(preparation,/content\.querySelector\('#kp-operations-hub'\)/,'the preparation checklist must never be reinserted beside the operational hub');
+assert.match(preparation,/content\.querySelector\('#kp-setup-preparation'\)\?\.remove\(\);return;/,'a completed customer setup must actively remove a stale preparation checklist');
+assert.match(preparation,/requestAnimationFrame/,'setup preparation observer must be frame-coalesced to prevent DOM mutation storms');
+assert.doesNotMatch(preparation,/new MutationObserver\(\(\)=>queueMicrotask\(apply\)\)/,'the former setup preparation microtask feedback loop must not return');
 
 assert.match(departmentAdmin,/\/department-lead\.html\?tenant_id=/,'department lead assignment must generate the real portal URL');
 assert.doesNotMatch(departmentAdmin,/\/fachbereichsleitung\.html\?tenant_id=/,'stale department lead portal path must not be emitted');
