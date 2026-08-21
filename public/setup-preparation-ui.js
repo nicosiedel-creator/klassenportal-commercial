@@ -74,17 +74,22 @@ function customerSetupReady(content){
 function injectCustomer(){
   const content=document.querySelector('.content');if(!content)return;
   const title=content.querySelector(':scope > .top h2')?.textContent?.trim();if(title!=='Kundenübersicht')return;
+  const progress=content.querySelector('#kp-setup-progress');
+  if(!progress){content.querySelector('#kp-setup-preparation')?.remove();return;}
   if(customerSetupReady(content)){content.querySelector('#kp-setup-preparation')?.remove();return;}
   if(content.querySelector('#kp-setup-preparation'))return;
-  const progress=content.querySelector('#kp-setup-progress'),grid=content.querySelector(':scope > .grid');
-  const anchor=progress||grid;if(!anchor)return;
-  anchor.insertAdjacentHTML('afterend',checklistHtml(true));wire(content);
+  progress.insertAdjacentHTML('afterend',checklistHtml(true));wire(content);
 }
 
 function apply(){if(ONBOARDING_PATH)injectOnboarding();if(CUSTOMER_PATH)injectCustomer();}
 if(ONBOARDING_PATH||CUSTOMER_PATH){
   let frame=0;
   const target=document.querySelector('#setup-app')||document.querySelector('#app')||document.body;
-  new MutationObserver(()=>{if(frame)return;frame=requestAnimationFrame(()=>{frame=0;apply();});}).observe(target,{subtree:true,childList:true});
+  new MutationObserver(ms=>{
+    if(frame)return;
+    const relevant=ms.some(m=>[...m.addedNodes,...m.removedNodes].some(n=>n.nodeType===1));
+    if(!relevant)return;
+    frame=requestAnimationFrame(()=>{frame=0;apply();});
+  }).observe(target,{subtree:true,childList:true});
   apply();
 }
