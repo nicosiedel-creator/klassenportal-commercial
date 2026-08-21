@@ -9,6 +9,7 @@ const enterpriseUx=await readFile('public/customer-enterprise-ux.js','utf8');
 const planning=await readFile('public/planning-resource-ui.js','utf8');
 const ui=await readFile('public/customer-admin-ui.js','utf8');
 const labels=await readFile('public/customer-admin-nav-labels.js','utf8');
+const lazy=await readFile('public/customer-admin-lazy-modules.js','utf8');
 const html=await readFile('public/customer-admin.html','utf8');
 
 assert.match(css,/\.customer-portal-admin \.side\{position:static!important;/,'customer admin navigation must stay in normal document flow');
@@ -58,8 +59,14 @@ assert.ok(html.includes('/customer-admin-ui.js?v=20260818-3'),'customer navigati
 assert.ok(html.includes('/customer-admin-nav-labels.js?v=20260818-1'),'clarified navigation label asset must be loaded');
 assert.ok(html.includes('/vfa13-reference.css?v=20260818-3'),'later customer theme cache key must reflect the final non-sticky theme');
 assert.ok(html.includes('/customer-dashboard-refresh.css?v=20260819-1'),'original dashboard refresh must be loaded after the base customer styles');
-assert.ok(html.includes('/setup-preparation-ui.js?v=20260819-1'),'customer setup preparation UI must be loaded');
+assert.ok(html.includes('/setup-preparation-ui.js?v=20260821-2'),'customer setup preparation UI must use the corrected deterministic status gate');
 assert.ok(html.includes('/customer-enterprise.css?v=20260821-2'),'enterprise customer-admin override must be loaded last');
 assert.ok(html.includes('/customer-enterprise-ux.js?v=20260821-2'),'actionable Education OS intent UX must be loaded');
+assert.match(html,/grid-template-columns:260px minmax\(0,1fr\)!important/,'critical desktop left-rail layout must be present in the navigation HTML itself');
+assert.ok(html.includes('/customer-admin-lazy-modules.js?v=20260821-1'),'heavy customer modules must be bootstrapped by the lazy loader');
+assert.doesNotMatch(html,/src="\/enterprise-admin-ui\.js/,'heavy secondary modules must not all execute during first paint');
+assert.match(lazy,/requestIdleCallback/,'secondary customer modules should wait until the first paint is responsive');
+assert.match(lazy,/Promise\.allSettled/,'secondary modules should load in bounded batches');
+assert.match(lazy,/kp:customer-modules-loaded/,'lazy module batches must signal the navigation organizer after loading');
 
 console.log('Customer admin enterprise navigation, actionable intent UX and non-overlap checks: OK');
