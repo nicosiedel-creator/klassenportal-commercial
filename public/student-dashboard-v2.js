@@ -105,7 +105,7 @@ if(root){
   }
   function startTimer(){clearInterval(timer);timer=setInterval(()=>{if(!currentData)return;const now=root.querySelector('[data-kp2-now]');if(!now)return;const current=now.dataset.current==='1',start=dt(now.dataset.start)?.getTime()||0,end=dt(now.dataset.end)?.getTime()||0,n=Date.now();if((current&&n>end)||(!current&&n>=start)){lastSignature='';render(currentData);return;}const target=current?end:start,strong=now.querySelector('.kp2-now-time strong');if(strong)strong.textContent=String(Math.max(0,Math.ceil((target-n)/60000)));if(current){const bar=now.querySelector('.kp2-now-copy i b');if(bar)bar.style.width=`${Math.max(0,Math.min(100,Math.round((n-start)/Math.max(1,end-start)*100)))}%`; }},30000);}
   async function build(){if(busy||!root.querySelector('.portal-shell'))return;busy=true;try{const data=await overview();if(!data?.course)return;render(data);enrichAssignments(data);}finally{busy=false;}}
-  function queue(){if(queued)return;queued=true;setTimeout(()=>{queued=false;build().catch(()=>{});},0);}
+  function queue(){if(queued||root.querySelector('.kp2-dashboard'))return;queued=true;setTimeout(()=>{queued=false;build().catch(()=>{});},0);}
   new MutationObserver(queue).observe(root,{subtree:true,childList:true});
   window.addEventListener('kp-assignment-change',()=>{if(currentData)enrichAssignments(currentData);});
   queue();
