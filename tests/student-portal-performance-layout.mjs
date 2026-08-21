@@ -18,8 +18,9 @@ assert.match(perf,/warm\(overviewPath/,'overview should start warming during par
 assert.match(perf,/window\.fetch=async function/,'same portal requests must be deduplicated through a short-lived response cache');
 assert.match(perf,/X-Klassenportal-Access-Code/,'prefetch must preserve access-code isolation');
 
+const overviewSource=dash.slice(dash.indexOf('async function overview(){'),dash.indexOf('async function enrichAssignments'));
 assert.match(dash,/const data=await overview\(\);if\(!data\?\.course\)return;render\(data\);enrichAssignments\(data\)/,'weekly dashboard must render before personal assignment enrichment');
-assert.doesNotMatch(dash,/async function overview\(\)[\s\S]*Promise\.all\(\[fetch\(`\/api\/assignments/,'overview must not block the timetable on assignment APIs');
+assert.doesNotMatch(overviewSource,/api\/assignments/,'overview must not block the timetable on assignment APIs');
 assert.match(dash,/taskCounts/,'weekly plan must visually surface due-task counts');
 assert.match(dash,/kp2-mosaic/,'week, tasks and agenda must form one cohesive dashboard block');
 assert.match(css,/grid-template-columns:minmax\(0,2\.15fr\) minmax\(300px,.85fr\)/,'desktop dashboard must prioritize the weekly plan');
