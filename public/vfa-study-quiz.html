@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>VFA 13 – Einzeltest</title>
+  <link rel="stylesheet" href="/vfa-live-study.css">
+</head>
+<body class="quiz-page">
+  <main class="quiz-shell">
+    <section id="waiting" class="waiting">
+      <div class="card">
+        <div class="eyebrow">VFA 13 – Einzeltest</div>
+        <h1>Du bist anonym verbunden.</h1>
+        <p class="muted">Der Test startet für alle gleichzeitig auf dem großen Bildschirm.</p>
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="waitStatus">Verbindung wird hergestellt …</p>
+      </div>
+    </section>
+
+    <section id="quiz" class="hidden">
+      <header class="quiz-head">
+        <b>VFA 13</b>
+        <span id="answeredText" class="muted">0 / 48 beantwortet</span>
+        <span id="timer" class="timer">60:00</span>
+      </header>
+      <div id="questionHost"></div>
+      <div class="quiz-actions">
+        <button id="prevQuestion" class="secondary" type="button">← Zurück</button>
+        <button id="nextQuestion" class="primary" type="button">Weiter →</button>
+      </div>
+      <div class="card">
+        <div id="questionNav" class="qnav"></div>
+        <button id="submit" class="danger" type="button" style="width:100%;margin-top:16px">Test endgültig abgeben</button>
+      </div>
+    </section>
+
+    <section id="done" class="done hidden">
+      <div class="card">
+        <div class="eyebrow">Abgegeben</div>
+        <h1>Dein Ergebnis</h1>
+        <div id="score" class="big-number">–</div>
+        <p id="scoreText"></p>
+        <div id="personalTopics"></div>
+        <p class="muted">Dein Ergebnis wird nur anonym in die Gruppenauswertung auf dem Beamer eingerechnet.</p>
+      </div>
+    </section>
+
+    <section id="error" class="done hidden">
+      <div class="card bad">
+        <h1>Quiz nicht verfügbar</h1>
+        <p id="errorText"></p>
+      </div>
+    </section>
+  </main>
+  <script src="/vfa-study-quiz.js" defer></script>
+</body>
+</html>
