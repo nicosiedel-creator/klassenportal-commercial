@@ -1,24 +1,16 @@
 PRAGMA foreign_keys = ON;
 
 -- Microsoft 365 / Teams is a core capability of the flagship product.
--- Existing module commerce rows are protected by billing-integrity triggers and
--- must not be rewritten by a schema migration. Runtime/product policy treats
--- these capabilities as core; historical commerce rows remain untouched for audit.
+-- Existing module commerce rows and feature_flags are protected by historical
+-- billing / entitlement triggers in production and must not be rewritten by a
+-- schema migration. Runtime/product policy treats these capabilities as core;
+-- historical commerce and feature-flag rows remain untouched for audit.
 --
--- The legacy billing guard in 0043 blocks enabled+manual for these historical
--- feature keys. Core capabilities must therefore be represented as plan-managed,
--- not manual/self-service flags. This keeps the billing guard intact while moving
--- Teams/M365 into the flagship baseline.
-
--- Existing legacy ICS/webhook functionality remains available to every tenant without an upsell.
-INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at)
-SELECT id,'microsoft_365',1,'plan',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM tenants
-WHERE 1
-ON CONFLICT(tenant_id,feature_key) DO UPDATE SET enabled=1,source='plan',updated_at=excluded.updated_at;
-INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at)
-SELECT id,'microsoft_teams',1,'plan',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM tenants
-WHERE 1
-ON CONFLICT(tenant_id,feature_key) DO UPDATE SET enabled=1,source='plan',updated_at=excluded.updated_at;
+-- Important: production contains a stricter FEATURE_NOT_ENTITLED trigger in
+-- addition to the legacy MODULE_MANAGED_BY_BILLING guard. Even plan-managed
+-- feature_flags writes can therefore be rejected for historical paid-module keys.
+-- 0082 is a schema migration only and intentionally performs no feature_flags
+-- INSERT/UPDATE for Microsoft 365 or Teams.
 
 -- One-time OAuth state. Only a SHA-256 digest of the browser state is stored.
 CREATE TABLE IF NOT EXISTS microsoft_oauth_states (
