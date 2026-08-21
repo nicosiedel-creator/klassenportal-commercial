@@ -6,6 +6,7 @@ const i18n=await readFile('public/localization.js','utf8');
 const polish=await readFile('public/customer-pretest-polish.js','utf8');
 const preparation=await readFile('public/setup-preparation-ui.js','utf8');
 const support=await readFile('public/customer-support-mode.js','utf8');
+const enterprise=await readFile('public/customer-enterprise.css','utf8');
 const customer=await readFile('public/customer-admin.html','utf8');
 const student=await readFile('public/class-portal.html','utf8');
 const teacher=await readFile('public/dozentenportal.html','utf8');
@@ -46,6 +47,11 @@ assert.match(support,/\/api\/platform\/tenants/,'tenant bootstrap must be warmab
 assert.match(support,/\/api\/courses/,'remembered tenant courses must be warmed in parallel');
 assert.match(support,/\/api\/billing\/setup-progress/,'setup progress should be warmed in parallel for the remembered tenant');
 assert.match(support,/clearBootstrapCache\(\)/,'writes must invalidate the short-lived bootstrap cache');
+
+assert.match(enterprise,/Final desktop information architecture/,'the last-loaded customer stylesheet must own the desktop information architecture');
+assert.match(enterprise,/grid-template-columns:260px minmax\(0,1fr\)!important/,'desktop customer admin must keep a stable left operations rail');
+assert.match(enterprise,/\.customer-portal-admin \.side\{position:static!important/,'final enterprise CSS must neutralize the later sticky top-navigation override');
+assert.match(enterprise,/backdrop-filter:none!important/,'final customer navigation must not spend main-thread/GPU work on a sticky blur layer');
 
 assert.match(departmentAdmin,/\/department-lead\.html\?tenant_id=/,'department lead assignment must generate the real portal URL');
 assert.doesNotMatch(departmentAdmin,/\/fachbereichsleitung\.html\?tenant_id=/,'stale department lead portal path must not be emitted');
