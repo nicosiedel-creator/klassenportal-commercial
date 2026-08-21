@@ -1,14 +1,9 @@
 PRAGMA foreign_keys = ON;
 
 -- Microsoft 365 / Teams is a core capability of the flagship product.
--- Keep historical commerce rows for audit compatibility, but make them non-billable.
-UPDATE module_commerce_rules
-SET monthly_price_cents=0,
-    pricing_enabled=0,
-    customer_self_service=0,
-    category='Kernfunktion',
-    updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-WHERE feature_key IN ('microsoft_365','microsoft_teams');
+-- Existing module commerce rows are protected by billing-integrity triggers and
+-- must not be rewritten by a schema migration. Runtime/product policy treats
+-- these capabilities as core; historical commerce rows remain untouched for audit.
 
 -- Existing legacy ICS/webhook functionality remains available to every tenant without an upsell.
 INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at)
