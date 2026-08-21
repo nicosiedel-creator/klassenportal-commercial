@@ -1,5 +1,4 @@
 import type { Env } from './types.js';
-import { resolveCoreAuth } from './auth.js';
 import { assertSameOrigin, json } from './utils.js';
 import { LIVE_STUDY_QUESTIONS, publicQuestion, questionMap } from './live-study-content.js';
 
@@ -25,7 +24,7 @@ async function ensureLiveStudySchema(env:Env):Promise<void>{
 
 function fail(e:unknown):Response{
   const code=String((e as Error)?.message||'LIVE_STUDY_ERROR');
-  const status=code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'||code==='PRESENTER_TOKEN_INVALID'||code==='PARTICIPANT_TOKEN_INVALID'||code==='CSRF_ORIGIN_MISMATCH'?403:code.includes('NOT_FOUND')?404:code.includes('EXPIRED')?410:code.includes('ALREADY_SUBMITTED')||code.includes('NOT_OPEN')||code.includes('NOT_STARTED')||code.includes('CLOSED')||code.includes('ENDED')?409:code.includes('INVALID')||code.includes('REQUIRED')?400:500;
+  const status=code==='LIVE_STUDY_CAPACITY_REACHED'?429:code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'||code==='PRESENTER_TOKEN_INVALID'||code==='PARTICIPANT_TOKEN_INVALID'||code==='CSRF_ORIGIN_MISMATCH'?403:code.includes('NOT_FOUND')?404:code.includes('EXPIRED')?410:code.includes('ALREADY_SUBMITTED')||code.includes('NOT_OPEN')||code.includes('NOT_STARTED')||code.includes('CLOSED')||code.includes('ENDED')?409:code.includes('INVALID')||code.includes('REQUIRED')?400:500;
   return json({ok:false,error:code},status);
 }
 function nowIso(){return new Date().toISOString();}
@@ -53,10 +52,18 @@ export async function handleLiveStudyApi(request:Request,env:Env):Promise<Respon
   const u=new URL(request.url);if(!u.pathname.startsWith('/api/live-study/'))return null;
   try{
     await ensureLiveStudySchema(env);
+    if(u.pathname==='/api/live-study/current'&&request.method==='GET'){
+      const now=nowIso();
+      const current=await env.DB.prepare("SELECT * FROM live_study_sessions WHERE expires_at > ? AND status IN ('lobby','quiz') ORDER BY created_at DESC LIMIT 1").bind(now).first<SessionRow>();
+      if(!current)return json({ok:true,ready:false});
+      return json({ok:true,ready:true,session:sessionPublic(current),participantUrl:`${u.origin}/quiz/vfa13/${current.id}`});
+    }
     if(u.pathname==='/api/live-study/sessions'&&request.method==='POST'){
-      sameOrigin(request,env);const auth=await resolveCoreAuth(env,request);if(!auth.isPlatformAdmin)throw new Error('PLATFORM_ADMIN_REQUIRED');
+      sameOrigin(request,env);
       const id=randomToken(12),presenterToken=randomToken(32),created=nowIso(),expires=new Date(Date.now()+8*60*60*1000).toISOString(),payload=await body(request),title=String(payload.title||'VFA 13 – Lernabend').slice(0,120);
       await env.DB.prepare("DELETE FROM live_study_sessions WHERE expires_at < ?").bind(created).run();
+      const active=await env.DB.prepare("SELECT COUNT(*) AS count FROM live_study_sessions WHERE expires_at > ? AND status <> 'closed'").bind(created).first<{count:number}>();
+      if(Number(active?.count||0)>=32)throw new Error('LIVE_STUDY_CAPACITY_REACHED');
       await env.DB.prepare("INSERT INTO live_study_sessions (id,presenter_token_hash,title,status,duration_seconds,created_at,expires_at) VALUES (?,?,?,'learning',3600,?,?)").bind(id,await sha256(presenterToken),title,created,expires).run();
       const stored=await session(env,id),participantUrl=`${u.origin}/quiz/vfa13/${id}`;return json({ok:true,session:{...sessionPublic(stored),presenterToken,participantUrl}},201);
     }
