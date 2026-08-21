@@ -1,0 +1,14 @@
+import { strict as assert } from 'node:assert';
+import { readFile } from 'node:fs/promises';
+const html=await readFile('public/customer-admin.html','utf8');
+const css=await readFile('public/customer-enterprise.css','utf8');
+const ux=await readFile('public/customer-enterprise-ux.js','utf8');
+const resources=await readFile('public/planning-resource-ui.js','utf8');
+assert.ok(html.includes('customer-enterprise.css?v=20260821-1'));
+assert.ok(html.includes('customer-enterprise-ux.js?v=20260821-1'));
+assert.match(css,/operations control center/i);
+assert.match(ux,/Raum\/Ressource/);
+assert.match(ux,/payload\.context\.resource_id=hits\[0\]\.id/);
+assert.match(ux,/starts_at=localToUtc/);
+assert.match(resources,/<select name="type" required>/);
+console.log('Customer enterprise UX static checks: OK');

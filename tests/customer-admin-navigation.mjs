@@ -4,6 +4,9 @@ import { readFile } from 'node:fs/promises';
 const css=await readFile('public/customer-compact.css','utf8');
 const theme=await readFile('public/vfa13-reference.css','utf8');
 const refresh=await readFile('public/customer-dashboard-refresh.css','utf8');
+const enterprise=await readFile('public/customer-enterprise.css','utf8');
+const enterpriseUx=await readFile('public/customer-enterprise-ux.js','utf8');
+const planning=await readFile('public/planning-resource-ui.js','utf8');
 const ui=await readFile('public/customer-admin-ui.js','utf8');
 const labels=await readFile('public/customer-admin-nav-labels.js','utf8');
 const html=await readFile('public/customer-admin.html','utf8');
@@ -25,15 +28,9 @@ assert.match(refresh,/@media\(max-width:960px\)[\s\S]*\.customer-portal-admin \.
 assert.match(refresh,/background:var\(--portal-primary,#2563eb\)/,'dashboard refresh must inherit the customer primary brand color rather than cloning a foreign palette');
 assert.match(refresh,/#kp-setup-preparation/,'dashboard refresh must style the setup preparation card consistently');
 
-for(const label of ['Übersicht','Klassen/Kurse','Benutzer & Rollen','Teilnehmer importieren','Inhalte','Prüfungen','Module','Paket & Abrechnung']){
-  assert.ok(ui.includes(`'${label}'`),`primary customer navigation missing ${label}`);
-}
-for(const group of ['Lernen & Kommunikation','Organisation & Betrieb','Technik & Integrationen']){
-  assert.ok(ui.includes(group),`secondary navigation group missing ${group}`);
-}
-for(const wording of ['Dokumente hochladen','Organisation & Struktur','Verantwortliche & Vertretungen','SSO, SCIM & API']){
-  assert.ok(labels.includes(wording),`clarified customer navigation wording missing ${wording}`);
-}
+for(const label of ['Übersicht','Klassen/Kurse','Benutzer & Rollen','Teilnehmer importieren','Inhalte','Prüfungen','Module','Paket & Abrechnung']) assert.ok(ui.includes(`'${label}'`),`primary customer navigation missing ${label}`);
+for(const group of ['Lernen & Kommunikation','Organisation & Betrieb','Technik & Integrationen']) assert.ok(ui.includes(group),`secondary navigation group missing ${group}`);
+for(const wording of ['Dokumente hochladen','Organisation & Struktur','Verantwortliche & Vertretungen','SSO, SCIM & API']) assert.ok(labels.includes(wording),`clarified customer navigation wording missing ${wording}`);
 assert.match(labels,/customerNavSourceLabel/,'visual relabeling must preserve the original module label for grouping');
 assert.match(ui,/function navSourceLabel\(button\)/,'navigation organizer must keep a stable source label for dynamically injected module buttons');
 assert.match(ui,/button\.dataset\.customerNavSourceLabel/,'navigation organizer must read and write the stable source label');
@@ -44,11 +41,25 @@ assert.match(ui,/const storedOpen=navMemoryGet\(\)/,'navigation must use the gua
 assert.match(ui,/aria-controls/,'secondary navigation toggle must be accessible');
 assert.match(ui,/extraActive\|\|storedOpen/,'an active secondary section must remain visible');
 assert.match(ui,/button\.parentElement!==primary/,'existing navigation buttons must be moved rather than recreated so their handlers survive');
+
+assert.match(enterprise,/Operations & Verwaltung/,'enterprise customer admin must present a professional operations navigation identity');
+assert.match(enterprise,/\.eo-os-main\{grid-template-columns:230px minmax\(0,1fr\)/,'Education OS must use a compact control-center workspace');
+assert.match(enterprise,/\.eo-os-two\{grid-template-columns:minmax\(0,1\.55fr\)/,'intent workspace must prioritize the actual task over explanatory chrome');
+assert.match(enterpriseUx,/resource_id:'Raum\/Ressource'/,'raw resource ids must have a human-facing label');
+assert.match(enterpriseUx,/api\/education\/planning\/resources/,'intent UX must resolve room names against real tenant resources');
+assert.match(enterpriseUx,/payload\.context\.resource_id=hits\[0\]\.id/,'unique room matches must become safe explicit context instead of exposing resource_id to the user');
+assert.match(enterpriseUx,/starts_at=localToUtc/,'room outage until-date must be converted into an explicit simulation interval');
+assert.match(enterpriseUx,/Noch eine Angabe nötig/,'missing intent context must be explained as an actionable customer message');
+assert.match(planning,/<select name="type" required>/,'resource type must be a controlled dropdown');
+assert.match(planning,/EDV-\/PC-Raum/,'resource type dropdown must include common education room types');
+
 assert.ok(html.includes('/customer-compact.css?v=20260818-2'),'customer layout CSS cache key must be bumped');
 assert.ok(html.includes('/customer-admin-ui.js?v=20260818-3'),'customer navigation JS cache key must reflect the final navigation implementation');
 assert.ok(html.includes('/customer-admin-nav-labels.js?v=20260818-1'),'clarified navigation label asset must be loaded');
 assert.ok(html.includes('/vfa13-reference.css?v=20260818-3'),'later customer theme cache key must reflect the final non-sticky theme');
 assert.ok(html.includes('/customer-dashboard-refresh.css?v=20260819-1'),'original dashboard refresh must be loaded after the base customer styles');
 assert.ok(html.includes('/setup-preparation-ui.js?v=20260819-1'),'customer setup preparation UI must be loaded');
+assert.ok(html.includes('/customer-enterprise.css?v=20260821-1'),'enterprise customer-admin override must be loaded last');
+assert.ok(html.includes('/customer-enterprise-ux.js?v=20260821-1'),'actionable Education OS intent UX must be loaded');
 
-console.log('Customer admin navigation, dashboard layout and non-overlap checks: OK');
+console.log('Customer admin enterprise navigation, actionable intent UX and non-overlap checks: OK');
