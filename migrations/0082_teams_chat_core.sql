@@ -4,16 +4,21 @@ PRAGMA foreign_keys = ON;
 -- Existing module commerce rows are protected by billing-integrity triggers and
 -- must not be rewritten by a schema migration. Runtime/product policy treats
 -- these capabilities as core; historical commerce rows remain untouched for audit.
+--
+-- The legacy billing guard in 0043 blocks enabled+manual for these historical
+-- feature keys. Core capabilities must therefore be represented as plan-managed,
+-- not manual/self-service flags. This keeps the billing guard intact while moving
+-- Teams/M365 into the flagship baseline.
 
 -- Existing legacy ICS/webhook functionality remains available to every tenant without an upsell.
 INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at)
-SELECT id,'microsoft_365',1,'manual',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM tenants
+SELECT id,'microsoft_365',1,'plan',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM tenants
 WHERE 1
-ON CONFLICT(tenant_id,feature_key) DO UPDATE SET enabled=1,updated_at=excluded.updated_at;
+ON CONFLICT(tenant_id,feature_key) DO UPDATE SET enabled=1,source='plan',updated_at=excluded.updated_at;
 INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at)
-SELECT id,'microsoft_teams',1,'manual',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM tenants
+SELECT id,'microsoft_teams',1,'plan',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM tenants
 WHERE 1
-ON CONFLICT(tenant_id,feature_key) DO UPDATE SET enabled=1,updated_at=excluded.updated_at;
+ON CONFLICT(tenant_id,feature_key) DO UPDATE SET enabled=1,source='plan',updated_at=excluded.updated_at;
 
 -- One-time OAuth state. Only a SHA-256 digest of the browser state is stored.
 CREATE TABLE IF NOT EXISTS microsoft_oauth_states (
