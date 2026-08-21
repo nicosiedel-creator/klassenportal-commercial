@@ -20,7 +20,7 @@ let submitting=false;
 
 function storageKey(){return `vfa-live-study-participant:${sessionId}`;}
 function progressKey(){return `vfa-live-study-progress:${sessionId}`;}
-function esc(value){return String(value??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[m]));}
+function esc(value){return String(value??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function shuffle(items){const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function showOnly(id){[waiting,quiz,done,error].forEach(x=>x.classList.toggle('hidden',x.id!==id));}
 function fail(message){clearInterval(pollTimer);clearInterval(clockTimer);document.getElementById('errorText').textContent=message;showOnly('error');}
