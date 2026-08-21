@@ -37,6 +37,21 @@
 .customer-portal-admin table{font-size:.82rem!important}
 .customer-portal-admin th{background:#f7f9fc!important;color:#526174!important;font-size:.72rem!important;text-transform:uppercase!important;letter-spacing:.035em!important}
 
+/* Final desktop information architecture: stable left operations rail, never a sticky top strip. */
+@media(min-width:961px){
+  .customer-portal-admin .layout{display:grid!important;grid-template-columns:260px minmax(0,1fr)!important;align-items:start!important;min-height:100vh!important}
+  .customer-portal-admin .side{position:static!important;inset:auto!important;z-index:auto!important;width:auto!important;min-height:100vh!important;padding:18px 14px!important;border:0!important;border-right:1px solid var(--kp-enterprise-line)!important;display:flex!important;flex-direction:column!important;gap:10px!important;overflow:visible!important;backdrop-filter:none!important}
+  .customer-portal-admin .side>.kp-customer-nav-head,.customer-portal-admin .side>.kp-customer-nav-primary,.customer-portal-admin .side>.kp-customer-nav-more-panel{width:100%!important;max-width:none!important;margin:0!important}
+  .customer-portal-admin .kp-customer-nav-head{min-height:54px!important;padding:4px 4px 13px!important;border-bottom:1px solid var(--kp-enterprise-line)!important;align-items:flex-start!important}
+  .customer-portal-admin .kp-customer-nav-primary{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:3px!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important}
+  .customer-portal-admin .nav,.customer-portal-admin .kp-customer-nav-primary .nav{width:100%!important;justify-content:flex-start!important;text-align:left!important;white-space:normal!important}
+  .customer-portal-admin .kp-customer-nav-actions{margin-left:auto!important;display:flex!important;flex-direction:column!important;align-items:flex-end!important;gap:5px!important}
+  .customer-portal-admin .kp-customer-more-toggle{min-height:32px!important;padding:6px 8px!important;font-size:.7rem!important}
+  .customer-portal-admin .kp-customer-nav-more-panel{left:12px!important;right:auto!important;top:auto!important;width:min(420px,calc(100vw - 290px))!important;max-height:calc(100vh - 110px)!important;overflow:auto!important}
+  .customer-portal-admin .content{width:100%!important;max-width:1600px!important;margin:0!important;padding:26px clamp(22px,3vw,48px) 56px!important}
+}
+@media(max-width:960px){.customer-portal-admin .side{position:static!important;backdrop-filter:none!important}.customer-portal-admin .content{padding-top:18px!important}}
+
 /* Education OS becomes an operations control center instead of a modal full of cards. */
 .customer-portal-admin .eo-os-back{background:rgba(15,23,42,.38)!important;backdrop-filter:blur(3px)}
 .customer-portal-admin .eo-os-shell{width:min(1500px,98vw)!important;height:min(900px,96vh)!important;border-radius:12px!important;box-shadow:0 22px 70px rgba(15,23,42,.25)!important;overflow:hidden!important;background:#f4f7fb!important}
