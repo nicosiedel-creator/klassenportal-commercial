@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VFA 13 – gemeinsames Lernen</title>
+  <link rel="stylesheet" href="/vfa-live-study.css">
+</head>
+<body class="presenter">
+  <main id="deck" class="deck" aria-live="polite"></main>
+
+  <div id="controls" class="controls">
+    <button id="prev" class="secondary" type="button">← Zurück</button>
+    <button id="reveal" class="secondary" type="button">Lösung einblenden</button>
+    <span id="counter" class="counter"></span>
+    <div class="progress" aria-label="Fortschritt"><i id="progress"></i></div>
+    <div class="spacer"></div>
+    <button id="fullscreen" class="secondary" type="button">Vollbild</button>
+    <button id="next" class="primary" type="button">Weiter →</button>
+  </div>
+
+  <section id="lobby" class="lobby hidden" aria-live="polite">
+    <div class="qr-card">
+      <div class="eyebrow">Einzeltest</div>
+      <h1>QR-Code scannen</h1>
+      <p class="muted">Keine Anmeldung. Keine Namen. Jeder Test bleibt anonym.</p>
+      <img id="qr" alt="QR-Code zum Einzeltest">
+      <p id="quizUrl" class="quiz-url"></p>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:20px">
+        <button id="startQuiz" class="primary" type="button">60-Minuten-Test gemeinsam starten</button>
+        <button id="closeQuiz" class="danger hidden" type="button">Test beenden</button>
+      </div>
+      <p id="lobbyMessage" class="muted"></p>
+    </div>
+    <div class="live-card">
+      <div class="eyebrow">Live-Auswertung</div>
+      <h2 id="liveTitle">Warte auf Teilnehmer …</h2>
+      <div class="statgrid">
+        <div class="stat"><span class="muted">verbunden</span><b id="joined">0</b></div>
+        <div class="stat"><span class="muted">abgegeben</span><b id="submitted">0</b></div>
+        <div class="stat"><span class="muted">Ø Ergebnis</span><b id="average">–</b></div>
+        <div class="stat"><span class="muted">Restzeit</span><b id="remaining">–</b></div>
+      </div>
+      <div id="topicStats"></div>
+      <div id="hardestWrap" class="hidden">
+        <h3>Schwierigste Fragen</h3>
+        <ol id="hardest" class="hardest"></ol>
+      </div>
+    </div>
+  </section>
+
+  <script src="/vfa-study-presenter.js" defer></script>
+</body>
+</html>
