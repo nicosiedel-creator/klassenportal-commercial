@@ -5,6 +5,7 @@ const boot=await readFile('public/boot.js','utf8');
 const i18n=await readFile('public/localization.js','utf8');
 const polish=await readFile('public/customer-pretest-polish.js','utf8');
 const preparation=await readFile('public/setup-preparation-ui.js','utf8');
+const support=await readFile('public/customer-support-mode.js','utf8');
 const customer=await readFile('public/customer-admin.html','utf8');
 const student=await readFile('public/class-portal.html','utf8');
 const teacher=await readFile('public/dozentenportal.html','utf8');
@@ -38,6 +39,13 @@ assert.match(preparation,/content\.querySelector\('#kp-operations-hub'\)/,'the p
 assert.match(preparation,/content\.querySelector\('#kp-setup-preparation'\)\?\.remove\(\);return;/,'a completed customer setup must actively remove a stale preparation checklist');
 assert.match(preparation,/requestAnimationFrame/,'setup preparation observer must be frame-coalesced to prevent DOM mutation storms');
 assert.doesNotMatch(preparation,/new MutationObserver\(\(\)=>queueMicrotask\(apply\)\)/,'the former setup preparation microtask feedback loop must not return');
+
+assert.match(support,/const TTL=8000/,'customer bootstrap reads need a bounded short-lived response cache');
+assert.match(support,/const responseCache=new Map/,'customer bootstrap should reuse identical startup responses');
+assert.match(support,/\/api\/platform\/tenants/,'tenant bootstrap must be warmable before app startup');
+assert.match(support,/\/api\/courses/,'remembered tenant courses must be warmed in parallel');
+assert.match(support,/\/api\/billing\/setup-progress/,'setup progress should be warmed in parallel for the remembered tenant');
+assert.match(support,/clearBootstrapCache\(\)/,'writes must invalidate the short-lived bootstrap cache');
 
 assert.match(departmentAdmin,/\/department-lead\.html\?tenant_id=/,'department lead assignment must generate the real portal URL');
 assert.doesNotMatch(departmentAdmin,/\/fachbereichsleitung\.html\?tenant_id=/,'stale department lead portal path must not be emitted');
