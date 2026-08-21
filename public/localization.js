@@ -1,61 +1,65 @@
-const exact=new Map(Object.entries({
-  'tenant_admin':'Kunden-Admin',
-  'class_admin':'Klassenverantwortliche/r (z. B. Klassensprecher)',
-  'Klassen-Admin':'Klassenverantwortliche/r (z. B. Klassensprecher)',
-  'participant':'Teilnehmer/in',
-  'guest':'Gast',
-  'platform_admin':'Plattform-Admin',
-  'login':'Anmeldung erforderlich',
-  'public':'Öffentlich',
-  'link_code':'Link / Zugangscode',
-  'hybrid':'Anmeldung oder Zugangscode',
-  'active':'Aktiv',
-  'disabled':'Deaktiviert',
-  'suspended':'Gesperrt',
-  'ended':'Beendet',
-  'deleting':'Wird gelöscht',
-  'trial':'Testphase',
-  'past_due':'Zahlung überfällig',
-  'cancelled':'Gekündigt',
-  'starter':'Starter',
-  'provider':'Bildungsträger',
-  'white_label':'White-Label',
-  'homework':'Hausaufgaben / Aufgaben',
-  'appointments':'Termine',
-  'announcements':'Meldungen / Informationen',
-  'links':'Links',
-  'lessons':'Stundenplan / Unterricht',
-  'schedule':'Stundenplan',
-  'files':'Dateien',
-  'calendar':'Kalender',
-  'reminders':'Erinnerungen',
-  'weekly_overview':'Wochenübersicht',
-  'exams_progress':'Prüfungen & Lernfortschritt',
-  'learning_materials':'Lernmaterialien',
-  'microsoft_365':'Microsoft 365',
-  'microsoft_teams':'Microsoft Teams',
-  'substitution_updates':'Vertretungsänderungen',
-  'custom_domain':'Eigene Domain',
-  'personal_grades':'Persönliche Noten',
-  'exams':'Prüfungen',
-  'learning_progress':'Lernfortschritt',
-  'materials':'Materialien',
-  'surveys':'Umfragen',
-  'substitution':'Vertretungen',
-  'teams':'Microsoft Teams',
-  'm365':'Microsoft 365',
-  'statistics':'Statistiken',
-  'plan':'Im Tarif enthalten',
-  'manual':'Zusätzlich freigeschaltet'
-}));
+const LOCALES={
+  de:'Deutsch',en:'English',fr:'Français',es:'Español',it:'Italiano',nl:'Nederlands',pl:'Polski',tr:'Türkçe',uk:'Українська',ro:'Română',cs:'Čeština',pt:'Português',ar:'العربية'
+};
+const RTL=new Set(['ar']);
+const STORAGE_KEY='kp_locale';
+const source={
+  tenant_admin:'Kunden-Admin',class_admin:'Klassenverantwortliche/r (z. B. Klassensprecher)',participant:'Teilnehmer/in',guest:'Gast',platform_admin:'Plattform-Admin',
+  login:'Anmeldung erforderlich',public:'Öffentlich',link_code:'Link / Zugangscode',hybrid:'Anmeldung oder Zugangscode',active:'Aktiv',disabled:'Deaktiviert',suspended:'Gesperrt',ended:'Beendet',deleting:'Wird gelöscht',trial:'Testphase',past_due:'Zahlung überfällig',cancelled:'Gekündigt',starter:'Starter',provider:'Bildungsträger',white_label:'White-Label',
+  homework:'Hausaufgaben / Aufgaben',appointments:'Termine',announcements:'Meldungen / Informationen',links:'Links',lessons:'Stundenplan / Unterricht',schedule:'Stundenplan',files:'Dateien',calendar:'Kalender',reminders:'Erinnerungen',weekly_overview:'Wochenübersicht',exams_progress:'Prüfungen & Lernfortschritt',learning_materials:'Lernmaterialien',microsoft_365:'Microsoft 365',microsoft_teams:'Microsoft Teams',substitution_updates:'Vertretungsänderungen',custom_domain:'Eigene Domain',personal_grades:'Persönliche Noten',exams:'Prüfungen',learning_progress:'Lernfortschritt',materials:'Materialien',surveys:'Umfragen',substitution:'Vertretungen',teams:'Microsoft Teams',m365:'Microsoft 365',statistics:'Statistiken',plan:'Im Tarif enthalten',manual:'Zusätzlich freigeschaltet',
+  overview:'Übersicht',courses:'Klassen/Kurse',users_roles:'Benutzer & Rollen',contents:'Inhalte',modules:'Module',billing:'Paket & Abrechnung',organization:'Organisation & Betrieb',learning_comms:'Lernen & Kommunikation',tech_integrations:'Technik & Integrationen',logout:'Abmelden',change:'Wechseln',language:'Sprache',assistant:'Arbeitsassistent',planning_data:'Planung & Daten',department_lead:'Fachbereichsleitung'
+};
+const T={
+  en:{tenant_admin:'Customer admin',class_admin:'Class representative',participant:'Participant',guest:'Guest',platform_admin:'Platform admin',login:'Sign-in required',public:'Public',link_code:'Link / access code',hybrid:'Sign-in or access code',active:'Active',disabled:'Disabled',suspended:'Suspended',ended:'Ended',deleting:'Deleting',trial:'Trial',past_due:'Payment overdue',cancelled:'Cancelled',provider:'Training provider',homework:'Homework / tasks',appointments:'Appointments',announcements:'Announcements / information',lessons:'Timetable / lessons',schedule:'Timetable',files:'Files',calendar:'Calendar',reminders:'Reminders',weekly_overview:'Weekly overview',exams_progress:'Exams & learning progress',learning_materials:'Learning materials',substitution_updates:'Substitution updates',custom_domain:'Custom domain',personal_grades:'Personal grades',exams:'Exams',learning_progress:'Learning progress',materials:'Materials',surveys:'Surveys',substitution:'Substitutions',statistics:'Statistics',plan:'Included in plan',manual:'Enabled additionally',overview:'Overview',courses:'Classes/Courses',users_roles:'Users & roles',contents:'Content',modules:'Modules',billing:'Plan & billing',organization:'Organisation & operations',learning_comms:'Learning & communication',tech_integrations:'Technology & integrations',logout:'Sign out',change:'Switch',language:'Language',assistant:'Work assistant',planning_data:'Planning & data',department_lead:'Department lead'},
+  fr:{tenant_admin:'Administration client',class_admin:'Responsable de classe',participant:'Participant',guest:'Invité',platform_admin:'Administration plateforme',login:'Connexion requise',public:'Public',active:'Actif',disabled:'Désactivé',suspended:'Suspendu',ended:'Terminé',trial:'Période d’essai',provider:'Organisme de formation',homework:'Devoirs / tâches',appointments:'Rendez-vous',announcements:'Annonces / informations',lessons:'Emploi du temps / cours',schedule:'Emploi du temps',files:'Fichiers',calendar:'Calendrier',reminders:'Rappels',exams:'Examens',learning_progress:'Progression',materials:'Supports',surveys:'Sondages',statistics:'Statistiques',overview:'Aperçu',courses:'Classes/Cours',users_roles:'Utilisateurs & rôles',contents:'Contenus',modules:'Modules',billing:'Offre & facturation',logout:'Déconnexion',language:'Langue',assistant:'Assistant de travail',planning_data:'Planification & données',department_lead:'Responsable de département'},
+  es:{tenant_admin:'Administrador del cliente',class_admin:'Responsable de clase',participant:'Participante',guest:'Invitado',platform_admin:'Administrador de plataforma',login:'Inicio de sesión obligatorio',public:'Público',active:'Activo',disabled:'Desactivado',suspended:'Suspendido',ended:'Finalizado',trial:'Periodo de prueba',provider:'Centro de formación',homework:'Tareas',appointments:'Citas',announcements:'Avisos / información',lessons:'Horario / clases',schedule:'Horario',files:'Archivos',calendar:'Calendario',reminders:'Recordatorios',exams:'Exámenes',learning_progress:'Progreso de aprendizaje',materials:'Materiales',surveys:'Encuestas',statistics:'Estadísticas',overview:'Resumen',courses:'Clases/Cursos',users_roles:'Usuarios y roles',contents:'Contenidos',modules:'Módulos',billing:'Plan y facturación',logout:'Cerrar sesión',language:'Idioma',assistant:'Asistente de trabajo',planning_data:'Planificación y datos',department_lead:'Responsable de área'},
+  it:{tenant_admin:'Amministratore cliente',class_admin:'Responsabile di classe',participant:'Partecipante',guest:'Ospite',platform_admin:'Amministratore piattaforma',login:'Accesso richiesto',public:'Pubblico',active:'Attivo',disabled:'Disattivato',suspended:'Sospeso',ended:'Terminato',trial:'Periodo di prova',provider:'Ente di formazione',homework:'Compiti / attività',appointments:'Appuntamenti',announcements:'Avvisi / informazioni',lessons:'Orario / lezioni',schedule:'Orario',files:'File',calendar:'Calendario',reminders:'Promemoria',exams:'Esami',learning_progress:'Progresso formativo',materials:'Materiali',surveys:'Sondaggi',statistics:'Statistiche',overview:'Panoramica',courses:'Classi/Corsi',users_roles:'Utenti e ruoli',contents:'Contenuti',modules:'Moduli',billing:'Piano e fatturazione',logout:'Esci',language:'Lingua',assistant:'Assistente di lavoro',planning_data:'Pianificazione e dati',department_lead:'Responsabile area'},
+  nl:{tenant_admin:'Klantbeheerder',class_admin:'Klassenverantwoordelijke',participant:'Deelnemer',guest:'Gast',platform_admin:'Platformbeheerder',login:'Aanmelden vereist',public:'Openbaar',active:'Actief',disabled:'Uitgeschakeld',suspended:'Geblokkeerd',ended:'Beëindigd',trial:'Proefperiode',provider:'Opleidingsorganisatie',homework:'Huiswerk / taken',appointments:'Afspraken',announcements:'Meldingen / informatie',lessons:'Rooster / lessen',schedule:'Rooster',files:'Bestanden',calendar:'Kalender',reminders:'Herinneringen',exams:'Examens',learning_progress:'Leerprogressie',materials:'Materialen',surveys:'Enquêtes',statistics:'Statistieken',overview:'Overzicht',courses:'Klassen/Cursussen',users_roles:'Gebruikers & rollen',contents:'Inhoud',modules:'Modules',billing:'Pakket & facturatie',logout:'Afmelden',language:'Taal',assistant:'Werkassistent',planning_data:'Planning & gegevens',department_lead:'Afdelingsleiding'},
+  pl:{tenant_admin:'Administrator klienta',class_admin:'Opiekun klasy',participant:'Uczestnik',guest:'Gość',platform_admin:'Administrator platformy',login:'Wymagane logowanie',public:'Publiczne',active:'Aktywne',disabled:'Wyłączone',suspended:'Zablokowane',ended:'Zakończone',trial:'Okres próbny',provider:'Placówka szkoleniowa',homework:'Prace domowe / zadania',appointments:'Terminy',announcements:'Ogłoszenia / informacje',lessons:'Plan / zajęcia',schedule:'Plan zajęć',files:'Pliki',calendar:'Kalendarz',reminders:'Przypomnienia',exams:'Egzaminy',learning_progress:'Postępy w nauce',materials:'Materiały',surveys:'Ankiety',statistics:'Statystyki',overview:'Przegląd',courses:'Klasy/Kursy',users_roles:'Użytkownicy i role',contents:'Treści',modules:'Moduły',billing:'Pakiet i rozliczenia',logout:'Wyloguj',language:'Język',assistant:'Asystent pracy',planning_data:'Planowanie i dane',department_lead:'Kierownik działu'},
+  tr:{tenant_admin:'Müşteri yöneticisi',class_admin:'Sınıf sorumlusu',participant:'Katılımcı',guest:'Misafir',platform_admin:'Platform yöneticisi',login:'Giriş gerekli',public:'Herkese açık',active:'Aktif',disabled:'Devre dışı',suspended:'Askıya alındı',ended:'Sona erdi',trial:'Deneme süresi',provider:'Eğitim kurumu',homework:'Ödevler / görevler',appointments:'Tarihler',announcements:'Duyurular / bilgiler',lessons:'Ders programı / dersler',schedule:'Ders programı',files:'Dosyalar',calendar:'Takvim',reminders:'Hatırlatmalar',exams:'Sınavlar',learning_progress:'Öğrenme ilerlemesi',materials:'Materyaller',surveys:'Anketler',statistics:'İstatistikler',overview:'Genel bakış',courses:'Sınıflar/Kurslar',users_roles:'Kullanıcılar ve roller',contents:'İçerikler',modules:'Modüller',billing:'Paket ve faturalama',logout:'Çıkış yap',language:'Dil',assistant:'Çalışma asistanı',planning_data:'Planlama ve veriler',department_lead:'Bölüm yöneticisi'},
+  uk:{tenant_admin:'Адміністратор клієнта',class_admin:'Відповідальний за клас',participant:'Учасник',guest:'Гість',platform_admin:'Адміністратор платформи',login:'Потрібен вхід',public:'Публічно',active:'Активно',disabled:'Вимкнено',suspended:'Заблоковано',ended:'Завершено',trial:'Пробний період',provider:'Навчальний заклад',homework:'Домашні завдання / задачі',appointments:'Події',announcements:'Оголошення / інформація',lessons:'Розклад / заняття',schedule:'Розклад',files:'Файли',calendar:'Календар',reminders:'Нагадування',exams:'Іспити',learning_progress:'Навчальний прогрес',materials:'Матеріали',surveys:'Опитування',statistics:'Статистика',overview:'Огляд',courses:'Класи/Курси',users_roles:'Користувачі та ролі',contents:'Вміст',modules:'Модулі',billing:'Пакет і оплата',logout:'Вийти',language:'Мова',assistant:'Робочий помічник',planning_data:'Планування та дані',department_lead:'Керівник напряму'},
+  ro:{tenant_admin:'Administrator client',class_admin:'Responsabil de clasă',participant:'Participant',guest:'Invitat',platform_admin:'Administrator platformă',login:'Autentificare necesară',public:'Public',active:'Activ',disabled:'Dezactivat',suspended:'Suspendat',ended:'Încheiat',trial:'Perioadă de probă',provider:'Furnizor de formare',homework:'Teme / sarcini',appointments:'Programări',announcements:'Anunțuri / informații',lessons:'Orar / cursuri',schedule:'Orar',files:'Fișiere',calendar:'Calendar',reminders:'Mementouri',exams:'Examene',learning_progress:'Progres de învățare',materials:'Materiale',surveys:'Sondaje',statistics:'Statistici',overview:'Prezentare generală',courses:'Clase/Cursuri',users_roles:'Utilizatori și roluri',contents:'Conținut',modules:'Module',billing:'Pachet și facturare',logout:'Deconectare',language:'Limbă',assistant:'Asistent de lucru',planning_data:'Planificare și date',department_lead:'Coordonator departament'},
+  cs:{tenant_admin:'Správce zákazníka',class_admin:'Zástupce třídy',participant:'Účastník',guest:'Host',platform_admin:'Správce platformy',login:'Je vyžadováno přihlášení',public:'Veřejné',active:'Aktivní',disabled:'Vypnuto',suspended:'Pozastaveno',ended:'Ukončeno',trial:'Zkušební období',provider:'Vzdělávací organizace',homework:'Domácí úkoly / úkoly',appointments:'Termíny',announcements:'Oznámení / informace',lessons:'Rozvrh / výuka',schedule:'Rozvrh',files:'Soubory',calendar:'Kalendář',reminders:'Připomínky',exams:'Zkoušky',learning_progress:'Studijní pokrok',materials:'Materiály',surveys:'Průzkumy',statistics:'Statistiky',overview:'Přehled',courses:'Třídy/Kurzy',users_roles:'Uživatelé a role',contents:'Obsah',modules:'Moduly',billing:'Balíček a fakturace',logout:'Odhlásit',language:'Jazyk',assistant:'Pracovní asistent',planning_data:'Plánování a data',department_lead:'Vedoucí oddělení'},
+  pt:{tenant_admin:'Administrador do cliente',class_admin:'Responsável da turma',participant:'Participante',guest:'Convidado',platform_admin:'Administrador da plataforma',login:'Início de sessão necessário',public:'Público',active:'Ativo',disabled:'Desativado',suspended:'Suspenso',ended:'Terminado',trial:'Período experimental',provider:'Entidade formadora',homework:'Trabalhos / tarefas',appointments:'Compromissos',announcements:'Avisos / informações',lessons:'Horário / aulas',schedule:'Horário',files:'Ficheiros',calendar:'Calendário',reminders:'Lembretes',exams:'Exames',learning_progress:'Progresso de aprendizagem',materials:'Materiais',surveys:'Inquéritos',statistics:'Estatísticas',overview:'Visão geral',courses:'Turmas/Cursos',users_roles:'Utilizadores e funções',contents:'Conteúdos',modules:'Módulos',billing:'Plano e faturação',logout:'Terminar sessão',language:'Idioma',assistant:'Assistente de trabalho',planning_data:'Planeamento e dados',department_lead:'Responsável de área'},
+  ar:{tenant_admin:'مسؤول العميل',class_admin:'مسؤول الصف',participant:'مشارك',guest:'ضيف',platform_admin:'مسؤول المنصة',login:'تسجيل الدخول مطلوب',public:'عام',active:'نشط',disabled:'معطل',suspended:'موقوف',ended:'منتهٍ',trial:'فترة تجريبية',provider:'جهة التدريب',homework:'الواجبات / المهام',appointments:'المواعيد',announcements:'الإعلانات / المعلومات',lessons:'الجدول / الدروس',schedule:'الجدول',files:'الملفات',calendar:'التقويم',reminders:'التذكيرات',exams:'الاختبارات',learning_progress:'تقدم التعلم',materials:'المواد',surveys:'الاستبيانات',statistics:'الإحصاءات',overview:'نظرة عامة',courses:'الصفوف/الدورات',users_roles:'المستخدمون والأدوار',contents:'المحتوى',modules:'الوحدات',billing:'الخطة والفوترة',logout:'تسجيل الخروج',language:'اللغة',assistant:'مساعد العمل',planning_data:'التخطيط والبيانات',department_lead:'رئيس القسم'}
+};
 
-function localize(root=document){
-  root.querySelectorAll?.('option,td,.pill,strong,.muted').forEach(el=>{
-    if(el.children.length)return;
-    const t=el.textContent?.trim();
-    if(t&&exact.has(t))el.textContent=exact.get(t);
-  });
+const keysBySource=new Map();
+for(const [key,value] of Object.entries(source)){keysBySource.set(value,key);keysBySource.set(key,key);}
+keysBySource.set('Klassen-Admin','class_admin');
+keysBySource.set('Fertig','active');
+keysBySource.set('Sign out','logout');
+keysBySource.set('Change','change');
+
+function safeGet(){try{return localStorage.getItem(STORAGE_KEY)||'';}catch{return'';}}
+function safeSet(v){try{localStorage.setItem(STORAGE_KEY,v);}catch{}}
+function browserLocale(){for(const item of navigator.languages||[navigator.language]){const k=String(item||'').toLowerCase().split('-')[0];if(LOCALES[k])return k;}return'de';}
+function requestedLocale(){const q=new URL(location.href).searchParams.get('lang');const k=String(q||safeGet()||browserLocale()).toLowerCase().split('-')[0];return LOCALES[k]?k:'de';}
+let locale=requestedLocale();
+
+function t(key){return T[locale]?.[key]??source[key]??key;}
+function applyDocumentLocale(){document.documentElement.lang=locale;document.documentElement.dir=RTL.has(locale)?'rtl':'ltr';}
+function translateElement(el){
+  if(!el||el.children.length)return;
+  const raw=(el.dataset?.kpI18nSource||el.textContent||'').trim();if(!raw)return;
+  const key=keysBySource.get(raw);if(!key)return;
+  if(el.dataset)el.dataset.kpI18nSource=source[key]??raw;
+  const value=locale==='de'?(source[key]??raw):t(key);if(value&&el.textContent!==value)el.textContent=value;
 }
+function localize(root=document){
+  if(root.nodeType===1&&root.matches?.('option,td,.pill,strong,.muted,.nav,button,a,h1,h2,h3,label'))translateElement(root);
+  root.querySelectorAll?.('option,td,.pill,strong,.muted,.nav,button,a,h1,h2,h3,label').forEach(translateElement);
+}
+function mountSelector(){
+  if(document.querySelector('#kp-language-select'))return;
+  const wrap=document.createElement('label');wrap.id='kp-language-select';wrap.setAttribute('aria-label',t('language'));wrap.style.cssText='position:fixed;left:12px;bottom:12px;z-index:950;display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid #d7deea;border-radius:10px;background:#fff;box-shadow:0 6px 20px rgba(15,23,42,.12);font:12px/1.2 system-ui;color:#172033';
+  wrap.innerHTML=`<span aria-hidden="true">🌐</span><select style="border:0;background:transparent;font:inherit;color:inherit;max-width:128px" aria-label="${t('language')}">${Object.entries(LOCALES).map(([k,n])=>`<option value="${k}"${k===locale?' selected':''}>${n}</option>`).join('')}</select>`;
+  wrap.querySelector('select').addEventListener('change',e=>setLocale(e.target.value));document.body.append(wrap);
+}
+function setLocale(next){const k=String(next||'').toLowerCase().split('-')[0];if(!LOCALES[k]||k===locale)return;locale=k;safeSet(k);applyDocumentLocale();document.querySelectorAll('[data-kp-i18n-source]').forEach(translateElement);localize(document);document.querySelector('#kp-language-select')?.remove();mountSelector();window.dispatchEvent(new CustomEvent('kp:localechange',{detail:{locale}}));}
 
-new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes)if(n.nodeType===1)localize(n);}).observe(document.documentElement,{subtree:true,childList:true});
-localize();
+applyDocumentLocale();localize();mountSelector();
+new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes){if(n.nodeType===1){localize(n);if(n.id!=='kp-language-select')mountSelector();}}}).observe(document.documentElement,{subtree:true,childList:true});
+window.KP_I18N={get locale(){return locale;},locales:{...LOCALES},t,setLocale,localize};
+
+if(location.pathname.replace(/\/$/,'')==='/kunden-admin')import('/customer-pretest-polish.js?v=20260821-1').catch(()=>{});
