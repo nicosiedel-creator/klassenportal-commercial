@@ -38,13 +38,29 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
       const text=n.textContent||'';
       if(text.trim().startsWith('Fehlt:')){const raw=text.split(':').slice(1).join(':').split(',').map(x=>x.trim()).filter(Boolean),labels=raw.map(humanField);n.innerHTML=`<strong>Noch eine Angabe nötig</strong><div class="eo-os-small">${labels.join(', ')} konnte nicht eindeutig zugeordnet werden. Prüfe die Bezeichnung oder wähle einen passenden Treffer aus.</div>`;n.classList.add('kp-intent-blocked');}
     });
-    result.querySelectorAll('.eo-os-small').forEach(n=>{n.textContent=n.textContent.replace(/resource_id/g,'Raum/Ressource').replace(/teacher_id/g,'Dozent').replace(/course_id/g,'Kurs').replace(/exam_id/g,'Prüfung');});
+    result.querySelectorAll('.eo-os-small').forEach(n=>{
+      const current=n.textContent||'';
+      const next=current.replace(/resource_id/g,'Raum/Ressource').replace(/teacher_id/g,'Dozent').replace(/course_id/g,'Kurs').replace(/exam_id/g,'Prüfung');
+      if(next!==current)n.textContent=next;
+    });
     const simulate=pane.querySelector('[data-simulate]');
     if(simulate&&!pane.querySelector('.kp-intent-human-help')){
       const help=document.createElement('div');help.className='kp-intent-human-help';help.innerHTML='<strong>Was jetzt passiert:</strong> Ich löse Personen, Räume, Kurse und Zeiträume gegen die echten Mandantendaten auf. Danach prüft die Simulation betroffene Termine, Konflikte und sichere Alternativen. Es wird dabei noch nichts produktiv geändert.';simulate.closest('.eo-os-card')?.append(help);
     }
-    if(simulate){simulate.title=simulate.disabled?'Sobald alle Angaben eindeutig aufgelöst sind, kann die Simulation berechnet werden.':'Berechnet Auswirkungen und Alternativen ohne Produktivdaten zu ändern.';}
+    if(simulate){const title=simulate.disabled?'Sobald alle Angaben eindeutig aufgelöst sind, kann die Simulation berechnet werden.':'Berechnet Auswirkungen und Alternativen ohne Produktivdaten zu ändern.';if(simulate.title!==title)simulate.title=title;}
   }
-  let queued=false;new MutationObserver(()=>{if(queued)return;queued=true;queueMicrotask(()=>{queued=false;humanizeIntentPane();});}).observe(document.body,{subtree:true,childList:true,characterData:true});
+
+  const intentSelector='[data-pane-body="intent"]';
+  const touchesIntent=m=>{
+    const target=m.target?.nodeType===1?m.target:m.target?.parentElement;
+    if(target?.closest?.(intentSelector))return true;
+    return [...(m.addedNodes||[])].some(n=>n.nodeType===1&&(n.matches?.(intentSelector)||n.querySelector?.(intentSelector)));
+  };
+  let frame=0;
+  const observerTarget=document.querySelector('#app')||document.body;
+  new MutationObserver(ms=>{
+    if(frame||!ms.some(touchesIntent))return;
+    frame=requestAnimationFrame(()=>{frame=0;humanizeIntentPane();});
+  }).observe(observerTarget,{subtree:true,childList:true,characterData:true});
   humanizeIntentPane();
 }
