@@ -7,6 +7,9 @@ const polish=await readFile('public/customer-pretest-polish.js','utf8');
 const preparation=await readFile('public/setup-preparation-ui.js','utf8');
 const support=await readFile('public/customer-support-mode.js','utf8');
 const enterprise=await readFile('public/customer-enterprise.css','utf8');
+const enterpriseUx=await readFile('public/customer-enterprise-ux.js','utf8');
+const serviceWorker=await readFile('public/service-worker.js','utf8');
+const pwa=await readFile('public/pwa-client.js','utf8');
 const customer=await readFile('public/customer-admin.html','utf8');
 const student=await readFile('public/class-portal.html','utf8');
 const teacher=await readFile('public/dozentenportal.html','utf8');
@@ -52,6 +55,20 @@ assert.match(enterprise,/Final desktop information architecture/,'the last-loade
 assert.match(enterprise,/grid-template-columns:260px minmax\(0,1fr\)!important/,'desktop customer admin must keep a stable left operations rail');
 assert.match(enterprise,/\.customer-portal-admin \.side\{position:static!important/,'final enterprise CSS must neutralize the later sticky top-navigation override');
 assert.match(enterprise,/backdrop-filter:none!important/,'final customer navigation must not spend main-thread/GPU work on a sticky blur layer');
+
+assert.ok(customer.includes('/customer-enterprise.css?v=20260821-2'),'customer enterprise CSS must get a new cache key after the desktop navigation fix');
+assert.ok(customer.includes('/customer-enterprise-ux.js?v=20260821-2'),'customer enterprise UX must get a new cache key after the observer fix');
+assert.ok(customer.includes('/pwa-client.js?v=20260821-2'),'customer admin must bootstrap the deployment-aware PWA client with a fresh cache key');
+assert.match(serviceWorker,/kp-shell-v2-20260821/,'service worker cache version must rotate so stale shell assets are deleted');
+assert.match(serviceWorker,/destination==='script'\|\|destination==='style'/,'scripts and styles must use the deployment-safe network path');
+assert.match(serviceWorker,/cache:'no-cache'/,'deployment-critical scripts and styles must revalidate with the network');
+assert.match(pwa,/updateViaCache:'none'/,'service-worker update checks must bypass stale HTTP cache state');
+assert.match(pwa,/reg\.update\(\)/,'PWA client must actively check for a new service worker');
+assert.match(pwa,/controllerchange/,'a newly activated service worker must refresh the controlled page once');
+assert.match(enterpriseUx,/if\(next!==current\)n\.textContent=next/,'intent humanization must be idempotent and never write unchanged text back into the DOM');
+assert.match(enterpriseUx,/ms\.some\(touchesIntent\)/,'intent observer must ignore unrelated customer-admin DOM mutations');
+assert.match(enterpriseUx,/requestAnimationFrame/,'intent observer work must be frame-coalesced');
+assert.doesNotMatch(enterpriseUx,/n\.textContent=n\.textContent\.replace/,'unconditional intent text rewrites must not return');
 
 assert.match(departmentAdmin,/\/department-lead\.html\?tenant_id=/,'department lead assignment must generate the real portal URL');
 assert.doesNotMatch(departmentAdmin,/\/fachbereichsleitung\.html\?tenant_id=/,'stale department lead portal path must not be emitted');
