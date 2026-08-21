@@ -52,6 +52,12 @@ export async function handleLiveStudyApi(request:Request,env:Env):Promise<Respon
   const u=new URL(request.url);if(!u.pathname.startsWith('/api/live-study/'))return null;
   try{
     await ensureLiveStudySchema(env);
+    if(u.pathname==='/api/live-study/current'&&request.method==='GET'){
+      const now=nowIso();
+      const current=await env.DB.prepare("SELECT * FROM live_study_sessions WHERE expires_at > ? AND status IN ('lobby','quiz') ORDER BY created_at DESC LIMIT 1").bind(now).first<SessionRow>();
+      if(!current)return json({ok:true,ready:false});
+      return json({ok:true,ready:true,session:sessionPublic(current),participantUrl:`${u.origin}/quiz/vfa13/${current.id}`});
+    }
     if(u.pathname==='/api/live-study/sessions'&&request.method==='POST'){
       sameOrigin(request,env);
       const id=randomToken(12),presenterToken=randomToken(32),created=nowIso(),expires=new Date(Date.now()+8*60*60*1000).toISOString(),payload=await body(request),title=String(payload.title||'VFA 13 – Lernabend').slice(0,120);
