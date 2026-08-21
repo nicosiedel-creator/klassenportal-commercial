@@ -6,6 +6,23 @@ import { LIVE_STUDY_QUESTIONS, publicQuestion, questionMap } from './live-study-
 type SessionRow={id:string;presenter_token_hash:string;title:string;status:'learning'|'lobby'|'quiz'|'closed';duration_seconds:number;quiz_started_at:string|null;created_at:string;expires_at:string};
 type ParticipantRow={id:string;session_id:string;participant_token_hash:string;joined_at:string;submitted_at:string|null;score:number|null;total:number|null;topic_scores_json:string|null;wrong_question_ids_json:string|null};
 
+let schemaReady:Promise<void>|null=null;
+async function ensureLiveStudySchema(env:Env):Promise<void>{
+  if(!schemaReady){
+    schemaReady=(async()=>{
+      const statements=[
+        "CREATE TABLE IF NOT EXISTS live_study_sessions (id TEXT PRIMARY KEY,presenter_token_hash TEXT NOT NULL,title TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'learning' CHECK (status IN ('learning','lobby','quiz','closed')),duration_seconds INTEGER NOT NULL DEFAULT 3600,quiz_started_at TEXT,created_at TEXT NOT NULL,expires_at TEXT NOT NULL)",
+        'CREATE INDEX IF NOT EXISTS idx_live_study_sessions_expires ON live_study_sessions(expires_at)',
+        'CREATE TABLE IF NOT EXISTS live_study_participants (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,participant_token_hash TEXT NOT NULL,joined_at TEXT NOT NULL,submitted_at TEXT,score INTEGER,total INTEGER,topic_scores_json TEXT,wrong_question_ids_json TEXT,FOREIGN KEY (session_id) REFERENCES live_study_sessions(id) ON DELETE CASCADE)',
+        'CREATE INDEX IF NOT EXISTS idx_live_study_participants_session ON live_study_participants(session_id)',
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_live_study_participant_token ON live_study_participants(session_id, participant_token_hash)',
+      ];
+      for(const sql of statements)await env.DB.prepare(sql).run();
+    })();
+  }
+  try{await schemaReady;}catch(e){schemaReady=null;throw e;}
+}
+
 function fail(e:unknown):Response{
   const code=String((e as Error)?.message||'LIVE_STUDY_ERROR');
   const status=code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'||code==='PRESENTER_TOKEN_INVALID'||code==='PARTICIPANT_TOKEN_INVALID'||code==='CSRF_ORIGIN_MISMATCH'?403:code.includes('NOT_FOUND')?404:code.includes('EXPIRED')?410:code.includes('ALREADY_SUBMITTED')||code.includes('NOT_OPEN')||code.includes('NOT_STARTED')||code.includes('CLOSED')||code.includes('ENDED')?409:code.includes('INVALID')||code.includes('REQUIRED')?400:500;
@@ -35,6 +52,7 @@ async function presenterStats(env:Env,s:SessionRow){
 export async function handleLiveStudyApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url);if(!u.pathname.startsWith('/api/live-study/'))return null;
   try{
+    await ensureLiveStudySchema(env);
     if(u.pathname==='/api/live-study/sessions'&&request.method==='POST'){
       sameOrigin(request,env);const auth=await resolveCoreAuth(env,request);if(!auth.isPlatformAdmin)throw new Error('PLATFORM_ADMIN_REQUIRED');
       const id=randomToken(12),presenterToken=randomToken(32),created=nowIso(),expires=new Date(Date.now()+8*60*60*1000).toISOString(),payload=await body(request),title=String(payload.title||'VFA 13 – Lernabend').slice(0,120);
