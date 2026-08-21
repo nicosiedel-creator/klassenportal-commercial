@@ -3,7 +3,7 @@
   if(!document.querySelector('link[rel="manifest"]')){const l=document.createElement('link');l.rel='manifest';l.href='/manifest.webmanifest';document.head.append(l);}
   let installEvent=null;
   let controllerReloading=false;
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const b64=s=>{const p='='.repeat((4-s.length%4)%4),raw=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(raw,c=>c.charCodeAt(0));};
   async function me(){try{const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});if(!r.ok)return null;return(await r.json()).user||null}catch{return null}}
   function currentTenant(user){const pick=document.querySelector('#tenantPick');if(pick?.value)return pick.value;const roles=user?.tenantRoles||[],ids=[...new Set(roles.map(x=>x.tenantId).filter(Boolean))];return ids.length===1?ids[0]:null;}
