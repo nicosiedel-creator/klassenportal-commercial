@@ -31,6 +31,8 @@
       "/kunden-admin*",
       "/klassen-admin*",
       "/dozentenportal*",
+      "/lernabend-vfa13*",
+      "/quiz/vfa13/*",
       "/zahlung/*",
       "/passwort-vergessen*",
       "/passwort-zuruecksetzen*",
