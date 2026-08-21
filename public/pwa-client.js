@@ -2,13 +2,24 @@
   if(!('serviceWorker'in navigator)||location.protocol!=='https:')return;
   if(!document.querySelector('link[rel="manifest"]')){const l=document.createElement('link');l.rel='manifest';l.href='/manifest.webmanifest';document.head.append(l);}
   let installEvent=null;
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let controllerReloading=false;
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   const b64=s=>{const p='='.repeat((4-s.length%4)%4),raw=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(raw,c=>c.charCodeAt(0));};
   async function me(){try{const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});if(!r.ok)return null;return(await r.json()).user||null}catch{return null}}
   function currentTenant(user){const pick=document.querySelector('#tenantPick');if(pick?.value)return pick.value;const roles=user?.tenantRoles||[],ids=[...new Set(roles.map(x=>x.tenantId).filter(Boolean))];return ids.length===1?ids[0]:null;}
   function button(id,text){let b=document.querySelector('#'+id);if(b)return b;b=document.createElement('button');b.id=id;b.type='button';b.textContent=text;b.style.cssText='position:fixed;right:18px;bottom:18px;z-index:40;border:1px solid #172033;background:#172033;color:#fff;border-radius:999px;padding:10px 15px;font:600 14px system-ui;box-shadow:0 8px 24px #0002;cursor:pointer';document.body.append(b);return b;}
   async function subscribe(){const user=await me(),tenantId=currentTenant(user);if(!user||!tenantId){alert('Push kann hier erst aktiviert werden, wenn ein eindeutiger Kundenbereich ausgewählt ist.');return;}const reg=await navigator.serviceWorker.ready,cfg=await fetch(`/api/push/config?tenant_id=${encodeURIComponent(tenantId)}`,{credentials:'same-origin',cache:'no-store'}).then(r=>r.json());if(!cfg.enabled||!cfg.public_key){alert('Push ist für diesen Betrieb noch nicht eingerichtet.');return;}const perm=await Notification.requestPermission();if(perm!=='granted')return;let sub=await reg.pushManager.getSubscription();if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(cfg.public_key)});const j=sub.toJSON();const r=await fetch(`/api/push/subscriptions?tenant_id=${encodeURIComponent(tenantId)}`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({endpoint:j.endpoint,p256dh:j.keys?.p256dh,auth:j.keys?.auth,user_agent:navigator.userAgent})});if(!r.ok){let d={};try{d=await r.json()}catch{}throw new Error(d.error||`HTTP_${r.status}`);}const b=document.querySelector('#kp-push');if(b)b.textContent='Benachrichtigungen aktiv';}
-  navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).then(async()=>{const user=await me();if(!user)return;const tenant=currentTenant(user);if(tenant&&'Notification'in window&&Notification.permission!=='denied'){const b=button('kp-push',Notification.permission==='granted'?'Benachrichtigungen aktiv':'Push aktivieren');b.onclick=()=>subscribe().catch(e=>alert(esc(e.message)));}}).catch(()=>{});
+
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(controllerReloading)return;
+    controllerReloading=true;
+    location.reload();
+  });
+
+  navigator.serviceWorker.register('/service-worker.js',{scope:'/',updateViaCache:'none'}).then(async reg=>{
+    void reg.update().catch(()=>{});
+    const user=await me();if(!user)return;const tenant=currentTenant(user);if(tenant&&'Notification'in window&&Notification.permission!=='denied'){const b=button('kp-push',Notification.permission==='granted'?'Benachrichtigungen aktiv':'Push aktivieren');b.onclick=()=>subscribe().catch(e=>alert(esc(e.message)));}
+  }).catch(()=>{});
   addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvent=e;const b=button('kp-install','App installieren');b.style.bottom=document.querySelector('#kp-push')?'64px':'18px';b.onclick=async()=>{if(!installEvent)return;await installEvent.prompt();installEvent=null;b.remove();};});
 })();
 
