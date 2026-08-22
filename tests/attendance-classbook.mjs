@@ -15,6 +15,7 @@ const teacherAssignUi=await readFile('public/teacher-assignment-ui.js','utf8');
 const customerHtml=await readFile('public/customer-admin.html','utf8');
 const classAdminHtml=await readFile('public/class-admin.html','utf8');
 const portalHtml=await readFile('public/class-portal.html','utf8');
+const portalLazy=await readFile('public/portal-lazy-runtime.js','utf8');
 const readiness=await readFile('src/core/launch-readiness.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
 
@@ -61,9 +62,10 @@ assert.doesNotMatch(customerHtml,/attendance-classbook-ui\.js/,'operational atte
 assert.match(customerHtml,/teacher-assignment-ui\.js/,'customer admin must configure teacher portal assignments');
 assert.doesNotMatch(classAdminHtml,/attendance-classbook-ui\.js/,'class admin must never load class attendance/classbook management');
 assert.match(classAdminHtml,/class-admin-entry\.js/,'class admin entry must redirect into student portal');
-assert.match(portalHtml,/portal-attendance-ui\.js/,'student portal must keep own attendance UI');
-assert.match(portalHtml,/class-admin-student-tools\.js/,'class admin extras must live inside the student portal');
+assert.doesNotMatch(portalHtml,/src="\/portal-attendance-ui\.js/,'student attendance UI must not block first paint');
+assert.match(portalLazy,/portal-attendance-ui/,'student portal must retain own attendance UI through the lazy runtime');
+assert.match(portalLazy,/class-admin-student-tools/,'class admin extras must live inside the same lazy student portal');
 assert.match(index,/handleAttendanceApi/);assert.match(index,/runAttendanceAttention/);
 for(const table of ['attendance_sessions','attendance_records','absence_notices','classbook_entries','attendance_policies','attendance_events','teacher_portal_assignments'])assert.ok(readiness.includes(`'${table}'`),`live gate must require ${table}`);
 
-console.log('Class-admin-as-student privacy, dedicated MFA-protected teacher portal, attendance self-service and classbook separation checks: OK');
+console.log('Class-admin-as-student privacy, dedicated MFA-protected teacher portal, lazy attendance self-service and classbook separation checks: OK');
