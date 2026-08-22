@@ -12,6 +12,7 @@ const participantUi=await readFile('public/portal-assignments-ui.js','utf8');
 const dashboard=await readFile('public/student-dashboard-ui.js','utf8');
 const adminUi=await readFile('public/assignment-gradebook-ui.js','utf8');
 const portal=await readFile('public/class-portal.html','utf8');
+const portalLazy=await readFile('public/portal-lazy-runtime.js','utf8');
 const customer=await readFile('public/customer-admin.html','utf8');
 const classAdmin=await readFile('public/class-admin.html','utf8');
 const studentRole=await readFile('src/core/student-role.ts','utf8');
@@ -64,10 +65,10 @@ assert.ok(dashboard.includes('Überfällig'),'open overdue tasks must stay visib
 
 assert.match(adminUi,/Offizielle Bewertungen sind getrennt von privaten Teilnehmernotizen/);
 assert.match(adminUi,/Sofort für diesen Teilnehmer veröffentlichen/);
-assert.match(portal,/portal-assignments-ui\.js/,'student portal must load own assignment/grade UI');
-assert.ok(portal.includes('portal-assignments-ui.js?v=20260819-1'),'student portal must bust old assignment UI cache');
+assert.doesNotMatch(portal,/src="\/portal-assignments-ui\.js/,'student portal must not execute assignment workspace on first paint');
+assert.match(portalLazy,/portal-assignments-ui/,'student portal must retain own assignment/grade UI through the lazy runtime');
 assert.match(customer,/assignment-gradebook-ui\.js/,'customer admin may retain administrative gradebook');
 assert.doesNotMatch(classAdmin,/assignment-gradebook-ui\.js/,'class admin must never load other-student gradebook UI');
 assert.match(classAdmin,/class-admin-entry\.js/,'class admin must enter through the student portal');
 
-console.log('Secure submissions plus personal progress, reading-task completion, private notes, and dashboard integration checks: OK');
+console.log('Secure submissions plus personal progress, reading-task completion, private notes, lazy student runtime, and dashboard integration checks: OK');
