@@ -8,6 +8,7 @@ const watchdog=await readFile('public/portal-load-watchdog.js','utf8');
 const dash=await readFile('public/student-dashboard-v2.js','utf8');
 const css=await readFile('public/student-dashboard-v2.css','utf8');
 const advanced=await readFile('src/core/public-advanced.ts','utf8');
+const brandingSchema=await readFile('src/core/branding-schema.ts','utf8');
 
 assert.ok(html.includes('/portal-load-watchdog.js?v=20260822-student-hotfix-3'),'student portal must have a visible long-load watchdog');
 assert.ok(html.includes('/portal-entry.js?v=20260822-student-hotfix-3'),'student portal must start through its lean entrypoint');
@@ -43,6 +44,9 @@ assert.doesNotMatch(advanced,/ensureCalendarFeedsForTenant/,'public student over
 assert.match(advanced,/feature_key IN \('substitution_updates','surveys','microsoft_365'\)/,'advanced feature flags must be read in one query');
 assert.match(advanced,/Promise\.all\(\[substitutionsPromise,surveysPromise,feedPromise\]\)/,'advanced student data must load in parallel');
 assert.match(advanced,/o\.survey_id IN \(\$\{marks\(ids\.length\)\}\)/,'survey options must be batched instead of queried once per survey');
+assert.match(brandingSchema,/let ensured:Promise<void>\|null=null/,'branding schema readiness must be cached per worker isolate');
+assert.match(brandingSchema,/if\(ensured\)return ensured/,'ready branding schema must not run PRAGMA checks on every portal request');
+assert.match(brandingSchema,/if\(repaired\)await env\.DB\.prepare\(`UPDATE tenant_settings/,'palette normalization must write only when runtime repair was actually necessary');
 
 assert.match(dash,/async function build\(data\)\{[^}]*render\(data\);void enrichAssignments\(data\)/,'weekly dashboard must render before personal assignment enrichment');
 assert.match(dash,/kp:portal-data/,'dashboard must consume the base portal data event rather than refetching the overview');
@@ -56,4 +60,4 @@ assert.match(css,/grid-template-columns:minmax\(0,2\.15fr\) minmax\(300px,.85fr\
 assert.match(css,/@media\(max-width:980px\)/,'dashboard must collapse cleanly for tablets');
 assert.match(css,/@media\(max-width:680px\)/,'dashboard must be mobile responsive');
 
-console.log('Student portal lean bootstrap, observer-free localization, read-only advanced overview, non-blocking load watchdog, event-driven request-storm guard and polished mosaic layout checks: OK');
+console.log('Student portal lean bootstrap, observer-free localization, read-only advanced overview, cached branding schema, non-blocking load watchdog, event-driven request-storm guard and polished mosaic layout checks: OK');
