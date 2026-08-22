@@ -32,11 +32,12 @@ assert.match(source,/value\.pct\*value\.itemWeight/);assert.match(source,/catego
 const ui=await readFile('public/gradebook-policy-ui.js','utf8');for(const code of ['CATEGORY_WEIGHT_TOTAL_EXCEEDED','CATEGORY_WEIGHT_TOTAL_INVALID','CATEGORY_RENAME_NOT_ALLOWED','GRADING_SCALE_OVERLAP','GRADING_SCALE_GAP','GRADING_SCALE_STORED_INVALID'])assert.ok(ui.includes(code));
 assert.ok(ui.includes('6;0;29.99'));assert.ok(ui.includes("replace(',','.')"));assert.match(ui,/form\.dataset\.categoryId/);assert.match(ui,/form\.elements\.name\.readOnly=true/);assert.match(ui,/hydrateCategories/);assert.match(ui,/form\.dataset\.scaleId/);assert.match(ui,/hydrateScale/);assert.match(ui,/event\.stopImmediatePropagation\(\)/);
 const defaultScaleUi=await readFile('public/gradebook-default-scale-ui.js','utf8');assert.ok(defaultScaleUi.includes("const legacy='1;92;100\\n2;81;91.99\\n3;67;80.99'"));assert.ok(defaultScaleUi.includes('6;0;29.99'));assert.match(defaultScaleUi,/normalized\(textarea\.value\)===legacy/);
-const customerHtml=await readFile('public/customer-admin.html','utf8'),classHtml=await readFile('public/class-admin.html','utf8');
-assert.ok(customerHtml.includes('/gradebook-policy-ui.js?v=20260818-2'),'customer admin must load the final gradebook validation UI');
-assert.ok(customerHtml.includes('/gradebook-default-scale-ui.js?v=20260818-1'),'customer admin must upgrade the incomplete legacy scale example');
-assert.ok(customerHtml.includes('/admin-overlay-hardening.css?v=20260818-2'),'customer gradebook integration must preserve hardened admin dialogs');
-assert.ok(customerHtml.includes('/admin-overlay-hardening.js?v=20260818-2'),'customer gradebook integration must preserve the DOM overlay guard');
+const customerHtml=await readFile('public/customer-admin.html','utf8'),customerLazy=await readFile('public/customer-admin-lazy-modules.js','utf8'),classHtml=await readFile('public/class-admin.html','utf8');
+assert.ok(customerLazy.includes("'gradebook-policy-ui'"),'customer learning workspace must lazy-load the final gradebook validation UI');
+assert.ok(customerLazy.includes("'gradebook-default-scale-ui'"),'customer learning workspace must lazy-load the complete default grading scale');
+assert.doesNotMatch(customerHtml,/src="\/gradebook-policy-ui\.js|src="\/gradebook-default-scale-ui\.js/,'gradebook policy modules must not execute on customer-admin first paint');
+assert.ok(customerHtml.includes('/admin-overlay-hardening.css?v=20260822-5'),'customer gradebook integration must preserve hardened admin dialog styles');
+assert.ok(customerHtml.includes('/admin-overlay-hardening.js?v=20260822-5'),'customer gradebook integration must preserve the DOM overlay guard');
 assert.doesNotMatch(classHtml,/gradebook-policy-ui\.js|gradebook-default-scale-ui\.js|admin-overlay-hardening\.js/,'class admin student entry must never load administrative gradebook UI');
 assert.match(classHtml,/class-admin-entry\.js/,'class admin must enter through the student portal');
-console.log('Official gradebook correctness for customer administration and class-admin student privacy checks: OK');
+console.log('Official gradebook correctness for lazy customer administration and class-admin student privacy checks: OK');
