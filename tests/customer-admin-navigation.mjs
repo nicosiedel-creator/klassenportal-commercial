@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 
-const [enterprise,enterpriseUx,planning,ui,i18n,lazy,html,dropdown]=await Promise.all([
+const [enterprise,enterpriseUx,planning,ui,i18n,lazy,html,dropdown,autopilot]=await Promise.all([
   readFile('public/customer-enterprise.css','utf8'),
   readFile('public/customer-enterprise-ux.js','utf8'),
   readFile('public/planning-resource-ui.js','utf8'),
@@ -9,7 +9,8 @@ const [enterprise,enterpriseUx,planning,ui,i18n,lazy,html,dropdown]=await Promis
   readFile('public/customer-admin-i18n.js','utf8'),
   readFile('public/customer-admin-lazy-modules.js','utf8'),
   readFile('public/customer-admin.html','utf8'),
-  readFile('public/customer-nav-dropdown.js','utf8')
+  readFile('public/customer-nav-dropdown.js','utf8'),
+  readFile('public/customer-autopilot-entry.js','utf8')
 ]);
 
 for(const label of ['Übersicht','Klassen/Kurse','Benutzer & Rollen','Teilnehmer importieren','Inhalte','Prüfungen','Module','Paket & Abrechnung'])assert.ok(ui.includes(`'${label}'`),`primary customer navigation missing ${label}`);
@@ -53,23 +54,33 @@ assert.match(planning,/name="teacher_id" required>\$\{options\(teachers\)\}/,'te
 assert.match(planning,/name="course_id" required>\$\{options\(courses\)\}/,'planning must use real course selectors rather than raw ids');
 assert.doesNotMatch(planning,/Dozenten-ID|Kurs-ID|teacher-001|room-101/,'planning UI must not expose internal-id examples or raw-id labels');
 
-assert.match(html,/customer-enterprise\.css\?v=20260822-5/,'final enterprise CSS must be the customer shell stylesheet');
+assert.match(html,/customer-enterprise\.css\?v=20260822-[56]/,'final enterprise CSS must be the customer shell stylesheet');
 assert.doesNotMatch(html,/customer-compact\.css|customer-dashboard-refresh\.css|role-dashboard(?:-polish)?\.css/,'legacy customer layout layers must not be loaded');
 assert.match(html,/customer-admin-ui\.js\?v=20260822-5/,'active customer navigation must be versioned');
-assert.match(html,/customer-admin-lazy-modules\.js\?v=20260822-5/,'lazy module controller must be versioned');
+assert.match(html,/customer-admin-lazy-modules\.js\?v=20260822-6/,'lazy module controller must use the performance release version');
+assert.match(html,/customer-autopilot-entry\.js\?v=20260822-1/,'customer admin must mount the direct Autopilot entry at first paint');
 assert.match(html,/customer-admin-i18n\.js\?v=20260822-1/,'customer admin must load its authoritative language pack');
 assert.doesNotMatch(html,/customer-admin-nav-labels\.js/,'legacy German-only navigation relabeler must not overwrite selected locale');
 assert.doesNotMatch(html,/src="\/customer-moat-ui\.js/,'work assistant implementation must not execute at first paint');
-assert.doesNotMatch(html,/src="\/customer-enterprise-ux\.js/,'Education OS UX must not execute before automation is opened');
+assert.doesNotMatch(html,/src="\/education-os-ui\.js/,'Autopilot implementation must stay lazy despite its prominent entry');
+assert.doesNotMatch(html,/src="\/customer-enterprise-ux\.js/,'Education OS UX must not execute before Autopilot/automation is opened');
 assert.doesNotMatch(html,/src="\/enterprise-admin-ui\.js/,'organization modules must not execute at first paint');
+assert.match(lazy,/autopilot:\['education-os-ui','customer-enterprise-ux'\]/,'Autopilot must have a dedicated two-module fast path');
+assert.match(lazy,/importObserverSafe/,'legacy Education OS global observer must be suppressed during lazy import');
+assert.match(lazy,/group==='autopilot'\?1:2/,'Autopilot imports must be serialized so observer suppression cannot affect sibling modules');
 assert.match(lazy,/customer-moat-ui/,'work assistant remains available on demand');
 assert.match(html,/customer-enterprise-ux/,'Education OS UX must remain represented in the audited inert manifest');
-assert.match(lazy,/Array\.from\(\{length:2\}/,'module imports must use bounded concurrency');
 assert.match(lazy,/groupPromises=new Map/,'concurrent group requests must be deduplicated');
 assert.doesNotMatch(lazy,/role-dashboard(?:-polish)?\.css/,'lazy features must not reintroduce role CSS into customer admin');
+
+assert.match(autopilot,/kp-autopilot-primary/,'Autopilot must be a prominent first-level navigation action');
+assert.match(autopilot,/kp-autopilot-header/,'Autopilot must also be directly reachable from the customer page header');
+assert.match(autopilot,/loadGroup\?\.\('autopilot'\)/,'one click must load only the dedicated Autopilot fast path');
+assert.match(autopilot,/\.eo-os-nav \[data-pane="intent"\]/,'direct entry must land immediately in the Autopilot intent pane');
+assert.doesNotMatch(autopilot,/MutationObserver/,'prominent Autopilot entry must be event-driven');
 
 assert.match(dropdown,/closest\('#kp-customer-more-toggle'\)/,'dropdown toggle click must not close itself');
 assert.match(dropdown,/Escape/,'customer dropdown must close with Escape');
 assert.doesNotMatch(dropdown,/MutationObserver/,'navigation dropdown must be event-driven, not mutation-driven');
 
-console.log('Customer admin final left-rail navigation, 13-language shell, lazy loading, planning and intent UX checks: OK');
+console.log('Customer admin left rail, one-click Autopilot, 13-language shell, lazy loading, planning and intent UX checks: OK');
