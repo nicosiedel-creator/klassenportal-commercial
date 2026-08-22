@@ -1,19 +1,16 @@
 const CUSTOMER_PATH=location.pathname.replace(/\/$/,'')==='/kunden-admin';
 if(CUSTOMER_PATH){
-  const V='20260822-5';
+  const V='20260822-6';
   const asset=name=>`/${name}.js?v=${V}`;
   const GROUPS={
+    autopilot:['education-os-ui','customer-enterprise-ux'].map(asset),
     learning:['communication-admin-ui','teacher-message-admin-ui','teacher-assignment-ui','assignment-gradebook-ui','learning-report-collab-admin-ui','gradebook-policy-ui','gradebook-default-scale-ui','participant-360-ui','materials-admin-ui','certificate-workflow-ui','exam-documentation-admin-ui','department-lead-admin-ui','education-signature-compose-ui'].map(asset),
     organization:['branding-assistant','timetable-assistant','timetable-bulk-v3','enterprise-admin-ui','responsibility-ui','participant-import-ui','organization-import-ui','intake-center-ui','intake-quick-upload-ui','planning-resource-ui','operational-crud-ui'].map(asset),
     automation:['customer-moat-ui','education-operations-admin-ui','education-operations-extended-ui','education-os-ui','education-os-readiness-ui','education-os-innovation-ui','module-catalog-ui','module-cancellation-ui','customer-enterprise-ux'].map(asset),
     technology:['teams-management-ui','custom-domain-ui','advanced-module-ui'].map(asset),
     commerce:['class-role-ui','commerce-safe-ui','billing-addons-ui','area-mode','stripe-customer-portal-ui','class-portal-admin-ui','legal-footer-ui'].map(asset)
   };
-  // role-dashboard*.css contains portal/student/teacher shell rules and must never be
-  // loaded into the customer-admin document: its legacy customer selectors can turn
-  // the desktop left rail back into a sticky horizontal strip. Customer modules use
-  // the customer enterprise shell; only feature-specific CSS is lazy-loaded here.
-  const CSS_GROUPS={automation:[`/education-os.css?v=${V}`]};
+  const CSS_GROUPS={autopilot:[`/education-os.css?v=${V}`],automation:[`/education-os.css?v=${V}`]};
   const loaded=new Set(),loading=new Map(),groupPromises=new Map(),styles=new Set();
   const state={groups:{},errors:[]};
   const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -28,7 +25,7 @@ if(CUSTOMER_PATH){
     if(state.groups[group]==='ready')return Promise.resolve(true);
     if(groupPromises.has(group))return groupPromises.get(group);
     const modules=GROUPS[group];if(!modules)return Promise.resolve(false);
-    const promise=(async()=>{state.groups[group]='loading';showStatus('Bereich wird geladen …');await Promise.all((CSS_GROUPS[group]||[]).map(ensureStyle));const queue=[...modules];let failures=0;const workers=Array.from({length:2},async()=>{while(queue.length){const src=queue.shift();if(!src)return;try{await loadOne(src);}catch{failures++;}await pause();}});await Promise.all(workers);state.groups[group]=failures?'partial':'ready';window.dispatchEvent(new CustomEvent('kp:customer-modules-group-ready',{detail:{group,failures}}));if(failures)showStatus(`${failures} Teilmodul(e) konnten nicht geladen werden. Erneutes Öffnen versucht nur die fehlenden Module.`,'warn');else showStatus('Bereich geladen.');return failures===0;})().finally(()=>groupPromises.delete(group));
+    const promise=(async()=>{state.groups[group]='loading';showStatus(group==='autopilot'?'Autopilot wird geladen …':'Bereich wird geladen …');await Promise.all((CSS_GROUPS[group]||[]).map(ensureStyle));const queue=[...modules];let failures=0;const workers=Array.from({length:group==='autopilot'?2:2},async()=>{while(queue.length){const src=queue.shift();if(!src)return;try{await loadOne(src);}catch{failures++;}await pause();}});await Promise.all(workers);state.groups[group]=failures?'partial':'ready';window.dispatchEvent(new CustomEvent('kp:customer-modules-group-ready',{detail:{group,failures}}));if(failures)showStatus(`${failures} Teilmodul(e) konnten nicht geladen werden. Erneutes Öffnen versucht nur die fehlenden Module.`,'warn');else showStatus(group==='autopilot'?'Autopilot bereit.':'Bereich geladen.');return failures===0;})().finally(()=>groupPromises.delete(group));
     groupPromises.set(group,promise);return promise;
   }
   window.KPCustomerModules={loadGroup,isLoaded:group=>state.groups[group]==='ready',state};
