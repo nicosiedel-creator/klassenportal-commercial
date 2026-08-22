@@ -42,8 +42,8 @@ assert.match(css,/#kalender\{grid-column:span 2/,'student calendar must get more
 assert.match(teacherHtml,/teacher-lazy-modules\.js\?v=20260822-1/,'teacher portal must load its bounded lazy controller');
 assert.ok(teacherLazy.includes("'teacher-workspace-ui'"),'teacher dashboard must load workspace UI on demand');
 assert.doesNotMatch(teacherHtml,/src="\/teacher-workspace-ui\.js/,'teacher workspace must not execute on first paint');
-assert.match(teacherHtml,/integrated-workspace\.css\?v=20260819-1/,'teacher portal must load workspace styles');
-assert.match(classHtml,/integrated-workspace\.css\?v=20260819-1/,'student portal must load layout correction');
+assert.match(teacherHtml,/integrated-workspace\.css(?:\?[^"']*)?/,'teacher portal must load workspace styles');
+assert.match(classHtml,/integrated-workspace\.css(?:\?[^"']*)?/,'student portal must load layout correction regardless of cache-bust version');
 assert.match(adminUi,/Schulleitung, Sekretariat und Verwaltung → Dozentenportal/,'customer admin must manage internal teacher messages');
 assert.match(seed,/lesson_hub_details/,'demo seed must make lesson hub visibly testable');
 assert.match(seed,/teacher_messages/,'demo seed must provide teacher messages');

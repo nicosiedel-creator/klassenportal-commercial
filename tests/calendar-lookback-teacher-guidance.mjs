@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 const publicApi=await readFile('src/core/public.ts','utf8');
 const calendar=await readFile('public/portal-calendar-lookback.js','utf8');
 const classPortal=await readFile('public/class-portal.html','utf8');
+const portalLazy=await readFile('public/portal-lazy-runtime.js','utf8');
 const classPortalJs=await readFile('public/class-portal.js','utf8');
 const teacherGuidance=await readFile('public/teacher-assignment-guidance.js','utf8');
 const teacherPortal=await readFile('public/dozentenportal.html','utf8');
@@ -21,7 +22,8 @@ assert.match(calendar,/window\.__KP_PORTAL_DATA/,'calendar must consume the shar
 assert.match(calendar,/kp:portal-data/,'calendar must follow deterministic portal-data updates');
 assert.doesNotMatch(calendar,/\/public\/.*\/overview/,'calendar must not issue its own duplicate overview request');
 assert.ok(calendar.includes("isPast?'Vergangen':event.kind"),'past calendar entries must be visually distinguishable');
-assert.ok(classPortal.includes('/portal-calendar-lookback.js?v=20260819-1'),'class portal must load the retrospective calendar module');
+assert.doesNotMatch(classPortal,/src="\/portal-calendar-lookback\.js/,'retrospective calendar must not block first paint');
+assert.match(portalLazy,/portal-calendar-lookback/,'class portal must retain the retrospective calendar through the lazy runtime');
 
 assert.ok(teacherGuidance.includes('Dozent/in + Portal-Benutzerkonto + Klasse/Kurs'),'empty teacher portal must explain the complete assignment triple');
 assert.ok(teacherGuidance.includes('Schüler oder Klassenadmin'),'teacher portal must explain the same-course role conflict');
@@ -31,4 +33,4 @@ assert.ok(teacherLazy.includes("'teacher-assignment-guidance'"),'teacher portal 
 assert.doesNotMatch(teacherPortal,/src="\/teacher-assignment-guidance\.js/,'assignment guidance must not execute on first paint');
 assert.ok(teacherCore.includes("throw new Error('TEACHER_STUDENT_ROLE_CONFLICT')"),'same-course student/teacher privacy barrier must remain server-side');
 
-console.log('Four-week calendar retrospective, shared portal data and lazy teacher assignment guidance checks: OK');
+console.log('Four-week calendar retrospective, shared portal data, lazy student calendar and lazy teacher assignment guidance checks: OK');

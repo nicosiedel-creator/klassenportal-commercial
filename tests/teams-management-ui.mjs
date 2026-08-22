@@ -7,6 +7,7 @@ const customerLazy=fs.readFileSync(new URL('../public/customer-admin-lazy-module
 const teacher=fs.readFileSync(new URL('../public/dozentenportal.html',import.meta.url),'utf8');
 const teacherLazy=fs.readFileSync(new URL('../public/teacher-lazy-modules.js',import.meta.url),'utf8');
 const participant=fs.readFileSync(new URL('../public/class-portal.html',import.meta.url),'utf8');
+const participantLazy=fs.readFileSync(new URL('../public/portal-lazy-runtime.js',import.meta.url),'utf8');
 const graph=fs.readFileSync(new URL('../src/core/microsoft-graph.ts',import.meta.url),'utf8');
 
 assert.match(customer,/kp-lazy-module-manifest/,'Kunden-Admin muss einen prüfbaren Lazy-Modul-Manifest besitzen');
@@ -15,7 +16,9 @@ assert.doesNotMatch(customer,/src="\/teams-management-ui\.js/,'Teams-Verwaltung 
 assert.match(teacher,/teacher-lazy-modules\.js/,'Dozentenportal muss den Lazy-Modul-Controller laden');
 assert.match(teacherLazy,/teams-management-ui/,'Dozentenportal muss Teams-Verwaltung bei Bedarf laden können');
 assert.doesNotMatch(teacher,/src="\/teams-management-ui\.js/,'Teams-Verwaltung darf den Dozentenportal-Start nicht mehr blockieren');
-assert.match(participant,/portal-teams-ui\.js/,'Teilnehmerportal muss den Beitreten-Link laden');
+assert.match(participant,/portal-lazy-runtime\.js/,'Teilnehmerportal muss den schlanken Lazy-Runtime-Controller laden');
+assert.match(participantLazy,/portal-teams-ui/,'Teilnehmerportal muss den Teams-Beitreten-Link über die Lazy-Runtime bereitstellen');
+assert.doesNotMatch(participant,/src="\/portal-teams-ui\.js/,'Teams-Beitreten darf den Teilnehmerportal-Start nicht blockieren');
 assert.match(ui,/\/api\/integrations\/microsoft\/lessons/,'UI muss ausschließlich die Microsoft-Integrationsrouten verwenden');
 assert.match(ui,/method:'POST'/,'Create/Sync muss verfügbar sein');
 assert.match(ui,/method:'PUT'/,'sicherer manueller Teams-Link muss verfügbar sein');
