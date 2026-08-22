@@ -138,7 +138,7 @@ if(CUSTOMER_ADMIN_PATH){
   function schedule(reason='render'){if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;apply(reason);});}
 
   await loadMe();
-  new MutationObserver(()=>schedule('render')).observe(appRoot,{childList:true});
+  window.addEventListener('kp:app-rendered',event=>schedule(event.detail?.view?`app:${event.detail.view}`:'app'));
   document.addEventListener('change',e=>{if(e.target?.id==='tenantPick'){document.querySelector('#kp-setup-progress')?.remove();document.querySelector('#kp-setup-preparation')?.remove();document.querySelector('#kp-operations-hub')?.remove();document.querySelector('#kp-setup-progress-error')?.remove();setupLoadingTenant='';schedule('tenant');}});
   document.addEventListener('click',e=>{
     const lazy=e.target?.closest?.('[data-kp-load-group]');if(lazy){e.preventDefault();const group=lazy.dataset.kpLoadGroup;lazy.disabled=true;const original=lazy.innerHTML;lazy.textContent='Wird geladen …';Promise.resolve(window.KPCustomerModules?.loadGroup(group)).finally(()=>{lazy.disabled=false;lazy.innerHTML=original;schedule('modules');});return;}
