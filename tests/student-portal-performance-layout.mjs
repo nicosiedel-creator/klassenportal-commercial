@@ -9,9 +9,9 @@ const dash=await readFile('public/student-dashboard-v2.js','utf8');
 const css=await readFile('public/student-dashboard-v2.css','utf8');
 const advanced=await readFile('src/core/public-advanced.ts','utf8');
 
-assert.ok(html.includes('/portal-load-watchdog.js?v=20260822-student-hotfix-2'),'student portal must have a visible long-load watchdog');
-assert.ok(html.includes('/portal-entry.js?v=20260822-student-hotfix-2'),'student portal must start through its lean entrypoint');
-assert.ok(html.includes('/portal-lazy-runtime.js?v=20260822-student-hotfix-2'),'student portal must defer secondary features to the lazy runtime');
+assert.ok(html.includes('/portal-load-watchdog.js?v=20260822-student-hotfix-3'),'student portal must have a visible long-load watchdog');
+assert.ok(html.includes('/portal-entry.js?v=20260822-student-hotfix-3'),'student portal must start through its lean entrypoint');
+assert.ok(html.includes('/portal-lazy-runtime.js?v=20260822-student-hotfix-3'),'student portal must defer secondary features to the lazy runtime');
 assert.ok(!html.includes('/portal-performance.js'),'student portal must not monkey-patch fetch or prewarm overview requests during parsing');
 assert.ok(!html.includes('src="/class-portal.js'),'base class portal must be launched asynchronously by the lean entrypoint');
 for(const heavy of ['student-dashboard-v2.js','portal-assignments-ui.js','portal-teams-ui.js','portal-report-book-ui.js','participant-moat-ui.js','pwa-client.js'])assert.ok(!html.includes(`src="/${heavy}`),`heavy student module must stay out of first paint: ${heavy}`);
@@ -29,6 +29,8 @@ assert.match(lazy,/finally\{window\.MutationObserver=Native;\}/,'native Mutation
 assert.match(lazy,/kp:portal-data/,'student portal translations must be refreshed from explicit portal events');
 assert.ok(!lazy.includes("'owner-route-privacy'"),'student runtime must not reintroduce the global owner-route subtree observer');
 assert.ok(!lazy.includes("'participant-moat-ui'"),'participant moat must not be imported twice with different cache-busting URLs');
+assert.match(lazy,/loadList\(GATE_SUPPORT,2\)/,'login support must load independently of the dashboard');
+assert.match(lazy,/if\(!window\.__KP_PORTAL_DATA\)return;/,'dashboard and heavy features must stay unloaded while only the login/access gate is visible');
 assert.match(lazy,/loadList\(HIGH,2\)/,'high-priority portal enhancements must use bounded parallelism');
 assert.match(lazy,/loadList\(FEATURES,3\)/,'secondary portal features must use bounded parallelism');
 assert.match(lazy,/requestIdleCallback/,'secondary features must wait for idle time after the base portal is visible');
