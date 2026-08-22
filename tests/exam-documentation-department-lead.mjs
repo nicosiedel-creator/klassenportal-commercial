@@ -11,6 +11,7 @@ const adminUi=await readFile('public/exam-documentation-admin-ui.js','utf8');
 const leadAdmin=await readFile('public/department-lead-admin-ui.js','utf8');
 const leadUi=await readFile('public/department-lead.js','utf8');
 const teacherHtml=await readFile('public/dozentenportal.html','utf8');
+const teacherLazy=await readFile('public/teacher-lazy-modules.js','utf8');
 const customerHtml=await readFile('public/customer-admin.html','utf8');
 const customerLazy=await readFile('public/customer-admin-lazy-modules.js','utf8');
 
@@ -63,7 +64,9 @@ assert.match(leadUi,/Korrektur anfordern/,'Fachbereich needs a review/correction
 assert.match(leadUi,/Unterrichtsnachweis/,'Fachbereich needs authority-ready topic exports');
 assert.match(leadUi,/Individuelle Schülernoten, Anwesenheiten und Fehlzeiten sind nicht Bestandteil/,'Fachbereich portal must state its privacy boundary');
 
-assert.match(teacherHtml,/teacher-classbook-export-ui\.js\?v=20260819-1/,'teacher portal must load classbook export UI');
+assert.match(teacherHtml,/teacher-lazy-modules\.js\?v=20260822-1/,'teacher portal must load its bounded module controller');
+assert.ok(teacherLazy.includes("'teacher-classbook-export-ui'"),'teacher classbook evidence export must remain available on demand');
+assert.doesNotMatch(teacherHtml,/src="\/teacher-classbook-export-ui\.js/,'teacher evidence export must not execute on first paint');
 assert.match(customerHtml,/kp-lazy-module-manifest/,'customer admin must expose an auditable lazy-module manifest');
 assert.match(customerLazy,/exam-documentation-admin-ui/,'customer admin must make exam documentation management available on demand');
 assert.match(customerLazy,/department-lead-admin-ui/,'customer admin must make Fachbereich assignment management available on demand');
