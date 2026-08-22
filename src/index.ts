@@ -61,7 +61,7 @@ function productionLockedResponse(path:string,reason:string|null):Response{const
 
 async function routeRequest(request:Request,env:Env):Promise<Response>{
   const url=new URL(request.url),clean=url.pathname.replace(/\/$/,'');
-  const release=await productionReleaseAccess(env,request);if(release.production&&!release.allowed&&!await releaseGateAllowsLockedRequest(url.pathname,request,env))return productionLockedResponse(url.pathname,release.reason);
+  if(!releaseGateBypass(url.pathname)){const release=await productionReleaseAccess(env,request);if(release.production&&!release.allowed&&!await releaseGateAllowsLockedRequest(url.pathname,request,env))return productionLockedResponse(url.pathname,release.reason);}
   const supportBlock=await blockPlatformSupportWrite(request,env);if(supportBlock)return supportBlock;
 
   const intakePublic=await handlePublicIntakeRoute(request,env);if(intakePublic)return intakePublic;
@@ -82,7 +82,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
 
   const classMeta=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/meta$/);if(classMeta){if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});try{return jsonOk(await publicPortalMetadata(env,decodeURIComponent(classMeta[1]),decodeURIComponent(classMeta[2])));}catch(e){return publicError(e);}}
   const classMaterial=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/materials\/([^/]+)$/);if(classMaterial){if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});try{return await publicMaterialDownload(env,decodeURIComponent(classMaterial[1]),decodeURIComponent(classMaterial[2]),decodeURIComponent(classMaterial[3]),await getSession(env,request),request.headers.get('X-Klassenportal-Access-Code')||undefined);}catch(e){return publicError(e);}}
-  const classOverview=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);if(classOverview){if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});try{const tenantSlug=decodeURIComponent(classOverview[1]),courseCode=decodeURIComponent(classOverview[2]),session=await getSession(env,request),accessCode=request.headers.get('X-Klassenportal-Access-Code')||url.searchParams.get('access_code')||undefined,base=await publicOverview(env,tenantSlug,courseCode,session,accessCode),advanced=await publicAdvancedBySlug(env,tenantSlug,courseCode,session,env.APP_ORIGIN||url.origin);return jsonOk({...base,...advanced});}catch(e){return publicError(e);}}
+  const classOverview=url.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);if(classOverview){if(request.method!=='GET')return new Response('Methode nicht erlaubt',{status:405});try{const tenantSlug=decodeURIComponent(classOverview[1]),courseCode=decodeURIComponent(classOverview[2]),session=await getSession(env,request),accessCode=request.headers.get('X-Klassenportal-Access-Code')||url.searchParams.get('access_code')||undefined,[base,advanced]=await Promise.all([publicOverview(env,tenantSlug,courseCode,session,accessCode),publicAdvancedBySlug(env,tenantSlug,courseCode,session,env.APP_ORIGIN||url.origin)]);return jsonOk({...base,...advanced});}catch(e){return publicError(e);}}
 
   const liveStudy=await handleLiveStudyApi(request,env);if(liveStudy)return liveStudy;
   const microsoftGraph=await handleMicrosoftGraphApi(request,env);if(microsoftGraph)return microsoftGraph;
