@@ -71,8 +71,9 @@ assert.doesNotMatch(enterpriseUx,/observe\(document\.(?:body|documentElement)/,'
 assert.match(enterpriseUx,/requestAnimationFrame/,'intent rendering must be frame-coalesced');
 assert.doesNotMatch(enterpriseUx,/n\.textContent=n\.textContent\.replace/,'unconditional intent text rewrites must not return');
 
-// Work assistant is human-readable and support-safe.
-assert.match(moat,/Education & Training OS · Arbeitsassistent/,'assistant must use final product name');
+// Work assistant is human-readable, localizable and support-safe.
+assert.match(moat,/Education & Training OS/,'assistant must retain the Education OS product identity');
+assert.match(moat,/t\('assistant','Arbeitsassistent'\)/,'assistant title must use the shared localization layer with the final German fallback');
 assert.match(moat,/supportPlatformAdmin/,'assistant must recognize platform support projection');
 assert.match(moat,/Plattform-Supportansicht · nur lesend/,'support assistant must be read-only');
 assert.doesNotMatch(moat,/JSON\.stringify\(s\.integrations,null,2\)/,'integrations must not be dumped as raw JSON');
@@ -92,7 +93,8 @@ assert.match(router,/return json\(\{ok:false,error:'NOT_FOUND'\},404\)/,'unknown
 
 // Resource CRUD and natural-language planning contract.
 for(const subtype of ['teaching_room','computer_room','exam_room','meeting_room','workshop','lab','event_space','office','storage','outdoor','other'])assert.ok(migration.includes(`'${subtype}'`),`missing planning resource subtype ${subtype}`);
-for(const label of ['Unterrichtsraum','EDV-/PC-Raum','Prüfungsraum','Besprechungsraum','Praxisraum/Werkstatt','Labor','Veranstaltungsraum','Büro','Lager','Außenfläche','Sonstiges'])assert.ok(planningUi.includes(label),`missing controlled resource label ${label}`);
+for(const label of ['Unterrichtsraum','EDV-/PC-Raum','Prüfungsraum','Besprechungsraum','Labor','Veranstaltungsraum','Büro','Lager','Außenfläche','Sonstiges'])assert.ok(planningUi.includes(label),`missing controlled resource label ${label}`);
+assert.match(planningUi,/Praxisraum\s*\/\s*Werkstatt/,'controlled workshop resource label must remain human-readable');
 assert.match(intent,/bis\\s\+\(\?<end>/,'education intent must parse German date ranges ending with bis');
 assert.match(intent,/resource_label|teacher_label|course_label/,'resolved intent entities must expose human-readable labels');
 
