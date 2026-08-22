@@ -44,13 +44,15 @@ assert.match(planning,/data-resource-edit/,'resources must be editable');
 assert.match(planning,/data-resource-deactivate/,'resources must be deactivatable');
 assert.match(planning,/data-resource-block/,'resources must support unavailability blocks');
 
-assert.match(html,/customer-enterprise\.css\?v=20260822-4/,'final enterprise CSS must be the customer shell stylesheet');
+assert.match(html,/customer-enterprise\.css\?v=20260822-5/,'final enterprise CSS must be the customer shell stylesheet');
 assert.doesNotMatch(html,/customer-compact\.css|customer-dashboard-refresh\.css|role-dashboard(?:-polish)?\.css/,'legacy customer layout layers must not be loaded');
-assert.match(html,/customer-admin-ui\.js\?v=20260822-4/,'active customer navigation must be versioned');
-assert.match(html,/customer-admin-lazy-modules\.js\?v=20260822-4/,'lazy module controller must be versioned');
+assert.match(html,/customer-admin-ui\.js\?v=20260822-5/,'active customer navigation must be versioned');
+assert.match(html,/customer-admin-lazy-modules\.js\?v=20260822-5/,'lazy module controller must be versioned');
 assert.doesNotMatch(html,/src="\/customer-moat-ui\.js/,'work assistant implementation must not execute at first paint');
+assert.doesNotMatch(html,/src="\/customer-enterprise-ux\.js/,'Education OS UX must not execute before automation is opened');
 assert.doesNotMatch(html,/src="\/enterprise-admin-ui\.js/,'organization modules must not execute at first paint');
 assert.match(lazy,/customer-moat-ui/,'work assistant remains available on demand');
+assert.match(lazy,/customer-enterprise-ux/,'Education OS UX must load together with automation workspace');
 assert.match(lazy,/Array\.from\(\{length:2\}/,'module imports must use bounded concurrency');
 assert.match(lazy,/groupPromises=new Map/,'concurrent group requests must be deduplicated');
 assert.doesNotMatch(lazy,/role-dashboard(?:-polish)?\.css/,'lazy features must not reintroduce role CSS into customer admin');
