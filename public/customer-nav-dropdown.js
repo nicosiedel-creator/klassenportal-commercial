@@ -21,22 +21,6 @@ if(CUSTOMER_NAV_DROPDOWN_PATH){
     if(target.closest('#kp-customer-nav-more-panel .nav')||!target.closest('#kp-customer-nav-more-panel'))closePanel();
   });
 
-  document.addEventListener('keydown',event=>{
-    if(event.key==='Escape')closePanel();
-  });
-
-  let queued=false;
-  const keepCollapsedAfterNavigation=()=>{
-    if(queued)return;
-    queued=true;
-    queueMicrotask(()=>{
-      queued=false;
-      const panel=document.querySelector('#kp-customer-nav-more-panel');
-      const toggle=document.querySelector('#kp-customer-more-toggle');
-      if(!panel||!toggle)return;
-      clearRememberedState();
-      if(document.activeElement!==toggle){panel.hidden=true;toggle.setAttribute('aria-expanded','false');}
-    });
-  };
-  new MutationObserver(keepCollapsedAfterNavigation).observe(document.querySelector('#app')||document.body,{subtree:true,childList:true});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape')closePanel();});
+  window.addEventListener('kp:customer-view-changed',event=>{if(event.detail?.reason==='modules')return;closePanel();});
 }
