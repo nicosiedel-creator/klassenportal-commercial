@@ -1,25 +1,32 @@
 import type { Env, SessionUser } from './types.js';
+import { verifyPassword } from './auth.js';
 
 const EMPTY={surveys:[] as Record<string,unknown>[],substitutions:[] as Record<string,unknown>[],microsoft365FeedUrl:null as string|null};
 
-function canPersonalize(session:SessionUser|null,tenantId:string,courseId:string):boolean{
-  if(!session)return false;
-  if(session.isPlatformAdmin)return true;
-  return session.tenantRoles.some(x=>x.tenantId===tenantId&&(x.courseId===null||x.courseId===courseId));
+function portalRole(session:SessionUser|null,tenantId:string,courseId:string):string|null{
+  if(!session||session.mustChangePassword)return null;
+  if(session.isPlatformAdmin)return 'platform_admin';
+  const rank:Record<string,number>={tenant_admin:4,class_admin:3,participant:2,guest:1};
+  return [...session.tenantRoles.filter(x=>x.tenantId===tenantId&&(x.courseId===null||x.courseId===courseId))].sort((a,b)=>(rank[b.role]||0)-(rank[a.role]||0))[0]?.role||null;
 }
+function canPersonalize(session:SessionUser|null,tenantId:string,courseId:string):boolean{return!!portalRole(session,tenantId,courseId);}
 function marks(n:number){return Array.from({length:n},()=>'?').join(',');}
 async function safe<T>(label:string,fn:()=>Promise<T>,fallback:T):Promise<T>{
   try{return await fn();}
   catch(error){console.error('Participant advanced overview optional query failed',{label,error:String((error as Error)?.message||error)});return fallback;}
 }
 
-export async function publicAdvancedBySlug(env:Env,tenantSlug:string,courseCode:string,session:SessionUser|null,origin:string){
-  const row=await env.DB.prepare(`SELECT c.id AS course_id,c.tenant_id FROM courses c JOIN tenants t ON t.id=c.tenant_id WHERE t.slug=? AND c.code=? AND t.status='active' AND c.is_active=1`).bind(tenantSlug,courseCode).first<{course_id:string;tenant_id:string}>();
-  if(!row)return{...EMPTY,surveys:[],substitutions:[]};
-  const tenantId=row.tenant_id,courseId=row.course_id;
+export async function publicAdvancedBySlug(env:Env,tenantSlug:string,courseCode:string,session:SessionUser|null,origin:string,accessCode?:string){
+  const row=await env.DB.prepare(`SELECT c.id AS course_id,c.tenant_id,c.access_mode,c.access_code_hash FROM courses c JOIN tenants t ON t.id=c.tenant_id WHERE t.slug=? AND c.code=? AND t.status='active' AND c.is_active=1`).bind(tenantSlug,courseCode).first<{course_id:string;tenant_id:string;access_mode:string;access_code_hash:string|null}>();
+  if(!row)throw new Error('COURSE_NOT_FOUND');
+  const tenantId=row.tenant_id,courseId=row.course_id,role=portalRole(session,tenantId,courseId),hasLogin=!!role,adminPreview=['platform_admin','tenant_admin','class_admin'].includes(String(role||'')),codeOk=!!accessCode&&!!row.access_code_hash&&await verifyPassword(accessCode,row.access_code_hash);
+  if(row.access_mode==='login'&&!hasLogin)throw new Error('LOGIN_REQUIRED');
+  if(row.access_mode==='link_code'&&!codeOk&&!adminPreview)throw new Error('ACCESS_CODE_REQUIRED');
+  if(row.access_mode==='hybrid'&&!hasLogin&&!codeOk)throw new Error('LOGIN_OR_CODE_REQUIRED');
 
-  // This is a hot public read path. Never create/repair schemas, entitlements or
-  // calendar feeds here. Migrations/provisioning own writes; portal reads fail soft.
+  // This is deliberately not part of the critical /overview request. It is loaded
+  // only when the advanced portal module is needed. Never create/repair schemas,
+  // entitlements or calendar feeds here; portal reads fail soft.
   const flags=await safe('feature_flags',async()=>{
     const result=await env.DB.prepare("SELECT feature_key,enabled FROM feature_flags WHERE tenant_id=? AND feature_key IN ('substitution_updates','surveys','microsoft_365')").bind(tenantId).all<{feature_key:string;enabled:number}>();
     return new Map((result.results??[]).map(x=>[x.feature_key,Number(x.enabled)===1]));
