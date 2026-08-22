@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 
-const [css,polish,student,studentV2Css,teacher,dropdown,classPortal,classAdmin,teacherHtml,customerAdmin,platformAdmin,teacherLazy,lazy]=await Promise.all([
-  readFile('public/role-dashboard.css','utf8'),readFile('public/role-dashboard-polish.css','utf8'),readFile('public/student-dashboard-v2.js','utf8'),readFile('public/student-dashboard-v2.css','utf8'),readFile('public/teacher-dashboard-ui.js','utf8'),readFile('public/customer-nav-dropdown.js','utf8'),readFile('public/class-portal.html','utf8'),readFile('public/class-admin.html','utf8'),readFile('public/dozentenportal.html','utf8'),readFile('public/customer-admin.html','utf8'),readFile('public/platform-admin.html','utf8'),readFile('public/teacher-lazy-modules.js','utf8'),readFile('public/customer-admin-lazy-modules.js','utf8')
+const [css,polish,student,studentV2Css,teacher,dropdown,classPortal,classAdmin,teacherHtml,customerAdmin,platformAdmin,teacherLazy,lazy,portalLazy]=await Promise.all([
+  readFile('public/role-dashboard.css','utf8'),readFile('public/role-dashboard-polish.css','utf8'),readFile('public/student-dashboard-v2.js','utf8'),readFile('public/student-dashboard-v2.css','utf8'),readFile('public/teacher-dashboard-ui.js','utf8'),readFile('public/customer-nav-dropdown.js','utf8'),readFile('public/class-portal.html','utf8'),readFile('public/class-admin.html','utf8'),readFile('public/dozentenportal.html','utf8'),readFile('public/customer-admin.html','utf8'),readFile('public/platform-admin.html','utf8'),readFile('public/teacher-lazy-modules.js','utf8'),readFile('public/customer-admin-lazy-modules.js','utf8'),readFile('public/portal-lazy-runtime.js','utf8')
 ]);
 
 assert.match(css,/\.kp-student-dashboard/,'shared role dashboard styling must exist');
@@ -33,7 +33,8 @@ assert.doesNotMatch(dropdown,/MutationObserver/,'customer dropdown must not poll
 assert.match(classPortal,/role-dashboard\.css/);
 assert.match(classPortal,/role-dashboard-polish\.css/,'class portal must load shared role polish');
 assert.match(classPortal,/student-dashboard-v2\.css/,'class portal must load v2 dashboard stylesheet');
-assert.match(classPortal,/student-dashboard-v2\.js/,'class portal must load active v2 dashboard script');
+assert.doesNotMatch(classPortal,/src="\/student-dashboard-v2\.js/,'class portal must not block first paint on the v2 dashboard script');
+assert.match(portalLazy,/student-dashboard-v2/,'class portal must retain active v2 dashboard through the lazy runtime');
 assert.doesNotMatch(classPortal,/student-dashboard-ui\.js/,'class portal must not load old delayed student dashboard');
 assert.match(classAdmin,/role-dashboard\.css/);
 assert.match(classAdmin,/role-dashboard-polish\.css/);
@@ -53,4 +54,4 @@ assert.match(customerAdmin,/customer-nav-dropdown\.js/,'customer admin must keep
 assert.doesNotMatch(platformAdmin,/role-dashboard(?:-polish)?\.css/,'platform admin must remain visually untouched');
 assert.doesNotMatch(platformAdmin,/student-dashboard(?:-v2|-ui)?|teacher-dashboard-ui|customer-nav-dropdown/,'platform admin must not load role-specific dashboard scripts');
 
-console.log('Role dashboard UI scope, lazy teacher runtime and customer-shell isolation tests: OK');
+console.log('Role dashboard UI scope, lazy student/teacher runtime and customer-shell isolation tests: OK');
