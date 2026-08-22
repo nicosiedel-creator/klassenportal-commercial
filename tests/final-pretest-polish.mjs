@@ -42,8 +42,10 @@ assert.doesNotMatch(customerLazy,/for\(const group of .*\)await loadGroup/,'all 
 assert.match(customerUi,/const appRoot=document\.querySelector\('#app'\)/,'customer UI must scope itself to the app shell');
 assert.doesNotMatch(customerUi,/observe\([^)]*,\{[^}]*subtree\s*:\s*true/,'customer shell observer must never watch the complete subtree');
 assert.match(customerUi,/kp:customer-view-changed/,'customer shell must publish deterministic render events');
-assert.match(preparation,/if\(CUSTOMER_PATH\)[\s\S]*kp:customer-view-changed/,'customer setup checklist must be event-driven');
-assert.doesNotMatch(preparation,/if\(CUSTOMER_PATH\)[\s\S]*new MutationObserver/,'customer setup logic must not install a customer mutation observer');
+assert.match(preparation,/if\(ONBOARDING_PATH\)[\s\S]*new MutationObserver/,'standalone onboarding may retain its narrow direct-child observer');
+const customerSetupBranch=preparation.slice(preparation.lastIndexOf('if(CUSTOMER_PATH){'));
+assert.match(customerSetupBranch,/kp:customer-view-changed/,'customer setup checklist must be event-driven');
+assert.doesNotMatch(customerSetupBranch,/MutationObserver/,'customer setup branch must not install a mutation observer');
 assert.ok(await missing('public/customer-support-mode.js'),'obsolete customer support fetch shim must stay deleted');
 assert.ok(await missing('public/planning-resource-suggestion-fix.js'),'obsolete planning DOM patch must stay deleted');
 
