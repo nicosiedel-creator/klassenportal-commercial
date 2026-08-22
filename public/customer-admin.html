@@ -6,14 +6,11 @@
   <meta name="theme-color" content="#172033">
   <title>Klassenportal · Kunden-Admin</title>
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=20260816-14">
-  <link rel="stylesheet" href="/customer-compact.css?v=20260818-2">
-  <link rel="stylesheet" href="/admin-overlay-hardening.css?v=20260818-2">
-  <link rel="stylesheet" href="/customer-dashboard-refresh.css?v=20260819-1">
-  <link rel="stylesheet" href="/role-dashboard.css?v=20260819-1">
-  <link rel="stylesheet" href="/role-dashboard-polish.css?v=20260819-1">
-  <link rel="stylesheet" href="/education-os.css?v=20260819-2">
-  <link rel="stylesheet" href="/customer-enterprise.css?v=20260821-2">
+  <link rel="stylesheet" href="/styles.css?v=20260822-2">
+  <link rel="stylesheet" href="/customer-compact.css?v=20260822-2">
+  <link rel="stylesheet" href="/admin-overlay-hardening.css?v=20260822-2">
+  <link rel="stylesheet" href="/customer-dashboard-refresh.css?v=20260822-2">
+  <link rel="stylesheet" href="/customer-enterprise.css?v=20260822-2">
   <style>
     [data-v="tenants"],#newTenant,#pa-onboarding-nav,#pa-new-customer,#kp-commerce-platform{display:none!important}
     @media(min-width:961px){
@@ -28,34 +25,34 @@
 <body class="customer-portal-admin">
   <div id="app"><main class="center"><div class="loader">Kunden-Admin wird geladen …</div></main></div>
 
-  <script src="/admin-overlay-hardening.js?v=20260818-2"></script>
-  <script src="/auth-mfa-ui.js?v=20260816-14"></script>
-  <script src="/admin-mfa-enrollment-ui.js?v=20260818-1"></script>
-  <script src="/account-mail-ui.js?v=20260816-14"></script>
-  <script src="/customer-support-mode.js?v=20260816-14"></script>
+  <script src="/admin-overlay-hardening.js?v=20260822-2"></script>
+  <script src="/auth-mfa-ui.js?v=20260822-2"></script>
+  <script src="/admin-mfa-enrollment-ui.js?v=20260822-2"></script>
+  <script src="/account-mail-ui.js?v=20260822-2"></script>
+  <script src="/customer-support-mode.js?v=20260822-2"></script>
 
-  <script type="module" src="/boot.js?v=20260821-1"></script>
-  <script type="module" src="/branding-assistant.js?v=20260817-2"></script>
-  <script type="module" src="/timetable-assistant.js?v=20260816-14"></script>
-  <script type="module" src="/timetable-bulk-v3.js?v=20260816-14"></script>
-  <script type="module" src="/localization.js?v=20260821-1"></script>
-  <script type="module" src="/customer-admin-ui.js?v=20260822-1"></script>
-  <script type="module" src="/customer-nav-dropdown.js?v=20260819-1"></script>
-  <script type="module" src="/customer-admin-nav-labels.js?v=20260818-1"></script>
-  <script type="module" src="/setup-preparation-ui.js?v=20260821-2"></script>
-  <script type="module" src="/customer-admin-lazy-modules.js?v=20260821-1"></script>
-  <script type="module" src="/customer-moat-ui.js?v=20260822-1"></script>
+  <script type="module" src="/boot.js?v=20260822-2"></script>
+  <script type="module" src="/branding-assistant.js?v=20260822-2"></script>
+  <script type="module" src="/timetable-assistant.js?v=20260822-2"></script>
+  <script type="module" src="/timetable-bulk-v3.js?v=20260822-2"></script>
+  <script type="module" src="/localization.js?v=20260822-2"></script>
+  <script type="module" src="/customer-admin-ui.js?v=20260822-2"></script>
+  <script type="module" src="/customer-nav-dropdown.js?v=20260822-2"></script>
+  <script type="module" src="/customer-admin-nav-labels.js?v=20260822-2"></script>
+  <script type="module" src="/setup-preparation-ui.js?v=20260822-2"></script>
+  <script type="module" src="/customer-admin-lazy-modules.js?v=20260822-2"></script>
+  <script type="module" src="/customer-moat-ui.js?v=20260822-2"></script>
 
   <template id="kp-lazy-module-manifest">
-    /class-role-ui.js?v=20260816-14 /commerce-safe-ui.js?v=20260816-14 /billing-addons-ui.js?v=20260816-14 /area-mode.js?v=20260816-14 /enterprise-admin-ui.js?v=20260817-1 /responsibility-ui.js?v=20260817-1 /participant-import-ui.js?v=20260817-1 /organization-import-ui.js?v=20260819-1
-    /intake-center-ui.js?v=20260817-1 /intake-quick-upload-ui.js?v=20260818-1 /communication-admin-ui.js?v=20260818-1 /teacher-message-admin-ui.js?v=20260819-1 /teacher-assignment-ui.js?v=20260819-1 /exam-documentation-admin-ui.js?v=20260819-1 /department-lead-admin-ui.js?v=20260819-1
-    /planning-resource-ui.js?v=20260820-1 /planning-resource-suggestion-fix.js?v=20260820-1 /education-operations-admin-ui.js?v=20260819-1 /education-operations-extended-ui.js?v=20260819-1 /education-signature-compose-ui.js?v=20260819-1 /education-os-ui.js?v=20260819-3 /education-os-readiness-ui.js?v=20260819-2 /education-os-innovation-ui.js?v=20260819-2
-    /assignment-gradebook-ui.js?v=20260818-1 /learning-report-collab-admin-ui.js?v=20260820-1 /gradebook-policy-ui.js?v=20260818-2 /gradebook-default-scale-ui.js?v=20260818-1 /participant-360-ui.js?v=20260818-1 /certificate-workflow-ui.js?v=20260818-1 /stripe-customer-portal-ui.js?v=20260816-14 /class-portal-admin-ui.js?v=20260816-14
-    /materials-admin-ui.js?v=20260816-14 /operational-crud-ui.js?v=20260816-14 /module-catalog-ui.js?v=20260816-14 /module-cancellation-ui.js?v=20260816-14 /custom-domain-ui.js?v=20260816-14 /advanced-module-ui.js?v=20260816-14 /teams-management-ui.js?v=20260820-1 /legal-footer-ui.js?v=20260816-14
+    learning: communication-admin-ui teacher-message-admin-ui teacher-assignment-ui assignment-gradebook-ui learning-report-collab-admin-ui gradebook-policy-ui gradebook-default-scale-ui participant-360-ui materials-admin-ui certificate-workflow-ui exam-documentation-admin-ui department-lead-admin-ui education-signature-compose-ui
+    organization: enterprise-admin-ui responsibility-ui participant-import-ui organization-import-ui intake-center-ui intake-quick-upload-ui planning-resource-ui operational-crud-ui
+    automation: education-operations-admin-ui education-operations-extended-ui education-os-ui education-os-readiness-ui education-os-innovation-ui module-catalog-ui module-cancellation-ui
+    technology: teams-management-ui custom-domain-ui advanced-module-ui
+    commerce: class-role-ui commerce-safe-ui billing-addons-ui area-mode stripe-customer-portal-ui class-portal-admin-ui legal-footer-ui
   </template>
 
-  <script src="/owner-route-privacy.js?v=20260817-1"></script>
-  <script src="/pwa-client.js?v=20260821-2"></script>
-  <script src="/customer-enterprise-ux.js?v=20260821-2"></script>
+  <script src="/owner-route-privacy.js?v=20260822-2"></script>
+  <script src="/pwa-client.js?v=20260822-2"></script>
+  <script src="/customer-enterprise-ux.js?v=20260822-2"></script>
 </body>
 </html>
