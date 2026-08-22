@@ -7,6 +7,7 @@ const lazy=await readFile('public/portal-lazy-runtime.js','utf8');
 const watchdog=await readFile('public/portal-load-watchdog.js','utf8');
 const dash=await readFile('public/student-dashboard-v2.js','utf8');
 const css=await readFile('public/student-dashboard-v2.css','utf8');
+const advanced=await readFile('src/core/public-advanced.ts','utf8');
 
 assert.ok(html.includes('/portal-load-watchdog.js?v=20260822-student-hotfix-2'),'student portal must have a visible long-load watchdog');
 assert.ok(html.includes('/portal-entry.js?v=20260822-student-hotfix-2'),'student portal must start through its lean entrypoint');
@@ -35,6 +36,12 @@ assert.match(lazy,/bootPromise/,'student lazy runtime must suppress duplicate bo
 assert.doesNotMatch(lazy,/new MutationObserver/,'student lazy runtime must remain event-driven');
 assert.doesNotMatch(lazy,/window\.fetch\s*=/,'student lazy runtime must never replace global fetch');
 
+assert.doesNotMatch(advanced,/ensureAdvancedModuleSchema/,'public student overview must never run schema creation/repair on a read request');
+assert.doesNotMatch(advanced,/ensureCalendarFeedsForTenant/,'public student overview must never create calendar feeds while loading');
+assert.match(advanced,/feature_key IN \('substitution_updates','surveys','microsoft_365'\)/,'advanced feature flags must be read in one query');
+assert.match(advanced,/Promise\.all\(\[substitutionsPromise,surveysPromise,feedPromise\]\)/,'advanced student data must load in parallel');
+assert.match(advanced,/o\.survey_id IN \(\$\{marks\(ids\.length\)\}\)/,'survey options must be batched instead of queried once per survey');
+
 assert.match(dash,/async function build\(data\)\{[^}]*render\(data\);void enrichAssignments\(data\)/,'weekly dashboard must render before personal assignment enrichment');
 assert.match(dash,/kp:portal-data/,'dashboard must consume the base portal data event rather than refetching the overview');
 assert.match(dash,/window\.__KP_PORTAL_DATA/,'dashboard must support already-resolved portal data on late module load');
@@ -47,4 +54,4 @@ assert.match(css,/grid-template-columns:minmax\(0,2\.15fr\) minmax\(300px,.85fr\
 assert.match(css,/@media\(max-width:980px\)/,'dashboard must collapse cleanly for tablets');
 assert.match(css,/@media\(max-width:680px\)/,'dashboard must be mobile responsive');
 
-console.log('Student portal lean bootstrap, observer-free localization, non-blocking load watchdog, event-driven request-storm guard and polished mosaic layout checks: OK');
+console.log('Student portal lean bootstrap, observer-free localization, read-only advanced overview, non-blocking load watchdog, event-driven request-storm guard and polished mosaic layout checks: OK');
