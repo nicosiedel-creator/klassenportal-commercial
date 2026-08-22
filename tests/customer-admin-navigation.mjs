@@ -1,12 +1,12 @@
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 
-const [enterprise,enterpriseUx,planning,ui,labels,lazy,html,dropdown]=await Promise.all([
+const [enterprise,enterpriseUx,planning,ui,i18n,lazy,html,dropdown]=await Promise.all([
   readFile('public/customer-enterprise.css','utf8'),
   readFile('public/customer-enterprise-ux.js','utf8'),
   readFile('public/planning-resource-ui.js','utf8'),
   readFile('public/customer-admin-ui.js','utf8'),
-  readFile('public/customer-admin-nav-labels.js','utf8'),
+  readFile('public/customer-admin-i18n.js','utf8'),
   readFile('public/customer-admin-lazy-modules.js','utf8'),
   readFile('public/customer-admin.html','utf8'),
   readFile('public/customer-nav-dropdown.js','utf8')
@@ -14,8 +14,14 @@ const [enterprise,enterpriseUx,planning,ui,labels,lazy,html,dropdown]=await Prom
 
 for(const label of ['Übersicht','Klassen/Kurse','Benutzer & Rollen','Teilnehmer importieren','Inhalte','Prüfungen','Module','Paket & Abrechnung'])assert.ok(ui.includes(`'${label}'`),`primary customer navigation missing ${label}`);
 for(const group of ['Lernen & Kommunikation','Organisation & Betrieb','Automatisierung & Education OS','Technik & Integrationen'])assert.ok(ui.includes(group),`customer navigation group missing ${group}`);
-for(const wording of ['Dokumente hochladen','Organisation & Struktur','Verantwortliche & Vertretungen','SSO, SCIM & API'])assert.ok(labels.includes(wording),`clarified customer navigation wording missing ${wording}`);
-assert.match(labels,/customerNavSourceLabel/,'visual relabeling must preserve stable source labels');
+for(const wording of ['Dokumente hochladen','Organisation & Struktur','Verantwortliche & Vertretungen','SSO, SCIM & API'])assert.ok(i18n.includes(wording),`localized customer navigation wording missing ${wording}`);
+assert.match(i18n,/customerNavSourceLabel/,'language pack must preserve stable source labels when localizing dynamic navigation');
+for(const locale of ['en','fr','es','it','nl','pl','tr','uk','ro','cs','pt','ar'])assert.match(i18n,new RegExp(`\\b${locale}:\\{`),`customer shell language pack missing ${locale}`);
+for(const key of ['customer_overview','more_areas','automation_os','participant_import','operations_intro','plans_title','data_backup_title'])assert.ok(i18n.includes(`${key}:`),`customer shell translation key missing ${key}`);
+assert.match(i18n,/kp:localechange/,'customer shell must react immediately to language changes');
+assert.match(i18n,/kp:customer-view-changed/,'customer shell must re-localize after deterministic app renders');
+assert.match(i18n,/kp:customer-modules-group-ready/,'lazy customer modules must be localized when mounted');
+assert.doesNotMatch(i18n,/MutationObserver/,'customer language switching must remain event-driven and avoid global mutation observers');
 assert.match(ui,/function navSourceLabel\(button\)/,'navigation organizer must keep stable source labels');
 assert.match(ui,/function navMemorySet\(open\)/,'secondary navigation state writes must be guarded');
 assert.match(ui,/function navMemoryGet\(\)/,'secondary navigation state reads must be guarded');
@@ -48,6 +54,8 @@ assert.match(html,/customer-enterprise\.css\?v=20260822-5/,'final enterprise CSS
 assert.doesNotMatch(html,/customer-compact\.css|customer-dashboard-refresh\.css|role-dashboard(?:-polish)?\.css/,'legacy customer layout layers must not be loaded');
 assert.match(html,/customer-admin-ui\.js\?v=20260822-5/,'active customer navigation must be versioned');
 assert.match(html,/customer-admin-lazy-modules\.js\?v=20260822-5/,'lazy module controller must be versioned');
+assert.match(html,/customer-admin-i18n\.js\?v=20260822-1/,'customer admin must load its authoritative language pack');
+assert.doesNotMatch(html,/customer-admin-nav-labels\.js/,'legacy German-only navigation relabeler must not overwrite selected locale');
 assert.doesNotMatch(html,/src="\/customer-moat-ui\.js/,'work assistant implementation must not execute at first paint');
 assert.doesNotMatch(html,/src="\/customer-enterprise-ux\.js/,'Education OS UX must not execute before automation is opened');
 assert.doesNotMatch(html,/src="\/enterprise-admin-ui\.js/,'organization modules must not execute at first paint');
@@ -61,4 +69,4 @@ assert.match(dropdown,/closest\('#kp-customer-more-toggle'\)/,'dropdown toggle c
 assert.match(dropdown,/Escape/,'customer dropdown must close with Escape');
 assert.doesNotMatch(dropdown,/MutationObserver/,'navigation dropdown must be event-driven, not mutation-driven');
 
-console.log('Customer admin final left-rail navigation, lazy loading and intent UX checks: OK');
+console.log('Customer admin final left-rail navigation, 13-language shell, lazy loading and intent UX checks: OK');
