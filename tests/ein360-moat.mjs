@@ -67,14 +67,12 @@ assert.doesNotMatch(customerHtml,/src="\/customer-moat-ui\.js/,'customer moat im
 assert.match(participant,/KP_LANGUAGES/);
 assert.match(participant,/rtlSet/);
 assert.match(participant,/\/api\/moat\/learning-coach\/plan/);
-assert.match(customer,/Compliance Readiness/);
-assert.match(customer,/Zero-Touch Migration 2\.0/);
-assert.match(customer,/Partnerportal-Freigabe/);
-assert.match(customer,/Action Copilot/);
+for(const label of ['Compliance-Status','Migration · Qualitätsprüfung','Partnerzugang','Sicherer Aktionsassistent'])assert.ok(customer.includes(label),`customer moat must expose localized operations section: ${label}`);
+assert.match(customer,/Education & Training OS/,'customer moat must retain the Education OS identity');
 assert.match(customer,/supportPlatformAdmin/,'customer moat must retain explicit support read-only behavior');
 assert.match(partnerHtml,/partner-portal\.js/,'partner portal shell must load secure client');
 assert.match(partner,/Authorization|authorization/,'partner client must send token in an Authorization header');
 assert.match(partner,/history\.replaceState/,'partner client must remove fragment token before rendering');
 assert.doesNotMatch(partner,/partner-access\/\$\{/,'partner client must never put token in request URL');
 
-console.log('EIN360 moat architecture/security and on-demand customer-runtime regression: OK');
+console.log('EIN360 moat architecture/security, localized customer UX and on-demand runtime regression: OK');
