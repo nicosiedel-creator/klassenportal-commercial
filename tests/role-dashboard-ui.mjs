@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 
-const [css,polish,student,studentV2Css,teacher,dropdown,classPortal,classAdmin,teacherHtml,customerAdmin,platformAdmin,lazy]=await Promise.all([
-  readFile('public/role-dashboard.css','utf8'),readFile('public/role-dashboard-polish.css','utf8'),readFile('public/student-dashboard-v2.js','utf8'),readFile('public/student-dashboard-v2.css','utf8'),readFile('public/teacher-dashboard-ui.js','utf8'),readFile('public/customer-nav-dropdown.js','utf8'),readFile('public/class-portal.html','utf8'),readFile('public/class-admin.html','utf8'),readFile('public/dozentenportal.html','utf8'),readFile('public/customer-admin.html','utf8'),readFile('public/platform-admin.html','utf8'),readFile('public/customer-admin-lazy-modules.js','utf8')
+const [css,polish,student,studentV2Css,teacher,dropdown,classPortal,classAdmin,teacherHtml,customerAdmin,platformAdmin,teacherLazy,lazy]=await Promise.all([
+  readFile('public/role-dashboard.css','utf8'),readFile('public/role-dashboard-polish.css','utf8'),readFile('public/student-dashboard-v2.js','utf8'),readFile('public/student-dashboard-v2.css','utf8'),readFile('public/teacher-dashboard-ui.js','utf8'),readFile('public/customer-nav-dropdown.js','utf8'),readFile('public/class-portal.html','utf8'),readFile('public/class-admin.html','utf8'),readFile('public/dozentenportal.html','utf8'),readFile('public/customer-admin.html','utf8'),readFile('public/platform-admin.html','utf8'),readFile('public/teacher-lazy-modules.js','utf8'),readFile('public/customer-admin-lazy-modules.js','utf8')
 ]);
 
 assert.match(css,/\.kp-student-dashboard/,'shared role dashboard styling must exist');
@@ -39,7 +39,9 @@ assert.match(classAdmin,/role-dashboard\.css/);
 assert.match(classAdmin,/role-dashboard-polish\.css/);
 assert.match(teacherHtml,/role-dashboard\.css/);
 assert.match(teacherHtml,/role-dashboard-polish\.css/);
-assert.match(teacherHtml,/teacher-dashboard-ui\.js/);
+assert.match(teacherHtml,/teacher-lazy-modules\.js/,'teacher portal must load the bounded lazy module controller');
+assert.match(teacherLazy,/teacher-dashboard-ui/,'teacher dashboard must remain available through the lazy controller');
+assert.doesNotMatch(teacherHtml,/src="\/teacher-dashboard-ui\.js/,'teacher dashboard must not regress to eager loading');
 
 // Customer admin owns a separate enterprise shell. Loading the shared role stylesheet
 // there would reintroduce the historical sticky/top-navigation customer rules.
@@ -51,4 +53,4 @@ assert.match(customerAdmin,/customer-nav-dropdown\.js/,'customer admin must keep
 assert.doesNotMatch(platformAdmin,/role-dashboard(?:-polish)?\.css/,'platform admin must remain visually untouched');
 assert.doesNotMatch(platformAdmin,/student-dashboard(?:-v2|-ui)?|teacher-dashboard-ui|customer-nav-dropdown/,'platform admin must not load role-specific dashboard scripts');
 
-console.log('Role dashboard UI scope and customer-shell isolation tests: OK');
+console.log('Role dashboard UI scope, lazy teacher runtime and customer-shell isolation tests: OK');
