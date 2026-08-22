@@ -17,7 +17,7 @@ assert.match(ui,/window\.KPCustomerModules\.loadGroup\('organization'\)/,'setup 
 assert.match(ui,/enterprise-structure-nav/,'organisation shortcut must resolve the dynamically injected enterprise structure control');
 assert.match(ui,/Teilnehmer importieren/,'participant shortcut must target the dedicated participant import area');
 assert.match(onboarding,/setup-preparation-ui\.js/,'onboarding must load setup preparation guidance');
-assert.match(customer,/setup-preparation-ui\.js\?v=20260822-4/,'customer admin must load the current event-driven setup guidance');
+assert.match(customer,/setup-preparation-ui\.js\?v=20260822-5/,'customer admin must load the current event-driven setup guidance');
 assert.match(ui,/const progress=content\.querySelector\('#kp-setup-progress'\);[\s\S]*if\(!progress\)\{content\.querySelector\('#kp-setup-preparation'\)\?\.remove\(\);return;\}/,'customer checklist must not appear until server setup status is available');
 assert.match(ui,/if\(CUSTOMER_PATH\)\{window\.addEventListener\('kp:customer-view-changed'/,'customer setup refresh must follow deterministic render events');
 const customerBlock=ui.slice(ui.indexOf('if(CUSTOMER_PATH){'));
