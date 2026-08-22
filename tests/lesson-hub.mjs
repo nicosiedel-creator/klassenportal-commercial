@@ -45,7 +45,8 @@ assert.match(student,/data-kp-material/,'lesson files must be directly usable fr
 assert.match(student,/Zum Fach demnächst/,'lesson hub should integrate nearby assignments and exams without pretending they are exact attachments');
 assert.doesNotMatch(classHtml,/src="\/lesson-hub-ui\.js/,'class portal must not execute lesson hub UI on first paint');
 assert.match(portalLazy,/lesson-hub-ui/,'class portal must retain the lesson hub UI through the lazy runtime');
-assert.match(classHtml,/lesson-hub\.css/,'class portal must load lesson hub styles');
+assert.doesNotMatch(classHtml,/rel="stylesheet" href="\/lesson-hub\.css/,'lesson hub stylesheet must not block student first paint');
+assert.match(portalLazy,/'lesson-hub-ui':\['lesson-hub'\]/,'lesson hub stylesheet must load together with the lazy lesson-hub module');
 
 assert.match(teacher,/Unterrichtsinfos & Materialien/,'teacher portal must offer lesson hub management');
 assert.match(teacher,/planned_topic/,'teacher must be able to maintain the planned lesson topic');
