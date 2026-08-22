@@ -41,41 +41,31 @@ const SECURITY_HEADERS:Record<string,string>={
   'x-content-type-options':'nosniff','x-frame-options':'DENY','referrer-policy':'strict-origin-when-cross-origin','permissions-policy':'camera=(), microphone=(), geolocation=()','cross-origin-opener-policy':'same-origin','strict-origin-agent-cluster':'?1','strict-transport-security':'max-age=31536000; includeSubDomains',
   'content-security-policy':"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://checkout.stripe.com https://login.microsoftonline.com; frame-src https://www.youtube-nocookie.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests",
 };
-function harden(response:Response):Response{const headers=new Headers(response.headers);for(const [k,v] of Object.entries(SECURITY_HEADERS))if(!headers.has(k))headers.set(k,v);headers.set('x-request-id',crypto.randomUUID());if((headers.get('content-type')||'').includes('text/html'))headers.set('cache-control','no-store');return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}
+function harden(response:Response):Response{const headers=new Headers(response.headers);for(const[k,v]of Object.entries(SECURITY_HEADERS))if(!headers.has(k))headers.set(k,v);headers.set('x-request-id',crypto.randomUUID());if((headers.get('content-type')||'').includes('text/html'))headers.set('cache-control','no-store');return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}
 function accessError(e:unknown):Response{const raw=String((e as Error)?.message||'PAYMENT_REQUIRED'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PAYMENT_REQUIRED',status=code==='TRIAL_EXPIRED'?410:code==='TRIAL_READ_ONLY'?423:402;return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 function jsonError(code:string,status:number):Response{return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 function publicError(e:unknown):Response{const raw=String((e as Error)?.message||'PUBLIC_PORTAL_ERROR'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PUBLIC_PORTAL_ERROR',status=code.includes('NOT_FOUND')?404:['LOGIN_REQUIRED','ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(code)?401:code==='PUBLIC_PORTAL_ERROR'?500:400;return jsonError(code,status);}
 function jsonOk(data:unknown):Response{return new Response(JSON.stringify({ok:true,...(data as Record<string,unknown>)}),{status:200,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
+function customerSupportReferer(request:Request):boolean{try{const value=request.headers.get('referer');return !!value&&new URL(value).pathname.replace(/\/$/,'')==='/kunden-admin';}catch{return false;}}
+async function blockPlatformSupportWrite(request:Request,env:Env):Promise<Response|null>{
+  const url=new URL(request.url),method=request.method.toUpperCase();
+  if(!url.pathname.startsWith('/api/')||method==='GET'||method==='HEAD'||url.pathname==='/api/auth/logout'||!customerSupportReferer(request))return null;
+  try{const session=await getSession(env,request);if(session?.isPlatformAdmin)return jsonError('SUPPORT_READ_ONLY',403);}catch{}
+  return null;
+}
 
 const LEGAL_PATHS=['/impressum','/datenschutz','/agb','/avv','/unterauftragsverarbeiter','/datenportabilitaet','/rechtsverstoss-melden'] as const;
-function releaseGateBypass(path:string):boolean{
-  const normalized=path==='/'?'/':path.replace(/\/+$/,'');
-  if(normalized==='/'||normalized==='/plattform-admin'||normalized==='/api/platform'||normalized.startsWith('/api/platform/')||normalized==='/api/auth'||normalized.startsWith('/api/auth/')||normalized==='/api/public/legal'||normalized==='/api/legal/report'||normalized==='/api/payments/stripe/webhook'||normalized==='/api/integrations/microsoft/callback')return true;
-  if(normalized==='/lernabend-vfa13'||normalized.startsWith('/quiz/vfa13/')||normalized.startsWith('/api/live-study/'))return true;
-  if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren',...LEGAL_PATHS].includes(normalized as any))return true;
-  if(normalized.startsWith('/brand/logo/'))return true;
-  return /\.(?:js|css|mjs|map|png|jpe?g|webp|svg|ico|woff2?|ttf)$/i.test(normalized);
-}
-async function releaseGateAllowsLockedRequest(path:string,request:Request,env:Env):Promise<boolean>{
-  if(releaseGateBypass(path))return true;
-  if(await acceptanceModeAllowsLockedRequest(env,request))return true;
-  if(!path.startsWith('/api/'))return false;
-  try{return !!(await getSession(env,request))?.isPlatformAdmin;}catch{return false;}
-}
-function productionLockedResponse(path:string,reason:string|null):Response{
-  const headers={'cache-control':'no-store','retry-after':'300'};
-  if(path.startsWith('/api/')||path.startsWith('/public/')||path.startsWith('/calendar/')||path.startsWith('/scim/'))return new Response(JSON.stringify({ok:false,error:'PRODUCTION_RELEASE_LOCKED'}),{status:503,headers:{...headers,'content-type':'application/json; charset=utf-8'}});
-  const html='<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Klassenportal</title><body style="font-family:system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f8fafc;color:#0f172a"><main style="max-width:560px;margin:24px;padding:28px;background:#fff;border:1px solid #e2e8f0;border-radius:18px"><h1 style="margin-top:0">Klassenportal vorübergehend nicht verfügbar</h1><p>Diese Version ist noch nicht für den Produktivbetrieb freigegeben. Bitte versuche es später erneut.</p></main></body></html>';
-  void reason;return new Response(html,{status:503,headers:{...headers,'content-type':'text/html; charset=utf-8'}});
-}
+function releaseGateBypass(path:string):boolean{const normalized=path==='/'?'/':path.replace(/\/+$/,'');if(normalized==='/'||normalized==='/plattform-admin'||normalized==='/api/platform'||normalized.startsWith('/api/platform/')||normalized==='/api/auth'||normalized.startsWith('/api/auth/')||normalized==='/api/public/legal'||normalized==='/api/legal/report'||normalized==='/api/payments/stripe/webhook'||normalized==='/api/integrations/microsoft/callback')return true;if(normalized==='/lernabend-vfa13'||normalized.startsWith('/quiz/vfa13/')||normalized.startsWith('/api/live-study/'))return true;if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren',...LEGAL_PATHS].includes(normalized as any))return true;if(normalized.startsWith('/brand/logo/'))return true;return/\.(?:js|css|mjs|map|png|jpe?g|webp|svg|ico|woff2?|ttf)$/i.test(normalized);}
+async function releaseGateAllowsLockedRequest(path:string,request:Request,env:Env):Promise<boolean>{if(releaseGateBypass(path))return true;if(await acceptanceModeAllowsLockedRequest(env,request))return true;if(!path.startsWith('/api/'))return false;try{return!!(await getSession(env,request))?.isPlatformAdmin;}catch{return false;}}
+function productionLockedResponse(path:string,reason:string|null):Response{const headers={'cache-control':'no-store','retry-after':'300'};if(path.startsWith('/api/')||path.startsWith('/public/')||path.startsWith('/calendar/')||path.startsWith('/scim/'))return new Response(JSON.stringify({ok:false,error:'PRODUCTION_RELEASE_LOCKED'}),{status:503,headers:{...headers,'content-type':'application/json; charset=utf-8'}});const html='<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Klassenportal</title><body style="font-family:system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f8fafc;color:#0f172a"><main style="max-width:560px;margin:24px;padding:28px;background:#fff;border:1px solid #e2e8f0;border-radius:18px"><h1 style="margin-top:0">Klassenportal vorübergehend nicht verfügbar</h1><p>Diese Version ist noch nicht für den Produktivbetrieb freigegeben. Bitte versuche es später erneut.</p></main></body></html>';void reason;return new Response(html,{status:503,headers:{...headers,'content-type':'text/html; charset=utf-8'}});}
 
 async function routeRequest(request:Request,env:Env):Promise<Response>{
   const url=new URL(request.url),clean=url.pathname.replace(/\/$/,'');
   const release=await productionReleaseAccess(env,request);if(release.production&&!release.allowed&&!await releaseGateAllowsLockedRequest(url.pathname,request,env))return productionLockedResponse(url.pathname,release.reason);
+  const supportBlock=await blockPlatformSupportWrite(request,env);if(supportBlock)return supportBlock;
 
   const intakePublic=await handlePublicIntakeRoute(request,env);if(intakePublic)return intakePublic;
-  const enterprisePublic=url.pathname.startsWith('/sso/')||url.pathname.startsWith('/scim/')||url.pathname.startsWith('/api/v1/');
-  if(enterprisePublic){const r=await handleEnterpriseRouter(request,env);if(r)return r;}
+  const enterprisePublic=url.pathname.startsWith('/sso/')||url.pathname.startsWith('/scim/')||url.pathname.startsWith('/api/v1/');if(enterprisePublic){const r=await handleEnterpriseRouter(request,env);if(r)return r;}
   const logo=url.pathname.match(/^\/brand\/logo\/([^/]+)$/);if(logo)return serveTenantLogo(env,decodeURIComponent(logo[1]));
   const calendarFeed=url.pathname.match(/^\/calendar\/([A-Za-z0-9]+)\.ics$/);if(calendarFeed){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return calendarFeedResponse(env,calendarFeed[1]);}
   if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren'].includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/account-action.html',request.url),{method:request.method,headers:request.headers}));}
@@ -108,10 +98,10 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   const attendance=await handleAttendanceApi(request,env);if(attendance)return attendance;
   const participant360Response=await handleParticipant360Api(request,env);if(participant360Response)return participant360Response;
 
-  const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);if(onboardingPost){const payload=await request.clone().json().catch(()=>({})) as Record<string,unknown>;if(String(payload.commercial_action||'trial')==='book'&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);}
+  const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);if(onboardingPost){const payload=await request.clone().json().catch(()=>({}))as Record<string,unknown>;if(String(payload.commercial_action||'trial')==='book'&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);}
   const tenantId=url.searchParams.get('tenant_id'),mutating=request.method!=='GET'&&request.method!=='HEAD',exemptMutation=url.pathname==='/api/timetable/preview'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/onboarding/')||url.pathname.startsWith('/api/platform/');if(tenantId&&mutating&&!exemptMutation){try{await assertPaymentWriteAccess(env,tenantId);}catch(e){return accessError(e);}}
   if(url.pathname.startsWith('/api/enterprise/')){const enterprise=await handleEnterpriseRouter(request,env);if(enterprise)return enterprise;}
-  const portability=await handlePortabilityRequest(request,env,portabilityConfig,(r)=>resolvePortabilityAuth(env,r));if(portability)return portability;
+  const portability=await handlePortabilityRequest(request,env,portabilityConfig,r=>resolvePortabilityAuth(env,r));if(portability)return portability;
   const api=await handleCoreApi(request,env);if(api){if(onboardingPost)return augmentPaidOnboardingResponse(env,request,api);return api;}
   const pub=await handlePublicApi(request,env);if(pub)return pub;
   return env.ASSETS.fetch(request);
