@@ -1,6 +1,6 @@
 const PATH_OK=/^\/portal\/[^/]+\/[^/]+\/?$/.test(location.pathname);
 if(PATH_OK){
-  const V='20260822-student-hotfix-3';
+  const V='20260822-student-hotfix-4';
   const asset=name=>`/${name}.js?v=${V}`;
   const loaded=new Set(),loading=new Map();let bootPromise=null;
   const GATE_SUPPORT=['auth-mfa-ui','account-mail-ui'];
@@ -41,7 +41,9 @@ if(PATH_OK){
       await nextFrame();
       await loadLocalization();
       await loadList(GATE_SUPPORT,2);
-      if(!window.__KP_PORTAL_DATA)return;
+      const data=window.__KP_PORTAL_DATA;
+      if(!data)return;
+      if(['class_admin','tenant_admin','platform_admin'].includes(String(data.viewer?.role||'')))await loadOne('admin-mfa-enrollment-ui');
       await loadList(HIGH,2);
       await idle();
       const failures=await loadList(FEATURES,3);
