@@ -12,6 +12,7 @@ const onboardingUi=await readFile('public/onboarding.js','utf8');
 const ownerUi=await readFile('public/platform-offers-ui.js','utf8');
 const adminPreviewUi=await readFile('public/platform-offer-admin-preview-ui.js','utf8');
 const platformLoginUi=await readFile('public/platform-direct-login.js','utf8');
+const platformLazy=await readFile('public/platform-admin-lazy-modules.js','utf8');
 const publicUi=await readFile('public/angebot.js','utf8');
 const stripe=await readFile('src/core/stripe-tax-billing.ts','utf8');
 const migration=await readFile('migrations/0045_platform_offers.sql','utf8');
@@ -57,7 +58,9 @@ assert.doesNotMatch(stripe,/payment_method_types/,'payment methods must not be h
 
 for(const marker of ['Individueller Monatspreis','Rabatt auf laufenden Preis','Kostenloser Pilot / Testbetrieb','Als Entwurf speichern','Angebot erstellen & freigeben'])assert.ok(ownerUi.includes(marker),`owner offer UI missing: ${marker}`);
 assert.match(adminPreviewUi,/admin_offer/,'offer detail PDF action must open the authenticated admin preview');
-assert.match(platformLoginUi,/platform-offer-admin-preview-ui\.js/,'platform admin must load the secure offer preview helper');
+assert.match(platformLoginUi,/platform-admin-lazy-modules\.js/,'platform admin bootstrap must install the lazy module controller');
+assert.match(platformLazy,/offers:\['platform-offers-ui','platform-offer-admin-preview-ui','platform-offer-accepted-link-ui'/,'offer manager and secure preview helper must remain available on demand');
+assert.doesNotMatch(platformLoginUi,/import\('\/platform-offer-admin-preview-ui\.js/,'secure offer preview helper must not regress to eager first-paint loading');
 assert.match(publicUi,/adminOffer/,'offer view must recognize authenticated admin previews');
 assert.match(publicUi,/adminPreview=!!data\.adminPreview/,'admin preview must render in explicit read-only mode');
 assert.match(publicUi,/Interne schreibgeschützte Admin-Ansicht/,'admin preview must clearly identify itself as read-only');
@@ -67,4 +70,4 @@ assert.match(publicUi,/confirm_dpa/,'public acceptance must affirmatively incorp
 assert.ok(wrangler.includes('"/angebot/*"')&&index.includes("/^\\/angebot\\/[^/]+\\/?$/"),'clean public offer URLs must be routed through the Worker');
 for(const col of ['monthly_override_cents','recurring_discount_cents','public_token_hash','accepted_terms','accepted_dpa'])assert.ok(migration.includes(col),`offer migration missing ${col}`);
 
-console.log('Platform offer, custom pricing, discount and safe-pilot checks: OK');
+console.log('Platform offer, custom pricing, discount, safe-pilot and lazy preview checks: OK');
