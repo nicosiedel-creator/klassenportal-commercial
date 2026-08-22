@@ -12,6 +12,7 @@ const leadAdmin=await readFile('public/department-lead-admin-ui.js','utf8');
 const leadUi=await readFile('public/department-lead.js','utf8');
 const teacherHtml=await readFile('public/dozentenportal.html','utf8');
 const customerHtml=await readFile('public/customer-admin.html','utf8');
+const customerLazy=await readFile('public/customer-admin-lazy-modules.js','utf8');
 
 assert.match(migration,/CREATE TABLE IF NOT EXISTS exam_authority_profiles/,'custom authority requirements need persistence');
 assert.match(migration,/CREATE TABLE IF NOT EXISTS course_exam_authority_profiles/,'courses need a selectable documentation profile');
@@ -63,7 +64,10 @@ assert.match(leadUi,/Unterrichtsnachweis/,'Fachbereich needs authority-ready top
 assert.match(leadUi,/Individuelle Schülernoten, Anwesenheiten und Fehlzeiten sind nicht Bestandteil/,'Fachbereich portal must state its privacy boundary');
 
 assert.match(teacherHtml,/teacher-classbook-export-ui\.js\?v=20260819-1/,'teacher portal must load classbook export UI');
-assert.match(customerHtml,/exam-documentation-admin-ui\.js\?v=20260819-1/,'customer admin must load exam documentation management');
-assert.match(customerHtml,/department-lead-admin-ui\.js\?v=20260819-1/,'customer admin must load Fachbereich assignment management');
+assert.match(customerHtml,/kp-lazy-module-manifest/,'customer admin must expose an auditable lazy-module manifest');
+assert.match(customerLazy,/exam-documentation-admin-ui/,'customer admin must make exam documentation management available on demand');
+assert.match(customerLazy,/department-lead-admin-ui/,'customer admin must make Fachbereich assignment management available on demand');
+assert.doesNotMatch(customerHtml,/src="\/exam-documentation-admin-ui\.js/,'exam documentation must not regress to eager loading');
+assert.doesNotMatch(customerHtml,/src="\/department-lead-admin-ui\.js/,'Fachbereich management must not regress to eager loading');
 
-console.log('Examination documentation and Fachbereich privacy checks: OK');
+console.log('Examination documentation and Fachbereich privacy/lazy-loading checks: OK');
