@@ -9,6 +9,7 @@ const roleRouter=await readFile('src/core/education-role-insights-router.ts','ut
 const guarded=await readFile('src/core/education-autopilot-guarded.ts','utf8');
 const maintenance=await readFile('src/core/education-os-maintenance.ts','utf8');
 const teacherHtml=await readFile('public/dozentenportal.html','utf8');
+const teacherLazy=await readFile('public/teacher-lazy-modules.js','utf8');
 const teacherUi=await readFile('public/teacher-operational-insights-ui.js','utf8');
 const customer=await readFile('public/customer-admin.html','utf8');
 const innovationUi=await readFile('public/education-os-innovation-ui.js','utf8');
@@ -43,11 +44,13 @@ assert.match(roleInsights,/can_execute_autopilot:false/,'teacher must not execut
 assert.match(roleRouter,/teacherOperationalInsights/,'teacher insights route missing');
 assert.match(participantRouter,/handleEducationRoleInsightsApi/,'teacher insights must be routed before generic Education OS');
 assert.match(participantRouter,/handleAdaptiveRecoveryApi/,'adaptive recovery must be routed before generic Education OS');
-assert.match(teacherHtml,/teacher-operational-insights-ui\.js/,'teacher portal must load its privacy-safe operational radar');
+assert.match(teacherHtml,/teacher-lazy-modules\.js/,'teacher portal must use its bounded lazy runtime');
+assert.match(teacherLazy,/teacher-operational-insights-ui/,'teacher workspace must lazy-load its privacy-safe operational radar');
+assert.doesNotMatch(teacherHtml,/src="\/teacher-operational-insights-ui\.js/,'operational radar must stay out of teacher first paint');
 assert.match(teacherUi,/Unterrichtsradar/,'teacher operational radar UI missing');
 assert.match(teacherUi,/Keine Noten, privaten Notizen oder personenbezogenen Anwesenheitsdaten/,'teacher UI must state its privacy boundary');
 
-assert.match(customer,/education-os-innovation-ui\.js/,'customer admin must load innovation extension');
+assert.match(customer,/education-os-innovation-ui\.js/,'customer admin must expose innovation extension through its on-demand manifest');
 assert.match(innovationUi,/Adaptive Recovery/,'Adaptive Recovery UI missing');
 assert.match(innovationUi,/Stundenplan-Entwurf/,'Recovery UI must make draft-only behavior visible');
 assert.match(innovationUi,/Kein Befund wird automatisch repariert/,'Self-Healing UI must be proposal-only');
