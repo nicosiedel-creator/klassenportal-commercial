@@ -14,6 +14,7 @@ const router=await readFile('src/core/education-os-router.ts','utf8');
 const bridge=await readFile('src/core/participant-360-router.ts','utf8');
 const cycle=await readFile('src/core/automation-cycle.ts','utf8');
 const customer=await readFile('public/customer-admin.html','utf8');
+const customerLazy=await readFile('public/customer-admin-lazy-modules.js','utf8');
 const platform=await readFile('public/platform-admin.html','utf8');
 const ui=await readFile('public/education-os-ui.js','utf8');
 const product=await readFile('PRODUCT_5000X.md','utf8');
@@ -91,8 +92,11 @@ for(const route of ['/api/education-os/twin','/api/education-os/scenarios','/api
 assert.match(router,/requireAutopilotTenantAdminMfa/,'manual security-sensitive scans/status changes must require tenant admin MFA');
 assert.match(bridge,/handleEducationOsApi/,'Education OS router must be connected before generic education routes');
 
-assert.match(customer,/education-os\.css/,'customer admin must load Education OS styles');
-assert.match(customer,/education-os-ui\.js/,'customer admin must load Education OS workspace');
+assert.match(customer,/kp-lazy-module-manifest/,'customer admin must expose an auditable on-demand module manifest');
+assert.match(customerLazy,/education-os\.css/,'customer admin must make Education OS styles available on demand');
+assert.match(customerLazy,/education-os-ui/,'customer admin must make Education OS workspace available on demand');
+assert.doesNotMatch(customer,/<link[^>]+education-os\.css/,'Education OS styles must not regress to eager first-paint loading');
+assert.doesNotMatch(customer,/src="\/education-os-ui\.js/,'Education OS workspace must not regress to eager first-paint loading');
 assert.ok(!platform.includes('education-os-ui.js'),'platform admin UI must remain untouched');
 for(const label of ['Future Radar','Scenario Lab','Self-Healing','Proof Graph','Autopilot-Sicherheitskern'])assert.ok(ui.includes(label),`Education OS UI ${label} missing`);
 assert.match(ui,/Keine direkten Schreibrechte|keine direkten Schreibrechte|keine direkten Schreibrechte/i,'UI must explain that language/AI has no direct write access');
@@ -103,4 +107,4 @@ for(const concept of ['Live Education Twin','Education Autopilot','Scenario Lab'
 assert.match(product,/Regelwerk vor KI/,'product strategy must keep deterministic rules before AI');
 assert.match(product,/Erst simulieren, dann verändern/,'product strategy must require simulation before mutation');
 
-console.log('Education Operating System architecture/security regression ok');
+console.log('Education Operating System architecture/security/lazy-runtime regression ok');
