@@ -15,7 +15,7 @@ if(KP_AUTOPILOT_PATH){
     if(!n){n=document.createElement('div');n.id='kp-autopilot-entry-status';n.setAttribute('role','status');n.setAttribute('aria-live','polite');document.body.append(n);}
     n.dataset.kind=kind;n.textContent=text;clearTimeout(status.timer);status.timer=setTimeout(()=>n?.remove(),kind==='error'?7000:2200);
   }
-  function openLoadedOs(){const legacy=document.querySelector('#education-os-nav');if(!legacy)return false;legacy.dataset.kpLegacyAutopilot='1';legacy.click();requestAnimationFrame(()=>document.querySelector('.eo-os-nav [data-pane="intent"]')?.click());return true;}
+  function openLoadedOs(){const legacy=document.querySelector('#education-os-nav');if(!legacy)return false;legacy.dataset.kpLegacyAutopilot='1';legacy.click();requestAnimationFrame(()=>{document.querySelector('.eo-os-nav [data-pane="intent"]')?.click();window.dispatchEvent(new CustomEvent('kp:customer-view-changed',{detail:{reason:'autopilot-open'}}));});return true;}
   async function openAutopilot(){
     if(busy)return;busy=true;document.querySelectorAll('[data-kp-autopilot-open]').forEach(b=>b.disabled=true);status('Autopilot wird geöffnet …');
     try{
