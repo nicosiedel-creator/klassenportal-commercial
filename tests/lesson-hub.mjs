@@ -9,6 +9,7 @@ const student=await readFile('public/lesson-hub-ui.js','utf8');
 const teacher=await readFile('public/teacher-lesson-hub-ui.js','utf8');
 const classHtml=await readFile('public/class-portal.html','utf8');
 const teacherHtml=await readFile('public/dozentenportal.html','utf8');
+const teacherLazy=await readFile('public/teacher-lazy-modules.js','utf8');
 
 assert.match(migration,/CREATE TABLE IF NOT EXISTS lesson_hub_details/,'lesson hub needs lesson-specific details');
 assert.match(migration,/CREATE TABLE IF NOT EXISTS lesson_hub_links/,'lesson hub needs lesson-specific links');
@@ -48,6 +49,8 @@ assert.match(teacher,/Unterrichtsinfos & Materialien/,'teacher portal must offer
 assert.match(teacher,/planned_topic/,'teacher must be able to maintain the planned lesson topic');
 assert.match(teacher,/data-upload/,'teacher must be able to upload lesson files directly');
 assert.match(teacher,/material_ids/,'teacher must be able to select reusable existing materials');
-assert.match(teacherHtml,/teacher-lesson-hub-ui\.js\?v=20260819-1/,'teacher portal must load lesson hub management');
+assert.match(teacherHtml,/teacher-lazy-modules\.js\?v=20260822-1/,'teacher portal must load the bounded lazy controller');
+assert.ok(teacherLazy.includes("'teacher-lesson-hub-ui'"),'teacher portal must lazy-load lesson hub management');
+assert.doesNotMatch(teacherHtml,/src="\/teacher-lesson-hub-ui\.js/,'teacher lesson hub must not execute on first paint');
 
-console.log('Lesson hub regression checks: OK');
+console.log('Lesson hub regression checks with lazy teacher runtime: OK');
