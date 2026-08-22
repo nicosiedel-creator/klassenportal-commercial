@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 const boot=await readFile('public/boot.js','utf8');
 const i18n=await readFile('public/localization.js','utf8');
 const customerUi=await readFile('public/customer-admin-ui.js','utf8');
+const customerLazy=await readFile('public/customer-admin-lazy-modules.js','utf8');
 const moat=await readFile('public/customer-moat-ui.js','utf8');
 const preparation=await readFile('public/setup-preparation-ui.js','utf8');
 const support=await readFile('public/customer-support-mode.js','utf8');
@@ -42,6 +43,11 @@ assert.match(customerUi,/showOperationsHub/,'active customer UI must own the com
 assert.match(customerUi,/requiredReady/,'active customer UI must recognize a ready self-service setup');
 assert.match(customerUi,/requestAnimationFrame/,'active customer observer must be frame-coalesced');
 assert.doesNotMatch(customerUi,/queueMicrotask\(\(\)=>\{scheduled=false;apply\(\);\}\)/,'the former customer-admin microtask feedback loop must not return');
+
+assert.match(customerLazy,/Array\.from\(\{length:6\}/,'customer modules must use bounded parallelism instead of five serial loading barriers');
+assert.match(customerLazy,/kp:customer-modules-loaded/,'each finished module must become visible to the navigation immediately');
+assert.match(customerLazy,/kp:customer-modules-ready/,'customer module loader must expose a deterministic completion signal');
+assert.doesNotMatch(customerLazy,/for\(const group of groups\)await loadGroup\(group\)/,'serial module groups must not return');
 
 assert.match(moat,/Education & Training OS · Arbeitsassistent/,'assistant must use its final product name without post-render patching');
 assert.match(moat,/supportPlatformAdmin/,'assistant must explicitly recognize the platform support projection');
