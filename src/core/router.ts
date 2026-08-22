@@ -107,19 +107,37 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
 
     if(u.pathname==='/api/courses'&&request.method==='GET')return json({ok:true,courses:await listCourses(env,a,tenantId)});
     if(u.pathname==='/api/courses'&&request.method==='POST'){await enforceCourseEntitlement(env,tenantId);return json({ok:true,course:await createCourse(env,a,tenantId,await body(request))},201);}
-    const courseRoute=u.pathname.match(/^\/api\/courses\/([^/]+)$/);if(courseRoute&&request.method==='PATCH')return json({ok:true,course:await updateCourse(env,a,tenantId,decodeURIComponent(courseRoute[1]),await body(request))});
+    const courseRoute=u.pathname.match(/^\/api\/courses\/([^/]+)$/);
+    if(courseRoute&&request.method==='PATCH')return json({ok:true,course:await updateCourse(env,a,tenantId,decodeURIComponent(courseRoute[1]),await body(request))});
+
     if(u.pathname==='/api/tenant/users'&&request.method==='GET')return json({ok:true,users:await listTenantUsers(env,a,tenantId)});
     if(u.pathname==='/api/tenant/users'&&request.method==='POST')return json({ok:true,...await createTenantUser(env,a,tenantId,await body(request))},201);
-    const passwordReset=u.pathname.match(/^\/api\/tenant\/users\/([^/]+)\/reset-password$/);if(passwordReset&&request.method==='POST')return json({ok:true,...await resetTenantUserPassword(env,a,tenantId,decodeURIComponent(passwordReset[1]))});
-    const membership=u.pathname.match(/^\/api\/tenant\/memberships\/([^/]+)$/);if(membership&&request.method==='PATCH')return json({ok:true,...await updateTenantMembership(env,a,tenantId,decodeURIComponent(membership[1]),await body(request))});if(membership&&request.method==='DELETE')return json({ok:true,...await deleteTenantMembership(env,a,tenantId,decodeURIComponent(membership[1]))});
-    const mat=u.pathname.match(/^\/api\/materials\/([^/]+)$/);if(mat&&request.method==='GET')return downloadLearningMaterial(env,a,tenantId,decodeURIComponent(mat[1]));if(mat&&request.method==='PATCH')return json({ok:true,...await updateLearningMaterial(env,a,tenantId,decodeURIComponent(mat[1]),await body(request))});if(mat&&request.method==='DELETE'){await deleteLearningMaterial(env,a,tenantId,decodeURIComponent(mat[1]));return json({ok:true});}
-    if(u.pathname==='/api/materials'&&request.method==='GET')return json({ok:true,materials:await listLearningMaterials(env,a,tenantId,courseId)});if(u.pathname==='/api/materials'&&request.method==='POST')return json({ok:true,...await uploadLearningMaterial(env,a,tenantId,request)},201);
-    const examVis=u.pathname.match(/^\/api\/exams\/([^/]+)\/visibility$/);if(examVis&&request.method==='PATCH'){const b=await body(request);await setExamVisibility(env,a,tenantId,decodeURIComponent(examVis[1]),!!b.visible);return json({ok:true});}
-    const grade=u.pathname.match(/^\/api\/exams\/([^/]+)\/grades\/([^/]+)$/);if(grade&&request.method==='PATCH')return json({ok:true,grade:await updatePersonalGrade(env,a,tenantId,decodeURIComponent(grade[1]),decodeURIComponent(grade[2]),await body(request))});if(grade&&request.method==='DELETE'){await deletePersonalGrade(env,a,tenantId,decodeURIComponent(grade[1]),decodeURIComponent(grade[2]));return json({ok:true});}
-    const grades=u.pathname.match(/^\/api\/exams\/([^/]+)\/grades$/);if(grades&&request.method==='GET')return json({ok:true,grades:await listPersonalGrades(env,a,tenantId,decodeURIComponent(grades[1]))});if(grades&&request.method==='POST')return json({ok:true,grade:await savePersonalGrade(env,a,tenantId,decodeURIComponent(grades[1]),await body(request))},201);
-    const contentRoute=u.pathname.match(/^\/api\/content\/(homework|appointments|announcements|links|lessons|exams)$/);if(contentRoute&&request.method==='GET')return json({ok:true,items:await listContent(env,a,tenantId,contentRoute[1],courseId)});if(contentRoute&&request.method==='POST')return json({ok:true,item:await createContent(env,a,tenantId,contentRoute[1],await body(request))},201);
-    const contentItem=u.pathname.match(/^\/api\/content\/(homework|appointments|announcements|links|lessons|exams)\/([^/]+)$/);if(contentItem&&request.method==='PATCH')return json({ok:true,item:await updateContent(env,a,tenantId,contentItem[1],decodeURIComponent(contentItem[2]),await body(request))});if(contentItem&&request.method==='DELETE'){await deleteContent(env,a,tenantId,contentItem[1],decodeURIComponent(contentItem[2]));return json({ok:true});}
-    return null;
+    const passwordReset=u.pathname.match(/^\/api\/tenant\/users\/([^/]+)\/reset-password$/);
+    if(passwordReset&&request.method==='POST')return json({ok:true,...await resetTenantUserPassword(env,a,tenantId,decodeURIComponent(passwordReset[1]))});
+    const membership=u.pathname.match(/^\/api\/tenant\/memberships\/([^/]+)$/);
+    if(membership&&request.method==='PATCH')return json({ok:true,membership:await updateTenantMembership(env,a,tenantId,decodeURIComponent(membership[1]),await body(request))});
+    if(membership&&request.method==='DELETE'){await deleteTenantMembership(env,a,tenantId,decodeURIComponent(membership[1]));return json({ok:true});}
+
+    if(u.pathname==='/api/materials'&&request.method==='GET')return json({ok:true,materials:await listLearningMaterials(env,a,tenantId,courseId)});
+    if(u.pathname==='/api/materials'&&request.method==='POST')return json({ok:true,material:await uploadLearningMaterial(env,a,tenantId,request,courseId)},201);
+    const materialDownload=u.pathname.match(/^\/api\/materials\/([^/]+)\/download$/);
+    if(materialDownload&&request.method==='GET')return downloadLearningMaterial(env,a,tenantId,decodeURIComponent(materialDownload[1]));
+    const material=u.pathname.match(/^\/api\/materials\/([^/]+)$/);
+    if(material&&request.method==='PATCH')return json({ok:true,material:await updateLearningMaterial(env,a,tenantId,decodeURIComponent(material[1]),await body(request))});
+    if(material&&request.method==='DELETE'){await deleteLearningMaterial(env,a,tenantId,decodeURIComponent(material[1]));return json({ok:true});}
+
+    const contentRow=u.pathname.match(/^\/api\/content\/([^/]+)\/([^/]+)$/);
+    if(contentRow&&request.method==='PATCH')return json({ok:true,item:await updateContent(env,a,tenantId,decodeURIComponent(contentRow[1]),decodeURIComponent(contentRow[2]),await body(request))});
+    if(contentRow&&request.method==='DELETE'){await deleteContent(env,a,tenantId,decodeURIComponent(contentRow[1]),decodeURIComponent(contentRow[2]));return json({ok:true});}
+    if(u.pathname.startsWith('/api/content/')){const type=u.pathname.split('/')[3]||'';if(request.method==='GET')return json({ok:true,items:await listContent(env,a,tenantId,type,courseId)});if(request.method==='POST')return json({ok:true,item:await createContent(env,a,tenantId,type,await body(request))},201);}
+    if(u.pathname.match(/^\/api\/exams\/[^/]+\/visibility$/)&&request.method==='PATCH'){const examId=u.pathname.split('/')[3];const b=await body(request);await setExamVisibility(env,a,tenantId,examId,!!b.visible);return json({ok:true});}
+
+    if(u.pathname==='/api/personal/grades'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,grades:await listPersonalGrades(env,a,tenantId,courseId)});}
+    if(u.pathname==='/api/personal/grades'&&request.method==='POST'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,grade:await savePersonalGrade(env,a,tenantId,courseId,await body(request))},201);}
+    const gradeRoute=u.pathname.match(/^\/api\/personal\/grades\/([^/]+)$/);
+    if(gradeRoute&&request.method==='PATCH'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,grade:await updatePersonalGrade(env,a,tenantId,courseId,decodeURIComponent(gradeRoute[1]),await body(request))});}
+    if(gradeRoute&&request.method==='DELETE'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');await deletePersonalGrade(env,a,tenantId,courseId,decodeURIComponent(gradeRoute[1]));return json({ok:true});}
+    return json({ok:false,error:'NOT_FOUND'},404);
   }catch(e){return err(e);}
 }
 
