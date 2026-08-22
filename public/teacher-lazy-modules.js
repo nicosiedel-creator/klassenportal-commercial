@@ -1,4 +1,4 @@
-const KP_TEACHER_LAZY_PATH=location.pathname.replace(/\/$/,'')==='/dozentenportal.html';
+const KP_TEACHER_LAZY_PATH=['/dozentenportal','/dozentenportal.html'].includes(location.pathname.replace(/\/$/,''));
 if(KP_TEACHER_LAZY_PATH){
   const VERSION='20260822-1';
   const GROUPS={
