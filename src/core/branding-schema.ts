@@ -6,6 +6,8 @@ const requiredBrandingColumns={
   text_color:"TEXT NOT NULL DEFAULT '#172033'",
 } as const;
 
+let ensured:Promise<void>|null=null;
+
 function supportsDirectD1(env:Env):boolean{
   const statement=env.DB.prepare('SELECT 1');
   return typeof statement.all==='function'&&typeof statement.run==='function';
@@ -33,11 +35,18 @@ export async function brandingSchemaStatus(env:Env){
 
 export async function ensureBrandingSchema(env:Env):Promise<void>{
   if(!supportsDirectD1(env))return;
-  let current=await settingsColumns(env);
-  for(const [name,definition] of Object.entries(requiredBrandingColumns) as [keyof typeof requiredBrandingColumns,string][]){
-    if(current.has(name))continue;
-    await addColumnSafely(env,name,definition);
-    current=await settingsColumns(env);
-  }
-  await env.DB.prepare(`UPDATE tenant_settings SET background_color='#ece8df' WHERE lower(background_color) IN ('#ffffff','#fefefe','#fafafa','#f9fafb','#f8fafc')`).run();
+  if(ensured)return ensured;
+  ensured=(async()=>{
+    let current=await settingsColumns(env),repaired=false;
+    for(const [name,definition] of Object.entries(requiredBrandingColumns) as [keyof typeof requiredBrandingColumns,string][]){
+      if(current.has(name))continue;
+      await addColumnSafely(env,name,definition);
+      repaired=true;
+      current=await settingsColumns(env);
+    }
+    // Normal production migrations already normalize the palette. Only perform
+    // this write if runtime schema repair actually had to add a missing column.
+    if(repaired)await env.DB.prepare(`UPDATE tenant_settings SET background_color='#ece8df' WHERE lower(background_color) IN ('#ffffff','#fefefe','#fafafa','#f9fafb','#f8fafc')`).run();
+  })().catch(error=>{ensured=null;throw error;});
+  return ensured;
 }
