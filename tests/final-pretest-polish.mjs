@@ -2,8 +2,8 @@ import { strict as assert } from 'node:assert';
 import { access, readFile } from 'node:fs/promises';
 
 const read=path=>readFile(path,'utf8');
-const [boot,i18n,customerUi,customerLazy,moat,preparation,enterprise,enterpriseUx,serviceWorker,pwa,customer,student,teacher,department,departmentAdmin,router,index,intent,migration,planningUi]=await Promise.all([
-  read('public/boot.js'),read('public/localization.js'),read('public/customer-admin-ui.js'),read('public/customer-admin-lazy-modules.js'),read('public/customer-moat-ui.js'),read('public/setup-preparation-ui.js'),read('public/customer-enterprise.css'),read('public/customer-enterprise-ux.js'),read('public/service-worker.js'),read('public/pwa-client.js'),read('public/customer-admin.html'),read('public/class-portal.html'),read('public/dozentenportal.html'),read('public/department-lead.html'),read('public/department-lead-admin-ui.js'),read('src/core/router.ts'),read('src/index.ts'),read('src/core/education-intent.ts'),read('migrations/0086_planning_resource_subtypes.sql'),read('public/planning-resource-ui.js')
+const [boot,i18n,customerUi,customerLazy,moat,preparation,enterprise,enterpriseUx,serviceWorker,pwa,customer,student,studentLazy,teacher,department,departmentAdmin,router,index,intent,migration,planningUi]=await Promise.all([
+  read('public/boot.js'),read('public/localization.js'),read('public/customer-admin-ui.js'),read('public/customer-admin-lazy-modules.js'),read('public/customer-moat-ui.js'),read('public/setup-preparation-ui.js'),read('public/customer-enterprise.css'),read('public/customer-enterprise-ux.js'),read('public/service-worker.js'),read('public/pwa-client.js'),read('public/customer-admin.html'),read('public/class-portal.html'),read('public/portal-lazy-runtime.js'),read('public/dozentenportal.html'),read('public/department-lead.html'),read('public/department-lead-admin-ui.js'),read('src/core/router.ts'),read('src/index.ts'),read('src/core/education-intent.ts'),read('migrations/0086_planning_resource_subtypes.sql'),read('public/planning-resource-ui.js')
 ]);
 const missing=async path=>{try{await access(path);return false;}catch{return true;}};
 
@@ -20,7 +20,10 @@ assert.match(i18n,/if\(CUSTOMER_PATH\)[\s\S]*kp:customer-view-changed/,'customer
 assert.match(i18n,/else\{[\s\S]*new MutationObserver/,'non-customer portals may retain their bounded added-node localization observer');
 assert.match(i18n,/window\.KP_I18N/,'localization API must remain shared');
 
-for(const html of [customer,student,teacher,department])assert.match(html,/localization\.js/,'all role portals must load the shared locale layer');
+for(const html of [customer,teacher,department])assert.match(html,/localization\.js/,'customer, teacher and department portals must load the shared locale layer');
+assert.match(student,/portal-lazy-runtime\.js/,'student portal must use the lean runtime controller');
+assert.match(studentLazy,/import\(`\/localization\.js\?v=\$\{V\}`\)/,'student portal must install the shared locale layer through its observer-free lazy adapter');
+assert.match(studentLazy,/window\.MutationObserver=NoopObserver/,'student locale installation must suppress the generic subtree observer');
 
 // Customer-admin initial payload: only shell-critical assets. Heavy features are on-demand.
 assert.match(customer,/customer-admin-lazy-modules\.js/,'customer admin must load the tiny lazy-module controller');
@@ -105,4 +108,4 @@ assert.match(intent,/resource_label|teacher_label|course_label/,'resolved intent
 assert.match(departmentAdmin,/\/department-lead\.html\?tenant_id=/,'department lead assignment must generate the real portal URL');
 assert.doesNotMatch(departmentAdmin,/\/fachbereichsleitung\.html\?tenant_id=/,'stale department portal path must not be emitted');
 
-console.log('Final pre-test zero-defect customer runtime, API compatibility, performance and routing checks: OK');
+console.log('Final pre-test zero-defect customer/student runtime, API compatibility, performance and routing checks: OK');
