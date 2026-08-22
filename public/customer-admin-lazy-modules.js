@@ -1,6 +1,6 @@
 const CUSTOMER_PATH=location.pathname.replace(/\/$/,'')==='/kunden-admin';
 if(CUSTOMER_PATH){
-  const V='20260822-3';
+  const V='20260822-4';
   const asset=name=>`/${name}.js?v=${V}`;
   const GROUPS={
     learning:['communication-admin-ui','teacher-message-admin-ui','teacher-assignment-ui','assignment-gradebook-ui','learning-report-collab-admin-ui','gradebook-policy-ui','gradebook-default-scale-ui','participant-360-ui','materials-admin-ui','certificate-workflow-ui','exam-documentation-admin-ui','department-lead-admin-ui','education-signature-compose-ui'].map(asset),
@@ -9,7 +9,11 @@ if(CUSTOMER_PATH){
     technology:['teams-management-ui','custom-domain-ui','advanced-module-ui'].map(asset),
     commerce:['class-role-ui','commerce-safe-ui','billing-addons-ui','area-mode','stripe-customer-portal-ui','class-portal-admin-ui','legal-footer-ui'].map(asset)
   };
-  const CSS_GROUPS={learning:[`/role-dashboard.css?v=${V}`,`/role-dashboard-polish.css?v=${V}`],automation:[`/education-os.css?v=${V}`]};
+  // role-dashboard*.css contains portal/student/teacher shell rules and must never be
+  // loaded into the customer-admin document: its legacy customer selectors can turn
+  // the desktop left rail back into a sticky horizontal strip. Customer modules use
+  // the customer enterprise shell; only feature-specific CSS is lazy-loaded here.
+  const CSS_GROUPS={automation:[`/education-os.css?v=${V}`]};
   const loaded=new Set(),loading=new Map(),groupPromises=new Map(),styles=new Set();
   const state={groups:{},errors:[]};
   const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
