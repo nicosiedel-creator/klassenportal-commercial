@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 
 const boot=await readFile('public/boot.js','utf8');
 const i18n=await readFile('public/localization.js','utf8');
-const polish=await readFile('public/customer-pretest-polish.js','utf8');
+const customerUi=await readFile('public/customer-admin-ui.js','utf8');
+const moat=await readFile('public/customer-moat-ui.js','utf8');
 const preparation=await readFile('public/setup-preparation-ui.js','utf8');
 const support=await readFile('public/customer-support-mode.js','utf8');
 const enterprise=await readFile('public/customer-enterprise.css','utf8');
@@ -25,18 +26,31 @@ assert.match(i18n,/m\.addedNodes/,'localization observer must process only added
 assert.match(i18n,/document\.documentElement\.dir=RTL\.has\(locale\)/,'RTL locale support must set document direction');
 assert.match(i18n,/window\.KP_I18N/,'localization API must be shared across portals');
 
-assert.ok(customer.includes('/localization.js?v=20260821-1'),'customer admin must load the new locale layer');
+assert.ok(customer.includes('/localization.js?v=20260821-1'),'customer admin must load the locale layer');
 assert.ok(student.includes('/localization.js?v=20260821-1'),'student portal must load the locale layer');
 assert.ok(teacher.includes('/localization.js?v=20260821-1'),'teacher portal must load the locale layer');
 assert.ok(department.includes('/localization.js?v=20260821-1'),'department lead portal must load the locale layer');
 
-assert.match(polish,/Planung & Daten/,'completed customer setup must be replaced by an operational planning/data area');
-assert.match(polish,/progress\.dataset\.setupReady='1'/,'completed setup state must be marked before the preparation checklist is removed');
-assert.match(polish,/requestAnimationFrame/,'customer polish observer must be frame-coalesced instead of running a microtask feedback loop');
-assert.match(polish,/Arbeitsassistent/,'floating Vorsprung action must use the clearer assistant name');
-assert.match(polish,/TENANT_ADMIN_REQUIRED/,'raw tenant-admin context error must be humanized');
-assert.match(polish,/const inflight=new Map/,'customer admin must deduplicate concurrent identical GET boot requests');
-assert.match(polish,/department-lead\.html/,'legacy department-lead links must be repaired defensively');
+// Test the files that are actually wired into /kunden-admin. A dead patch file must never make CI green.
+assert.ok(customer.includes('/customer-admin-ui.js?v=20260822-1'),'customer admin must load the audited active customer UI');
+assert.ok(customer.includes('/customer-moat-ui.js?v=20260822-1'),'customer admin must load the audited work assistant directly');
+assert.doesNotMatch(customer,/customer-pretest-polish\.js/,'customer runtime must not rely on the former unwired pretest patch file');
+assert.doesNotMatch(customer,/vfa13-reference\.css/,'commercial customer admin must not inherit VFA13-specific layout rules');
+
+assert.match(customerUi,/Planung & Daten/,'completed customer setup must become an operational planning/data area in the active runtime');
+assert.match(customerUi,/showOperationsHub/,'active customer UI must own the completed-setup transition');
+assert.match(customerUi,/requiredReady/,'active customer UI must recognize a ready self-service setup');
+assert.match(customerUi,/requestAnimationFrame/,'active customer observer must be frame-coalesced');
+assert.doesNotMatch(customerUi,/queueMicrotask\(\(\)=>\{scheduled=false;apply\(\);\}\)/,'the former customer-admin microtask feedback loop must not return');
+
+assert.match(moat,/Education & Training OS · Arbeitsassistent/,'assistant must use its final product name without post-render patching');
+assert.match(moat,/supportPlatformAdmin/,'assistant must explicitly recognize the platform support projection');
+assert.match(moat,/Plattform-Supportansicht · nur lesend/,'platform support must get a safe read-only assistant view');
+assert.match(moat,/Promise\.allSettled/,'one failed assistant panel must not blank the complete modal');
+assert.match(moat,/TENANT_ADMIN_REQUIRED:/,'tenant-admin denial must have a human-readable message');
+assert.match(moat,/AUTOPILOT_TENANT_ADMIN_REQUIRED:/,'autopilot tenant-admin denial must have a human-readable message');
+assert.doesNotMatch(moat,/host\.innerHTML=note\(e\.message/,'raw backend errors must never replace the entire assistant body');
+assert.doesNotMatch(moat,/out\.textContent=e\.message/,'raw backend errors must never be printed into assistant actions');
 
 assert.match(preparation,/function customerSetupReady\(/,'setup preparation must understand the completed customer state');
 assert.match(preparation,/content\.querySelector\('#kp-operations-hub'\)/,'the preparation checklist must never be reinserted beside the operational hub');
@@ -46,6 +60,7 @@ assert.doesNotMatch(preparation,/new MutationObserver\(\(\)=>queueMicrotask\(app
 
 assert.match(support,/const TTL=8000/,'customer bootstrap reads need a bounded short-lived response cache');
 assert.match(support,/const responseCache=new Map/,'customer bootstrap should reuse identical startup responses');
+assert.match(support,/supportPlatformAdmin:true/,'platform support projection must remain explicitly marked as support rather than becoming server-side tenant admin');
 assert.match(support,/\/api\/platform\/tenants/,'tenant bootstrap must be warmable before app startup');
 assert.match(support,/\/api\/courses/,'remembered tenant courses must be warmed in parallel');
 assert.match(support,/\/api\/billing\/setup-progress/,'setup progress should be warmed in parallel for the remembered tenant');
@@ -56,9 +71,9 @@ assert.match(enterprise,/grid-template-columns:260px minmax\(0,1fr\)!important/,
 assert.match(enterprise,/\.customer-portal-admin \.side\{position:static!important/,'final enterprise CSS must neutralize the later sticky top-navigation override');
 assert.match(enterprise,/backdrop-filter:none!important/,'final customer navigation must not spend main-thread/GPU work on a sticky blur layer');
 
-assert.ok(customer.includes('/customer-enterprise.css?v=20260821-2'),'customer enterprise CSS must get a new cache key after the desktop navigation fix');
-assert.ok(customer.includes('/customer-enterprise-ux.js?v=20260821-2'),'customer enterprise UX must get a new cache key after the observer fix');
-assert.ok(customer.includes('/pwa-client.js?v=20260821-2'),'customer admin must bootstrap the deployment-aware PWA client with a fresh cache key');
+assert.ok(customer.includes('/customer-enterprise.css?v=20260821-2'),'customer enterprise CSS must keep its deployment cache key');
+assert.ok(customer.includes('/customer-enterprise-ux.js?v=20260821-2'),'customer enterprise UX must keep its observer-fix cache key');
+assert.ok(customer.includes('/pwa-client.js?v=20260821-2'),'customer admin must bootstrap the deployment-aware PWA client');
 assert.match(serviceWorker,/kp-shell-v2-20260821/,'service worker cache version must rotate so stale shell assets are deleted');
 assert.match(serviceWorker,/destination==='script'\|\|destination==='style'/,'scripts and styles must use the deployment-safe network path');
 assert.match(serviceWorker,/cache:'no-cache'/,'deployment-critical scripts and styles must revalidate with the network');
@@ -73,4 +88,4 @@ assert.doesNotMatch(enterpriseUx,/n\.textContent=n\.textContent\.replace/,'uncon
 assert.match(departmentAdmin,/\/department-lead\.html\?tenant_id=/,'department lead assignment must generate the real portal URL');
 assert.doesNotMatch(departmentAdmin,/\/fachbereichsleitung\.html\?tenant_id=/,'stale department lead portal path must not be emitted');
 
-console.log('Final pre-test performance, multilingual, customer-ops and department-lead routing checks: OK');
+console.log('Final pre-test active-runtime, performance, multilingual, customer-ops and department-lead checks: OK');
