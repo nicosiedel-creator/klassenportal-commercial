@@ -10,19 +10,19 @@ const bridge=await readFile('src/core/participant-360-router.ts','utf8');
 const cycle=await readFile('src/core/automation-cycle.ts','utf8');
 const participant=await readFile('public/participant-moat-ui.js','utf8');
 const customer=await readFile('public/customer-moat-ui.js','utf8');
+const customerLazy=await readFile('public/customer-admin-lazy-modules.js','utf8');
+const customerHtml=await readFile('public/customer-admin.html','utf8');
 const partner=await readFile('public/partner-portal.js','utf8');
 const partnerHtml=await readFile('public/partner.html','utf8');
 const pwa=await readFile('public/pwa-client.js','utf8');
 
-for(const table of ['tenant_compliance_programs','compliance_requirements','compliance_evidence','compliance_findings','compliance_evidence_packages','portal_language_preferences','learner_twin_snapshots','learner_coach_plans','partner_access_grants','migration_quality_runs'])
-  assert.match(migration,new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`),`${table} missing`);
+for(const table of ['tenant_compliance_programs','compliance_requirements','compliance_evidence','compliance_findings','compliance_evidence_packages','portal_language_preferences','learner_twin_snapshots','learner_coach_plans','partner_access_grants','migration_quality_runs'])assert.match(migration,new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`),`${table} missing`);
 assert.match(migration,/LEARNER_TWIN_SNAPSHOT_IMMUTABLE/,'learner twin snapshots must be immutable');
 assert.match(migration,/token_hash TEXT NOT NULL UNIQUE/,'partner grants must store only hashed bearer tokens');
 assert.match(hardeningMigration,/CREATE TABLE IF NOT EXISTS compliance_automation_state/,'bounded compliance automation cursor missing');
 for(const trigger of ['trg_compliance_evidence_immutable_update','trg_compliance_evidence_immutable_delete','trg_compliance_package_immutable_update','trg_compliance_package_immutable_delete'])assert.match(hardeningMigration,new RegExp(trigger),`${trigger} missing`);
 
-for(const locale of ["'de'","'en'","'tr'","'ar'","'uk'","'ru'","'pl'","'ro'","'bg'","'fa'","'prs'","'ps'","'fr'","'es'","'vi'"])
-  assert.ok(core.includes(locale),`locale ${locale} missing`);
+for(const locale of ["'de'","'en'","'tr'","'ar'","'uk'","'ru'","'pl'","'ro'","'bg'","'fa'","'prs'","'ps'","'fr'","'es'","'vi'"])assert.ok(core.includes(locale),`locale ${locale} missing`);
 assert.match(core,/RTL_SET/,'RTL support missing');
 assert.match(core,/own_data_only:true/,'learner twin must be self-scoped');
 assert.match(core,/peer_comparison:false/,'learner twin must not compare peers');
@@ -35,8 +35,7 @@ assert.match(core,/verification_confirmed/,'regulatory packs must require explic
 assert.match(core,/legal_determination:false/,'compliance engine must not claim legal determination');
 assert.match(core,/silent_data_loss_allowed:false/,'migration quality gate must explicitly forbid silent data loss');
 
-for(const forbidden of ['grades','attendance','health','private_notes','billing','roles','permissions'])
-  assert.ok(core.includes(`'${forbidden}'`),`partner forbidden capability ${forbidden} must be explicit`);
+for(const forbidden of ['grades','attendance','health','private_notes','billing','roles','permissions'])assert.ok(core.includes(`'${forbidden}'`),`partner forbidden capability ${forbidden} must be explicit`);
 assert.match(core,/tokenHash=await sha256Text\(token\)/,'partner bearer token must be hashed before storage');
 assert.match(core,/token_shown_once:true/,'partner token must be one-time display');
 assert.doesNotMatch(core,/SELECT .*grade.*FROM/i,'partner/learner moat must not query grades directly');
@@ -51,8 +50,7 @@ assert.doesNotMatch(hardening,/practice_period/,'unimplemented partner capabilit
 assert.match(hardening,/runComplianceRadarBounded/,'bounded compliance automation missing');
 assert.match(hardening,/LIMIT \?/,'compliance automation must be bounded per cycle');
 
-for(const route of ['/api/moat/language','/api/moat/learner-twin','/api/moat/learning-coach/plan','/api/moat/compliance/overview','/api/moat/compliance/evidence-package','/api/moat/migration/preflight','/api/moat/partners/grants','/api/moat/integrations/capabilities','/api/moat/copilot/preview','/api/moat/partner-access'])
-  assert.ok(router.includes(route),`route ${route} missing`);
+for(const route of ['/api/moat/language','/api/moat/learner-twin','/api/moat/learning-coach/plan','/api/moat/compliance/overview','/api/moat/compliance/evidence-package','/api/moat/migration/preflight','/api/moat/partners/grants','/api/moat/integrations/capabilities','/api/moat/copilot/preview','/api/moat/partner-access'])assert.ok(router.includes(route),`route ${route} missing`);
 assert.doesNotMatch(router,/partner-access\\\/\(\[\^\/\]\+\)/,'partner bearer tokens must never be placed in URL path');
 assert.match(router,/authorization/,'partner access must accept Authorization bearer token');
 assert.match(router,/publicPartnerContextHardened/,'partner access must use the membership-scoped hardened reader');
@@ -63,7 +61,9 @@ assert.match(bridge,/handlePersonalCompassApi/,'existing personal compass must b
 assert.match(cycle,/runComplianceRadarBounded/,'compliance radar must use bounded Worker-safe automation');
 
 assert.match(pwa,/participant-moat-ui\.js/,'participant portal must load multilingual learner UI');
-assert.match(pwa,/customer-moat-ui\.js/,'customer admin must load moat workspace');
+assert.doesNotMatch(pwa,/customer-moat-ui\.js/,'customer moat must not be smuggled into the PWA critical path');
+assert.match(customerLazy,/customer-moat-ui/,'customer moat workspace must remain available through on-demand customer modules');
+assert.doesNotMatch(customerHtml,/src="\/customer-moat-ui\.js/,'customer moat implementation must not execute during first paint');
 assert.match(participant,/KP_LANGUAGES/);
 assert.match(participant,/rtlSet/);
 assert.match(participant,/\/api\/moat\/learning-coach\/plan/);
@@ -71,9 +71,10 @@ assert.match(customer,/Compliance Readiness/);
 assert.match(customer,/Zero-Touch Migration 2\.0/);
 assert.match(customer,/Partnerportal-Freigabe/);
 assert.match(customer,/Action Copilot/);
+assert.match(customer,/supportPlatformAdmin/,'customer moat must retain explicit support read-only behavior');
 assert.match(partnerHtml,/partner-portal\.js/,'partner portal shell must load secure client');
 assert.match(partner,/Authorization|authorization/,'partner client must send token in an Authorization header');
 assert.match(partner,/history\.replaceState/,'partner client must remove fragment token before rendering');
 assert.doesNotMatch(partner,/partner-access\/\$\{/,'partner client must never put token in request URL');
 
-console.log('EIN360 moat architecture/security regression: OK');
+console.log('EIN360 moat architecture/security and on-demand customer-runtime regression: OK');
