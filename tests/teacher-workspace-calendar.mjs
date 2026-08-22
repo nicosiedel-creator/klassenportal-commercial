@@ -7,6 +7,7 @@ const router=await readFile('src/core/communications-router.ts','utf8');
 const ui=await readFile('public/teacher-workspace-ui.js','utf8');
 const css=await readFile('public/integrated-workspace.css','utf8');
 const teacherHtml=await readFile('public/dozentenportal.html','utf8');
+const teacherLazy=await readFile('public/teacher-lazy-modules.js','utf8');
 const classHtml=await readFile('public/class-portal.html','utf8');
 const adminUi=await readFile('public/teacher-message-admin-ui.js','utf8');
 const seed=await readFile('scripts/seed-demo-nico-teacher.mjs','utf8');
@@ -38,11 +39,13 @@ assert.match(ui,/Meldungen/,'teacher workspace must display management/office me
 
 assert.match(css,/#tp-workspace/,'teacher dashboard needs its own integrated layout');
 assert.match(css,/#kalender\{grid-column:span 2/,'student calendar must get more horizontal space');
-assert.match(teacherHtml,/teacher-workspace-ui\.js\?v=20260819-1/,'teacher portal must load workspace UI');
+assert.match(teacherHtml,/teacher-lazy-modules\.js\?v=20260822-1/,'teacher portal must load its bounded lazy controller');
+assert.ok(teacherLazy.includes("'teacher-workspace-ui'"),'teacher dashboard must load workspace UI on demand');
+assert.doesNotMatch(teacherHtml,/src="\/teacher-workspace-ui\.js/,'teacher workspace must not execute on first paint');
 assert.match(teacherHtml,/integrated-workspace\.css\?v=20260819-1/,'teacher portal must load workspace styles');
 assert.match(classHtml,/integrated-workspace\.css\?v=20260819-1/,'student portal must load layout correction');
 assert.match(adminUi,/Schulleitung, Sekretariat und Verwaltung → Dozentenportal/,'customer admin must manage internal teacher messages');
 assert.match(seed,/lesson_hub_details/,'demo seed must make lesson hub visibly testable');
 assert.match(seed,/teacher_messages/,'demo seed must provide teacher messages');
 
-console.log('Integrated teacher calendar, classbook, lesson hub and notices checks: OK');
+console.log('Integrated teacher calendar, classbook, lesson hub, notices and lazy-runtime checks: OK');
