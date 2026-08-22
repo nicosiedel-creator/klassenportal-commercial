@@ -7,6 +7,7 @@ const classPortal=await readFile('public/class-portal.html','utf8');
 const classPortalJs=await readFile('public/class-portal.js','utf8');
 const teacherGuidance=await readFile('public/teacher-assignment-guidance.js','utf8');
 const teacherPortal=await readFile('public/dozentenportal.html','utf8');
+const teacherLazy=await readFile('public/teacher-lazy-modules.js','utf8');
 const teacherCore=await readFile('src/core/teacher-portal.ts','utf8');
 
 assert.ok(publicApi.includes('Date.now()-28*86400000'),'participant overview must retain four weeks of calendar history');
@@ -25,7 +26,9 @@ assert.ok(classPortal.includes('/portal-calendar-lookback.js?v=20260819-1'),'cla
 assert.ok(teacherGuidance.includes('Dozent/in + Portal-Benutzerkonto + Klasse/Kurs'),'empty teacher portal must explain the complete assignment triple');
 assert.ok(teacherGuidance.includes('Schüler oder Klassenadmin'),'teacher portal must explain the same-course role conflict');
 assert.ok(teacherGuidance.includes('separates Dozentenkonto'),'teacher portal must offer the privacy-safe testing path');
-assert.ok(teacherPortal.includes('/teacher-assignment-guidance.js?v=20260819-1'),'teacher portal must load assignment guidance');
+assert.match(teacherPortal,/teacher-lazy-modules\.js\?v=20260822-1/,'teacher portal must load the bounded lazy controller');
+assert.ok(teacherLazy.includes("'teacher-assignment-guidance'"),'teacher portal must lazy-load assignment guidance after authenticated teacher state is known');
+assert.doesNotMatch(teacherPortal,/src="\/teacher-assignment-guidance\.js/,'assignment guidance must not execute on first paint');
 assert.ok(teacherCore.includes("throw new Error('TEACHER_STUDENT_ROLE_CONFLICT')"),'same-course student/teacher privacy barrier must remain server-side');
 
-console.log('Four-week calendar retrospective, shared portal data and teacher assignment guidance checks: OK');
+console.log('Four-week calendar retrospective, shared portal data and lazy teacher assignment guidance checks: OK');
