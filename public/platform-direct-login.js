@@ -4,7 +4,7 @@ if(PLATFORM_DIRECT_PATH){
   const root=document.querySelector('#app');
   let loading=false;
 
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   async function json(url,opt={}){
     const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt,headers:{'content-type':'application/json',...(opt.headers||{})}});
     let d={};try{d=await r.clone().json();}catch{}
@@ -32,28 +32,14 @@ if(PLATFORM_DIRECT_PATH){
   async function loadPlatform(){
     if(loading)return;loading=true;
     root.innerHTML='<main class="center"><div class="loader">Plattform-Admin wird geladen …</div></main>';
-    await import('/boot.js?v=20260817-7');
+    // Keep first paint deliberately small. localization.js is already loaded by
+    // platform-admin.html; importing another query-string variant used to create
+    // a second independent localization runtime and another document observer.
+    await import('/boot.js?v=20260822-platform-perf-1');
     await Promise.all([
-      import('/branding-assistant.js?v=20260817-2'),
-      import('/timetable-assistant.js?v=20260816-14'),
-      import('/timetable-bulk-v3.js?v=20260816-14'),
-      import('/localization.js?v=20260817-3'),
-      import('/class-role-ui.js?v=20260816-14'),
-      import('/platform-admin-ui.js?v=20260816-14'),
-      import('/platform-owner-ui.js?v=20260816-14'),
-      import('/platform-offers-ui.js?v=20260817-2'),
-      import('/platform-offer-admin-preview-ui.js?v=20260818-1'),
-      import('/platform-offer-accepted-link-ui.js?v=20260817-1'),
-      import('/platform-accounting-ui.js?v=20260818-1'),
-      import('/platform-accounting-autopilot-ui.js?v=20260818-1'),
-      import('/legal-owner-ui.js?v=20260817-1'),
-      import('/owner-security-ui.js?v=20260816-14'),
-      import('/launch-readiness-ui.js?v=20260818-2'),
-      import('/custom-domain-ui.js?v=20260816-14'),
-      import('/schema-upgrade-ui.js?v=20260816-14'),
-      import('/commerce-safe-ui.js?v=20260816-14'),
-      import('/module-pricing-platform-ui.js?v=20260816-14'),
-      import('/area-mode.js?v=20260816-14')
+      import('/platform-admin-ui.js?v=20260822-platform-perf-1'),
+      import('/platform-admin-i18n.js?v=20260822-platform-perf-1'),
+      import('/platform-admin-lazy-modules.js?v=20260822-platform-perf-1')
     ]);
   }
 
@@ -64,7 +50,7 @@ if(PLATFORM_DIRECT_PATH){
       if(user)await logout();
       renderLogin(user?'Bitte melde Dich mit Deinem Plattform-Admin-Konto an.':'');
     }
-  }catch(e){
+  }catch{
     renderLogin('Die Plattform-Anmeldung konnte nicht geladen werden. Bitte erneut versuchen.');
   }
 }

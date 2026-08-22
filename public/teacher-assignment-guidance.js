@@ -2,8 +2,6 @@ const teacherPortal=document.querySelector('#teacher-portal');
 
 if(teacherPortal){
   const emptyText='Für dieses Konto ist noch keine Klasse im Dozentenportal zugeordnet.';
-  let queued=false;
-
   function enhance(){
     const empty=[...teacherPortal.querySelectorAll('.portal-empty')].find(node=>node.textContent?.trim()===emptyText);
     if(!empty||empty.dataset.assignmentGuidance==='1')return;
@@ -20,13 +18,6 @@ if(teacherPortal){
       </div>
     `;
   }
-
-  function schedule(){
-    if(queued)return;
-    queued=true;
-    queueMicrotask(()=>{queued=false;enhance();});
-  }
-
-  new MutationObserver(schedule).observe(teacherPortal,{subtree:true,childList:true});
-  schedule();
+  window.addEventListener('kp:teacher-state',enhance);
+  enhance();
 }

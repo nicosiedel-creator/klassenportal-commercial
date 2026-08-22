@@ -38,14 +38,8 @@ async function resolveContext(){
   }catch{}
   customized=(serverOrder?.length||safeLoadOrder().length)>0;
 }
-async function saveOrderServer(ids){
-  if(!serverContext)return;
-  try{const r=await apiJson(`/api/personal/portal-layout?tenant_id=${encodeURIComponent(serverContext.tenantId)}&course_id=${encodeURIComponent(serverContext.courseId)}`,{method:'PUT',body:JSON.stringify({order:ids})});serverOrder=Array.isArray(r.order)?r.order.map(String):ids;}catch{}
-}
-async function resetOrderServer(){
-  if(!serverContext)return;
-  try{await apiJson(`/api/personal/portal-layout?tenant_id=${encodeURIComponent(serverContext.tenantId)}&course_id=${encodeURIComponent(serverContext.courseId)}`,{method:'DELETE'});serverOrder=[];}catch{}
-}
+async function saveOrderServer(ids){if(!serverContext)return;try{const r=await apiJson(`/api/personal/portal-layout?tenant_id=${encodeURIComponent(serverContext.tenantId)}&course_id=${encodeURIComponent(serverContext.courseId)}`,{method:'PUT',body:JSON.stringify({order:ids})});serverOrder=Array.isArray(r.order)?r.order.map(String):ids;}catch{}}
+async function resetOrderServer(){if(!serverContext)return;try{await apiJson(`/api/personal/portal-layout?tenant_id=${encodeURIComponent(serverContext.tenantId)}&course_id=${encodeURIComponent(serverContext.courseId)}`,{method:'DELETE'});serverOrder=[];}catch{}}
 function reorderNav(order){
   const nav=portalRoot?.querySelector('.portal-nav');if(!nav)return;
   const links=[...nav.querySelectorAll('a[href^="#"]')],byId=new Map(links.map(a=>[decodeURIComponent(a.hash.slice(1)),a]));
@@ -102,4 +96,10 @@ async function enhanceLayout(){
   installDropTargets(grid);reorderNav(sectionIds(grid));addResetButton(defaultOrder,grid);
 }
 
-if(portalRoot){const observer=new MutationObserver(()=>queueMicrotask(()=>void enhanceLayout()));observer.observe(portalRoot,{childList:true,subtree:true});void enhanceLayout();}
+if(portalRoot){
+  let frame=0;const schedule=()=>{if(frame)return;frame=requestAnimationFrame(()=>{frame=0;void enhanceLayout();});};
+  // Only a complete shell replacement requires re-enhancement. Nested feature
+  // mutations must not fan out into a document-wide observer cascade.
+  new MutationObserver(schedule).observe(portalRoot,{childList:true});
+  void enhanceLayout();
+}

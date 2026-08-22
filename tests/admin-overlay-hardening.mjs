@@ -19,7 +19,7 @@ assert.match(js,/kp-admin-modal-open/,'overlay guard must maintain the body moda
 
 for(const file of ['public/customer-admin.html','public/platform-admin.html']){
   const html=await readFile(file,'utf8');
-  const base=html.lastIndexOf('/styles.css'),hardening=html.indexOf('/admin-overlay-hardening.css?v=20260818-2'),guard=html.indexOf('/admin-overlay-hardening.js?v=20260818-2');
+  const base=html.lastIndexOf('/styles.css'),hardening=html.indexOf('/admin-overlay-hardening.css?v='),guard=html.indexOf('/admin-overlay-hardening.js?v=');
   assert.ok(hardening>=0,`${file} must load viewport overlay hardening`);
   assert.ok(hardening>base,`${file} must load overlay hardening after its normal stylesheet stack`);
   assert.ok(guard>=0,`${file} must load the DOM overlay guard`);

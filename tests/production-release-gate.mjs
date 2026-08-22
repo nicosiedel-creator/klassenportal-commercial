@@ -8,6 +8,7 @@ const router=await readFile('src/core/launch-readiness-router.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
 const ui=await readFile('public/launch-readiness-ui.js','utf8');
 const platformDirect=await readFile('public/platform-direct-login.js','utf8');
+const platformLazy=await readFile('public/platform-admin-lazy-modules.js','utf8');
 const platformHtml=await readFile('public/platform-admin.html','utf8');
 const wrangler=await readFile('wrangler.jsonc','utf8');
 const migration=await readFile('migrations/0042_production_release_gate.sql','utf8');
@@ -64,7 +65,9 @@ for(const label of ['EU-Worker-Verarbeitung / Regional Services','EU Customer Me
 assert.match(ui,/Unmittelbar nach dem MFA-Schritt prüft der Server alle Freigabebedingungen erneut/,'owner UI must explain final server-side recheck');
 assert.match(ui,/PRODUCTION_NOT_READY_AFTER_STEP_UP:'Während der Bestätigung hat sich eine Freigabebedingung geändert/,'owner UI must explain a post-step-up readiness race in plain German');
 assert.match(ui,/PRODUCTION_RELEASE_STATE_CHANGED:'Worker-Version oder Produktionsdomain haben sich während der Bestätigung geändert/,'owner UI must explain a version/origin race in plain German');
-assert.ok(platformDirect.includes("/launch-readiness-ui.js?v=20260818-2"),'platform loader must bust cache for hardened readiness UI');
-assert.ok(platformHtml.includes('/platform-direct-login.js?v=20260818-2'),'platform page must bust cache for the updated loader');
+assert.match(platformDirect,/platform-admin-lazy-modules\.js/,'platform bootstrap must install the bounded lazy controller after authentication');
+assert.match(platformLazy,/release:\['launch-readiness-ui'\]/,'release/readiness UI must remain available on demand');
+assert.doesNotMatch(platformDirect,/import\('\/launch-readiness-ui\.js/,'release UI must not regress to eager first-paint loading');
+assert.match(platformHtml,/\/platform-direct-login\.js\?v=20260822-platform-perf-1/,'platform page must load the current optimized direct-login entry');
 
-console.log('Version-bound, fail-closed and post-MFA production release gate checks: OK');
+console.log('Version-bound, fail-closed, post-MFA production release gate and lazy platform-runtime checks: OK');

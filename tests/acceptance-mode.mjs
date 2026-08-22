@@ -6,7 +6,11 @@ const base='https://klassenportal-commercial.nicosiedel.workers.dev';
 const testEnv={APP_ORIGIN:'',STRIPE_SECRET_KEY:'sk_test_example'};
 const liveStripeEnv={APP_ORIGIN:'',STRIPE_SECRET_KEY:'sk_live_example'};
 const productionEnv={APP_ORIGIN:'https://portal.example.de',STRIPE_SECRET_KEY:'sk_test_example'};
-const worker=await readFile('src/index.ts','utf8');
+const [worker,teacherRuntime,teacherLazy]=await Promise.all([
+  readFile('src/index.ts','utf8'),
+  readFile('public/teacher-runtime-controller.js','utf8'),
+  readFile('public/teacher-lazy-modules.js','utf8')
+]);
 
 const req=(path,method='GET')=>new Request(`${base}${path}`,{method});
 assert.equal(isLockedAcceptanceEnvironment(testEnv,req('/kunden-admin')),true,'base workers.dev must be recognized as pre-live acceptance host');
@@ -24,6 +28,9 @@ assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/klassen-admin
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/dozentenportal')),true,'canonical teacher portal route must load during controlled acceptance');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/dozentenportal.html')),true,'teacher portal html shell must load during controlled acceptance');
 assert.match(worker,/clean==='\/dozentenportal'\|\|clean==='\/dozentenportal\.html'[\s\S]*\/dozentenportal\.html/,'canonical teacher portal route must resolve to the teacher portal asset');
+for(const source of [teacherRuntime,teacherLazy]){
+  assert.match(source,/\['\/dozentenportal','\/dozentenportal\.html'\]\.includes\(location\.pathname/,'teacher feature runtime must activate on both canonical and html portal URLs');
+}
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/einrichtung/invite_token')),true,'tokenized onboarding page must load during acceptance');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/api/onboarding/invite_token')),true,'tokenized onboarding API must be reachable during acceptance');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/api/onboarding/invite_token','POST')),true,'test-mode onboarding submission must be allowed');
@@ -34,4 +41,4 @@ assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/api/intake/up
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/api/courses?tenant_id=ten_test')),false,'tenant APIs must not be opened without an authenticated session');
 assert.equal(await acceptanceModeAllowsLockedRequest(testEnv,req('/unrelated-private-page')),false,'unlisted pages must remain locked');
 
-console.log('Controlled pre-live acceptance mode including teacher portal checks: OK');
+console.log('Controlled pre-live acceptance mode including canonical teacher lazy-runtime checks: OK');

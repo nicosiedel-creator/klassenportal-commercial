@@ -16,8 +16,7 @@ if(teacherRoot){
     if(mainCard&&!sideCard)mainCard.classList.add('teacher-main-wide');
     main.querySelectorAll('.portal-grid > .portal-section').forEach(x=>x.classList.add('teacher-course-card'));
   }
-  let queued=false;
-  const queue=()=>{if(queued)return;queued=true;queueMicrotask(()=>{queued=false;scan();});};
-  new MutationObserver(queue).observe(teacherRoot,{childList:true,subtree:true});
+  let frame=0;const schedule=()=>{if(frame)return;frame=requestAnimationFrame(()=>{frame=0;scan();});};
+  window.addEventListener('kp:teacher-state',schedule);
   scan();
 }

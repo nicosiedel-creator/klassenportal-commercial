@@ -20,6 +20,7 @@ const reportbook=await readFile('public/portal-report-book-ui.js','utf8');
 const participantModes=await readFile('public/portal-learning-mode-ui.js','utf8');
 const signatureInbox=await readFile('public/portal-signature-inbox-ui.js','utf8');
 const teacher=await readFile('public/dozentenportal.html','utf8');
+const teacherLazy=await readFile('public/teacher-lazy-modules.js','utf8');
 const teacherLearning=await readFile('public/teacher-learning-operations-ui.js','utf8');
 const teacherModes=await readFile('public/teacher-learning-mode-display.js','utf8');
 const platform=await readFile('public/platform-admin.html','utf8');
@@ -99,8 +100,11 @@ assert.match(signatureInbox,/snapshot_json/,'participant must see the exact snap
 assert.match(signatureInbox,/Externe qualifizierte Signatur \(QES\)/,'QES requests must be visually distinguished from portal confirmation');
 assert.match(signatureInbox,/Das Portal erzeugt nicht selbst eine fortgeschrittene oder qualifizierte Signatur/,'portal must not misrepresent built-in confirmation as advanced or qualified signature');
 
-assert.match(teacher,/teacher-learning-operations-ui\.js/,'teacher learning operations workspace missing');
-assert.match(teacher,/teacher-learning-mode-display\.js/,'teacher calendar learning-mode display missing');
+assert.match(teacher,/teacher-lazy-modules\.js/,'teacher portal must load the lazy runtime controller');
+assert.match(teacherLazy,/teacher-learning-operations-ui/,'teacher learning operations workspace must remain available on demand');
+assert.match(teacherLazy,/teacher-learning-mode-display/,'teacher calendar learning-mode display must remain available on demand');
+assert.doesNotMatch(teacher,/src="\/teacher-learning-operations-ui\.js/,'teacher learning operations must not regress to eager loading');
+assert.doesNotMatch(teacher,/src="\/teacher-learning-mode-display\.js/,'teacher learning-mode display must not regress to eager loading');
 assert.match(teacherLearning,/Lernform/,'teacher must be able to classify learning activity');
 assert.match(teacherLearning,/Berichtshefte prüfen/,'teacher report book review missing');
 assert.match(teacherLearning,/Gegenzeichnen/,'teacher digital countersignature missing');

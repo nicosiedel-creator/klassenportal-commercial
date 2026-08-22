@@ -18,15 +18,16 @@ assert.match(perf,/warm\(overviewPath/,'overview should start warming during par
 assert.match(perf,/window\.fetch=async function/,'same portal requests must be deduplicated through a short-lived response cache');
 assert.match(perf,/X-Klassenportal-Access-Code/,'prefetch must preserve access-code isolation');
 
-const overviewSource=dash.slice(dash.indexOf('async function overview(){'),dash.indexOf('async function enrichAssignments'));
-assert.match(dash,/const data=await overview\(\);if\(!data\?\.course\)return;render\(data\);enrichAssignments\(data\)/,'weekly dashboard must render before personal assignment enrichment');
-assert.doesNotMatch(overviewSource,/api\/assignments/,'overview must not block the timetable on assignment APIs');
-assert.match(dash,/function queue\(\)\{if\(queued\|\|root\.querySelector\('\.kp2-dashboard'\)\)return;/,'dashboard mutation observer must never refetch because of its own rendered dashboard');
-assert.match(dash,/new MutationObserver\(queue\)/,'portal shell changes may still trigger one guarded dashboard build');
+assert.match(dash,/async function build\(data\)\{[^}]*render\(data\);void enrichAssignments\(data\)/,'weekly dashboard must render before personal assignment enrichment');
+assert.match(dash,/kp:portal-data/,'dashboard must consume the base portal data event rather than refetching the overview');
+assert.match(dash,/window\.__KP_PORTAL_DATA/,'dashboard must support already-resolved portal data on late module load');
+assert.doesNotMatch(dash,/\/public\/.*\/overview/,'dashboard must not issue its own overview request');
+assert.doesNotMatch(dash,/MutationObserver/,'student dashboard must remain fully event-driven and cannot re-enter through DOM mutations');
+assert.match(dash,/assignmentBusy/,'personal assignment enrichment must be protected against concurrent duplicate requests');
 assert.match(dash,/taskCounts/,'weekly plan must visually surface due-task counts');
 assert.match(dash,/kp2-mosaic/,'week, tasks and agenda must form one cohesive dashboard block');
 assert.match(css,/grid-template-columns:minmax\(0,2\.15fr\) minmax\(300px,.85fr\)/,'desktop dashboard must prioritize the weekly plan');
 assert.match(css,/@media\(max-width:980px\)/,'dashboard must collapse cleanly for tablets');
 assert.match(css,/@media\(max-width:680px\)/,'dashboard must be mobile responsive');
 
-console.log('Student portal immediate-week-plan, request-storm guard and polished mosaic layout checks: OK');
+console.log('Student portal immediate-week-plan, event-driven request-storm guard and polished mosaic layout checks: OK');

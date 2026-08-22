@@ -34,6 +34,7 @@ const attendanceRouter=await text('src/core/attendance-router.ts');
 const customerAdminHtml=await text('public/customer-admin.html');
 const platformAdminHtml=await text('public/platform-admin.html');
 const platformDirectLogin=await text('public/platform-direct-login.js');
+const platformLazy=await text('public/platform-admin-lazy-modules.js');
 const platformOwnerUi=await text('public/platform-owner-ui.js');
 const ownerSecurityUi=await text('public/owner-security-ui.js');
 const launchReadinessUi=await text('public/launch-readiness-ui.js');
@@ -123,7 +124,7 @@ assert.ok(teacherAssignmentUi.includes('TEACHER_STUDENT_ROLE_CONFLICT')&&custome
 assert.ok(!customerAdminHtml.includes('/attendance-classbook-ui.js'),'customer admin must not host the operational teacher attendance/classbook workspace');
 assert.ok(attendanceRouter.includes('teacherAttendanceAuth')&&attendanceRouter.includes('forbidClassAdminStudentData(auth)'),'attendance management must require teacher assignment and explicitly deny class admins');
 assert.ok(!classAdminHtml.includes('/boot.js')&&!classAdminHtml.includes('/app.js'),'class admin must not fall back to generic admin SPA');
-assert.ok(customerAdminHtml.includes('customer-portal-admin')&&customerAdminHtml.includes('/customer-compact.css')&&customerAdminHtml.includes('/customer-enterprise.css')&&!customerAdminHtml.includes('/vfa13-reference.css'),'customer admin must use its dedicated enterprise admin visual system without VFA13 coupling');
+assert.ok(customerAdminHtml.includes('customer-portal-admin')&&customerAdminHtml.includes('/customer-enterprise.css')&&!customerAdminHtml.includes('/customer-compact.css')&&!customerAdminHtml.includes('/vfa13-reference.css')&&!customerAdminHtml.includes('/role-dashboard.css')&&!customerAdminHtml.includes('/role-dashboard-polish.css'),'customer admin must use its consolidated enterprise admin visual system without student/VFA13 or legacy compact coupling');
 assert.ok(vfaReferenceCss.includes('#stundenplan,#aufgaben'),'VFA13 participant priorities must stay intact');
 assert.ok(vfaRefinementCss.includes('--portal-surface')&&vfaRefinementCss.includes('--portal-accent'),'portal must consume the complete six-color tenant theme');
 assert.ok(dataBrandingGuard(),'six-color branding must reject white backgrounds and unsafe text contrast');
@@ -146,7 +147,9 @@ assert.ok(users.includes("NOT (m.role='participant' AND EXISTS"),'tenant adminis
 assert.ok(participantImport.includes('PARTICIPANT_IMPORT_PREVIEW_CHANGED')&&participantImport.includes('SPECIAL_CATEGORY_DATA_DETECTED_NOT_IMPORTED'),'participant document imports must be immutable and data-minimising');
 assert.ok(participantImportUi.includes('vendor/pdfjs/pdf.mjs')&&participantImportUi.includes('Markierte Teilnehmer übernehmen & einladen'),'customer participant imports must locally extract PDF text and require explicit confirmation');
 
-assert.ok(platformDirectLogin.includes("import('/platform-owner-ui.js")&&platformDirectLogin.includes("import('/owner-security-ui.js")&&platformDirectLogin.includes("import('/launch-readiness-ui.js"),'owner admin/security/release modules must load only after a verified platform session');
+assert.ok(platformDirectLogin.includes("import('/platform-admin-lazy-modules.js")&&platformDirectLogin.includes("if(user?.isPlatformAdmin)await loadPlatform()"),'verified platform session must install the privileged lazy-module controller');
+for(const privileged of ['platform-owner-ui','owner-security-ui','launch-readiness-ui'])assert.ok(platformLazy.includes(`'${privileged}'`),`verified platform lazy controller must retain ${privileged}`);
+for(const privileged of ['platform-owner-ui','owner-security-ui','launch-readiness-ui'])assert.ok(!platformDirectLogin.includes(`import('/${privileged}.js`),`heavy privileged module must stay out of platform first paint: ${privileged}`);
 assert.ok(runtimeRouter.includes('/api/platform/owner/demo-fixture')&&runtimeRouter.includes('platformTenantDetail')&&runtimeRouter.includes('updatePlatformTenant'),'owner APIs must expose tenant editing and demo fixture creation');
 assert.ok(platformOwnerUi.includes('owner-edit')&&platformOwnerUi.includes('data-demo-build'),'owner UI must provide customer editing and demo generation');
 assert.equal((platformOwner.match(/\['VFA 26\/|\['Kaufleute Büromanagement|\['Fachinformatik Systemintegration|\['Sozialverwaltung/g)||[]).length,20,'demo fixture must define exactly 20 classes');

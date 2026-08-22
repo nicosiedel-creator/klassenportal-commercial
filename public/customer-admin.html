@@ -6,56 +6,36 @@
   <meta name="theme-color" content="#172033">
   <title>Klassenportal · Kunden-Admin</title>
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=20260816-14">
-  <link rel="stylesheet" href="/customer-compact.css?v=20260818-2">
-  <link rel="stylesheet" href="/admin-overlay-hardening.css?v=20260818-2">
-  <link rel="stylesheet" href="/customer-dashboard-refresh.css?v=20260819-1">
-  <link rel="stylesheet" href="/role-dashboard.css?v=20260819-1">
-  <link rel="stylesheet" href="/role-dashboard-polish.css?v=20260819-1">
-  <link rel="stylesheet" href="/education-os.css?v=20260819-2">
-  <link rel="stylesheet" href="/customer-enterprise.css?v=20260821-2">
-  <style>
-    [data-v="tenants"],#newTenant,#pa-onboarding-nav,#pa-new-customer,#kp-commerce-platform{display:none!important}
-    @media(min-width:961px){
-      .customer-portal-admin .layout{display:grid!important;grid-template-columns:260px minmax(0,1fr)!important;align-items:start!important;min-height:100vh!important}
-      .customer-portal-admin .side{position:static!important;width:auto!important;min-height:100vh!important;display:flex!important;flex-direction:column!important;overflow:visible!important;border-right:1px solid #dbe3ec!important;backdrop-filter:none!important}
-      .customer-portal-admin .kp-customer-nav-primary{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:3px!important}
-      .customer-portal-admin .kp-customer-nav-primary .nav{width:100%!important;justify-content:flex-start!important;text-align:left!important;white-space:normal!important}
-      .customer-portal-admin .content{width:100%!important;max-width:1600px!important;margin:0!important}
-    }
-  </style>
+  <link rel="stylesheet" href="/styles.css?v=20260822-5">
+  <link rel="stylesheet" href="/admin-overlay-hardening.css?v=20260822-5">
+  <link rel="stylesheet" href="/customer-enterprise.css?v=20260822-5">
 </head>
 <body class="customer-portal-admin">
   <div id="app"><main class="center"><div class="loader">Kunden-Admin wird geladen …</div></main></div>
 
-  <script src="/admin-overlay-hardening.js?v=20260818-2"></script>
-  <script src="/auth-mfa-ui.js?v=20260816-14"></script>
-  <script src="/admin-mfa-enrollment-ui.js?v=20260818-1"></script>
-  <script src="/account-mail-ui.js?v=20260816-14"></script>
-  <script src="/customer-support-mode.js?v=20260816-14"></script>
+  <script src="/admin-overlay-hardening.js?v=20260822-5"></script>
+  <script src="/auth-mfa-ui.js?v=20260822-5"></script>
+  <script src="/admin-mfa-enrollment-ui.js?v=20260822-5"></script>
+  <script src="/account-mail-ui.js?v=20260822-5"></script>
 
-  <script type="module" src="/boot.js?v=20260821-1"></script>
-  <script type="module" src="/branding-assistant.js?v=20260817-2"></script>
-  <script type="module" src="/timetable-assistant.js?v=20260816-14"></script>
-  <script type="module" src="/timetable-bulk-v3.js?v=20260816-14"></script>
-  <script type="module" src="/localization.js?v=20260821-1"></script>
-  <script type="module" src="/customer-admin-ui.js?v=20260822-1"></script>
-  <script type="module" src="/customer-nav-dropdown.js?v=20260819-1"></script>
-  <script type="module" src="/customer-admin-nav-labels.js?v=20260818-1"></script>
-  <script type="module" src="/setup-preparation-ui.js?v=20260821-2"></script>
-  <script type="module" src="/customer-admin-lazy-modules.js?v=20260821-1"></script>
-  <script type="module" src="/customer-moat-ui.js?v=20260822-1"></script>
+  <script type="module" src="/boot.js?v=20260822-5"></script>
+  <script type="module" src="/localization.js?v=20260822-5"></script>
+  <script type="module" src="/customer-admin-ui.js?v=20260822-5"></script>
+  <script type="module" src="/customer-nav-dropdown.js?v=20260822-5"></script>
+  <script type="module" src="/setup-preparation-ui.js?v=20260822-5"></script>
+  <script type="module" src="/customer-admin-lazy-modules.js?v=20260822-5"></script>
+  <script type="module" src="/customer-admin-i18n.js?v=20260822-1"></script>
 
+  <!-- Inert, machine-auditable manifest. These paths are not script tags and are
+       executed only by customer-admin-lazy-modules.js when their area is opened. -->
   <template id="kp-lazy-module-manifest">
-    /class-role-ui.js?v=20260816-14 /commerce-safe-ui.js?v=20260816-14 /billing-addons-ui.js?v=20260816-14 /area-mode.js?v=20260816-14 /enterprise-admin-ui.js?v=20260817-1 /responsibility-ui.js?v=20260817-1 /participant-import-ui.js?v=20260817-1 /organization-import-ui.js?v=20260819-1
-    /intake-center-ui.js?v=20260817-1 /intake-quick-upload-ui.js?v=20260818-1 /communication-admin-ui.js?v=20260818-1 /teacher-message-admin-ui.js?v=20260819-1 /teacher-assignment-ui.js?v=20260819-1 /exam-documentation-admin-ui.js?v=20260819-1 /department-lead-admin-ui.js?v=20260819-1
-    /planning-resource-ui.js?v=20260820-1 /planning-resource-suggestion-fix.js?v=20260820-1 /education-operations-admin-ui.js?v=20260819-1 /education-operations-extended-ui.js?v=20260819-1 /education-signature-compose-ui.js?v=20260819-1 /education-os-ui.js?v=20260819-3 /education-os-readiness-ui.js?v=20260819-2 /education-os-innovation-ui.js?v=20260819-2
-    /assignment-gradebook-ui.js?v=20260818-1 /learning-report-collab-admin-ui.js?v=20260820-1 /gradebook-policy-ui.js?v=20260818-2 /gradebook-default-scale-ui.js?v=20260818-1 /participant-360-ui.js?v=20260818-1 /certificate-workflow-ui.js?v=20260818-1 /stripe-customer-portal-ui.js?v=20260816-14 /class-portal-admin-ui.js?v=20260816-14
-    /materials-admin-ui.js?v=20260816-14 /operational-crud-ui.js?v=20260816-14 /module-catalog-ui.js?v=20260816-14 /module-cancellation-ui.js?v=20260816-14 /custom-domain-ui.js?v=20260816-14 /advanced-module-ui.js?v=20260816-14 /teams-management-ui.js?v=20260820-1 /legal-footer-ui.js?v=20260816-14
+    learning: /communication-admin-ui.js /teacher-message-admin-ui.js /teacher-assignment-ui.js /assignment-gradebook-ui.js /learning-report-collab-admin-ui.js /gradebook-policy-ui.js /gradebook-default-scale-ui.js /participant-360-ui.js /materials-admin-ui.js /certificate-workflow-ui.js /exam-documentation-admin-ui.js /department-lead-admin-ui.js /education-signature-compose-ui.js
+    organization: /branding-assistant.js /timetable-assistant.js /timetable-bulk-v3.js /enterprise-admin-ui.js /responsibility-ui.js /participant-import-ui.js /organization-import-ui.js /intake-center-ui.js /intake-quick-upload-ui.js /planning-resource-ui.js /operational-crud-ui.js
+    automation: /customer-moat-ui.js /education-operations-admin-ui.js /education-operations-extended-ui.js /education-os-ui.js /education-os-readiness-ui.js /education-os-innovation-ui.js /module-catalog-ui.js /module-cancellation-ui.js /customer-enterprise-ux.js
+    technology: /teams-management-ui.js /custom-domain-ui.js /advanced-module-ui.js
+    commerce: /class-role-ui.js /commerce-safe-ui.js /billing-addons-ui.js /area-mode.js /stripe-customer-portal-ui.js /class-portal-admin-ui.js /legal-footer-ui.js
   </template>
 
-  <script src="/owner-route-privacy.js?v=20260817-1"></script>
-  <script src="/pwa-client.js?v=20260821-2"></script>
-  <script src="/customer-enterprise-ux.js?v=20260821-2"></script>
+  <script src="/owner-route-privacy.js?v=20260822-5"></script>
 </body>
 </html>
