@@ -16,6 +16,7 @@ const customer=await readFile('public/customer-admin.html','utf8');
 const extended=await readFile('public/education-operations-extended-ui.js','utf8');
 const signatureComposer=await readFile('public/education-signature-compose-ui.js','utf8');
 const participant=await readFile('public/class-portal.html','utf8');
+const participantLazy=await readFile('public/portal-lazy-runtime.js','utf8');
 const reportbook=await readFile('public/portal-report-book-ui.js','utf8');
 const participantModes=await readFile('public/portal-learning-mode-ui.js','utf8');
 const signatureInbox=await readFile('public/portal-signature-inbox-ui.js','utf8');
@@ -86,10 +87,10 @@ assert.match(extended,/\.csv,\.xlsx,\.pdf/,'legacy migration UI must accept stru
 assert.match(signatureComposer,/An alle Teilnehmer senden/,'customer admin must be able to create course-wide confirmation requests');
 assert.match(signatureComposer,/Portal-authentifizierte Bestätigung/,'built-in confirmation must be clearly distinguished from QES');
 
-assert.match(participant,/portal-curriculum-ui\.js/,'participant curriculum progress missing');
-assert.match(participant,/portal-report-book-ui\.js/,'participant digital report book missing');
-assert.match(participant,/portal-learning-mode-ui\.js/,'participant timetable must expose structured learning modes');
-assert.match(participant,/portal-signature-inbox-ui\.js/,'participant confirmation inbox must be loaded');
+for(const module of ['portal-curriculum-ui','portal-report-book-ui','portal-learning-mode-ui','portal-signature-inbox-ui']){
+  assert.doesNotMatch(participant,new RegExp(`src="/${module}\\.js`),`${module} must not block participant first paint`);
+  assert.match(participantLazy,new RegExp(module),`${module} must remain available through the lazy participant runtime`);
+}
 assert.match(reportbook,/Selbstlernphase · Homeoffice/,'participant report book must support home-office self-study');
 assert.match(reportbook,/Aus Stundenplan ergänzen/,'report book must support automated schedule prefill');
 assert.match(reportbook,/digital bestätigen/,'participant digital confirmation UI missing');
