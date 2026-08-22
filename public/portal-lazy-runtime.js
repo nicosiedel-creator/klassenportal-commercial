@@ -1,9 +1,10 @@
 const PATH_OK=/^\/portal\/[^/]+\/[^/]+\/?$/.test(location.pathname);
 if(PATH_OK){
-  const V='20260822-student-hotfix-2';
+  const V='20260822-student-hotfix-3';
   const asset=name=>`/${name}.js?v=${V}`;
   const loaded=new Set(),loading=new Map();let bootPromise=null;
-  const HIGH=['auth-mfa-ui','account-mail-ui','portal-layout','portal-compact','vfa13-refinement','student-dashboard-v2'];
+  const GATE_SUPPORT=['auth-mfa-ui','account-mail-ui'];
+  const HIGH=['portal-layout','portal-compact','vfa13-refinement','student-dashboard-v2'];
   const FEATURES=['portal-calendar-lookback','portal-targeted-messages','portal-attendance-ui','portal-assignments-ui','portal-learning-collaboration-ui','portal-teams-ui','portal-certificates-ui','portal-advanced-ui','class-admin-student-tools','lesson-hub-ui','portal-curriculum-ui','portal-learning-mode-ui','portal-report-book-ui','portal-signature-inbox-ui','legal-footer-ui'];
   const nextFrame=()=>new Promise(resolve=>requestAnimationFrame(()=>resolve()));
   const idle=()=>new Promise(resolve=>('requestIdleCallback'in window?requestIdleCallback(()=>resolve(),{timeout:1200}):setTimeout(resolve,250)));
@@ -39,8 +40,9 @@ if(PATH_OK){
     bootPromise=(async()=>{
       await nextFrame();
       await loadLocalization();
-      await loadList(HIGH,2);
+      await loadList(GATE_SUPPORT,2);
       if(!window.__KP_PORTAL_DATA)return;
+      await loadList(HIGH,2);
       await idle();
       const failures=await loadList(FEATURES,3);
       window.dispatchEvent(new CustomEvent('kp:portal-modules-ready',{detail:{failures}}));
