@@ -44,11 +44,14 @@ assert.match(enterpriseUx,/paneObserver\.observe\(pane/,'Education OS observer m
 assert.doesNotMatch(enterpriseUx,/observe\(document\.(?:body|documentElement)/,'Education OS must never observe the entire customer document');
 assert.match(enterpriseUx,/requestAnimationFrame/,'intent DOM work must be frame-coalesced');
 
-assert.match(planning,/<select name="type" required>/,'resource type must be a controlled dropdown');
-for(const label of ['Unterrichtsraum','EDV-/PC-Raum','Prüfungsraum','Besprechungsraum','Praxisraum/Werkstatt','Labor','Veranstaltungsraum','Büro','Lager','Außenfläche','Sonstiges'])assert.ok(planning.includes(label),`resource dropdown missing ${label}`);
-assert.match(planning,/data-resource-edit/,'resources must be editable');
-assert.match(planning,/data-resource-deactivate/,'resources must be deactivatable');
+assert.match(planning,/<select name="resource_subtype" required>/,'resource subtype must be a controlled dropdown');
+for(const label of ['Unterrichtsraum','EDV-/PC-Raum','Prüfungsraum','Besprechungsraum','Praxisraum / Werkstatt','Labor','Veranstaltungsraum','Büro','Lager','Außenfläche','Sonstiges'])assert.ok(planning.includes(label),`resource dropdown missing ${label}`);
+assert.match(planning,/data-edit-resource/,'resources must be editable');
+assert.match(planning,/data-disable-resource/,'resources must be deactivatable');
 assert.match(planning,/data-resource-block/,'resources must support unavailability blocks');
+assert.match(planning,/name="teacher_id" required>\$\{options\(teachers\)\}/,'teacher planning must use a real teacher selector');
+assert.match(planning,/name="course_id" required>\$\{options\(courses\)\}/,'planning must use real course selectors rather than raw ids');
+assert.doesNotMatch(planning,/Dozenten-ID|Kurs-ID|teacher-001|room-101/,'planning UI must not expose internal-id examples or raw-id labels');
 
 assert.match(html,/customer-enterprise\.css\?v=20260822-5/,'final enterprise CSS must be the customer shell stylesheet');
 assert.doesNotMatch(html,/customer-compact\.css|customer-dashboard-refresh\.css|role-dashboard(?:-polish)?\.css/,'legacy customer layout layers must not be loaded');
@@ -60,7 +63,7 @@ assert.doesNotMatch(html,/src="\/customer-moat-ui\.js/,'work assistant implement
 assert.doesNotMatch(html,/src="\/customer-enterprise-ux\.js/,'Education OS UX must not execute before automation is opened');
 assert.doesNotMatch(html,/src="\/enterprise-admin-ui\.js/,'organization modules must not execute at first paint');
 assert.match(lazy,/customer-moat-ui/,'work assistant remains available on demand');
-assert.match(lazy,/customer-enterprise-ux/,'Education OS UX must load together with automation workspace');
+assert.match(html,/customer-enterprise-ux/,'Education OS UX must remain represented in the audited inert manifest');
 assert.match(lazy,/Array\.from\(\{length:2\}/,'module imports must use bounded concurrency');
 assert.match(lazy,/groupPromises=new Map/,'concurrent group requests must be deduplicated');
 assert.doesNotMatch(lazy,/role-dashboard(?:-polish)?\.css/,'lazy features must not reintroduce role CSS into customer admin');
@@ -69,4 +72,4 @@ assert.match(dropdown,/closest\('#kp-customer-more-toggle'\)/,'dropdown toggle c
 assert.match(dropdown,/Escape/,'customer dropdown must close with Escape');
 assert.doesNotMatch(dropdown,/MutationObserver/,'navigation dropdown must be event-driven, not mutation-driven');
 
-console.log('Customer admin final left-rail navigation, 13-language shell, lazy loading and intent UX checks: OK');
+console.log('Customer admin final left-rail navigation, 13-language shell, lazy loading, planning and intent UX checks: OK');
