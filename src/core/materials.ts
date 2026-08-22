@@ -58,7 +58,7 @@ export async function uploadLearningMaterial(env:Env,auth:CoreAuthContext,tenant
       .bind(materialId,tenantId,key,file.name,contentType,file.size,auth.userId,ts,requestedCourse,title,description,visible,ts).run();
   }catch(e){await env.FILES.delete(key);throw e;}
   await audit(env.DB,auth.userId,'learning_material.created',tenantId,requestedCourse||undefined,'learning_material',materialId,{title,size:file.size,visible:!!visible});
-  return env.DB.prepare(`SELECT id,course_id,title,description,original_name,content_type,size_bytes,visible,uploaded_by,created_at,updated_at FROM portability_files WHERE id=? AND tenant_id=?`).bind(materialId,tenantId).first();
+  const row=await env.DB.prepare(`SELECT id,course_id,title,description,original_name,content_type,size_bytes,visible,uploaded_by,created_at,updated_at FROM portability_files WHERE id=? AND tenant_id=?`).bind(materialId,tenantId).first<Record<string,unknown>>();if(!row)throw new Error('MATERIAL_NOT_FOUND');return row;
 }
 
 export async function updateLearningMaterial(env:Env,auth:CoreAuthContext,tenantId:string,materialId:string,input:Record<string,unknown>){
@@ -69,7 +69,7 @@ export async function updateLearningMaterial(env:Env,auth:CoreAuthContext,tenant
   const description=safeString(input.description??current.description,5000)||null,visible=input.visible===undefined?Number(current.visible||0):(input.visible?1:0),ts=nowIso();
   await env.DB.prepare(`UPDATE portability_files SET title=?,description=?,visible=?,updated_at=? WHERE id=? AND tenant_id=? AND purpose='learning_material'`).bind(title,description,visible,ts,materialId,tenantId).run();
   await audit(env.DB,auth.userId,'learning_material.updated',tenantId,current.course_id?String(current.course_id):undefined,'learning_material',materialId,{visible:!!visible});
-  return env.DB.prepare(`SELECT id,course_id,title,description,original_name,content_type,size_bytes,visible,uploaded_by,created_at,updated_at FROM portability_files WHERE id=? AND tenant_id=?`).bind(materialId,tenantId).first();
+  const row=await env.DB.prepare(`SELECT id,course_id,title,description,original_name,content_type,size_bytes,visible,uploaded_by,created_at,updated_at FROM portability_files WHERE id=? AND tenant_id=?`).bind(materialId,tenantId).first<Record<string,unknown>>();if(!row)throw new Error('MATERIAL_NOT_FOUND');return row;
 }
 
 export async function deleteLearningMaterial(env:Env,auth:CoreAuthContext,tenantId:string,materialId:string):Promise<void>{
