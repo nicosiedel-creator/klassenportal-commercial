@@ -1,11 +1,11 @@
 const CUSTOMER_PATH=location.pathname.replace(/\/$/,'')==='/kunden-admin';
 if(CUSTOMER_PATH){
-  const V='20260822-4';
+  const V='20260822-5';
   const asset=name=>`/${name}.js?v=${V}`;
   const GROUPS={
     learning:['communication-admin-ui','teacher-message-admin-ui','teacher-assignment-ui','assignment-gradebook-ui','learning-report-collab-admin-ui','gradebook-policy-ui','gradebook-default-scale-ui','participant-360-ui','materials-admin-ui','certificate-workflow-ui','exam-documentation-admin-ui','department-lead-admin-ui','education-signature-compose-ui'].map(asset),
     organization:['branding-assistant','timetable-assistant','timetable-bulk-v3','enterprise-admin-ui','responsibility-ui','participant-import-ui','organization-import-ui','intake-center-ui','intake-quick-upload-ui','planning-resource-ui','operational-crud-ui'].map(asset),
-    automation:['customer-moat-ui','education-operations-admin-ui','education-operations-extended-ui','education-os-ui','education-os-readiness-ui','education-os-innovation-ui','module-catalog-ui','module-cancellation-ui'].map(asset),
+    automation:['customer-moat-ui','education-operations-admin-ui','education-operations-extended-ui','education-os-ui','education-os-readiness-ui','education-os-innovation-ui','module-catalog-ui','module-cancellation-ui','customer-enterprise-ux'].map(asset),
     technology:['teams-management-ui','custom-domain-ui','advanced-module-ui'].map(asset),
     commerce:['class-role-ui','commerce-safe-ui','billing-addons-ui','area-mode','stripe-customer-portal-ui','class-portal-admin-ui','legal-footer-ui'].map(asset)
   };
