@@ -1,4 +1,4 @@
-const KP_TEACHER_RUNTIME_PATH=location.pathname.replace(/\/$/,'')==='/dozentenportal.html';
+const KP_TEACHER_RUNTIME_PATH=['/dozentenportal','/dozentenportal.html'].includes(location.pathname.replace(/\/$/,''));
 if(KP_TEACHER_RUNTIME_PATH){
   const root=document.querySelector('#teacher-portal');
   let courses=null,loading=false,frame=0,lastSignature='';
