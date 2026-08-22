@@ -57,6 +57,9 @@ assert.match(moat,/TENANT_ADMIN_REQUIRED:/,'tenant-admin denial must have a huma
 assert.match(moat,/AUTOPILOT_TENANT_ADMIN_REQUIRED:/,'autopilot tenant-admin denial must have a human-readable message');
 assert.doesNotMatch(moat,/host\.innerHTML=note\(e\.message/,'raw backend errors must never replace the entire assistant body');
 assert.doesNotMatch(moat,/out\.textContent=e\.message/,'raw backend errors must never be printed into assistant actions');
+const supportStart=moat.indexOf('if(me?.supportPlatformAdmin){'),supportEnd=moat.indexOf('return;',supportStart),supportBranch=moat.slice(supportStart,supportEnd);
+assert.ok(supportStart>=0&&supportEnd>supportStart,'support assistant branch must be structurally detectable');
+assert.doesNotMatch(supportBranch,/\/api\/moat\/compliance\/overview|\/api\/moat\/partners\/grants/,'platform support must not call tenant-admin-only assistant endpoints');
 
 assert.match(preparation,/function customerSetupReady\(/,'setup preparation must understand the completed customer state');
 assert.match(preparation,/content\.querySelector\('#kp-operations-hub'\)/,'the preparation checklist must never be reinserted beside the operational hub');
@@ -94,4 +97,4 @@ assert.doesNotMatch(enterpriseUx,/n\.textContent=n\.textContent\.replace/,'uncon
 assert.match(departmentAdmin,/\/department-lead\.html\?tenant_id=/,'department lead assignment must generate the real portal URL');
 assert.doesNotMatch(departmentAdmin,/\/fachbereichsleitung\.html\?tenant_id=/,'stale department lead portal path must not be emitted');
 
-console.log('Final pre-test active-runtime, performance, multilingual, customer-ops and department-lead checks: OK');
+console.log('Final pre-test active-runtime, support-boundary, performance, multilingual and routing checks: OK');
