@@ -9,10 +9,9 @@ const [html,direct,core,i18n,lazy]=await Promise.all([
   readFile('public/platform-admin-lazy-modules.js','utf8')
 ]);
 
-const htmlLocalization=[...html.matchAll(/src="\/localization\.js\?[^\"]+"/g)];
-assert.equal(htmlLocalization.length,1,'platform admin must execute exactly one localization runtime');
+assert.doesNotMatch(html,/src="\/localization\.js/,'platform admin must not load the generic document-observer localization runtime');
 assert.match(html,/platform-direct-login\.js\?v=20260822-platform-perf-1/,'platform shell must use the performance-hardened direct login entry');
-assert.doesNotMatch(direct,/import\('\/localization\.js/,'platform direct login must never instantiate a second localization module URL');
+assert.doesNotMatch(direct,/import\('\/localization\.js/,'platform direct login must never instantiate a generic localization module');
 for(const name of ['boot.js','platform-admin-ui.js','platform-admin-i18n.js','platform-admin-lazy-modules.js'])assert.ok(direct.includes(name),`platform critical path missing ${name}`);
 for(const heavy of ['platform-owner-ui','platform-offers-ui','platform-accounting-ui','platform-accounting-autopilot-ui','legal-owner-ui','owner-security-ui','launch-readiness-ui','custom-domain-ui','branding-assistant','timetable-assistant'])assert.ok(!direct.includes(`import('/${heavy}.js`),`heavy platform module must not be eager-loaded: ${heavy}`);
 assert.doesNotMatch(core,/MutationObserver/,'platform core must be event-driven instead of observing the entire app subtree');
@@ -28,8 +27,10 @@ assert.match(lazy,/kp:app-rendered/,'platform lazy loader must mount from determ
 
 for(const locale of ['en','fr','es','it','nl','pl','tr','uk','ro','cs','pt','ar'])assert.match(i18n,new RegExp(`\\b${locale}:\\{`),`platform language pack missing ${locale}`);
 for(const key of ['platform_summary','customers','customer_setup','offers','legal_privacy','live_release','system_security','accounting_finance','logout'])assert.ok(i18n.includes(`${key}:`),`platform language pack missing ${key}`);
+assert.match(i18n,/window\.KP_I18N=/,'platform language runtime must provide the shared locale API itself');
+assert.match(i18n,/kp-language-select/,'platform language runtime must own its selector without generic localization');
 assert.match(i18n,/kp:localechange/,'platform shell must react immediately to locale changes');
 assert.match(i18n,/kp:app-rendered/,'platform translations must refresh after application renders');
 assert.doesNotMatch(i18n,/MutationObserver/,'platform language switching must be event-driven');
 
-console.log('Platform admin single-locale runtime, event-driven core, on-demand loading and multilingual shell checks: OK');
+console.log('Platform admin dedicated observer-free locale runtime, event-driven core and on-demand loading checks: OK');
