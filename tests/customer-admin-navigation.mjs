@@ -2,7 +2,6 @@ import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 
 const css=await readFile('public/customer-compact.css','utf8');
-const theme=await readFile('public/vfa13-reference.css','utf8');
 const refresh=await readFile('public/customer-dashboard-refresh.css','utf8');
 const enterprise=await readFile('public/customer-enterprise.css','utf8');
 const enterpriseUx=await readFile('public/customer-enterprise-ux.js','utf8');
@@ -14,10 +13,6 @@ const html=await readFile('public/customer-admin.html','utf8');
 
 assert.match(css,/\.customer-portal-admin \.side\{position:static!important;/,'customer admin navigation must stay in normal document flow');
 assert.doesNotMatch(css,/\.customer-portal-admin \.side\{[^}]*position:sticky/,'customer admin compact CSS must never cover scrolled content with sticky positioning');
-assert.match(theme,/\.customer-portal-admin \.side\{position:static!important;/,'later VFA13 theme must preserve the non-sticky customer navigation');
-assert.doesNotMatch(theme,/\.customer-portal-admin \.side\{[^}]*position:sticky/,'later VFA13 theme must not reintroduce sticky customer navigation');
-assert.doesNotMatch(theme,/\.customer-portal-admin \.side\{[^}]*z-index:50/,'later VFA13 theme must not reintroduce the old overlay stacking layer');
-assert.match(theme,/\.customer-portal-admin \.kp-customer-nav-primary\{flex-wrap:wrap!important\}/,'VFA13 theme must preserve wrapped primary customer navigation without making the header sticky');
 assert.match(css,/\.kp-customer-nav-primary/,'customer admin needs a dedicated compact primary navigation row');
 assert.match(css,/\.kp-customer-nav-more-panel\[hidden\]\{display:none!important\}/,'secondary navigation must collapse without overlaying the workspace');
 assert.match(css,/@media\(max-width:680px\)[\s\S]*overflow-x:auto/,'primary navigation must remain usable on narrow screens');
@@ -38,10 +33,12 @@ assert.match(ui,/button\.dataset\.customerNavSourceLabel/,'navigation organizer 
 assert.match(ui,/const label=navSourceLabel\(button\)/,'navigation grouping must use the original source label after visual relabeling');
 assert.match(ui,/function navMemorySet\(open\)\{try\{sessionStorage\.setItem/,'blocked session storage must not break navigation state writes');
 assert.match(ui,/function navMemoryGet\(\)\{try\{return sessionStorage\.getItem/,'blocked session storage must not break navigation state reads');
-assert.match(ui,/const storedOpen=navMemoryGet\(\)/,'navigation must use the guarded storage accessor');
+assert.match(ui,/extraActive\|\|navMemoryGet\(\)/,'navigation must use the guarded storage accessor when restoring the secondary panel');
 assert.match(ui,/aria-controls/,'secondary navigation toggle must be accessible');
-assert.match(ui,/extraActive\|\|storedOpen/,'an active secondary section must remain visible');
 assert.match(ui,/button\.parentElement!==primary/,'existing navigation buttons must be moved rather than recreated so their handlers survive');
+assert.match(ui,/Planung & Daten/,'completed customer setup must transition into an operational planning/data hub in the active runtime');
+assert.match(ui,/kp-operations-hub/,'active customer runtime must own the completed setup operations hub');
+assert.match(ui,/requestAnimationFrame/,'customer admin mutation work must be frame-coalesced');
 
 assert.match(enterprise,/Operations & Verwaltung/,'enterprise customer admin must present a professional operations navigation identity');
 assert.match(enterprise,/\.eo-os-main\{grid-template-columns:230px minmax\(0,1fr\)/,'Education OS must use a compact control-center workspace');
@@ -54,19 +51,22 @@ assert.match(enterpriseUx,/Noch eine Angabe nötig/,'missing intent context must
 assert.match(planning,/<select name="type" required>/,'resource type must be a controlled dropdown');
 assert.match(planning,/EDV-\/PC-Raum/,'resource type dropdown must include common education room types');
 
-assert.ok(html.includes('/customer-compact.css?v=20260818-2'),'customer layout CSS cache key must be bumped');
-assert.ok(html.includes('/customer-admin-ui.js?v=20260818-3'),'customer navigation JS cache key must reflect the final navigation implementation');
+assert.ok(html.includes('/customer-compact.css?v=20260818-2'),'customer layout CSS cache key must be present');
+assert.ok(html.includes('/customer-admin-ui.js?v=20260822-1'),'customer navigation JS cache key must reflect the final pretest implementation');
 assert.ok(html.includes('/customer-admin-nav-labels.js?v=20260818-1'),'clarified navigation label asset must be loaded');
-assert.ok(html.includes('/vfa13-reference.css?v=20260818-3'),'later customer theme cache key must reflect the final non-sticky theme');
+assert.doesNotMatch(html,/vfa13-reference\.css/,'commercial customer admin must not import the VFA13 class-portal theme');
 assert.ok(html.includes('/customer-dashboard-refresh.css?v=20260819-1'),'original dashboard refresh must be loaded after the base customer styles');
 assert.ok(html.includes('/setup-preparation-ui.js?v=20260821-2'),'customer setup preparation UI must use the corrected deterministic status gate');
 assert.ok(html.includes('/customer-enterprise.css?v=20260821-2'),'enterprise customer-admin override must be loaded last');
 assert.ok(html.includes('/customer-enterprise-ux.js?v=20260821-2'),'actionable Education OS intent UX must be loaded');
+assert.ok(html.includes('/customer-moat-ui.js?v=20260822-1'),'customer Work Assistant runtime must be explicitly wired into the real customer admin');
 assert.match(html,/grid-template-columns:260px minmax\(0,1fr\)!important/,'critical desktop left-rail layout must be present in the navigation HTML itself');
 assert.ok(html.includes('/customer-admin-lazy-modules.js?v=20260821-1'),'heavy customer modules must be bootstrapped by the lazy loader');
 assert.doesNotMatch(html,/src="\/enterprise-admin-ui\.js/,'heavy secondary modules must not all execute during first paint');
 assert.match(lazy,/requestIdleCallback/,'secondary customer modules should wait until the first paint is responsive');
-assert.match(lazy,/Promise\.allSettled/,'secondary modules should load in bounded batches');
-assert.match(lazy,/kp:customer-modules-loaded/,'lazy module batches must signal the navigation organizer after loading');
+assert.match(lazy,/Array\.from\(\{length:6\}/,'secondary modules should use bounded parallelism instead of serial batches or an unbounded flood');
+assert.match(lazy,/Promise\.all\(workers\)/,'bounded lazy-loader workers must be awaited before ready is announced');
+assert.match(lazy,/kp:customer-modules-loaded/,'each lazy module must signal the navigation organizer after loading');
+assert.match(lazy,/kp:customer-modules-ready/,'lazy loader must expose an explicit all-modules-ready signal');
 
 console.log('Customer admin enterprise navigation, actionable intent UX and non-overlap checks: OK');

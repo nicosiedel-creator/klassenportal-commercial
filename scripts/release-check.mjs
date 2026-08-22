@@ -123,8 +123,8 @@ assert.ok(teacherAssignmentUi.includes('TEACHER_STUDENT_ROLE_CONFLICT')&&custome
 assert.ok(!customerAdminHtml.includes('/attendance-classbook-ui.js'),'customer admin must not host the operational teacher attendance/classbook workspace');
 assert.ok(attendanceRouter.includes('teacherAttendanceAuth')&&attendanceRouter.includes('forbidClassAdminStudentData(auth)'),'attendance management must require teacher assignment and explicitly deny class admins');
 assert.ok(!classAdminHtml.includes('/boot.js')&&!classAdminHtml.includes('/app.js'),'class admin must not fall back to generic admin SPA');
-assert.ok(customerAdminHtml.includes('customer-portal-admin')&&customerAdminHtml.includes('/customer-compact.css')&&customerAdminHtml.includes('/vfa13-reference.css'),'customer admin must share compact VFA13 visual language');
-assert.ok(vfaReferenceCss.includes('#stundenplan,#aufgaben')&&vfaReferenceCss.includes('flex-wrap:wrap'),'VFA13 priorities and wrapped customer navigation must stay intact');
+assert.ok(customerAdminHtml.includes('customer-portal-admin')&&customerAdminHtml.includes('/customer-compact.css')&&customerAdminHtml.includes('/customer-enterprise.css')&&!customerAdminHtml.includes('/vfa13-reference.css'),'customer admin must use its dedicated enterprise admin visual system without VFA13 coupling');
+assert.ok(vfaReferenceCss.includes('#stundenplan,#aufgaben'),'VFA13 participant priorities must stay intact');
 assert.ok(vfaRefinementCss.includes('--portal-surface')&&vfaRefinementCss.includes('--portal-accent'),'portal must consume the complete six-color tenant theme');
 assert.ok(dataBrandingGuard(),'six-color branding must reject white backgrounds and unsafe text contrast');
 assert.ok(brandingSchema.includes('ensureBrandingSchema')&&brandingSchema.includes('addColumnSafely')&&brandingSchema.includes('ALTER TABLE tenant_settings ADD COLUMN'),'branding schema must self-heal safely when deployment migrations lag');
