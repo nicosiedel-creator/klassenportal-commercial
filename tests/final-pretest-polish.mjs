@@ -98,7 +98,8 @@ for(const subtype of ['teaching_room','computer_room','exam_room','meeting_room'
 for(const label of ['Unterrichtsraum','EDV-/PC-Raum','Prüfungsraum','Besprechungsraum','Labor','Veranstaltungsraum','Büro','Lager','Außenfläche','Sonstiges'])assert.ok(planningUi.includes(label),`missing controlled resource label ${label}`);
 assert.match(planningUi,/Praxisraum\s*\/\s*Werkstatt/,'controlled workshop resource label must remain human-readable');
 assert.match(intent,/function datePeriod/,'education intent must retain a dedicated date-period parser');
-assert.ok(intent.includes("bis\\s+(${token})"),'education intent must parse German date ranges ending with bis');
+assert.match(intent,/until=n\.match\(new RegExp/,'date-period parser must resolve an explicit range end');
+assert.match(intent,/datePeriod\(intent,tz\)/,'intent preview must actually consume the parsed date period');
 assert.match(intent,/resource_label|teacher_label|course_label/,'resolved intent entities must expose human-readable labels');
 
 assert.match(departmentAdmin,/\/department-lead\.html\?tenant_id=/,'department lead assignment must generate the real portal URL');
