@@ -2,7 +2,7 @@ name: Education OS deep security
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, vfa13-beta-pilot]
   workflow_dispatch:
 
 permissions:
