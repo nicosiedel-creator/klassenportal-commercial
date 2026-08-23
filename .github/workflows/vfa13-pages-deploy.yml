@@ -1,0 +1,78 @@
+name: VFA13 Pages live deployment
+
+on:
+  push:
+    branches: [vfa13-beta-pilot]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vfa13-pages-live
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout exact VFA13 head
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Require Cloudflare deployment credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'CLOUDFLARE_API_TOKEN secret is missing'; exit 2; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'CLOUDFLARE_ACCOUNT_ID secret is missing'; exit 2; }
+
+      - name: Full VFA13 regression and security suite
+        run: npm test
+
+      - name: Build VFA13 Pages advanced-mode runtime
+        run: npm run build:vfa13-pages
+
+      - name: Verify target Pages project exists
+        run: npx wrangler pages deployment list --project-name vfa13-klassenportal --config wrangler.vfa13-pages.jsonc >/dev/null
+
+      - name: Deploy exact VFA13 branch head
+        run: |
+          npx wrangler pages deploy dist-vfa13-pages \
+            --project-name vfa13-klassenportal \
+            --branch main \
+            --commit-hash "$GITHUB_SHA" \
+            --commit-dirty=false \
+            --config wrangler.vfa13-pages.jsonc
+
+      - name: Verify real VFA13 live portal
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://vfa13-klassenportal.pages.dev'
+          for i in $(seq 1 18); do
+            headers=$(mktemp)
+            body=$(mktemp)
+            if curl -fsS --max-time 15 -D "$headers" -o "$body" "$base/portal/vfa13/vfa13"; then
+              runtime=$(tr -d '\r' < "$headers" | awk -F': ' 'tolower($1)=="x-klassenportal-vfa13-runtime"{print $2}' | tail -1)
+              meta=$(curl -fsS --max-time 15 "$base/public/vfa13/vfa13/meta" || true)
+              if test "$runtime" = '20260823-2' && jq -e '.ok == true and .course.code == "vfa13" and .course.access_mode == "public"' <<<"$meta" >/dev/null; then
+                echo "VFA13 live verification successful for $GITHUB_SHA"
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo 'VFA13 live verification failed' >&2
+          exit 1
