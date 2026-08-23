@@ -10,6 +10,8 @@ const dashboard=await readFile('public/student-dashboard-v2.js','utf8');
 assert.match(html,/kp-vfa13-commercial-module-manifest/,'VFA13 must expose the commercial module contract');
 assert.match(html,/data-public-safe="portal-calendar-lookback portal-advanced-ui lesson-hub-ui legal-footer-ui"/,'VFA13 must explicitly declare its public-safe commercial modules');
 assert.match(html,/data-authenticated-only=/,'VFA13 must explicitly separate personal/authenticated commercial modules');
+const publicSafe=html.match(/data-public-safe="([^"]+)"/)?.[1]||'';
+for(const privateModule of ['portal-attendance-ui','portal-assignments-ui','portal-report-book-ui','portal-signature-inbox-ui','portal-teams-ui','class-admin-student-tools'])assert.ok(!publicSafe.includes(privateModule),`${privateModule} must never enter the VFA13 public-safe module allowlist`);
 assert.doesNotMatch(html,/src="\/portal-attendance-ui\.js/,'personal attendance UI must never be eager on the public VFA13 portal');
 assert.doesNotMatch(html,/src="\/portal-assignments-ui\.js/,'personal assignment/submission UI must never be eager on the public VFA13 portal');
 assert.doesNotMatch(html,/src="\/portal-report-book-ui\.js/,'personal report book UI must never be eager on the public VFA13 portal');
