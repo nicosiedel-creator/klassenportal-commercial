@@ -30,9 +30,8 @@ assert.match(dropdown,/closest\('#kp-customer-more-toggle'\)/,'dropdown toggle c
 assert.match(dropdown,/Escape/,'customer dropdown must close with Escape');
 assert.doesNotMatch(dropdown,/MutationObserver/,'customer dropdown must not poll DOM mutations');
 
-assert.match(classPortal,/role-dashboard\.css/);
-assert.match(classPortal,/role-dashboard-polish\.css/,'class portal must load shared role polish');
-assert.match(classPortal,/student-dashboard-v2\.css/,'class portal must load v2 dashboard stylesheet');
+for(const blockingCss of ['role-dashboard.css','role-dashboard-polish.css','student-dashboard-v2.css'])assert.doesNotMatch(classPortal,new RegExp(`rel=["']stylesheet["'][^>]+${blockingCss.replaceAll('.','\\.')}`),`student first paint must not block on ${blockingCss}`);
+assert.match(portalLazy,/'student-dashboard-v2':\['role-dashboard','role-dashboard-polish','student-dashboard-v2'\]/,'student dashboard must load all dashboard styles together with the deferred v2 module');
 assert.doesNotMatch(classPortal,/src="\/student-dashboard-v2\.js/,'class portal must not block first paint on the v2 dashboard script');
 assert.match(portalLazy,/student-dashboard-v2/,'class portal must retain active v2 dashboard through the lazy runtime');
 assert.doesNotMatch(classPortal,/student-dashboard-ui\.js/,'class portal must not load old delayed student dashboard');
@@ -54,4 +53,4 @@ assert.match(customerAdmin,/customer-nav-dropdown\.js/,'customer admin must keep
 assert.doesNotMatch(platformAdmin,/role-dashboard(?:-polish)?\.css/,'platform admin must remain visually untouched');
 assert.doesNotMatch(platformAdmin,/student-dashboard(?:-v2|-ui)?|teacher-dashboard-ui|customer-nav-dropdown/,'platform admin must not load role-specific dashboard scripts');
 
-console.log('Role dashboard UI scope, lazy student/teacher runtime and customer-shell isolation tests: OK');
+console.log('Role dashboard UI scope, deferred student CSS, lazy student/teacher runtime and customer-shell isolation tests: OK');
