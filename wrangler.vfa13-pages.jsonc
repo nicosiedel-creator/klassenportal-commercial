@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "vfa13-klassenportal",
+  "pages_build_output_dir": "./dist-vfa13-pages",
+  "compatibility_date": "2026-08-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "klassenportal-commercial",
+      "database_id": "beaf2c0a-d671-4468-a989-b9932c48f43f"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "klassenportal-commercial-files"
+    }
+  ]
+}
