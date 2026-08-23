@@ -8,8 +8,8 @@ const auto=await readFile('src/core/planning-automation.ts','utf8');
 const router=await readFile('src/core/planning-router.ts','utf8');
 const bridge=await readFile('src/core/participant-360-router.ts','utf8');
 const ui=await readFile('public/planning-resource-ui.js','utf8');
-const suggestionFix=await readFile('public/planning-resource-suggestion-fix.js','utf8');
 const customer=await readFile('public/customer-admin.html','utf8');
+const customerLazy=await readFile('public/customer-admin-lazy-modules.js','utf8');
 const platform=await readFile('public/platform-admin.html','utf8');
 
 for(const table of ['planning_resources','planning_resource_unavailability','teacher_unavailability','planning_blackouts','course_scheduling_rules','teacher_workload_rules','timetable_plan_entry_resources','lesson_resource_reservations'])assert.match(migration,new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`),`${table} missing`);
@@ -33,14 +33,18 @@ assert.match(router,/publishAdvancedTimetablePlan/,'generic publish must be inte
 assert.match(router,/saveTeacherUnavailabilityWithSubstitutions/,'teacher absence route must automate substitution cases');
 assert.match(bridge,/handlePlanningApi/,'planning router must run before generic education routes');
 
-for(const label of ['Räume & Ressourcen','Ferien & Sperrzeiten','Dozenten-Abwesenheit','Kursregeln','Vertretungsvorschlag'])assert.ok(ui.includes(label),`planning UI ${label} missing`);
+for(const label of ['Räume & Ressourcen','Ferien & allgemeine Sperrzeiten','Dozenten-Abwesenheit','Kursregeln','Vertretungsfall/-fälle automatisch angelegt'])assert.ok(ui.includes(label),`planning UI ${label} missing`);
 assert.match(ui,/Ressourcen & Regeln/,'planner must expose constraints manager');
-assert.match(ui,/Auto-Vorschläge/,'planner must expose automatic suggestions');
-assert.match(ui,/Vertretungsfall\/\-fälle automatisch angelegt/,'absence UI must explain automated substitution cases');
-assert.match(suggestionFix,/\/api\/education\/planning\/suggestions\?tenant_id=/,'automatic suggestion request must use a valid query URL');
-assert.match(suggestionFix,/fachqualifiziert/,'automatic suggestion picker should surface qualification');
-assert.match(customer,/planning-resource-ui\.js/,'customer admin must load planning constraints UI');
-assert.match(customer,/planning-resource-suggestion-fix\.js/,'customer admin must load corrected suggestion picker');
+assert.match(ui,/Automatische Planungsvorschläge/,'planner must expose automatic suggestions');
+assert.match(ui,/\/api\/education\/planning\/suggestions/,'automatic suggestion request must use the integrated planning endpoint');
+assert.match(ui,/fachqualifiziert/,'automatic suggestion picker should surface qualification');
+assert.match(ui,/localToUtc/,'planning date-time values must use the tenant-timezone conversion path');
+assert.match(ui,/data-teacher-id/,'teacher suggestions must retain internal ids only as data attributes');
+assert.match(ui,/data-resource-id/,'room suggestions must retain internal ids only as data attributes');
+assert.match(customer,/kp-lazy-module-manifest/,'customer admin must expose the lazy planning manifest');
+assert.match(customerLazy,/planning-resource-ui/,'customer admin must make planning constraints UI available on demand');
+assert.doesNotMatch(customer,/src="\/planning-resource-ui\.js/,'planning constraints must not regress to eager loading');
+assert.doesNotMatch(customerLazy,/planning-resource-suggestion-fix/,'retired planning suggestion patch must stay removed');
 assert.ok(!platform.includes('planning-resource-ui.js'),'platform admin must remain visually untouched');
 assert.ok(!platform.includes('planning-resource-suggestion-fix.js'),'platform admin must not load customer planner extensions');
 

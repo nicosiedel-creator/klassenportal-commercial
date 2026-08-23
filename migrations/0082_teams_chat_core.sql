@@ -1,24 +1,16 @@
 PRAGMA foreign_keys = ON;
 
 -- Microsoft 365 / Teams is a core capability of the flagship product.
--- Keep historical commerce rows for audit compatibility, but make them non-billable.
-UPDATE module_commerce_rules
-SET monthly_price_cents=0,
-    pricing_enabled=0,
-    customer_self_service=0,
-    category='Kernfunktion',
-    updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-WHERE feature_key IN ('microsoft_365','microsoft_teams');
-
--- Existing legacy ICS/webhook functionality remains available to every tenant without an upsell.
-INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at)
-SELECT id,'microsoft_365',1,'manual',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM tenants
-WHERE 1
-ON CONFLICT(tenant_id,feature_key) DO UPDATE SET enabled=1,updated_at=excluded.updated_at;
-INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at)
-SELECT id,'microsoft_teams',1,'manual',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM tenants
-WHERE 1
-ON CONFLICT(tenant_id,feature_key) DO UPDATE SET enabled=1,updated_at=excluded.updated_at;
+-- Existing module commerce rows and feature_flags are protected by historical
+-- billing / entitlement triggers in production and must not be rewritten by a
+-- schema migration. Runtime/product policy treats these capabilities as core;
+-- historical commerce and feature-flag rows remain untouched for audit.
+--
+-- Important: production contains a stricter FEATURE_NOT_ENTITLED trigger in
+-- addition to the legacy MODULE_MANAGED_BY_BILLING guard. Even plan-managed
+-- feature_flags writes can therefore be rejected for historical paid-module keys.
+-- 0082 is a schema migration only and intentionally performs no feature_flags
+-- INSERT/UPDATE for Microsoft 365 or Teams.
 
 -- One-time OAuth state. Only a SHA-256 digest of the browser state is stored.
 CREATE TABLE IF NOT EXISTS microsoft_oauth_states (

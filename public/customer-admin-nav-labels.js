@@ -16,6 +16,7 @@ if(CUSTOMER_ADMIN_NAV_LABEL_PATH){
       if(label&&current!==label)button.textContent=label;
     });
   }
-  new MutationObserver(()=>queueMicrotask(applyLabels)).observe(document.querySelector('#app')||document.body,{subtree:true,childList:true});
+  window.addEventListener('kp:customer-view-changed',applyLabels);
+  window.addEventListener('kp:customer-modules-group-ready',applyLabels);
   applyLabels();
 }

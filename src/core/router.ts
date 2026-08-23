@@ -23,7 +23,7 @@ function err(e:unknown):Response{
     :code==='PASSWORD_CHANGE_REQUIRED'?428
     :code==='TRIAL_READ_ONLY'?423
     :code==='TRIAL_EXPIRED'||code==='ONBOARDING_EXPIRED'||code==='ONBOARDING_UNAVAILABLE'?410
-    :code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'||code==='PLATFORM_ADMIN_RESET_FORBIDDEN'||code==='MODULE_NOT_ACTIVE'?403
+    :code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'||code==='PLATFORM_ADMIN_RESET_FORBIDDEN'||code==='MODULE_NOT_ACTIVE'||code==='SUPPORT_READ_ONLY'?403
     :code.includes('NOT_FOUND')?404
     :['ONBOARDING_ALREADY_IN_PROGRESS','ONBOARDING_ALREADY_COMPLETED','COURSE_LIMIT_REACHED','PRICING_NOT_CONFIGURED','SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','TIMETABLE_BATCH_CONFIRMATION_REQUIRED','TIMETABLE_INDIVIDUAL_CONFIRMATION_INVALID','CANNOT_REMOVE_OWN_TENANT_ADMIN','SURVEY_ALREADY_VOTED','SURVEY_CLOSED'].includes(code)?409
     :code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413
@@ -32,6 +32,7 @@ function err(e:unknown):Response{
   return json({ok:false,error:code,issues:ex?.issues,targeting:ex?.targeting},status);
 }
 async function body(request:Request):Promise<Record<string,unknown>>{try{const b=await request.json() as Record<string,unknown>;if(b.course_id==='')b.course_id=null;return b;}catch{return{};}}
+function customerSupportRequest(request:Request):boolean{try{const ref=request.headers.get('referer');return !!ref&&new URL(ref).pathname.replace(/\/$/,'')==='/kunden-admin';}catch{return false;}}
 
 export async function handleCoreApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url);if(!u.pathname.startsWith('/api/'))return null;
@@ -40,7 +41,11 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(u.pathname==='/api/health')return json({ok:true,service:'klassenportal-commercial'});
     if(u.pathname==='/api/auth/login'&&request.method==='POST')return login(env,request);
     if(u.pathname==='/api/auth/logout'&&request.method==='POST')return logout(env,request);
-    if(u.pathname==='/api/auth/me'&&request.method==='GET')return json({ok:true,user:await getSession(env,request)});
+    if(u.pathname==='/api/auth/me'&&request.method==='GET'){
+      const user=await getSession(env,request);
+      if(user?.isPlatformAdmin&&customerSupportRequest(request))return json({ok:true,user:{...user,isPlatformAdmin:false,supportPlatformAdmin:true,tenantRoles:[]}});
+      return json({ok:true,user});
+    }
     if(u.pathname==='/api/auth/change-password'&&request.method==='POST')return changePassword(env,request);
 
     const publicQuote=u.pathname.match(/^\/api\/onboarding\/([^/]+)\/quote$/);
@@ -50,11 +55,9 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
 
     if(u.pathname==='/api/platform/onboarding-invitations'&&request.method==='GET'){const a=await resolveCoreAuth(env,request);requirePlatform(a);return json({ok:true,invitations:await listOnboardingInvitations(env,a)});}
     if(u.pathname==='/api/platform/onboarding-invitations'&&request.method==='POST'){const a=await resolveCoreAuth(env,request);requirePlatform(a);return json({ok:true,...await createOnboardingInvitation(env,a,request)},201);}
-    const revoke=u.pathname.match(/^\/api\/platform\/onboarding-invitations\/([^/]+)\/revoke$/);
-    if(revoke&&request.method==='POST'){const a=await resolveCoreAuth(env,request);requirePlatform(a);await revokeOnboardingInvitation(env,a,decodeURIComponent(revoke[1]));return json({ok:true});}
+    const revoke=u.pathname.match(/^\/api\/platform\/onboarding-invitations\/([^/]+)\/revoke$/);if(revoke&&request.method==='POST'){const a=await resolveCoreAuth(env,request);requirePlatform(a);await revokeOnboardingInvitation(env,a,decodeURIComponent(revoke[1]));return json({ok:true});}
     if(u.pathname==='/api/platform/commerce/plans'&&request.method==='GET'){const a=await resolveCoreAuth(env,request);return json({ok:true,plans:await listCommercePlans(env,a)});}
-    const planCommerce=u.pathname.match(/^\/api\/platform\/commerce\/plans\/([^/]+)$/);
-    if(planCommerce&&request.method==='PUT'){const a=await resolveCoreAuth(env,request);await updateCommercePlan(env,a,decodeURIComponent(planCommerce[1]),await body(request));return json({ok:true});}
+    const planCommerce=u.pathname.match(/^\/api\/platform\/commerce\/plans\/([^/]+)$/);if(planCommerce&&request.method==='PUT'){const a=await resolveCoreAuth(env,request);await updateCommercePlan(env,a,decodeURIComponent(planCommerce[1]),await body(request));return json({ok:true});}
     if(u.pathname==='/api/platform/commerce/seller'&&request.method==='GET'){const a=await resolveCoreAuth(env,request);return json({ok:true,profile:await getSellerProfile(env,a)});}
     if(u.pathname==='/api/platform/commerce/seller'&&request.method==='PUT'){const a=await resolveCoreAuth(env,request);await updateSellerProfile(env,a,await body(request));return json({ok:true});}
 
@@ -66,23 +69,18 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
 
     if(u.pathname==='/api/tenant/audit'&&request.method==='GET')return json({ok:true,events:await listTenantAudit(env,a,tenantId,Number(u.searchParams.get('limit')||100))});
     if(u.pathname==='/api/notifications'&&request.method==='GET')return json({ok:true,notifications:await listUserNotifications(env,a,tenantId,courseId,Number(u.searchParams.get('limit')||80))});
-    const notification=u.pathname.match(/^\/api\/notifications\/([^/]+)\/read$/);
-    if(notification&&request.method==='PATCH')return json({ok:true,notification:await markNotificationRead(env,a,tenantId,decodeURIComponent(notification[1]))});
+    const notification=u.pathname.match(/^\/api\/notifications\/([^/]+)\/read$/);if(notification&&request.method==='PATCH')return json({ok:true,notification:await markNotificationRead(env,a,tenantId,decodeURIComponent(notification[1]))});
     if(u.pathname==='/api/notifications/read-all'&&request.method==='POST')return json({ok:true,...await markAllNotificationsRead(env,a,tenantId,courseId)});
 
     if(u.pathname==='/api/modules/statistics'&&request.method==='GET')return json({ok:true,statistics:await statisticsSummary(env,a,tenantId)});
     if(u.pathname==='/api/surveys'&&request.method==='GET')return json({ok:true,surveys:await listSurveys(env,a,tenantId,courseId)});
     if(u.pathname==='/api/surveys'&&request.method==='POST')return json({ok:true,survey:await createSurvey(env,a,tenantId,await body(request))},201);
-    const surveyClose=u.pathname.match(/^\/api\/surveys\/([^/]+)\/close$/);
-    if(surveyClose&&request.method==='POST'){await closeSurvey(env,a,tenantId,decodeURIComponent(surveyClose[1]));return json({ok:true});}
-    const surveyVote=u.pathname.match(/^\/api\/surveys\/([^/]+)\/vote$/);
-    if(surveyVote&&request.method==='POST'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');const b=await body(request);return json({ok:true,...await voteSurvey(env,a,tenantId,courseId,decodeURIComponent(surveyVote[1]),String(b.option_id||''))});}
-    const survey=u.pathname.match(/^\/api\/surveys\/([^/]+)$/);
-    if(survey&&request.method==='DELETE'){await deleteSurvey(env,a,tenantId,decodeURIComponent(survey[1]));return json({ok:true});}
+    const surveyClose=u.pathname.match(/^\/api\/surveys\/([^/]+)\/close$/);if(surveyClose&&request.method==='POST'){await closeSurvey(env,a,tenantId,decodeURIComponent(surveyClose[1]));return json({ok:true});}
+    const surveyVote=u.pathname.match(/^\/api\/surveys\/([^/]+)\/vote$/);if(surveyVote&&request.method==='POST'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');const b=await body(request);return json({ok:true,...await voteSurvey(env,a,tenantId,courseId,decodeURIComponent(surveyVote[1]),String(b.option_id||''))});}
+    const survey=u.pathname.match(/^\/api\/surveys\/([^/]+)$/);if(survey&&request.method==='DELETE'){await deleteSurvey(env,a,tenantId,decodeURIComponent(survey[1]));return json({ok:true});}
     if(u.pathname==='/api/substitutions'&&request.method==='GET')return json({ok:true,updates:await listSubstitutionUpdates(env,a,tenantId,courseId)});
     if(u.pathname==='/api/substitutions'&&request.method==='POST')return json({ok:true,update:await createSubstitutionUpdate(env,a,tenantId,await body(request))},201);
-    const substitution=u.pathname.match(/^\/api\/substitutions\/([^/]+)$/);
-    if(substitution&&request.method==='DELETE'){await deleteSubstitutionUpdate(env,a,tenantId,decodeURIComponent(substitution[1]));return json({ok:true});}
+    const substitution=u.pathname.match(/^\/api\/substitutions\/([^/]+)$/);if(substitution&&request.method==='DELETE'){await deleteSubstitutionUpdate(env,a,tenantId,decodeURIComponent(substitution[1]));return json({ok:true});}
     if(u.pathname==='/api/integrations/teams'&&request.method==='GET')return json({ok:true,integration:await getTeamsIntegration(env,a,tenantId)});
     if(u.pathname==='/api/integrations/teams'&&request.method==='PUT')return json({ok:true,integration:await saveTeamsIntegration(env,a,tenantId,await body(request))});
     if(u.pathname==='/api/integrations/teams/test'&&request.method==='POST')return json({ok:true,...await testTeamsIntegration(env,a,tenantId)});
@@ -143,4 +141,4 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
   }catch(e){return err(e);}
 }
 
-export async function handlePublicApi(request:Request,env:Env):Promise<Response|null>{const u=new URL(request.url);const m=u.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);if(!m)return null;try{return json({ok:true,...await publicOverview(env,decodeURIComponent(m[1]),decodeURIComponent(m[2]),await getSession(env,request),u.searchParams.get('access_code')||undefined)});}catch(e){return err(e);}}
+export async function handlePublicApi(request:Request,env:Env):Promise<Response|null>{const u=new URL(request.url),m=u.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);if(!m)return null;try{const d=await publicOverview(env,decodeURIComponent(m[1]),decodeURIComponent(m[2]),await getSession(env,request),request.headers.get('X-Klassenportal-Access-Code')||u.searchParams.get('access_code')||undefined);return json({ok:true,...d});}catch(e){const c=(e as Error).message,s=c==='LOGIN_REQUIRED'||c==='ACCESS_CODE_REQUIRED'||c==='LOGIN_OR_CODE_REQUIRED'?401:c==='PORTAL_NOT_FOUND'?404:400;return json({ok:false,error:c},s);}}

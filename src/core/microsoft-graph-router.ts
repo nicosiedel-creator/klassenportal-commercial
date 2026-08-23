@@ -3,6 +3,7 @@ import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { assertSameOrigin, json } from './utils.js';
 import { cancelTeamsMeeting, createOrSyncTeamsMeeting, disconnectMicrosoftAccount, finishMicrosoftConnection, getLessonMeeting, getMicrosoftConnectionStatus, linkTeamsMeeting, listCourseMeetings, startMicrosoftConnection } from './microsoft-graph.js';
+import { syncCourseMeetingAttendees } from './microsoft-course-invitations.js';
 import { listMeetingReadyLessons } from './microsoft-meeting-lessons.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -21,6 +22,11 @@ function callbackHtml(ok:boolean,message:string):Response{
   const title=ok?'Microsoft 365 verbunden':'Microsoft-365-Verbindung fehlgeschlagen';
   const safe=message.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]||c));
   return new Response(`<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><body><main><h1>${title}</h1><p>${safe}</p><p>Du kannst dieses Fenster jetzt schließen und zum Klassenportal zurückkehren.</p></main></body></html>`,{status:ok?200:400,headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store'}});
+}
+async function createMeetingWithClassInvites(env:Env,auth:Awaited<ReturnType<typeof resolveCoreAuth>>,tenantId:string,courseId:string,lessonId:string){
+  const meeting=await createOrSyncTeamsMeeting(env,auth,tenantId,courseId,lessonId);
+  try{return{meeting,invitations:await syncCourseMeetingAttendees(env,auth,tenantId,courseId,lessonId)};}
+  catch(error){const code=String((error as Error)?.message||'MICROSOFT_CLASS_INVITE_FAILED');if(code.startsWith('FORBIDDEN')||code.includes('MFA_')||code.includes('ORGANIZER_MISMATCH'))throw error;return{meeting,invitations:{invited:null,hidden_attendees:true,warning:code}};}
 }
 
 export async function handleMicrosoftGraphApi(request:Request,env:Env):Promise<Response|null>{
@@ -52,7 +58,7 @@ export async function handleMicrosoftGraphApi(request:Request,env:Env):Promise<R
     if(lessonRoute){
       if(!courseId)throw new Error('COURSE_ID_REQUIRED');const lessonId=decodeURIComponent(lessonRoute[1]);
       if(request.method==='GET')return json({ok:true,meeting:await getLessonMeeting(env,auth,tenantId,courseId,lessonId)});
-      if(request.method==='POST')return json({ok:true,meeting:await createOrSyncTeamsMeeting(env,auth,tenantId,courseId,lessonId)});
+      if(request.method==='POST')return json({ok:true,...await createMeetingWithClassInvites(env,auth,tenantId,courseId,lessonId)});
       if(request.method==='PUT'){const b=await body(request);return json({ok:true,meeting:await linkTeamsMeeting(env,auth,tenantId,courseId,lessonId,b.join_url)});}
       if(request.method==='DELETE')return json({ok:true,...await cancelTeamsMeeting(env,auth,tenantId,courseId,lessonId)});
     }

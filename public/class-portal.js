@@ -7,7 +7,7 @@ const legacyCode=new URLSearchParams(location.search).get('code')||'';
 if(legacyCode){sessionStorage.setItem(codeStoreKey,legacyCode);history.replaceState(null,'',location.pathname);}
 let lastData=null,lastCourse=null;
 
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const safeColor=(v,fallback)=>/^#[0-9a-f]{6}$/i.test(String(v||''))?String(v):fallback;
 const roleName=r=>({platform_admin:'Plattform-Admin',tenant_admin:'Kunden-Admin',class_admin:'Klassenverantwortliche/r',participant:'Teilnehmer/in',guest:'Gast'})[r]||r||'';
 const notificationName=t=>({announcement:'Meldung',homework:'Aufgabe',appointment:'Termin',exam:'Prüfung'})[t]||'Hinweis';
@@ -22,6 +22,7 @@ function sectionEnabled(modules,key){return modules?.[key]!==false;}
 function materialsEnabled(modules){return modules?.files!==false||modules?.learning_materials===true;}
 function textOr(v,f=''){return String(v??'').trim()||f;}
 function fileSize(n){const x=Number(n||0);if(x<1024)return `${x} B`;if(x<1024*1024)return `${(x/1024).toFixed(1)} KB`;return `${(x/1024/1024).toFixed(1)} MB`;}
+function portalNotice(text,kind='ok'){let n=document.querySelector('#kp-portal-notice');if(!n){n=document.createElement('div');n.id='kp-portal-notice';n.setAttribute('role','status');n.setAttribute('aria-live','polite');n.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2200;max-width:380px;padding:10px 12px;border:1px solid #dbe3ec;border-radius:8px;background:#fff;color:#172033;box-shadow:0 8px 24px #0002;font:13px/1.4 system-ui';document.body.append(n);}n.dataset.kind=kind;n.textContent=text;clearTimeout(portalNotice.timer);portalNotice.timer=setTimeout(()=>n?.remove(),5500);}
 
 async function fetchJson(url,opt={}){
   const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt,headers:{...(opt.body?{'content-type':'application/json'}:{}),...(opt.headers||{})}});
@@ -36,7 +37,7 @@ async function downloadMaterial(material){
     const r=await fetch(`/public/${encodeURIComponent(tenantSlug)}/${encodeURIComponent(courseCode)}/materials/${encodeURIComponent(material.id)}`,{credentials:'same-origin',cache:'no-store',headers:code?{'X-Klassenportal-Access-Code':code}:{}});
     if(!r.ok){let d={};try{d=await r.json();}catch{}throw new Error(d.error||`HTTP_${r.status}`);}
     const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=String(material.original_name||material.title||'material');document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
-  }catch(e){alert(e.message==='ACCESS_CODE_REQUIRED'||e.message==='LOGIN_OR_CODE_REQUIRED'?'Der Portalzugang ist abgelaufen. Bitte öffne das Portal erneut.':'Die Datei konnte nicht heruntergeladen werden.');}
+  }catch(e){portalNotice(e.message==='ACCESS_CODE_REQUIRED'||e.message==='LOGIN_OR_CODE_REQUIRED'?'Der Portalzugang ist abgelaufen. Bitte öffne das Portal erneut.':'Die Datei konnte nicht heruntergeladen werden.','error');}
   finally{if(button)button.disabled=false;}
 }
 async function markNotification(id,tenantId,courseId){await fetchJson(`/api/notifications/${encodeURIComponent(id)}/read?tenant_id=${encodeURIComponent(tenantId)}&course_id=${encodeURIComponent(courseId)}`,{method:'PATCH',body:'{}'});await load();}
@@ -55,7 +56,7 @@ function gateShell(inner,course={}){applyBrand(course);root.className='';root.in
 function renderGate(code,course={},wrongCode=false){
   const loginNeeded=code==='LOGIN_REQUIRED'||code==='LOGIN_OR_CODE_REQUIRED',codeNeeded=code==='ACCESS_CODE_REQUIRED'||code==='LOGIN_OR_CODE_REQUIRED';
   let html=`<h1>Zugang zum Klassenportal</h1><p>${code==='LOGIN_OR_CODE_REQUIRED'?'Du kannst dich anmelden oder den Zugangscode der Klasse verwenden.':loginNeeded?'Bitte melde dich mit deinem Klassenportal-Konto an.':'Bitte gib den Zugangscode der Klasse ein.'}</p>`;
-  if(loginNeeded)html+=`<form class="portal-form" id="portal-login"><label class="portal-field">E-Mail<input name="email" type="email" autocomplete="username" required></label><label class="portal-field">Passwort<input name="password" type="password" autocomplete="current-password" required></label><button class="portal-btn" type="submit">Anmelden</button><div class="portal-error" id="portal-login-error"></div></form>`;
+  if(loginNeeded)html+=`<form class="portal-form" id="portal-login"><label class="portal-field">E-Mail<input name="email" type="email" autocomplete="username" required></label><label class="portal-field">Passwort<input name="password" type="password" autocomplete="current-password" required></label><button class="portal-btn" type="submit">Anmelden</button><p style="margin:10px 0 0"><a href="/passwort-vergessen">Passwort vergessen?</a></p><div class="portal-error" id="portal-login-error"></div></form>`;
   if(loginNeeded&&codeNeeded)html+='<div class="portal-divider">oder mit Zugangscode</div>';
   if(codeNeeded)html+=`<form class="portal-form" id="portal-code"><label class="portal-field">Zugangscode<input name="access_code" type="password" autocomplete="off" minlength="6" required></label><button class="portal-btn${loginNeeded?' secondary':''}" type="submit">Portal öffnen</button><div class="portal-error" id="portal-code-error">${wrongCode?'Der Zugangscode ist nicht korrekt.':''}</div></form>`;
   gateShell(html,course);
@@ -66,19 +67,9 @@ function renderGate(code,course={},wrongCode=false){
 function item(title,meta='',body='',pill=''){return `<div class="portal-item"><div class="portal-item-top"><strong>${esc(title)}</strong>${pill?`<span class="portal-pill">${esc(pill)}</span>`:''}</div>${meta?`<div class="meta">${esc(meta)}</div>`:''}${body?`<div class="body">${esc(body)}</div>`:''}</div>`;}
 function empty(text){return `<div class="portal-empty">${esc(text)}</div>`;}
 function section(id,title,content,count,wide=false){return `<section class="portal-section${wide?' wide':''}" id="${id}"><div class="portal-section-head"><h2>${esc(title)}</h2><span>${esc(count)}</span></div>${content}</section>`;}
-function combinedEvents(d){
-  const rows=[];
-  for(const x of d.lessons||[])rows.push({kind:'Unterricht',at:x.starts_at,title:textOr(x.subject_name,x.notes||'Unterricht'),detail:[x.teacher_name,x.room].filter(Boolean).join(' · ')});
-  for(const x of d.homework||[])if(x.due_at)rows.push({kind:'Aufgabe',at:x.due_at,title:x.title,detail:x.subject_short_name||x.subject_name||''});
-  for(const x of d.appointments||[])rows.push({kind:'Termin',at:x.starts_at,title:x.title,detail:x.location||''});
-  for(const x of d.exams||[])rows.push({kind:'Prüfung',at:x.starts_at,title:x.title,detail:[x.subject_name,x.room].filter(Boolean).join(' · ')});
-  return rows.filter(x=>dateObj(x.at)).sort((a,b)=>dateObj(a.at)-dateObj(b.at));
-}
+function combinedEvents(d){const rows=[];for(const x of d.lessons||[])rows.push({kind:'Unterricht',at:x.starts_at,title:textOr(x.subject_name,x.notes||'Unterricht'),detail:[x.teacher_name,x.room].filter(Boolean).join(' · ')});for(const x of d.homework||[])if(x.due_at)rows.push({kind:'Aufgabe',at:x.due_at,title:x.title,detail:x.subject_short_name||x.subject_name||''});for(const x of d.appointments||[])rows.push({kind:'Termin',at:x.starts_at,title:x.title,detail:x.location||''});for(const x of d.exams||[])rows.push({kind:'Prüfung',at:x.starts_at,title:x.title,detail:[x.subject_name,x.room].filter(Boolean).join(' · ')});return rows.filter(x=>dateObj(x.at)).sort((a,b)=>dateObj(a.at)-dateObj(b.at));}
 function rangeEvents(events,days){const from=Date.now()-60000,to=Date.now()+days*86400000;return events.filter(x=>{const t=dateObj(x.at)?.getTime()||0;return t>=from&&t<=to;});}
-function groupedEvents(events,tz){
-  const groups=new Map();for(const e of events){const k=dateKey(dateObj(e.at),tz);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(e);}
-  return [...groups.entries()].map(([,rows])=>`<div class="portal-day"><h3>${esc(fmtDate(rows[0].at,tz,{weekday:'long',day:'2-digit',month:'long'}))}</h3><div class="portal-list">${rows.map(e=>item(e.title,`${fmtTime(e.at,tz)}${e.detail?` · ${e.detail}`:''}`,'',e.kind)).join('')}</div></div>`).join('');
-}
+function groupedEvents(events,tz){const groups=new Map();for(const e of events){const k=dateKey(dateObj(e.at),tz);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(e);}return [...groups.entries()].map(([,rows])=>`<div class="portal-day"><h3>${esc(fmtDate(rows[0].at,tz,{weekday:'long',day:'2-digit',month:'long'}))}</h3><div class="portal-list">${rows.map(e=>item(e.title,`${fmtTime(e.at,tz)}${e.detail?` · ${e.detail}`:''}`,'',e.kind)).join('')}</div></div>`).join('');}
 
 function renderPortal(d){
   lastData=d;const c=d.course||{},m=d.modules||{},tz=textOr(c.timezone,'Europe/Berlin');lastCourse=c;applyBrand(c);
@@ -103,15 +94,25 @@ function renderPortal(d){
   const stats=[participantViewer&&unread?[unread,'ungelesene Hinweise']:null,sectionEnabled(m,'schedule')?[todayLessons.length,'Unterricht heute']:null,sectionEnabled(m,'homework')?[futureHomework.length,'offene Aufgaben']:null,sectionEnabled(m,'reminders')?[reminders.length,'kurzfristige Erinnerungen']:null].filter(Boolean);
   root.className='';root.innerHTML=`<div class="portal-shell"><header class="portal-header"><div class="portal-header-inner">${logo}<div class="portal-brand"><strong>${esc(textOr(c.portal_name,'Klassenportal'))}</strong><span>${esc(textOr(c.name,'Klasse/Kurs'))}</span></div><div class="portal-header-actions">${headerActions}</div></div></header><main class="portal-main"><section class="portal-hero"><div><div class="portal-kicker">${esc(textOr(c.tenant_name,'Klassenportal'))}</div><h1>${esc(textOr(c.name,'Klasse/Kurs'))}</h1><p>${esc(heroMessage)}</p></div><div class="portal-date"><strong>${esc(day)}</strong><span>${esc(`${weekday}, ${month}`)}</span></div></section>${stats.length?`<div class="portal-stats">${stats.map(([n,label])=>`<div class="portal-stat"><strong>${esc(n)}</strong><span>${esc(label)}</span></div>`).join('')}</div>`:''}<nav class="portal-nav" aria-label="Portalbereiche">${nav.map(([id,n])=>`<a href="#${id}">${esc(n)}</a>`).join('')}</nav><div class="portal-grid">${sections.join('')}</div></main><footer class="portal-footer">${Number(c.white_label)===1?esc(c.tenant_name||''):'Klassenportal'} · ${esc(c.name||'')}</footer></div>`;
   root.querySelector('#portal-logout')?.addEventListener('click',async()=>{try{await fetchJson('/api/auth/logout',{method:'POST',body:'{}'});}catch{}sessionStorage.removeItem(codeStoreKey);await load();});
-  root.querySelectorAll('.portal-material-download').forEach(b=>{b.addEventListener('click',()=>{const material=materials.find(x=>String(x.id)===String(b.dataset.materialId));if(material)downloadMaterial(material);});});
-  root.querySelectorAll('.portal-notification-read').forEach(b=>b.addEventListener('click',()=>{if(d.viewer?.tenantId)markNotification(String(b.dataset.notificationId),d.viewer.tenantId,c.id).catch(()=>alert('Benachrichtigung konnte nicht aktualisiert werden.'));}));
-  root.querySelector('#portal-notifications-read-all')?.addEventListener('click',()=>{if(d.viewer?.tenantId)markAllNotifications(d.viewer.tenantId,c.id).catch(()=>alert('Benachrichtigungen konnten nicht aktualisiert werden.'));});
+  root.querySelectorAll('.portal-material-download').forEach(b=>b.addEventListener('click',()=>{const material=materials.find(x=>String(x.id)===String(b.dataset.materialId));if(material)downloadMaterial(material);}));
+  root.querySelectorAll('.portal-notification-read').forEach(b=>b.addEventListener('click',()=>{if(d.viewer?.tenantId)markNotification(String(b.dataset.notificationId),d.viewer.tenantId,c.id).catch(()=>portalNotice('Benachrichtigung konnte nicht aktualisiert werden.','error'));}));
+  root.querySelector('#portal-notifications-read-all')?.addEventListener('click',()=>{if(d.viewer?.tenantId)markAllNotifications(d.viewer.tenantId,c.id).catch(()=>portalNotice('Benachrichtigungen konnten nicht aktualisiert werden.','error'));});
+  window.__KP_PORTAL_DATA=d;
+  window.dispatchEvent(new CustomEvent('kp:portal-data',{detail:{data:d}}));
 }
 function renderFatal(message){root.className='';root.innerHTML=`<div class="portal-gate"><div class="portal-gate-card"><h1>Klassenportal nicht verfügbar</h1><p>${esc(message)}</p><button class="portal-btn" id="portal-reload" type="button">Neu laden</button></div></div>`;root.querySelector('#portal-reload')?.addEventListener('click',()=>location.reload());}
 async function load(){
   if(!tenantSlug||!courseCode){renderFatal('Der Portal-Link ist unvollständig.');return;}
   root.className='portal-loading';root.textContent='Klassenportal wird geladen …';const stored=sessionStorage.getItem(codeStoreKey)||'';
-  try{if(!lastCourse){const meta=await metadata();lastCourse=meta.course||null;if(lastCourse)applyBrand(lastCourse);}renderPortal(await overview(stored));}
-  catch(e){if(e.message==='COURSE_NOT_FOUND'){renderFatal('Diese Klasse oder dieser Kurs wurde nicht gefunden oder ist nicht mehr aktiv.');return;}if(stored&&['ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(e.message))sessionStorage.removeItem(codeStoreKey);if(['LOGIN_REQUIRED','ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(e.message)){renderGate(e.message,lastCourse||{},!!stored);return;}renderFatal('Das Portal konnte gerade nicht geladen werden.');}
+  try{renderPortal(await overview(stored));}
+  catch(e){
+    if(e.message==='COURSE_NOT_FOUND'){renderFatal('Diese Klasse oder dieser Kurs wurde nicht gefunden oder ist nicht mehr aktiv.');return;}
+    if(stored&&['ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(e.message))sessionStorage.removeItem(codeStoreKey);
+    if(['LOGIN_REQUIRED','ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(e.message)){
+      if(!lastCourse){try{const meta=await metadata();lastCourse=meta.course||null;if(lastCourse)applyBrand(lastCourse);}catch{}}
+      renderGate(e.message,lastCourse||{},!!stored);return;
+    }
+    renderFatal('Das Portal konnte gerade nicht geladen werden.');
+  }
 }
 await load();

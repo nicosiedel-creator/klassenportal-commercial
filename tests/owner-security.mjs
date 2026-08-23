@@ -16,6 +16,7 @@ const adminMfaUi=await readFile('public/admin-mfa-enrollment-ui.js','utf8');
 const customerHtml=await readFile('public/customer-admin.html','utf8');
 const classHtml=await readFile('public/class-admin.html','utf8');
 const classPortalHtml=await readFile('public/class-portal.html','utf8');
+const studentLazy=await readFile('public/portal-lazy-runtime.js','utf8');
 const teacherHtml=await readFile('public/dozentenportal.html','utf8');
 const platformHtml=await readFile('public/platform-admin.html','utf8');
 const platformLogin=await readFile('public/platform-direct-login.js','utf8');
@@ -71,7 +72,9 @@ assert.match(adminMfaUi,/Für administrative und Dozenten-Zugänge verpflichtend
 assert.match(adminMfaUi,/Wiederherstellungscodes jetzt sicher speichern/,'admin MFA enrollment must surface one-time recovery codes');
 assert.match(customerHtml,/admin-mfa-enrollment-ui\.js/,'customer admin must load MFA enrollment protection');
 assert.match(classHtml,/admin-mfa-enrollment-ui\.js/,'class admin entry must load MFA enrollment protection');
-assert.match(classPortalHtml,/admin-mfa-enrollment-ui\.js/,'shared student portal must support MFA enrollment when the signed-in student is a class admin');
+assert.match(classPortalHtml,/portal-lazy-runtime\.js/,'shared student portal must load the audited lazy runtime');
+assert.match(studentLazy,/\['class_admin','tenant_admin','platform_admin'\]/,'student lazy runtime must restrict admin MFA enrollment loading to protected roles');
+assert.match(studentLazy,/loadOne\('admin-mfa-enrollment-ui'\)/,'shared student portal must support MFA enrollment when the signed-in student is a class admin');
 assert.match(teacherHtml,/auth-mfa-ui\.js/);assert.match(teacherHtml,/admin-mfa-enrollment-ui\.js/,'teacher portal must load MFA challenge and enrollment protection');
 
 assert.match(index,/const asset=clean==='\/kunden-admin'\?'\/customer-admin\.html':clean==='\/klassen-admin'\?'\/class-admin\.html':'\/platform-admin\.html'/,'platform admin route must serve its login shell without requiring a pre-existing owner session');

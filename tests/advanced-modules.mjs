@@ -34,9 +34,10 @@ for(const id of ['vertretungen','umfragen','microsoft365'])assert.ok(layout.incl
 const index=read('src/index.ts');
 assert.match(index,/calendarFeedResponse/);
 assert.match(index,/publicAdvancedBySlug/);
-const portalHtml=read('public/class-portal.html'),classEntry=read('public/class-admin.html');
-assert.match(portalHtml,/portal-advanced-ui\.js/,'advanced participant modules must be shared by students and class admins');
-assert.match(portalHtml,/class-admin-student-tools\.js/,'class admin extras must be layered into that same portal');
+const portalHtml=read('public/class-portal.html'),portalLazy=read('public/portal-lazy-runtime.js'),classEntry=read('public/class-admin.html');
+assert.doesNotMatch(portalHtml,/src="\/portal-advanced-ui\.js/,'advanced participant modules must not block student first paint');
+assert.match(portalLazy,/portal-advanced-ui/,'advanced participant modules must remain shared by students and class admins through the lazy runtime');
+assert.match(portalLazy,/class-admin-student-tools/,'class admin extras must be layered into that same portal lazily');
 assert.match(classEntry,/class-admin-entry\.js/,'class admin route must redirect into the shared student portal');
 assert.doesNotMatch(classEntry,/class-admin-portal\.js/,'legacy class-admin workspace must no longer be active');
 
@@ -55,6 +56,6 @@ assert.match(adminEntry,/\/klassen-admin/);
 const rootHtml=read('public/index.html');
 assert.match(rootHtml,/admin-entry-route-ui\.js/,'generic root may use the class-admin entry route to resolve the concrete student portal');
 const localization=read('public/localization.js');
-for(const key of ['learning_materials','microsoft_365','substitution_updates','custom_domain','weekly_overview'])assert.ok(localization.includes(`'${key}'`),`missing German localization for ${key}`);
+for(const key of ['learning_materials','microsoft_365','substitution_updates','custom_domain','weekly_overview'])assert.match(localization,new RegExp(`(?:['\"]${key}['\"]|\\b${key}\\b)\\s*:`),`missing German localization for ${key}`);
 
-console.log('Advanced modules + shared class-admin/student portal + self-service add-on acceptance checks: OK');
+console.log('Advanced modules + shared lazy class-admin/student portal + self-service add-on acceptance checks: OK');

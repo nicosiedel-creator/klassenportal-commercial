@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 
-const [learnMig,collabMig,accountMig,learn,learnRouter,management,collab,account,accountRouter,automation,attendanceRouter,ownerRouter,pwa,sw,customer,classAdmin,portal,ciGuard]=await Promise.all([
-  readFile('migrations/0059_learning_suite.sql','utf8'),readFile('migrations/0060_collaboration_reporting_pwa.sql','utf8'),readFile('migrations/0061_platform_accounting.sql','utf8'),readFile('src/core/learning-suite.ts','utf8'),readFile('src/core/learning-suite-router.ts','utf8'),readFile('src/core/learning-suite-management.ts','utf8'),readFile('src/core/collaboration-reporting.ts','utf8'),readFile('src/core/platform-accounting.ts','utf8'),readFile('src/core/platform-accounting-router.ts','utf8'),readFile('src/core/automation-cycle.ts','utf8'),readFile('src/core/attendance-router.ts','utf8'),readFile('src/core/owner-security-router.ts','utf8'),readFile('public/pwa-client.js','utf8'),readFile('public/service-worker.js','utf8'),readFile('public/customer-admin.html','utf8'),readFile('public/class-admin.html','utf8'),readFile('public/class-portal.html','utf8'),readFile('scripts/workers-ci-guard.mjs','utf8')
+const [learnMig,collabMig,accountMig,learn,learnRouter,management,collab,account,accountRouter,automation,attendanceRouter,ownerRouter,pwa,sw,customer,classAdmin,portal,portalLazy,ciGuard]=await Promise.all([
+  readFile('migrations/0059_learning_suite.sql','utf8'),readFile('migrations/0060_collaboration_reporting_pwa.sql','utf8'),readFile('migrations/0061_platform_accounting.sql','utf8'),readFile('src/core/learning-suite.ts','utf8'),readFile('src/core/learning-suite-router.ts','utf8'),readFile('src/core/learning-suite-management.ts','utf8'),readFile('src/core/collaboration-reporting.ts','utf8'),readFile('src/core/platform-accounting.ts','utf8'),readFile('src/core/platform-accounting-router.ts','utf8'),readFile('src/core/automation-cycle.ts','utf8'),readFile('src/core/attendance-router.ts','utf8'),readFile('src/core/owner-security-router.ts','utf8'),readFile('public/pwa-client.js','utf8'),readFile('public/service-worker.js','utf8'),readFile('public/customer-admin.html','utf8'),readFile('public/class-admin.html','utf8'),readFile('public/class-portal.html','utf8'),readFile('public/portal-lazy-runtime.js','utf8'),readFile('scripts/workers-ci-guard.mjs','utf8')
 ]);
 for(const table of ['gradebook_categories','grading_scales','quiz_banks','quiz_questions','quizzes','quiz_attempts','course_templates','course_clone_jobs'])assert.ok(learnMig.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`missing ${table}`);
 for(const table of ['push_subscriptions','push_outbox','discussion_threads','discussion_messages','report_definitions','integration_outbox'])assert.ok(collabMig.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`missing ${table}`);
@@ -36,11 +36,13 @@ assert.match(pwa,/serviceWorker\.register/,'PWA must register a service worker')
 assert.match(pwa,/Notification\.requestPermission/,'push must remain explicit opt-in');
 assert.match(sw,/u\.pathname\.startsWith\('\/api\/'\)/,'service worker must not cache API responses');
 assert.match(sw,/event\.request\.mode==='navigate'/,'service worker must not offline-cache authenticated page navigations');
-assert.match(customer,/learning-report-collab-admin-ui\.js/,'customer admin must load learning/report admin workspace');
+assert.match(customer,/learning-report-collab-admin-ui\.js/,'customer admin must keep learning/report admin workspace available through its lazy manifest');
 assert.doesNotMatch(classAdmin,/learning-report-collab-admin-ui\.js/,'class admin must not load administrative learner reporting');
 assert.match(classAdmin,/class-admin-entry\.js/,'class admin page must be only an entry into the student portal');
-for(const html of [customer,classAdmin,portal])assert.match(html,/pwa-client\.js/,'PWA client must be loaded');
-assert.match(portal,/portal-learning-collaboration-ui\.js/,'participant quiz/forum UI must be loaded');
-assert.match(portal,/class-admin-student-tools\.js/,'class admin extras must be layered into participant portal');
+assert.match(classAdmin,/pwa-client\.js/,'class-admin entry may keep its small PWA client');
+assert.doesNotMatch(portal,/src="\/pwa-client\.js/,'student portal must not block first paint on PWA registration');
+assert.match(portalLazy,/loadOne\('pwa-client'\)/,'student portal must retain PWA support after idle time');
+assert.match(portalLazy,/portal-learning-collaboration-ui/,'participant quiz/forum UI must be available through the lazy student runtime');
+assert.match(portalLazy,/class-admin-student-tools/,'class admin extras must remain layered into the participant portal lazily');
 assert.match(ciGuard,/WORKERS_CI_GUARD_ACTIVE/,'Cloudflare nested Wrangler recursion guard required');
-console.log('Final platform learning/PWA/reporting/accounting security and class-admin student-portal checks: OK');
+console.log('Final platform learning/PWA/reporting/accounting security, lean customer/student bootstrap and class-admin student-portal checks: OK');

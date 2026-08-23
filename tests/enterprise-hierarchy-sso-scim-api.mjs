@@ -17,6 +17,7 @@ const auth=await readFile('src/core/auth.ts','utf8');
 const ui=await readFile('public/enterprise-admin-ui.js','utf8');
 const responsibilityUi=await readFile('public/responsibility-ui.js','utf8');
 const customerHtml=await readFile('public/customer-admin.html','utf8');
+const customerLazy=await readFile('public/customer-admin-lazy-modules.js','utf8');
 const exportCode=await readFile('src/portability/export.ts','utf8');
 const importCode=await readFile('src/portability/import.ts','utf8');
 const backup=await readFile('src/portability/backup.ts','utf8');
@@ -53,7 +54,8 @@ assert.match(router,/api\/enterprise\/responsibilities/,'responsibility manageme
 for(const label of ['Hauptverantwortlich','2. / weitere Verantwortliche','Vertretung'])assert.ok(responsibilityUi.includes(label),`responsibility UI missing ${label}`);
 assert.match(responsibilityUi,/Gültig bis/,'deputies and co-responsibles must support time limits');
 assert.match(responsibilityUi,/Klasse \/ Kurs/,'responsibility UI must support direct course responsibility');
-assert.ok(customerHtml.includes('/responsibility-ui.js'),'customer admin must load responsibility management');
+assert.match(customerLazy,/responsibility-ui/,'customer admin must keep responsibility management available on demand');
+assert.doesNotMatch(customerHtml,/src="\/responsibility-ui\.js/,'responsibility management must not block customer-admin first paint');
 assert.ok(readiness.includes("'responsibility_assignments'"),'production release must fail closed if responsibility schema is missing');
 
 assert.match(secrets,/AES-GCM/,'tenant secrets must be encrypted with authenticated encryption');

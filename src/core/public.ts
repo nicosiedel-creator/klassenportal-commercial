@@ -12,9 +12,8 @@ function viewerRole(session:SessionUser|null,tenantId:string,courseId:string):st
   return best==='class_admin'?'participant':best;
 }
 
-async function coursePortalRow(env:Env,tenantSlug:string,courseCode:string){
-  await ensureBrandingSchema(env);
-  const row=await env.DB.prepare(`SELECT
+async function queryCoursePortalRow(env:Env,tenantSlug:string,courseCode:string){
+  return env.DB.prepare(`SELECT
       c.id,c.tenant_id,c.name,c.code,c.start_date,c.end_date,c.access_mode,c.access_code_hash,
       t.name AS tenant_name,t.slug,
       s.portal_name,s.welcome_text,s.logo_url,s.primary_color,s.secondary_color,s.accent_color,s.background_color,s.surface_color,s.text_color,
@@ -24,6 +23,16 @@ async function coursePortalRow(env:Env,tenantSlug:string,courseCode:string){
     JOIN tenant_settings s ON s.tenant_id=t.id
     WHERE t.slug=? AND c.code=? AND t.status='active' AND c.is_active=1`)
     .bind(tenantSlug,courseCode).first<Record<string,unknown>>();
+}
+async function coursePortalRow(env:Env,tenantSlug:string,courseCode:string){
+  let row:Record<string,unknown>|null=null;
+  try{row=await queryCoursePortalRow(env,tenantSlug,courseCode);}
+  catch(error){
+    const message=String((error as Error)?.message||error);
+    if(!/no such column|SQLITE_ERROR|D1_ERROR/i.test(message))throw error;
+    // Recovery only: normal production reads do not pay the branding PRAGMA/repair cost.
+    await ensureBrandingSchema(env);row=await queryCoursePortalRow(env,tenantSlug,courseCode);
+  }
   if(!row)throw new Error('COURSE_NOT_FOUND');
   return row;
 }
@@ -60,53 +69,57 @@ async function optionalRows<T>(label:string,query:()=>Promise<{results?:T[]}>):P
 
 export async function publicOverview(env:Env,tenantSlug:string,courseCode:string,session:SessionUser|null,accessCode?:string){
   const access=await authorizePortal(env,tenantSlug,courseCode,session,accessCode),{row,tenantId,courseId}=access;
-  const past=new Date(Date.now()-28*86400000).toISOString();
+  const now=Date.now(),past=new Date(now-28*86400000).toISOString(),future=new Date(now+120*86400000).toISOString();
+  const notificationsPromise=access.hasLogin&&session?.userId
+    ?optionalRows<Record<string,unknown>>('notifications',()=>env.DB.prepare(`SELECT id,course_id,type,title,body,read_at,created_at FROM notifications
+      WHERE tenant_id=? AND user_id=? AND (course_id=? OR course_id IS NULL)
+      ORDER BY created_at DESC LIMIT 40`).bind(tenantId,session.userId,courseId).all<Record<string,unknown>>())
+    :Promise.resolve([] as Record<string,unknown>[]);
 
-  const [homework,appointments,announcements,links,exams,lessons,features,materials,hubDetails,hubLinks,hubMaterials]=await Promise.all([
+  const [homework,appointments,announcements,links,exams,lessons,features,materials,hubDetails,hubLinks,hubMaterials,notifications]=await Promise.all([
     optionalRows<Record<string,unknown>>('homework',()=>env.DB.prepare(`SELECT h.id,h.course_id,h.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
         h.title,h.description,h.due_at,h.submission_info,h.created_at,h.updated_at
       FROM homework h LEFT JOIN subjects s ON s.id=h.subject_id AND s.tenant_id=h.tenant_id
-      WHERE h.tenant_id=? AND h.course_id=? AND (h.due_at IS NULL OR h.due_at>=?)
-      ORDER BY CASE WHEN h.due_at IS NULL THEN 1 ELSE 0 END,h.due_at ASC LIMIT 200`).bind(tenantId,courseId,past).all<Record<string,unknown>>()),
+      WHERE h.tenant_id=? AND h.course_id=? AND (h.due_at IS NULL OR (h.due_at>=? AND h.due_at<=?))
+      ORDER BY CASE WHEN h.due_at IS NULL THEN 1 ELSE 0 END,h.due_at ASC LIMIT 80`).bind(tenantId,courseId,past,future).all<Record<string,unknown>>()),
     optionalRows<Record<string,unknown>>('appointments',()=>env.DB.prepare(`SELECT id,course_id,title,starts_at,ends_at,location,description,created_at
-      FROM appointments WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) AND starts_at>=?
-      ORDER BY starts_at ASC LIMIT 200`).bind(tenantId,courseId,past).all<Record<string,unknown>>()),
+      FROM appointments WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) AND starts_at>=? AND starts_at<=?
+      ORDER BY starts_at ASC LIMIT 80`).bind(tenantId,courseId,past,future).all<Record<string,unknown>>()),
     optionalRows<Record<string,unknown>>('announcements',()=>env.DB.prepare(`SELECT id,course_id,title,body,published_at,created_at
       FROM announcements WHERE tenant_id=? AND (course_id=? OR course_id IS NULL) AND visible=1
-      ORDER BY published_at DESC LIMIT 50`).bind(tenantId,courseId).all<Record<string,unknown>>()),
+      ORDER BY published_at DESC LIMIT 30`).bind(tenantId,courseId).all<Record<string,unknown>>()),
     optionalRows<Record<string,unknown>>('links',()=>env.DB.prepare(`SELECT id,course_id,title,url,category,created_at
       FROM links WHERE tenant_id=? AND (course_id=? OR course_id IS NULL)
-      ORDER BY title ASC LIMIT 200`).bind(tenantId,courseId).all<Record<string,unknown>>()),
+      ORDER BY title ASC LIMIT 80`).bind(tenantId,courseId).all<Record<string,unknown>>()),
     optionalRows<Record<string,unknown>>('exams',()=>env.DB.prepare(`SELECT e.id,e.course_id,e.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
         e.title,e.starts_at,e.ends_at,e.room,e.notes,e.allowed_aids,e.created_at,e.updated_at
       FROM exams e LEFT JOIN subjects s ON s.id=e.subject_id AND s.tenant_id=e.tenant_id
-      WHERE e.tenant_id=? AND e.course_id=? AND e.visible_to_students=1 AND e.starts_at>=?
-      ORDER BY e.starts_at ASC LIMIT 200`).bind(tenantId,courseId,past).all<Record<string,unknown>>()),
+      WHERE e.tenant_id=? AND e.course_id=? AND e.visible_to_students=1 AND e.starts_at>=? AND e.starts_at<=?
+      ORDER BY e.starts_at ASC LIMIT 80`).bind(tenantId,courseId,past,future).all<Record<string,unknown>>()),
     optionalRows<Record<string,unknown>>('lessons',()=>env.DB.prepare(`SELECT l.id,l.course_id,l.subject_id,s.name AS subject_name,s.short_name AS subject_short_name,
         l.teacher_id,t.name AS teacher_name,l.starts_at,l.ends_at,l.room,l.notes,l.created_at
       FROM lessons l
       LEFT JOIN subjects s ON s.id=l.subject_id AND s.tenant_id=l.tenant_id
       LEFT JOIN teachers t ON t.id=l.teacher_id AND t.tenant_id=l.tenant_id
-      WHERE l.tenant_id=? AND l.course_id=? AND l.ends_at>=?
-      ORDER BY l.starts_at ASC LIMIT 500`).bind(tenantId,courseId,past).all<Record<string,unknown>>()),
+      WHERE l.tenant_id=? AND l.course_id=? AND l.starts_at>=? AND l.starts_at<=?
+      ORDER BY l.starts_at ASC LIMIT 300`).bind(tenantId,courseId,past,future).all<Record<string,unknown>>()),
     optionalRows<Record<string,unknown>>('feature_flags',()=>env.DB.prepare('SELECT feature_key,enabled FROM feature_flags WHERE tenant_id=?').bind(tenantId).all<Record<string,unknown>>()),
     optionalRows<Record<string,unknown>>('materials',()=>env.DB.prepare(`SELECT id,course_id,title,description,original_name,content_type,size_bytes,created_at,updated_at
       FROM portability_files WHERE tenant_id=? AND purpose='learning_material' AND visible=1 AND (course_id=? OR course_id IS NULL)
-      ORDER BY created_at DESC LIMIT 200`).bind(tenantId,courseId).all<Record<string,unknown>>()),
-    optionalRows<Record<string,unknown>>('lesson_hub_details',()=>env.DB.prepare(`SELECT lesson_id,planned_topic,info_text,delivery_mode,updated_at FROM lesson_hub_details WHERE tenant_id=? AND course_id=?`).bind(tenantId,courseId).all<Record<string,unknown>>()),
-    optionalRows<Record<string,unknown>>('lesson_hub_links',()=>env.DB.prepare(`SELECT id,lesson_id,title,url,sort_order FROM lesson_hub_links WHERE tenant_id=? AND course_id=? ORDER BY lesson_id,sort_order,title`).bind(tenantId,courseId).all<Record<string,unknown>>()),
+      ORDER BY created_at DESC LIMIT 100`).bind(tenantId,courseId).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('lesson_hub_details',()=>env.DB.prepare(`SELECT d.lesson_id,d.planned_topic,d.info_text,d.delivery_mode,d.updated_at
+      FROM lesson_hub_details d JOIN lessons l ON l.id=d.lesson_id AND l.tenant_id=d.tenant_id AND l.course_id=d.course_id
+      WHERE d.tenant_id=? AND d.course_id=? AND l.starts_at>=? AND l.starts_at<=?`).bind(tenantId,courseId,past,future).all<Record<string,unknown>>()),
+    optionalRows<Record<string,unknown>>('lesson_hub_links',()=>env.DB.prepare(`SELECT x.id,x.lesson_id,x.title,x.url,x.sort_order
+      FROM lesson_hub_links x JOIN lessons l ON l.id=x.lesson_id AND l.tenant_id=x.tenant_id AND l.course_id=x.course_id
+      WHERE x.tenant_id=? AND x.course_id=? AND l.starts_at>=? AND l.starts_at<=? ORDER BY x.lesson_id,x.sort_order,x.title`).bind(tenantId,courseId,past,future).all<Record<string,unknown>>()),
     optionalRows<Record<string,unknown>>('lesson_hub_materials',()=>env.DB.prepare(`SELECT hm.lesson_id,p.id,p.title,p.description,p.original_name,p.content_type,p.size_bytes,hm.sort_order
-      FROM lesson_hub_materials hm JOIN portability_files p ON p.id=hm.material_id AND p.tenant_id=hm.tenant_id
-      WHERE hm.tenant_id=? AND hm.course_id=? AND p.purpose='learning_material' AND p.visible=1
-      ORDER BY hm.lesson_id,hm.sort_order,p.title`).bind(tenantId,courseId).all<Record<string,unknown>>()),
+      FROM lesson_hub_materials hm JOIN lessons l ON l.id=hm.lesson_id AND l.tenant_id=hm.tenant_id AND l.course_id=hm.course_id
+      JOIN portability_files p ON p.id=hm.material_id AND p.tenant_id=hm.tenant_id
+      WHERE hm.tenant_id=? AND hm.course_id=? AND l.starts_at>=? AND l.starts_at<=? AND p.purpose='learning_material' AND p.visible=1
+      ORDER BY hm.lesson_id,hm.sort_order,p.title`).bind(tenantId,courseId,past,future).all<Record<string,unknown>>()),
+    notificationsPromise,
   ]);
-
-  let notifications:Record<string,unknown>[]=[];
-  if(access.hasLogin&&session?.userId){
-    notifications=await optionalRows<Record<string,unknown>>('notifications',()=>env.DB.prepare(`SELECT id,course_id,type,title,body,read_at,created_at FROM notifications
-      WHERE tenant_id=? AND user_id=? AND (course_id=? OR course_id IS NULL)
-      ORDER BY created_at DESC LIMIT 60`).bind(tenantId,session.userId,courseId).all<Record<string,unknown>>());
-  }
 
   const modules:Record<string,boolean>={};for(const f of features)modules[String(f.feature_key)]=Number(f.enabled)===1;
   const materialsEnabled=modules.files!==false||modules.learning_materials===true;
