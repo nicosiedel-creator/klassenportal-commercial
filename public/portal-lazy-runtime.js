@@ -1,9 +1,9 @@
 const PATH_OK=/^\/portal\/[^/]+\/[^/]+\/?$/.test(location.pathname);
 if(PATH_OK){
-  const V='20260822-student-hotfix-5';
+  const V='20260822-student-hotfix-6';
   const asset=name=>`/${name}.js?v=${V}`;
   const style=name=>`/${name}.css?v=${V}`;
-  const loaded=new Set(),loading=new Map(),styles=new Set(),styleLoading=new Map();let bootPromise=null,backgroundStarted=false;
+  const loaded=new Set(),loading=new Map(),styles=new Set(),styleLoading=new Map();let bootPromise=null,backgroundStarted=false,interactionBound=false;
   const GATE_SUPPORT=['auth-mfa-ui','account-mail-ui'];
   const CORE_ENHANCERS=['portal-layout','portal-compact','vfa13-refinement'];
   const FEATURES=['portal-calendar-lookback','portal-targeted-messages','portal-attendance-ui','portal-assignments-ui','portal-learning-collaboration-ui','portal-teams-ui','portal-certificates-ui','portal-advanced-ui','class-admin-student-tools','lesson-hub-ui','portal-curriculum-ui','portal-learning-mode-ui','portal-report-book-ui','portal-signature-inbox-ui','legal-footer-ui'];
@@ -58,15 +58,25 @@ if(PATH_OK){
     const opener=target?.closest?.('[data-open-section]');return opener?.dataset?.openSection||'';
   }
   function bindInteractionLoading(){
+    if(interactionBound)return;interactionBound=true;
     document.addEventListener('click',event=>{const id=requestedSection(event.target);const names=SECTION_MODULES[id];if(names?.length)void loadList(names,2);},{capture:true});
   }
   async function backgroundWarmup(){
     if(backgroundStarted)return;backgroundStarted=true;
-    await pause(5000);await idle(5000);
+    await pause(15000);await idle(5000);
     let failures=0;
-    for(const name of FEATURES){if(!await loadOne(name))failures++;await pause(120);await nextFrame();}
+    for(const name of FEATURES){
+      await idle(1800);
+      if(!await loadOne(name))failures++;
+      await pause(document.hidden?1000:350);await nextFrame();
+    }
     window.dispatchEvent(new CustomEvent('kp:portal-modules-ready',{detail:{failures}}));
-    await pause(3000);await idle(4000);void loadOne('pwa-client');
+    await pause(10000);await idle(5000);void loadOne('pwa-client');
+  }
+  async function deferredGermanLocalization(data){
+    const stored=String(localStorage.getItem('kp_locale')||'').toLowerCase(),courseLocale=String(data?.course?.locale||'de').toLowerCase();
+    if((stored&&stored!=='de')||(!stored&&!courseLocale.startsWith('de'))){await loadLocalization();return;}
+    await pause(2500);await idle(3000);void loadLocalization();
   }
   function boot(){
     if(bootPromise)return bootPromise;
@@ -76,10 +86,10 @@ if(PATH_OK){
       if(!data){await Promise.all([loadLocalization(),loadList(GATE_SUPPORT,2)]);return;}
       performance.mark?.('kp-student-base-visible');
       bindInteractionLoading();
-      void loadLocalization();
-      await loadList(CORE_ENHANCERS,2);
+      void deferredGermanLocalization(data);
+      await idle(700);await loadList(CORE_ENHANCERS,2);
       if(['class_admin','tenant_admin','platform_admin'].includes(String(data.viewer?.role||'')))void loadOne('admin-mfa-enrollment-ui');
-      await idle(900);void loadOne('student-dashboard-v2');
+      await idle(1400);void loadOne('student-dashboard-v2');
       void backgroundWarmup();
     })();
     return bootPromise;
