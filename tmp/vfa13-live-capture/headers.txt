@@ -1,0 +1,15 @@
+HTTP/2 200 
+date: Sun, 23 Aug 2026 20:35:41 GMT
+content-type: text/html; charset=utf-8
+content-length: 233760
+cache-control: public, max-age=300
+content-security-policy: default-src 'self'; script-src 'nonce-84665bdcaf34418b80e511158852602d' https://teams.microsoft.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://teams.microsoft.com; connect-src 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; frame-src https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; frame-ancestors 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; base-uri 'none'; form-action 'self'
+permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+referrer-policy: strict-origin-when-cross-origin
+x-content-type-options: nosniff
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=HAMqjTwadpD6w9LUQv8Tu1CrQUikrOcYH%2Fi3XYHTQFzoPNQZCWcbmatZQEVa1wvbcBNdtRpdZQ%2BJBDyyf1rwd5JY8W71vQ4YtOnaI7M1wz3odMwdYNZJGoTp4hWiUJoCsaOhomM0BFcc8%2BGFtRpc8A%3D%3D"}]}
+nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+server: cloudflare
+cf-ray: a2fce7b799f86b28-DFW
+alt-svc: h3=":443"; ma=86400
+
