@@ -1,5 +1,5 @@
 const ROOT=document.querySelector('#class-portal');
-const VERSION='20260822-student-hotfix-6';
+const VERSION='20260823-vfa13-commercial-1';
 
 function fatal(message){
   if(!ROOT)return;
@@ -12,7 +12,7 @@ const base=import(`/class-portal.js?v=${VERSION}`);
 window.__KP_PORTAL_BASE_PROMISE=base;
 base.then(()=>window.dispatchEvent(new CustomEvent('kp:portal-base-ready',{detail:{data:window.__KP_PORTAL_DATA||null}})))
   .catch(error=>{
-    console.error('Student portal base failed to load',error);
+    console.error('VFA13 portal base failed to load',error);
     fatal('Die Portaloberfläche konnte nicht gestartet werden. Bitte neu laden.');
     window.dispatchEvent(new CustomEvent('kp:portal-base-failed'));
   });
