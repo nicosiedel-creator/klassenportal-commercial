@@ -19,7 +19,33 @@ jobs:
           test -s tmp/vfa13-live-capture/index.html
           sha256sum tmp/vfa13-live-capture/index.html
           wc -c tmp/vfa13-live-capture/index.html
-      - name: Upload captured source
+      - name: Probe live VFA13 routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://vfa13-klassenportal.pages.dev'
+          : > tmp/vfa13-live-capture/probe.txt
+          for path in \
+            '/' \
+            '/api/calendar?from=2026-08-01&to=2026-09-30' \
+            '/api/announcements' \
+            '/api/feedback/public' \
+            '/api/poll' \
+            '/api/admin/system/status' \
+            '/manifest.webmanifest' \
+            '/sw.js' \
+            '/icon.svg'; do
+            body=$(mktemp)
+            headers=$(mktemp)
+            code=$(curl -sS -L --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$base$path" || true)
+            ctype=$(tr -d '\r' < "$headers" | awk -F': ' 'tolower($1)=="content-type"{print $2}' | tail -1)
+            bytes=$(wc -c < "$body" | tr -d ' ')
+            sha=$(sha256sum "$body" | awk '{print $1}')
+            first=$(head -c 160 "$body" | tr '\n\r\t' '   ' | sed 's/[[:space:]]\+/ /g')
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$path" "$code" "$ctype" "$bytes" "$sha" "$first" >> tmp/vfa13-live-capture/probe.txt
+          done
+          cat tmp/vfa13-live-capture/probe.txt
+      - name: Upload captured source and probe
         uses: actions/upload-artifact@v4
         with:
           name: vfa13-live-source-20260823
@@ -27,5 +53,6 @@ jobs:
             tmp/vfa13-live-capture/index.html
             tmp/vfa13-live-capture/headers.txt
             tmp/vfa13-live-capture/sha256.txt
+            tmp/vfa13-live-capture/probe.txt
           if-no-files-found: error
           retention-days: 1
