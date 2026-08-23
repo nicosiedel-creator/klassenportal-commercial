@@ -35,8 +35,8 @@ assert.match(portalLazy,/'student-dashboard-v2':\['role-dashboard','role-dashboa
 assert.doesNotMatch(classPortal,/src="\/student-dashboard-v2\.js/,'class portal must not block first paint on the v2 dashboard script');
 assert.match(portalLazy,/student-dashboard-v2/,'class portal must retain active v2 dashboard through the lazy runtime');
 assert.doesNotMatch(classPortal,/student-dashboard-ui\.js/,'class portal must not load old delayed student dashboard');
-assert.match(classAdmin,/role-dashboard\.css/);
-assert.match(classAdmin,/role-dashboard-polish\.css/);
+assert.match(classAdmin,/class-admin-entry\.js/,'class-admin route must resolve into the shared student portal');
+assert.doesNotMatch(classAdmin,/student-dashboard-v2\.js/,'class-admin entry must not eagerly execute the student dashboard');
 assert.match(teacherHtml,/role-dashboard\.css/);
 assert.match(teacherHtml,/role-dashboard-polish\.css/);
 assert.match(teacherHtml,/teacher-lazy-modules\.js/,'teacher portal must load the bounded lazy module controller');
