@@ -1,7 +1,7 @@
 name: Education OS circuit breaker
 on:
   pull_request:
-    branches: [main]
+    branches: [main, vfa13-beta-pilot]
   workflow_dispatch:
 permissions:
   contents: read
