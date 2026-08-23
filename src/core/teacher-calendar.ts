@@ -29,6 +29,36 @@ export async function teacherCourseCalendar(env:Env,auth:CoreAuthContext,tenantI
   const args:unknown[]=[tenantId,courseId,fromIso,toIso];
   if(assignment?.teacher_id){sql+=' AND l.teacher_id=?';args.push(assignment.teacher_id);}
   sql+=' ORDER BY l.starts_at ASC LIMIT 600';
-  const rows=await env.DB.prepare(sql).bind(...args).all<Record<string,unknown>>();
-  return{range:{from:fromIso.slice(0,10),to:toIso.slice(0,10)},lessons:rows.results??[]};
+
+  let deadlineSql=`SELECT id,tenant_id,course_id,category,title,description,due_at,escalation_at,priority,status,source_type,source_id
+    FROM operational_deadlines
+    WHERE tenant_id=? AND course_id=? AND participant_user_id IS NULL
+      AND status IN ('open','in_progress') AND due_at>=? AND due_at<=?`;
+  const deadlineArgs:unknown[]=[tenantId,courseId,fromIso,toIso];
+  if(assignment?.teacher_id){deadlineSql+=' AND (owner_user_id IS NULL OR owner_user_id=?)';deadlineArgs.push(auth.userId);}
+  deadlineSql+=' ORDER BY due_at ASC LIMIT 150';
+
+  let substitutionSql=`SELECT sc.id,sc.tenant_id,sc.course_id,sc.lesson_id,sc.absent_teacher_id,sc.substitute_teacher_id,
+      sc.status,sc.reason,sc.replacement_starts_at,sc.replacement_ends_at,sc.note,
+      ta.name absent_teacher_name,ts.name substitute_teacher_name
+    FROM substitution_cases sc
+    LEFT JOIN teachers ta ON ta.id=sc.absent_teacher_id AND ta.tenant_id=sc.tenant_id
+    LEFT JOIN teachers ts ON ts.id=sc.substitute_teacher_id AND ts.tenant_id=sc.tenant_id
+    WHERE sc.tenant_id=? AND sc.course_id=? AND sc.status IN ('open','assigned','rescheduled')
+      AND (sc.replacement_ends_at IS NULL OR sc.replacement_ends_at>=?)`;
+  const substitutionArgs:unknown[]=[tenantId,courseId,new Date(now-7*86400000).toISOString()];
+  if(assignment?.teacher_id){substitutionSql+=' AND (sc.absent_teacher_id=? OR sc.substitute_teacher_id=?)';substitutionArgs.push(assignment.teacher_id,assignment.teacher_id);}
+  substitutionSql+=' ORDER BY COALESCE(sc.replacement_starts_at,sc.created_at) ASC LIMIT 100';
+
+  const [rows,deadlineRows,substitutionRows]=await Promise.all([
+    env.DB.prepare(sql).bind(...args).all<Record<string,unknown>>(),
+    env.DB.prepare(deadlineSql).bind(...deadlineArgs).all<Record<string,unknown>>(),
+    env.DB.prepare(substitutionSql).bind(...substitutionArgs).all<Record<string,unknown>>()
+  ]);
+  return{
+    range:{from:fromIso.slice(0,10),to:toIso.slice(0,10)},
+    lessons:rows.results??[],
+    deadlines:deadlineRows.results??[],
+    substitutions:substitutionRows.results??[]
+  };
 }

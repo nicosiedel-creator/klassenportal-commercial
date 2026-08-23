@@ -1,6 +1,6 @@
 const KP_TEACHER_LAZY_PATH=['/dozentenportal','/dozentenportal.html'].includes(location.pathname.replace(/\/$/,''));
 if(KP_TEACHER_LAZY_PATH){
-  const VERSION='20260823-1';
+  const VERSION='20260823-2';
   const GROUPS={
     cards:['teacher-calendar-ui','teacher-assignment-guidance','teacher-dashboard-ui','teacher-lesson-hub-ui'],
     workspace:['teacher-workspace-ui','teacher-curriculum-ui','teacher-learning-operations-ui','teacher-learning-mode-display','teacher-classbook-export-ui','teacher-operational-insights-ui','teams-management-ui']
