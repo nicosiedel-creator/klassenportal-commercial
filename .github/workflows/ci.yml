@@ -29,6 +29,9 @@ jobs:
         run: npm run typecheck
       - name: Full regression suite
         run: npm test
+      - name: Build VFA13 Pages runtime
+        if: github.base_ref == 'vfa13-beta-pilot'
+        run: npm run build:vfa13-pages
       - name: Validate browser JavaScript syntax
         run: find public -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Release checks
