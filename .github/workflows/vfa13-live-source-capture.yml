@@ -1,0 +1,39 @@
+name: Capture VFA13 live source
+
+on:
+  push:
+    branches: [vfa13/capture-live-source-20260823]
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: vfa13/capture-live-source-20260823
+      - name: Fetch current public VFA13 deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/vfa13-live-capture
+          curl -fsSL --retry 3 --retry-delay 2 --max-time 30 \
+            -D tmp/vfa13-live-capture/headers.txt \
+            https://vfa13-klassenportal.pages.dev/ \
+            -o tmp/vfa13-live-capture/index.html
+          test -s tmp/vfa13-live-capture/index.html
+          sha256sum tmp/vfa13-live-capture/index.html | tee tmp/vfa13-live-capture/sha256.txt
+          wc -c tmp/vfa13-live-capture/index.html
+          head -c 300 tmp/vfa13-live-capture/index.html | tr '\n' ' '
+      - name: Commit captured public source to temporary branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tmp/vfa13-live-capture/index.html tmp/vfa13-live-capture/headers.txt tmp/vfa13-live-capture/sha256.txt
+          git commit -m 'Capture current public VFA13 live source' || exit 0
+          git push origin HEAD:vfa13/capture-live-source-20260823
