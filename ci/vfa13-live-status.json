@@ -1,8 +1,1 @@
-{
-  "status": "pending",
-  "verified_sha": null,
-  "verified_at": null,
-  "deploy_outcome": null,
-  "live_outcome": null,
-  "details": "Awaiting VFA13 Pages deployment workflow"
-}
+{"status":"failure","verified_sha":"7b360ac91f940d99001c832211f99892f05b3c26","verified_at":"2026-08-23T17:33:07Z","tests_outcome":"success","bundle_outcome":"success","credentials_outcome":"failure","project_outcome":"skipped","deploy_outcome":"skipped","live_outcome":"skipped","details":"tests=success bundle=success credentials=failure project=skipped deploy=skipped live=skipped"}
