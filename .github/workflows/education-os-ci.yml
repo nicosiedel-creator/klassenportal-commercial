@@ -3,7 +3,7 @@ name: Education OS release gate
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, vfa13-beta-pilot]
   workflow_dispatch:
 
 permissions:
