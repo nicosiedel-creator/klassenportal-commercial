@@ -7,6 +7,7 @@ const lazy=await readFile('public/portal-lazy-runtime.js','utf8');
 const watchdog=await readFile('public/portal-load-watchdog.js','utf8');
 const dash=await readFile('public/student-dashboard-v2.js','utf8');
 const css=await readFile('public/student-dashboard-v2.css','utf8');
+const portalLayout=await readFile('public/portal-layout.js','utf8');
 const advanced=await readFile('src/core/public-advanced.ts','utf8');
 const brandingSchema=await readFile('src/core/branding-schema.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
@@ -47,6 +48,12 @@ assert.match(lazy,/requestIdleCallback/,'secondary features must wait for idle t
 assert.match(lazy,/bootPromise/,'student lazy runtime must suppress duplicate boot attempts');
 assert.doesNotMatch(lazy,/new MutationObserver/,'student lazy runtime must remain event-driven');
 assert.doesNotMatch(lazy,/window\.fetch\s*=/,'student lazy runtime must never replace global fetch');
+
+assert.match(portalLayout,/window\.__KP_PORTAL_DATA/,'personal layout must consume the already-resolved portal payload');
+assert.doesNotMatch(portalLayout,/\/api\/auth\/me/,'personal layout must not add a duplicate authentication request on startup');
+assert.doesNotMatch(portalLayout,/\/public\/.*\/overview/,'personal layout must never refetch the heavy student overview');
+assert.doesNotMatch(portalLayout,/MutationObserver/,'personal layout must be event-driven rather than DOM-observer driven');
+assert.match(portalLayout,/kp:portal-module-loaded/,'personal layout must enhance lazily inserted sections through explicit module events');
 
 assert.match(index,/if\(!releaseGateBypass\(url\.pathname\)\)\{const release=await productionReleaseAccess/,'static assets and explicit release-bypass routes must not pay the production-release lookup cost');
 assert.match(index,/\[base,advanced\]=await Promise\.all\(\[publicOverview\([\s\S]*?publicAdvancedBySlug\(/,'base and advanced student overview work must execute in parallel instead of serially');
