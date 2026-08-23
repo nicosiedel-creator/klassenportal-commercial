@@ -29,6 +29,11 @@ assert.match(calendarCore,/l\.teacher_id=\?/,'teacher calendar must show only le
 assert.match(calendarCore,/lesson_online_meetings/,'teacher calendar must expose existing Teams meeting state without an extra meeting-list request');
 assert.match(calendarCore,/attendance_session_id/,'global calendar must expose linked classbook state');
 assert.match(calendarCore,/now\+90\*86400000/,'teacher global calendar must look far enough ahead for planning');
+assert.match(calendarCore,/FROM operational_deadlines/,'teacher calendar feed must include operational deadlines without another dashboard round trip');
+assert.match(calendarCore,/participant_user_id IS NULL/,'teacher cockpit must not expose participant-specific deadlines');
+assert.match(calendarCore,/owner_user_id IS NULL OR owner_user_id=\?/,'teacher deadlines must be course-wide or explicitly owned by the logged-in teacher');
+assert.match(calendarCore,/FROM substitution_cases/,'teacher calendar feed must include substitution cases');
+assert.match(calendarCore,/sc\.absent_teacher_id=\? OR sc\.substitute_teacher_id=\?/,'teacher substitution feed must be limited to the mapped physical teacher');
 
 assert.ok(router.includes("path==='/api/communications/teacher/calendar'"),'teacher global calendar API must be routed');
 assert.match(router,/teacherAttendanceAuth/,'teacher calendar and workspace must use explicit teacher assignment auth');
@@ -37,6 +42,10 @@ assert.ok(router.includes('ensureLessonClassbookSession'),'calendar-to-classbook
 
 assert.match(calendarUi,/Mein Unterricht/,'teacher landing page must prominently expose the personal teaching calendar');
 assert.match(calendarUi,/Nächster Unterricht/,'teacher calendar must surface the next lesson immediately');
+assert.match(calendarUi,/Heute erledigen/,'teacher landing page must include a compact daily work cockpit');
+assert.match(calendarUi,/Prüfungsfrist/,'teacher cockpit must surface course-level examination deadlines');
+assert.match(calendarUi,/Vertretung|Ausfall/,'teacher cockpit must surface substitution and absence work');
+assert.match(calendarUi,/Material\/Links prüfen/,'teacher cockpit must surface preparation gaps before the next lesson');
 assert.match(calendarUi,/Teams starten/,'an existing Teams meeting must be directly startable from the teacher calendar');
 assert.match(calendarUi,/Teams planen/,'a missing Teams meeting must be directly plannable from the teacher calendar');
 assert.match(calendarUi,/\/api\/integrations\/microsoft\/lessons\/\$\{encodeURIComponent\(lessonId\)\}\/meeting/,'teacher calendar must use the protected Microsoft meeting route');
@@ -48,6 +57,7 @@ assert.match(calendarUi,/Promise\.all\(Array\.from\(\{length:Math\.min\(2,queue\
 assert.doesNotMatch(calendarUi,/MutationObserver/,'global teacher calendar must remain event-driven');
 assert.match(calendarUi,/kp:teacher-state/,'global teacher calendar must reuse centralized teacher state');
 assert.ok(teacherLazy.includes("'teacher-calendar-ui'"),'teacher calendar must load as a primary card on the teacher landing page');
+assert.match(teacherLazy,/VERSION='20260823-2'/,'teacher module cache version must advance with the daily cockpit');
 
 assert.match(ui,/Mein Kalender · 4 Wochen zurück \/ 30 Tage voraus/,'course workspace must retain its detailed calendar');
 assert.match(ui,/Heute & demnächst/,'teacher calendar needs forward filter');
@@ -70,4 +80,4 @@ assert.match(adminUi,/Schulleitung, Sekretariat und Verwaltung → Dozentenporta
 assert.match(seed,/lesson_hub_details/,'demo seed must make lesson hub visibly testable');
 assert.match(seed,/teacher_messages/,'demo seed must provide teacher messages');
 
-console.log('Integrated teacher calendar, global teaching plan, Teams actions, classbook, lesson hub and notices checks: OK');
+console.log('Integrated teacher calendar, global teaching plan, Teams actions, daily cockpit, deadlines, substitutions, classbook, lesson hub and notices checks: OK');
