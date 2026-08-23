@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: vfa13-pages-live
@@ -31,23 +31,28 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Full VFA13 regression and security suite
+        id: tests
+        run: npm test
+
+      - name: Build VFA13 Pages advanced-mode runtime
+        id: bundle
+        run: npm run build:vfa13-pages
+
       - name: Require Cloudflare deployment credentials
+        id: credentials
         shell: bash
         run: |
           set -euo pipefail
           test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'CLOUDFLARE_API_TOKEN secret is missing'; exit 2; }
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'CLOUDFLARE_ACCOUNT_ID secret is missing'; exit 2; }
 
-      - name: Full VFA13 regression and security suite
-        run: npm test
-
-      - name: Build VFA13 Pages advanced-mode runtime
-        run: npm run build:vfa13-pages
-
       - name: Verify target Pages project exists
+        id: project
         run: npx wrangler pages deployment list --project-name vfa13-klassenportal --config wrangler.vfa13-pages.jsonc >/dev/null
 
       - name: Deploy exact VFA13 branch head
+        id: deploy
         run: |
           npx wrangler pages deploy dist-vfa13-pages \
             --project-name vfa13-klassenportal \
@@ -57,6 +62,7 @@ jobs:
             --config wrangler.vfa13-pages.jsonc
 
       - name: Verify real VFA13 live portal
+        id: live
         shell: bash
         run: |
           set -euo pipefail
@@ -76,3 +82,52 @@ jobs:
           done
           echo 'VFA13 live verification failed' >&2
           exit 1
+
+      - name: Persist VFA13 deployment status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          BUNDLE_OUTCOME: ${{ steps.bundle.outcome }}
+          CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          PROJECT_OUTCOME: ${{ steps.project.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          LIVE_OUTCOME: ${{ steps.live.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          if test "$LIVE_OUTCOME" = success; then status=success; else status=failure; fi
+          details="tests=$TESTS_OUTCOME bundle=$BUNDLE_OUTCOME credentials=$CREDENTIALS_OUTCOME project=$PROJECT_OUTCOME deploy=$DEPLOY_OUTCOME live=$LIVE_OUTCOME"
+          payload=$(jq -nc \
+            --arg status "$status" \
+            --arg sha "$GITHUB_SHA" \
+            --arg at "$checked_at" \
+            --arg tests "$TESTS_OUTCOME" \
+            --arg bundle "$BUNDLE_OUTCOME" \
+            --arg credentials "$CREDENTIALS_OUTCOME" \
+            --arg project "$PROJECT_OUTCOME" \
+            --arg deploy "$DEPLOY_OUTCOME" \
+            --arg live "$LIVE_OUTCOME" \
+            --arg details "$details" \
+            '{status:$status,verified_sha:$sha,verified_at:$at,tests_outcome:$tests,bundle_outcome:$bundle,credentials_outcome:$credentials,project_outcome:$project,deploy_outcome:$deploy,live_outcome:$live,details:$details}')
+          encoded=$(printf '%s\n' "$payload" | base64 -w0)
+          meta=$(curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/vfa13-live-status.json?ref=vfa13-deployment-status")
+          current_sha=$(jq -r '.sha' <<<"$meta")
+          jq -n --arg message "Record VFA13 live deployment for $GITHUB_SHA ($status)" --arg content "$encoded" --arg sha "$current_sha" --arg branch vfa13-deployment-status '{message:$message,content:$content,sha:$sha,branch:$branch}' > /tmp/vfa13-status.json
+          curl -fsS -X PUT \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/ci/vfa13-live-status.json" \
+            --data-binary @/tmp/vfa13-status.json >/dev/null
+
+      - name: Enforce successful VFA13 live deployment
+        if: always()
+        env:
+          LIVE_OUTCOME: ${{ steps.live.outcome }}
+        run: test "$LIVE_OUTCOME" = success
