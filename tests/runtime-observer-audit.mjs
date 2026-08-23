@@ -17,7 +17,10 @@ const eventDriven=[
   'public/platform-accounting-ui.js',
   'public/platform-accounting-autopilot-ui.js',
   'public/custom-domain-ui.js',
-  'public/portal-report-book-ui.js'
+  'public/portal-report-book-ui.js',
+  'public/portal-layout.js',
+  'public/portal-compact.js',
+  'public/vfa13-refinement.js'
 ];
 
 for(const file of eventDriven){
@@ -26,8 +29,6 @@ for(const file of eventDriven){
 }
 
 const scopedPortal=[
-  'public/portal-compact.js',
-  'public/vfa13-refinement.js',
   'public/portal-learning-mode-ui.js',
   'public/lesson-hub-ui.js'
 ];
