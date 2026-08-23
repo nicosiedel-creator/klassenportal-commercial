@@ -117,12 +117,12 @@ function internalPreviewRequest(request:Request):Request{
 
 function withRuntimeHeader(response:Response):Response{
   const headers=new Headers(response.headers);
-  headers.set('x-klassenportal-vfa13-runtime','20260823-1');
+  headers.set('x-klassenportal-vfa13-runtime','20260823-2');
   return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
 }
 
 export default {
-  async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
+  async fetch(request:Request,env:Env):Promise<Response>{
     const url=new URL(request.url);
     if(!allowedHost(url.hostname))return new Response('Not Found',{status:404});
 
@@ -137,12 +137,12 @@ export default {
       target.searchParams.set('tenant',VFA13_TENANT_SLUG);
       return Response.redirect(target.toString(),302);
     }
-    if(url.pathname==='/plattform-admin'||url.pathname.startsWith('/plattform-admin/')){
+    if(url.pathname==='/plattform-admin'||url.pathname.startsWith('/plattform-admin/')||url.pathname==='/api/platform'||url.pathname.startsWith('/api/platform/')){
       return new Response('Not Found',{status:404});
     }
 
-    const previewEnv={...env,APP_ORIGIN:undefined};
-    const response=await app.fetch(internalPreviewRequest(request),previewEnv,ctx);
+    const previewEnv:Env={...env,APP_ORIGIN:undefined};
+    const response=await app.fetch(internalPreviewRequest(request),previewEnv);
     return withRuntimeHeader(response);
   }
 };
