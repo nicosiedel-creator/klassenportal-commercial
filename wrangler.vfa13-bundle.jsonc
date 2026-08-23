@@ -1,7 +1,0 @@
-{
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "vfa13-klassenportal-bundle",
-  "main": "src/vfa13-pages.ts",
-  "compatibility_date": "2026-08-14",
-  "compatibility_flags": ["nodejs_compat"]
-}
