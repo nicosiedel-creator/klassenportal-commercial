@@ -11,7 +11,7 @@ jobs:
   artifact:
     if: github.head_ref == 'vfa13/capture-live-source-20260823'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - name: Verify captured live source
@@ -54,5 +54,22 @@ jobs:
             tmp/vfa13-live-capture/headers.txt
             tmp/vfa13-live-capture/sha256.txt
             tmp/vfa13-live-capture/probe.txt
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload current Commercial source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: commercial-source-for-vfa13-20260823
+          path: |
+            src
+            public
+            migrations
+            scripts
+            tests
+            package.json
+            package-lock.json
+            tsconfig.json
+            tsconfig.build.json
+            wrangler.jsonc
           if-no-files-found: error
           retention-days: 1
