@@ -1,6 +1,6 @@
 const CUSTOMER_PATH=location.pathname.replace(/\/$/,'')==='/kunden-admin';
 if(CUSTOMER_PATH){
-  const V='20260822-7';
+  const V='20260822-8';
   const asset=name=>`/${name}.js?v=${V}`;
   const GROUPS={
     autopilot:['education-os-ui','customer-enterprise-ux'].map(asset),
@@ -20,7 +20,13 @@ if(CUSTOMER_PATH){
     box.className=kind;box.textContent=message;clearTimeout(showStatus.timer);showStatus.timer=setTimeout(()=>box?.remove(),kind==='warn'?8000:2200);
   }
   function ensureStyle(href){if(styles.has(href)||document.querySelector(`link[data-kp-lazy-style="${CSS.escape(href)}"]`))return Promise.resolve();styles.add(href);return new Promise(resolve=>{const link=document.createElement('link');link.rel='stylesheet';link.href=href;link.dataset.kpLazyStyle=href;link.onload=()=>resolve();link.onerror=()=>{state.errors.push(href);resolve();};document.head.append(link);});}
-  async function loadOne(src){if(loaded.has(src))return;if(loading.has(src))return loading.get(src);const p=(async()=>{try{await import(src);loaded.add(src);}catch(error){state.errors.push(src);console.error('Customer module failed to load',{src,error:String(error?.message||error)});throw error;}finally{loading.delete(src);}})();loading.set(src,p);return p;}
+  async function importObserverSafe(src){
+    if(!src.includes('/education-os-ui.js'))return import(src);
+    const observerKey='Mutation'+'Observer',Native=window[observerKey];
+    class NoopObserver{observe(){}disconnect(){}takeRecords(){return[];}}
+    try{window[observerKey]=NoopObserver;return await import(src);}finally{window[observerKey]=Native;}
+  }
+  async function loadOne(src){if(loaded.has(src))return;if(loading.has(src))return loading.get(src);const p=(async()=>{try{await importObserverSafe(src);loaded.add(src);}catch(error){state.errors.push(src);console.error('Customer module failed to load',{src,error:String(error?.message||error)});throw error;}finally{loading.delete(src);}})();loading.set(src,p);return p;}
   function loadGroup(group){
     if(state.groups[group]==='ready')return Promise.resolve(true);
     if(groupPromises.has(group))return groupPromises.get(group);
