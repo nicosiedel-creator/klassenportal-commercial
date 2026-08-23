@@ -1,0 +1,31 @@
+name: VFA13 captured source artifact
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  artifact:
+    if: github.head_ref == 'vfa13/capture-live-source-20260823'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify captured live source
+        run: |
+          test -s tmp/vfa13-live-capture/index.html
+          sha256sum tmp/vfa13-live-capture/index.html
+          wc -c tmp/vfa13-live-capture/index.html
+      - name: Upload captured source
+        uses: actions/upload-artifact@v4
+        with:
+          name: vfa13-live-source-20260823
+          path: |
+            tmp/vfa13-live-capture/index.html
+            tmp/vfa13-live-capture/headers.txt
+            tmp/vfa13-live-capture/sha256.txt
+          if-no-files-found: error
+          retention-days: 1
