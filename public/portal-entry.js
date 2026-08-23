@@ -1,5 +1,5 @@
 const ROOT=document.querySelector('#class-portal');
-const VERSION='20260822-student-hotfix-4';
+const VERSION='20260822-student-hotfix-6';
 
 function fatal(message){
   if(!ROOT)return;

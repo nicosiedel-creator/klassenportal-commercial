@@ -11,7 +11,7 @@ const teacherPortal=await readFile('public/dozentenportal.html','utf8');
 const teacherLazy=await readFile('public/teacher-lazy-modules.js','utf8');
 const teacherCore=await readFile('src/core/teacher-portal.ts','utf8');
 
-assert.ok(publicApi.includes('Date.now()-28*86400000'),'participant overview must retain four weeks of calendar history');
+assert.match(publicApi,/past\s*=\s*new Date\((?:Date\.now\(\)|now)-28\*86400000\)/,'participant overview must retain four weeks of calendar history');
 assert.ok(calendar.includes('28*86400000'),'calendar lookback must cover four weeks');
 assert.ok(calendar.includes('30*86400000'),'calendar forward view must remain 30 days');
 assert.ok(calendar.includes('Letzte 4 Wochen'),'calendar needs an explicit retrospective filter');

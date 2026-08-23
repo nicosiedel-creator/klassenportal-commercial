@@ -28,8 +28,8 @@ function enhanceSection(section){
 function compactScan(){if(!compactRoot)return;compactRoot.querySelectorAll('.portal-grid > .portal-section').forEach(enhanceSection);}
 if(compactRoot){
   let frame=0;const schedule=()=>{if(frame)return;frame=requestAnimationFrame(()=>{frame=0;compactScan();});};
-  // The base portal replaces the root shell as one direct child. Watching nested
-  // feature mutations caused every enhancement to wake every other enhancement.
-  new MutationObserver(schedule).observe(compactRoot,{childList:true});
-  compactScan();
+  window.addEventListener('kp:portal-data',schedule);
+  window.addEventListener('kp:portal-module-loaded',schedule);
+  window.addEventListener('kp:localechange',schedule);
+  schedule();
 }

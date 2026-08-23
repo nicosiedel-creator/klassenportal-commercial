@@ -11,6 +11,7 @@ const css=await readFile('public/integrated-workspace.css','utf8');
 const teacherHtml=await readFile('public/dozentenportal.html','utf8');
 const teacherLazy=await readFile('public/teacher-lazy-modules.js','utf8');
 const classHtml=await readFile('public/class-portal.html','utf8');
+const portalLazy=await readFile('public/portal-lazy-runtime.js','utf8');
 const adminUi=await readFile('public/teacher-message-admin-ui.js','utf8');
 const seed=await readFile('scripts/seed-demo-nico-teacher.mjs','utf8');
 
@@ -65,7 +66,10 @@ assert.match(teacherHtml,/teacher-lazy-modules\.js\?v=20260822-1/,'teacher porta
 assert.ok(teacherLazy.includes("'teacher-workspace-ui'"),'teacher dashboard must load workspace UI on demand');
 assert.doesNotMatch(teacherHtml,/src="\/teacher-workspace-ui\.js/,'teacher workspace must not execute on first paint');
 assert.match(teacherHtml,/integrated-workspace\.css(?:\?[^"']*)?/,'teacher portal must load workspace styles');
-assert.match(classHtml,/integrated-workspace\.css(?:\?[^"']*)?/,'student portal must load layout correction regardless of cache-bust version');
+assert.doesNotMatch(classHtml,/integrated-workspace\.css(?:\?[^"']*)?/,'student first paint must not block on workspace styles');
+assert.match(portalLazy,/'portal-learning-collaboration-ui':\['integrated-workspace'\]/,'student collaboration must request workspace styles with its lazy module');
+assert.match(portalLazy,/'portal-curriculum-ui':\['integrated-workspace'\]/,'student curriculum must request workspace styles with its lazy module');
+assert.match(portalLazy,/'portal-report-book-ui':\['integrated-workspace'\]/,'student report book must request workspace styles with its lazy module');
 assert.match(adminUi,/Schulleitung, Sekretariat und Verwaltung → Dozentenportal/,'customer admin must manage internal teacher messages');
 assert.match(seed,/lesson_hub_details/,'demo seed must make lesson hub visibly testable');
 assert.match(seed,/teacher_messages/,'demo seed must provide teacher messages');

@@ -2,12 +2,12 @@ const portalRoot=document.querySelector('#class-portal');
 const portalPath=location.pathname.split('/').filter(Boolean);
 const layoutTenant=decodeURIComponent(portalPath[1]||'');
 const layoutCourse=decodeURIComponent(portalPath[2]||'');
-const accessStoreKey=`kp_access_${layoutTenant}_${layoutCourse}`;
-let layoutIdentity='browser',serverContext=null,serverOrder=null,customized=false,contextReady=false;
+let serverContext=null,serverOrder=null,customized=false,contextReady=false,authenticated=false,frame=0;
 
-function storageKey(){return `kp_layout_v2_${layoutTenant}_${layoutCourse}_${layoutIdentity}`;}
+function storageKey(){return `kp_layout_v2_${layoutTenant}_${layoutCourse}_browser`;}
 function legacyStorageKey(){return `kp_layout_v1_${layoutTenant}_${layoutCourse}`;}
 function safeLoadOrder(){
+  if(authenticated)return[];
   try{
     const current=localStorage.getItem(storageKey());
     if(current){const parsed=JSON.parse(current);return Array.isArray(parsed)?parsed.map(String):[];}
@@ -15,29 +15,24 @@ function safeLoadOrder(){
     const parsed=JSON.parse(legacy);if(Array.isArray(parsed)){localStorage.setItem(storageKey(),JSON.stringify(parsed));return parsed.map(String);}return[];
   }catch{return[];}
 }
-function saveOrderLocal(ids){try{localStorage.setItem(storageKey(),JSON.stringify(ids));}catch{}}
-function clearOrderLocal(){try{localStorage.removeItem(storageKey());}catch{}}
+function saveOrderLocal(ids){if(authenticated)return;try{localStorage.setItem(storageKey(),JSON.stringify(ids));}catch{}}
+function clearOrderLocal(){if(authenticated)return;try{localStorage.removeItem(storageKey());}catch{}}
 function sectionIds(grid){return [...grid.querySelectorAll(':scope > .portal-section[id]')].map(x=>x.id);}
 function combinedSavedOrder(current){const source=(serverOrder?.length?serverOrder:safeLoadOrder()).filter(id=>current.includes(id));return [...source,...current.filter(id=>!source.includes(id))];}
 async function apiJson(url,opt={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt,headers:{...(opt.body?{'content-type':'application/json'}:{}),...(opt.headers||{})}});let d={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(d.error||`HTTP_${r.status}`);return d;}
 async function resolveContext(){
   if(contextReady)return;contextReady=true;
-  try{
-    const code=sessionStorage.getItem(accessStoreKey)||'';
-    const [me,overview]=await Promise.all([
-      apiJson('/api/auth/me').catch(()=>({user:null})),
-      apiJson(`/public/${encodeURIComponent(layoutTenant)}/${encodeURIComponent(layoutCourse)}/overview`,{headers:code?{'X-Klassenportal-Access-Code':code}:{}}).catch(()=>null),
-    ]);
-    if(me?.user?.userId)layoutIdentity=String(me.user.userId);
-    const tenantId=overview?.viewer?.authenticated?String(overview.viewer.tenantId||''):'';
-    const courseId=String(overview?.course?.id||'');
-    if(tenantId&&courseId&&me?.user?.userId){
-      serverContext={tenantId,courseId};
-      try{const r=await apiJson(`/api/personal/portal-layout?tenant_id=${encodeURIComponent(tenantId)}&course_id=${encodeURIComponent(courseId)}`);serverOrder=Array.isArray(r.order)?r.order.map(String):[];}catch{serverOrder=null;}
-    }
-  }catch{}
+  const overview=window.__KP_PORTAL_DATA||null;
+  authenticated=!!overview?.viewer?.authenticated;
+  const tenantId=authenticated?String(overview?.viewer?.tenantId||''):'';
+  const courseId=String(overview?.course?.id||'');
+  if(tenantId&&courseId){
+    serverContext={tenantId,courseId};
+    try{const r=await apiJson(`/api/personal/portal-layout?tenant_id=${encodeURIComponent(tenantId)}&course_id=${encodeURIComponent(courseId)}`);serverOrder=Array.isArray(r.order)?r.order.map(String):[];}catch{serverOrder=null;}
+  }
   customized=(serverOrder?.length||safeLoadOrder().length)>0;
 }
+function resetContext(){contextReady=false;serverContext=null;serverOrder=null;authenticated=false;}
 async function saveOrderServer(ids){if(!serverContext)return;try{const r=await apiJson(`/api/personal/portal-layout?tenant_id=${encodeURIComponent(serverContext.tenantId)}&course_id=${encodeURIComponent(serverContext.courseId)}`,{method:'PUT',body:JSON.stringify({order:ids})});serverOrder=Array.isArray(r.order)?r.order.map(String):ids;}catch{}}
 async function resetOrderServer(){if(!serverContext)return;try{await apiJson(`/api/personal/portal-layout?tenant_id=${encodeURIComponent(serverContext.tenantId)}&course_id=${encodeURIComponent(serverContext.courseId)}`,{method:'DELETE'});serverOrder=[];}catch{}}
 function reorderNav(order){
@@ -88,18 +83,20 @@ function installDropTargets(grid){
   });
 }
 async function enhanceLayout(){
-  const grid=portalRoot?.querySelector('.portal-grid');if(!grid||grid.dataset.layoutEnhanced==='1')return;
-  await resolveContext();if(!grid.isConnected||grid.dataset.layoutEnhanced==='1')return;
-  grid.dataset.layoutEnhanced='1';const defaultOrder=sectionIds(grid),wanted=combinedSavedOrder(defaultOrder);
-  for(const id of wanted){const section=grid.querySelector(`#${CSS.escape(id)}`);if(section)grid.append(section);}
+  const grid=portalRoot?.querySelector('.portal-grid');if(!grid)return;
+  await resolveContext();if(!grid.isConnected)return;
+  if(grid.dataset.layoutEnhanced!=='1'){
+    grid.dataset.layoutEnhanced='1';const defaultOrder=sectionIds(grid),wanted=combinedSavedOrder(defaultOrder);
+    for(const id of wanted){const section=grid.querySelector(`#${CSS.escape(id)}`);if(section)grid.append(section);}
+    installDropTargets(grid);reorderNav(sectionIds(grid));addResetButton(defaultOrder,grid);
+  }
   for(const section of grid.querySelectorAll(':scope > .portal-section[id]'))addControls(section);
-  installDropTargets(grid);reorderNav(sectionIds(grid));addResetButton(defaultOrder,grid);
 }
+function schedule(){if(frame)return;frame=requestAnimationFrame(()=>{frame=0;void enhanceLayout();});}
 
 if(portalRoot){
-  let frame=0;const schedule=()=>{if(frame)return;frame=requestAnimationFrame(()=>{frame=0;void enhanceLayout();});};
-  // Only a complete shell replacement requires re-enhancement. Nested feature
-  // mutations must not fan out into a document-wide observer cascade.
-  new MutationObserver(schedule).observe(portalRoot,{childList:true});
-  void enhanceLayout();
+  window.addEventListener('kp:portal-data',()=>{resetContext();schedule();});
+  window.addEventListener('kp:portal-module-loaded',schedule);
+  window.addEventListener('kp:localechange',schedule);
+  schedule();
 }
