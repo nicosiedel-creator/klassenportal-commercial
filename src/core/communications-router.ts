@@ -3,6 +3,7 @@ import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { acknowledgeCommunication, closeCommunication, createCommunication, getCommunication, listCommunications, markCommunicationRead, myCommunications, publishCommunication } from './secure-communications.js';
 import { teacherAttendanceAuth } from './teacher-portal.js';
+import { teacherCourseCalendar } from './teacher-calendar.js';
 import { createTeacherMessage, deleteTeacherMessage, ensureLessonClassbookSession, listTeacherMessagesAdmin, markTeacherMessageRead, teacherWorkspace } from './teacher-workspace.js';
 import { assertSameOrigin, json } from './utils.js';
 
@@ -18,6 +19,9 @@ export async function handleCommunicationsApi(request:Request,env:Env):Promise<R
     if(path==='/api/communications/teacher/messages/admin'&&request.method==='POST'){await assertTenantWriteAllowed(env,tenantId);return json({ok:true,message:await createTeacherMessage(env,auth,tenantId,await body(request))},201);}
     const teacherAdminMessage=path.match(/^\/api\/communications\/teacher\/messages\/admin\/([^/]+)$/);
     if(teacherAdminMessage&&request.method==='DELETE'){await assertTenantWriteAllowed(env,tenantId);await deleteTeacherMessage(env,auth,tenantId,decodeURIComponent(teacherAdminMessage[1]));return json({ok:true});}
+    if(path==='/api/communications/teacher/calendar'&&request.method==='GET'){
+      if(!courseId)throw new Error('COURSE_ID_REQUIRED');const teacherAuth=await teacherAttendanceAuth(env,auth,tenantId,courseId);return json({ok:true,...await teacherCourseCalendar(env,teacherAuth,tenantId,courseId)});
+    }
     if(path==='/api/communications/teacher/workspace'&&request.method==='GET'){
       if(!courseId)throw new Error('COURSE_ID_REQUIRED');const teacherAuth=await teacherAttendanceAuth(env,auth,tenantId,courseId);return json({ok:true,...await teacherWorkspace(env,teacherAuth,tenantId,courseId)});
     }
