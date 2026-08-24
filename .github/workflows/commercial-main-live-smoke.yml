@@ -1,0 +1,55 @@
+name: Commercial main live smoke
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commercial-main-live-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      BASE: https://klassenportal-commercial.nicosiedel.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for exact Commercial deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            meta=$(curl -fsS --max-time 12 "$BASE/build-meta.json?sha=$GITHUB_SHA" || true)
+            if jq -e --arg sha "$GITHUB_SHA" '.commit == $sha' <<<"$meta" >/dev/null 2>&1; then
+              echo "Exact Commercial deployment is live: $GITHUB_SHA"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Exact Commercial deployment did not become live on $BASE" >&2
+          exit 1
+      - name: Verify test entry points
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /produkt /plattform-admin /kunden-admin /dozentenportal; do
+            code=$(curl -sS --max-time 15 -o /tmp/body -w '%{http_code}' "$BASE$path")
+            test "$code" = 200 || { echo "$path returned $code" >&2; head -c 300 /tmp/body >&2; exit 1; }
+            test -s /tmp/body
+          done
+      - name: Verify onboarding-link routes exist without mutating data
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS --max-time 15 -o /tmp/platform -w '%{http_code}' "$BASE/api/platform/onboarding-invitations")
+          case "$code" in 401|403) ;; *) echo "Platform onboarding route returned unexpected $code" >&2; cat /tmp/platform >&2; exit 1;; esac
+          code=$(curl -sS --max-time 15 -o /tmp/public -w '%{http_code}' "$BASE/api/onboarding/not-a-real-token")
+          case "$code" in 400|404|410) ;; *) echo "Public onboarding route returned unexpected $code" >&2; cat /tmp/public >&2; exit 1;; esac
+          grep -Eq 'UNAUTHENTICATED|PLATFORM_ADMIN_REQUIRED|LOGIN_REQUIRED|FORBIDDEN' /tmp/platform || true
+          echo 'Commercial onboarding route contract is live.'
