@@ -7,6 +7,7 @@ import { ensureOfferSchema } from './offer-schema.js';
 import { mailConfigured } from './mail.js';
 import { dataResidencyStatus, configuredMailProvider } from './data-residency.js';
 import { ownerMfaStatus } from './mfa.js';
+import { paymentsEnabled, paymentPolicy } from './payment-policy.js';
 import { stripeModeIfConfigured } from './stripe-mode.js';
 import { tenantSecretEncryptionReady } from './tenant-secrets.js';
 import { currentWorkerVersion, ensureProductionReleaseSchema, productionOriginStatus } from './production-release-state.js';
@@ -19,9 +20,10 @@ async function count(env:Env,sql:string,values:unknown[]=[]):Promise<number>{con
 
 export async function productionReadiness(env:Env,auth:CoreAuthContext){
   requirePlatform(auth);await ensureProductionReleaseSchema(env);await ensureOfferSchema(env);await ensureLegalDocumentSchema(env);
-  const blockers:string[]=[],warnings:string[]=[],origin=productionOriginStatus(env),version=currentWorkerVersion(env),mfa=await ownerMfaStatus(env,auth.userId),legal=await ownerLegal(env,auth),backups=await backupReadiness(env,48),missingSchema=await essentialSchema(env),residency=dataResidencyStatus(env),stripeMode=(()=>{try{return stripeModeIfConfigured(env);}catch{return null;}})();
+  const blockers:string[]=[],warnings:string[]=[],origin=productionOriginStatus(env),version=currentWorkerVersion(env),mfa=await ownerMfaStatus(env,auth.userId),legal=await ownerLegal(env,auth),backups=await backupReadiness(env,48),missingSchema=await essentialSchema(env),residency=dataResidencyStatus(env),payment=paymentPolicy(env),stripeMode=(()=>{try{return stripeModeIfConfigured(env);}catch{return null;}})();
   if(!origin.ok)blockers.push(origin.reason!);if(!version)blockers.push('Cloudflare Worker-Versionsmetadaten fehlen; versionsgebundene Live-Freigabe ist nicht möglich');
-  if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)blockers.push('Stripe Live-Konfiguration fehlt');else if(stripeMode!=='live')blockers.push('Stripe läuft noch nicht mit Live-Schlüssel');
+  if(payment.enabled){if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)blockers.push('Stripe Live-Konfiguration fehlt');else if(stripeMode!=='live')blockers.push('Stripe läuft noch nicht mit Live-Schlüssel');}
+  else warnings.push('Zahlungsabwicklung ist absichtlich deaktiviert; Angebote und Portale dürfen live laufen, Zahlungen erfolgen außerhalb des Portals');
   if(!mfa.encryptionReady)blockers.push('OWNER_MFA_ENCRYPTION_KEY fehlt oder ist ungültig');if(!mfa.enabled)blockers.push('Eigentümer-MFA ist nicht aktiviert');
   if(!mailConfigured(env))blockers.push('Transaktions-E-Mail ist nicht vollständig konfiguriert (EU-Standard: MAIL_PROVIDER=brevo, BREVO_API_KEY, MAIL_FROM, APP_ORIGIN)');
   if(!residency.ready)for(const issue of residency.blockers)blockers.push(`EU-Datenhaltung nicht bestätigt: ${issue}`);
@@ -45,11 +47,11 @@ export async function productionReadiness(env:Env,auth:CoreAuthContext){
   if(customOfferQueryOk&&customNeeded&&!customProviderConfigured)blockers.push('Eigene Domains werden angeboten, aber Cloudflare for SaaS ist nicht vollständig konfiguriert');
 
   let providerFailures=0,paymentEventsQueryOk=!missingSchema.includes('payment_provider_events');
-  if(paymentEventsQueryOk){try{providerFailures=await count(env,"SELECT COUNT(*) AS n FROM payment_provider_events WHERE status='failed' AND received_at>=?",[new Date(Date.now()-24*3600_000).toISOString()]);}catch{paymentEventsQueryOk=false;blockers.push('Zahlungsprovider-Ereignisse der letzten 24 Stunden konnten nicht geprüft werden; Live-Freigabe bleibt gesperrt');}}
-  if(paymentEventsQueryOk&&providerFailures)blockers.push(`${providerFailures} fehlgeschlagene Zahlungsprovider-Ereignisse in den letzten 24 Stunden`);
+  if(payment.enabled&&paymentEventsQueryOk){try{providerFailures=await count(env,"SELECT COUNT(*) AS n FROM payment_provider_events WHERE status='failed' AND received_at>=?",[new Date(Date.now()-24*3600_000).toISOString()]);}catch{paymentEventsQueryOk=false;blockers.push('Zahlungsprovider-Ereignisse der letzten 24 Stunden konnten nicht geprüft werden; Live-Freigabe bleibt gesperrt');}}
+  if(payment.enabled&&paymentEventsQueryOk&&providerFailures)blockers.push(`${providerFailures} fehlgeschlagene Zahlungsprovider-Ereignisse in den letzten 24 Stunden`);
 
   const dueDeletions=Number(await env.DB.prepare("SELECT COUNT(*) AS n FROM portability_deletion_requests WHERE status='pending' AND scheduled_for<=?").bind(new Date().toISOString()).first<number>('n').catch(()=>0)||0);if(dueDeletions)warnings.push(`${dueDeletions} Kundenlöschungen haben ihre Schutzfrist erreicht und warten auf manuelle Entscheidung`);
   const expiringIntegrations=missingSchema.includes('api_tokens')?0:Number(await env.DB.prepare("SELECT (SELECT COUNT(*) FROM api_tokens WHERE revoked_at IS NULL AND expires_at BETWEEN ? AND ?) + (SELECT COUNT(*) FROM scim_tokens WHERE revoked_at IS NULL AND expires_at BETWEEN ? AND ?) AS n").bind(new Date().toISOString(),new Date(Date.now()+14*86400000).toISOString(),new Date().toISOString(),new Date(Date.now()+14*86400000).toISOString()).first<number>('n').catch(()=>0)||0);if(expiringIntegrations)warnings.push(`${expiringIntegrations} API-/SCIM-Token(s) laufen innerhalb der nächsten 14 Tage ab`);
 
-  return{ready:blockers.length===0,blockers,warnings,checks:{productionOrigin:origin,workerVersion:!!version,liveStripe:stripeMode==='live',ownerMfa:mfa.enabled&&mfa.encryptionReady,transactionalMail:mailConfigured(env),euDataResidency:residency.ready,euWorkerProcessing:!!residency.checks.find(x=>x.key==='worker_eu')?.ok,euMetadataBoundary:!!residency.checks.find(x=>x.key==='metadata_eu')?.ok,legal:legal.complete,backups:backups.ready,schema:missingSchema.length===0,ssoSecretEncryption:ssoSecretReady,inboundMail:inboundReady,customDomainProvider:customDomainProviderReady,paymentProviderFailures24h:paymentEventsQueryOk&&providerFailures===0},paymentProviderFailureCount24h:paymentEventsQueryOk?providerFailures:null,residency,workerVersion:version,backupIssues:backups.issues,checkedAt:new Date().toISOString()};
+  return{ready:blockers.length===0,blockers,warnings,checks:{productionOrigin:origin,workerVersion:!!version,paymentsEnabled:paymentsEnabled(env),liveStripe:!payment.enabled||stripeMode==='live',ownerMfa:mfa.enabled&&mfa.encryptionReady,transactionalMail:mailConfigured(env),euDataResidency:residency.ready,euWorkerProcessing:!!residency.checks.find(x=>x.key==='worker_eu')?.ok,euMetadataBoundary:!!residency.checks.find(x=>x.key==='metadata_eu')?.ok,legal:legal.complete,backups:backups.ready,schema:missingSchema.length===0,ssoSecretEncryption:ssoSecretReady,inboundMail:inboundReady,customDomainProvider:customDomainProviderReady,paymentProviderFailures24h:!payment.enabled||(paymentEventsQueryOk&&providerFailures===0)},paymentPolicy:payment,paymentProviderFailureCount24h:payment.enabled&&paymentEventsQueryOk?providerFailures:null,residency,workerVersion:version,backupIssues:backups.issues,checkedAt:new Date().toISOString()};
 }
