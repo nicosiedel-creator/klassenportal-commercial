@@ -1,6 +1,7 @@
 import type { Env } from './types.js';
 import { audit } from './audit.js';
 import { acceptedQuoteForOnboarding } from './platform-offers.js';
+import { paymentsEnabled } from './payment-policy.js';
 import { id, nowIso } from './utils.js';
 
 function number(prefix:string):string{const d=new Date(),date=`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}`;return `${prefix}-${date}-${id('').replace(/[^a-zA-Z0-9]/g,'').slice(-8).toUpperCase()}`;}
@@ -24,20 +25,21 @@ export async function startPilotFromAcceptedOffer(env:Env,args:{tenantId:string;
 
 export async function createPaidBookingFromAcceptedOffer(env:Env,args:{tenantId:string;quoteId:string;invitationId:string;actorId:string}){
   const {row,offer}=await acceptedQuoteForOnboarding(env,args.quoteId);if(String(offer.offerKind)!=='paid')throw new Error('OFFER_NOT_PAID');
-  const pending=await env.DB.prepare("SELECT id FROM commercial_orders WHERE tenant_id=? AND status='pending_payment' ORDER BY booked_at DESC LIMIT 1").bind(args.tenantId).first<{id:string}>();if(pending)throw new Error('PAYMENT_ALREADY_PENDING');
+  const providerPayments=paymentsEnabled(env);
+  if(providerPayments){const pending=await env.DB.prepare("SELECT id FROM commercial_orders WHERE tenant_id=? AND status='pending_payment' ORDER BY booked_at DESC LIMIT 1").bind(args.tenantId).first<{id:string}>();if(pending)throw new Error('PAYMENT_ALREADY_PENDING');}
   const recurring=Number(offer.recurringMonthlyCents??row.recurring_monthly_cents),setup=Number(offer.managedSetupCents??row.setup_cents),first=Number(offer.firstTotalCents??row.first_total_cents);if(!Number.isFinite(recurring)||recurring<1||!Number.isFinite(setup)||setup<0||!Number.isFinite(first)||first<1)throw new Error('ACCEPTED_OFFER_PRICE_INVALID');
-  const ts=nowIso(),orderId=id('ord_'),invoiceId=id('inv_'),snapshot=JSON.stringify(offer);
+  const ts=nowIso(),orderId=id('ord_'),invoiceId=id('inv_'),snapshot=JSON.stringify(offer),orderStatus=providerPayments?'pending_payment':'active',invoiceStatus=providerPayments?'pending_provider':'draft',subscriptionStatus=providerPayments?'past_due':'active',activatedAt=providerPayments?null:ts;
   await env.DB.batch([
     env.DB.prepare(`INSERT INTO tenant_entitlements(tenant_id,plan_id,course_limit,currency,recurring_monthly_cents,setup_cents,pricing_snapshot_json,updated_at)
       VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET plan_id=excluded.plan_id,course_limit=excluded.course_limit,currency=excluded.currency,recurring_monthly_cents=excluded.recurring_monthly_cents,setup_cents=excluded.setup_cents,pricing_snapshot_json=excluded.pricing_snapshot_json,updated_at=excluded.updated_at`)
       .bind(args.tenantId,row.plan_id,row.requested_courses,row.currency,recurring,setup,snapshot,ts),
-    env.DB.prepare(`INSERT INTO commercial_orders(id,order_number,tenant_id,quote_id,plan_id,course_limit,status,currency,recurring_monthly_cents,setup_cents,booked_at)
-      VALUES(?,?,?,?,?,?,'pending_payment',?,?,?,?)`).bind(orderId,number('AUF'),args.tenantId,row.id,row.plan_id,row.requested_courses,row.currency,recurring,setup,ts),
+    env.DB.prepare(`INSERT INTO commercial_orders(id,order_number,tenant_id,quote_id,plan_id,course_limit,status,currency,recurring_monthly_cents,setup_cents,booked_at,activated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).bind(orderId,number('AUF'),args.tenantId,row.id,row.plan_id,row.requested_courses,orderStatus,row.currency,recurring,setup,ts,activatedAt),
     env.DB.prepare(`INSERT INTO commercial_invoices(id,invoice_number,tenant_id,order_id,type,status,currency,net_cents,tax_cents,gross_cents,snapshot_json,created_at)
-      VALUES(?,?,?,?,'initial','pending_provider',?,?,0,?,?,?)`).bind(invoiceId,number('ENTW'),args.tenantId,orderId,row.currency,first,first,snapshot,ts),
-    env.DB.prepare("UPDATE subscriptions SET plan_id=?,status='past_due',starts_at=?,ends_at=NULL WHERE tenant_id=?").bind(row.plan_id,ts,args.tenantId),
+      VALUES(?,?,?,?,'initial',?,?,?,0,?,?,?)`).bind(invoiceId,number('ENTW'),args.tenantId,orderId,invoiceStatus,row.currency,first,first,snapshot,ts),
+    env.DB.prepare('UPDATE subscriptions SET plan_id=?,status=?,starts_at=?,ends_at=NULL WHERE tenant_id=?').bind(row.plan_id,subscriptionStatus,ts,args.tenantId),
     env.DB.prepare('UPDATE commercial_quotes SET tenant_id=?,onboarding_invitation_id=?,updated_at=? WHERE id=?').bind(args.tenantId,args.invitationId,ts,row.id),
   ]);
-  await audit(env.DB,args.actorId,'commerce.booking.created_from_offer',args.tenantId,undefined,'order',orderId,{quoteId:row.id,quoteNumber:row.quote_number,invoiceId,planId:row.plan_id,courseCount:row.requested_courses,recurringMonthlyCents:recurring,setupCents:setup,firstTotalCents:first,manualPricing:!!offer.manualPricing});
-  return{quoteId:row.id,orderId,invoiceId,status:'pending_payment',offer};
+  await audit(env.DB,args.actorId,'commerce.booking.created_from_offer',args.tenantId,undefined,'order',orderId,{quoteId:row.id,quoteNumber:row.quote_number,invoiceId,planId:row.plan_id,courseCount:row.requested_courses,recurringMonthlyCents:recurring,setupCents:setup,firstTotalCents:first,manualPricing:!!offer.manualPricing,paymentProcessing:providerPayments?'enabled':'disabled',orderStatus,invoiceStatus});
+  return{quoteId:row.id,orderId,invoiceId,status:orderStatus,offer,paymentProcessing:providerPayments?'enabled':'disabled',paymentProvider:providerPayments?'stripe':'manual'};
 }
