@@ -1,0 +1,53 @@
+name: Diagnose live Commercial and VFA13
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: github.head_ref == 'diag/live-commercial-vfa-20260824'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe Commercial public/onboarding routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev'
+          for spec in \
+            'GET /produkt' \
+            'GET /plattform-admin' \
+            'GET /api/platform/onboarding-invitations' \
+            'POST /api/platform/onboarding-invitations' \
+            'GET /einrichtung/not-a-real-token' \
+            'GET /api/onboarding/not-a-real-token'; do
+            method=${spec%% *}; path=${spec#* }
+            echo "=== COMMERCIAL $method $path ==="
+            if test "$method" = POST; then
+              curl -sS --max-time 20 -X POST -H 'content-type: application/json' --data '{"customer_email":"probe@example.invalid","plan_id":"provider","valid_days":14}' -D /tmp/h -o /tmp/b -w 'HTTP=%{http_code}\n' "$base$path" || true
+            else
+              curl -sS --max-time 20 -D /tmp/h -o /tmp/b -w 'HTTP=%{http_code}\n' "$base$path" || true
+            fi
+            tr -d '\r' </tmp/h | grep -Ei '^(content-type|location|cache-control):' || true
+            head -c 300 /tmp/b; echo; echo
+          done
+      - name: Probe VFA13 runtime/auth routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://vfa13-klassenportal.pages.dev'
+          for path in '/api/v2/health' '/api/v2/public' '/api/v2/auth/me' '/api/calendar?from=2026-08-24&to=2026-08-31'; do
+            echo "=== VFA GET $path ==="
+            curl -sS --max-time 20 -D /tmp/h -o /tmp/b -w 'HTTP=%{http_code}\n' "$base$path" || true
+            tr -d '\r' </tmp/h | grep -Ei '^(content-type|x-vfa13-upgrade|retry-after):' || true
+            head -c 500 /tmp/b; echo; echo
+          done
+          echo '=== VFA invalid registration validation ==='
+          curl -sS --max-time 20 -H 'content-type: application/json' --data '{"display_name":"x","email":"not-an-email","password":"x","password_confirm":"y"}' -D /tmp/h -o /tmp/b -w 'HTTP=%{http_code}\n' "$base/api/v2/auth/register" || true
+          tr -d '\r' </tmp/h | grep -Ei '^(content-type|x-vfa13-upgrade|retry-after):' || true
+          cat /tmp/b; echo
