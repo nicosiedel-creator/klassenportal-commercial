@@ -6,6 +6,7 @@ import { approveProductionRelease, releaseStateForOwner, revokeProductionRelease
 import { verifyBackup } from './backup-verification.js';
 import { submitLegalContentReport } from './legal-content-report.js';
 import { publicProduct } from './public-product.js';
+import { copyEuStorageBatch, euStorageMigrationStatus, finalizeEuStorageMigration } from './eu-storage-migration.js';
 import { assertSameOrigin, json } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -20,7 +21,7 @@ export async function handleLaunchReadinessApi(request:Request,env:Env):Promise<
     if(u.pathname==='/api/public/legal'&&request.method==='GET')return json({ok:true,legal:await publicLegal(env)});
     if(u.pathname==='/api/public/product'&&request.method==='GET')return json({ok:true,product:await publicProduct(env)});
     if(u.pathname==='/api/legal/report'&&request.method==='POST')return json({ok:true,...await submitLegalContentReport(env,request)},201);
-    if(!u.pathname.startsWith('/api/platform/legal')&&!u.pathname.startsWith('/api/platform/release-readiness')&&!u.pathname.startsWith('/api/platform/release-state')&&!u.pathname.startsWith('/api/platform/backups/'))return null;
+    if(!u.pathname.startsWith('/api/platform/legal')&&!u.pathname.startsWith('/api/platform/release-readiness')&&!u.pathname.startsWith('/api/platform/release-state')&&!u.pathname.startsWith('/api/platform/backups/')&&!u.pathname.startsWith('/api/platform/eu-storage-migration'))return null;
     assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);
     if(u.pathname==='/api/platform/legal'&&request.method==='GET')return json({ok:true,legal:await ownerLegal(env,auth)});
     if(u.pathname==='/api/platform/legal'&&request.method==='PUT')return json({ok:true,legal:await updateOwnerLegal(env,auth,await body(request))});
@@ -28,8 +29,10 @@ export async function handleLaunchReadinessApi(request:Request,env:Env):Promise<
     if(u.pathname==='/api/platform/release-state'&&request.method==='GET')return json({ok:true,state:await releaseStateForOwner(env,auth)});
     if(u.pathname==='/api/platform/release-state/approve'&&request.method==='POST')return json({ok:true,...await approveProductionRelease(env,auth,await body(request))});
     if(u.pathname==='/api/platform/release-state/revoke'&&request.method==='POST')return json({ok:true,...await revokeProductionRelease(env,auth,await body(request))});
+    if(u.pathname==='/api/platform/eu-storage-migration/status'&&request.method==='GET')return json({ok:true,migration:await euStorageMigrationStatus(env,auth)});
+    if(u.pathname==='/api/platform/eu-storage-migration/copy'&&request.method==='POST')return json({ok:true,...await copyEuStorageBatch(env,auth,await body(request))});
+    if(u.pathname==='/api/platform/eu-storage-migration/finalize'&&request.method==='POST')return json({ok:true,...await finalizeEuStorageMigration(env,auth,await body(request))});
     const verify=u.pathname.match(/^\/api\/platform\/backups\/([^/]+)\/verify$/);if(verify&&request.method==='POST'){if(!auth.isPlatformAdmin)throw new Error('PLATFORM_ADMIN_REQUIRED');return json({ok:true,verification:await verifyBackup(env,decodeURIComponent(verify[1]))});}
     return new Response('Methode nicht erlaubt',{status:405});
   }catch(e){return fail(e);}
 }
-

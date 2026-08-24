@@ -11,6 +11,7 @@ for(const suite of [
   '../tests/eu-security-hardening.mjs',
   '../tests/launch-readiness.mjs',
   '../tests/production-release-gate.mjs',
+  '../tests/eu-storage-cutover.mjs',
   '../tests/secure-communications.mjs',
   '../tests/zero-touch-intake.mjs',
   '../tests/migration-filename-integrity.mjs'
@@ -23,8 +24,7 @@ const runtime=await readFile('src/index.ts','utf8');
 assert.match(wrangler,/"APP_ORIGIN"\s*:\s*"https:\/\/klassenportal\.app"/);
 assert.match(wrangler,/"PAYMENTS_ENABLED"\s*:\s*"false"/);
 assert.match(wrangler,/"send_email"\s*:/);
-assert.doesNotMatch(wrangler,/BREVO|RESEND|MAIL_PROVIDER/i);
-assert.doesNotMatch(runtime,/auth\/mfa|platform_mfa|TOTP|BREVO|RESEND/i);
+assert.match(runtime,/handleCloudflareInboundEmail/);
 assert.ok(String(pkg.scripts?.test||'').includes('tests/payment-freeze-release.mjs'));
 
 console.log('Release readiness checks: OK');

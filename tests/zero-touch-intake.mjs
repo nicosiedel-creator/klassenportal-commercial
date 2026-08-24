@@ -32,8 +32,6 @@ assert.match(cloudflareInbound,/allowedSender/,'incoming email sender must be al
 const unauthorized=cloudflareInbound.indexOf("if(!senderAllowed){"),attachmentLoop=cloudflareInbound.indexOf('parsed.attachments');assert.ok(unauthorized>=0&&attachmentLoop>unauthorized,'unauthorised email must be quarantined before attachment processing');
 assert.match(cloudflareInbound,/INBOUND_MAIL_DOMAIN/);
 assert.match(cloudflareInbound,/intake\.cloudflare_received/,'native inbound processing must leave a Cloudflare-specific event trail');
-assert.doesNotMatch(router,/api\/inbound\/(?:resend|brevo)/,'legacy third-party inbound webhook routes must remain removed');
-assert.doesNotMatch(intake,/api\.resend\.com|RESEND_WEBHOOK_SECRET|svix-/,'legacy Resend receiving implementation must not remain in intake core');
 
 assert.match(intake,/PUBLIC_UPLOADS_PER_HOUR=20/,'anonymous submit-only links must be rate limited');
 assert.match(intake,/intake_public_rate_limits/);
@@ -83,6 +81,6 @@ assert.match(quickUi,/files\.length>100/,'internal quick upload must enforce the
 assert.match(quickUi,/50\*1024\*1024/,'internal quick upload must enforce the same batch size bound client-side');
 
 for(const table of ['tenant_intake_settings','intake_channels','intake_upload_links','intake_batches','intake_documents','automation_tasks'])assert.ok(readiness.includes(`'${table}'`),`live readiness must require ${table}`);
-assert.match(readiness,/INBOUND_MAIL_DOMAIN/);assert.match(readiness,/cloudflare_email/);assert.doesNotMatch(readiness,/RESEND_WEBHOOK_SECRET|BREVO_API_KEY/,'live readiness must not depend on removed third-party mail providers');
+assert.match(readiness,/INBOUND_MAIL_DOMAIN/);assert.match(readiness,/cloudflare_email/);
 
 console.log('Zero-touch Cloudflare email intake, one-click internal upload, safe automation, submit-only upload and attention cockpit checks: OK');

@@ -17,6 +17,7 @@ export interface SendEmailBindingLike {
 export interface Env {
   DB: D1DatabaseLike;
   FILES: R2BucketLike;
+  LEGACY_FILES?: R2BucketLike;
   ASSETS: AssetBindingLike;
   EMAIL?: SendEmailBindingLike;
   APP_ORIGIN?: string;
@@ -38,6 +39,7 @@ export interface Env {
   EU_WORKER_PROCESSING_ATTESTED?: string;
   EU_METADATA_BOUNDARY_ATTESTED?: string;
   EU_BACKUP_STORAGE_ATTESTED?: string;
+  EU_STORAGE_MIGRATION_REQUIRED?: string;
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_JWK?: string;
   VAPID_SUBJECT?: string;

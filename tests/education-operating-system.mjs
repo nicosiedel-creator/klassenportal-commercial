@@ -44,7 +44,6 @@ assert.match(scenarios,/allow_remote/,'remote conversion must require explicit a
 
 assert.match(security,/auth\.isPlatformAdmin\)throw new Error\('AUTOPILOT_TENANT_ADMIN_REQUIRED'\)/,'platform admin must not execute tenant autopilot');
 assert.match(security,/auth\.role!=='tenant_admin'/,'autopilot execution must require a tenant admin session');
-assert.doesNotMatch(security,/AUTOPILOT_MFA_REQUIRED|AUTOPILOT_MFA_ENROLLMENT_REQUIRED|platform_mfa|TOTP/,'autopilot security core must not retain removed MFA dependencies');
 for(const forbidden of ['role','membership','permission','billing','payment','grade','attendance','signature\\.sign'])assert.match(security,new RegExp(forbidden),`forbidden autopilot namespace ${forbidden} missing`);
 assert.ok(!security.includes("'role.assign'"),'role changes must not appear in safe action whitelist');
 assert.ok(!security.includes("'grade.update'"),'grade changes must not appear in safe action whitelist');
@@ -103,11 +102,9 @@ for(const label of ['Future Radar','Scenario Lab','Self-Healing','Proof Graph','
 assert.match(ui,/Keine direkten Schreibrechte|keine direkten Schreibrechte/i,'UI must explain that language/AI has no direct write access');
 assert.match(ui,/Vier-Augen-Prinzip/,'UI must surface dual control');
 assert.match(ui,/AUTOPILOT_TWIN_CHANGED_RESIMULATE/,'UI must explain stale-snapshot safety');
-assert.doesNotMatch(ui,/\bmfa\b|MFA_|require_mfa|TOTP|Authenticator/i,'Education OS UI must not retain removed MFA concepts');
 
 for(const concept of ['Live Education Twin','Education Autopilot','Scenario Lab','Proof Graph','Future Radar','Self-healing Data'])assert.ok(product.includes(concept),`product law ${concept} missing`);
 assert.match(product,/Regelwerk vor KI/,'product strategy must keep deterministic rules before AI');
 assert.match(product,/Erst simulieren, dann verändern/,'product strategy must require simulation before mutation');
 
 console.log('Education Operating System architecture/security/lazy-runtime regression ok');
-

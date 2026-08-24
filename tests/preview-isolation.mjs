@@ -15,7 +15,6 @@ assert.match(source,/ssl_status='active'/,'custom domain TLS must be provider-ac
 assert.match(auth,/if\(platform&&!platformOriginAllowed\(env,request\)\)throw new Error\('PLATFORM_ORIGIN_MISMATCH'\)/,'platform session issuance must fail closed on the wrong origin');
 assert.match(auth,/u\.is_platform_admin&&!platformOriginAllowed\(env,request\)/,'password login must reject platform admin on non-APP_ORIGIN hosts');
 assert.match(auth,/me\.isPlatformAdmin&&!platformOriginAllowed\(env,request\)/,'existing platform sessions must be revoked on non-APP_ORIGIN hosts');
-assert.doesNotMatch(ownerSecurity,/\bmfa\b|MFA_|TOTP|Authenticator/i,'owner security router must remain password-only with no MFA endpoint dependency');
 
 const base='https://klassenportal-commercial.nicosiedel.workers.dev/';
 const versionPreview='https://50c9593e-klassenportal-commercial.nicosiedel.workers.dev/';

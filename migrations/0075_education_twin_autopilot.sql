@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS education_autopilot_policies (
   tenant_id TEXT PRIMARY KEY,
   mode TEXT NOT NULL DEFAULT 'recommend_only' CHECK(mode IN ('recommend_only','assisted','safe_auto')),
   max_auto_risk TEXT NOT NULL DEFAULT 'low' CHECK(max_auto_risk IN ('low','medium')),
-  require_mfa INTEGER NOT NULL DEFAULT 1 CHECK(require_mfa IN (0,1)),
+  require_reauthentication INTEGER NOT NULL DEFAULT 1 CHECK(require_reauthentication IN (0,1)),
   dual_approval_from_risk TEXT NOT NULL DEFAULT 'high' CHECK(dual_approval_from_risk IN ('medium','high','critical')),
   max_actions_per_execution INTEGER NOT NULL DEFAULT 100 CHECK(max_actions_per_execution BETWEEN 1 AND 500),
   max_courses_per_execution INTEGER NOT NULL DEFAULT 10 CHECK(max_courses_per_execution BETWEEN 1 AND 100),

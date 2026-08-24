@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS digital_signatures (
   declaration_text TEXT NOT NULL,
   signed_at TEXT NOT NULL,
   auth_method TEXT,
-  mfa_verified INTEGER NOT NULL DEFAULT 0 CHECK(mfa_verified IN (0,1)),
+  federated_auth INTEGER NOT NULL DEFAULT 0 CHECK(federated_auth IN (0,1)),
   provider TEXT,
   provider_reference TEXT,
   FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
