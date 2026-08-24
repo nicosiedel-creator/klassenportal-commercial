@@ -1,0 +1,35 @@
+name: Diagnose VFA13 live auth
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: github.head_ref == 'diag/vfa13-live-auth-20260824'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe live VFA13 auth runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://vfa13-klassenportal.pages.dev'
+          call(){
+            label="$1"; shift
+            echo "=== $label ==="
+            : >/tmp/h; : >/tmp/b
+            code=$(curl -sS --max-time 20 -D /tmp/h -o /tmp/b -w '%{http_code}' "$@" || true)
+            echo "HTTP=$code"
+            tr -d '\r' </tmp/h | grep -Ei '^(content-type|x-vfa13-upgrade|cf-ray|server|retry-after):' || true
+            cat /tmp/b; echo; echo
+          }
+          call health "$base/api/v2/health"
+          call public "$base/api/v2/public"
+          call challenge "$base/api/v2/auth/challenge?login=diag-vfa13-20260824@example.invalid"
+          call invalid-proof -X POST -H 'content-type: application/json' -H "origin: $base" --data '{"display_name":"VFA Diagnose","email":"diag-vfa13-20260824@example.invalid","password_salt":"AAAAAAAAAAAAAAAAAAAAAA","password_proof":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","kdf_iterations":120000}' "$base/api/v2/auth/register"
+          call legacy-calendar "$base/api/calendar?from=2026-08-24&to=2026-08-31"
