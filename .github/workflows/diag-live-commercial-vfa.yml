@@ -14,27 +14,20 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Probe Commercial public/onboarding routes
+      - name: Probe Commercial candidate hosts
         shell: bash
         run: |
           set -euo pipefail
-          base='https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev'
-          for spec in \
-            'GET /produkt' \
-            'GET /plattform-admin' \
-            'GET /api/platform/onboarding-invitations' \
-            'POST /api/platform/onboarding-invitations' \
-            'GET /einrichtung/not-a-real-token' \
-            'GET /api/onboarding/not-a-real-token'; do
-            method=${spec%% *}; path=${spec#* }
-            echo "=== COMMERCIAL $method $path ==="
-            if test "$method" = POST; then
-              curl -sS --max-time 20 -X POST -H 'content-type: application/json' --data '{"customer_email":"probe@example.invalid","plan_id":"provider","valid_days":14}' -D /tmp/h -o /tmp/b -w 'HTTP=%{http_code}\n' "$base$path" || true
-            else
+          for base in \
+            'https://klassenportal-commercial.nicosiedel.workers.dev' \
+            'https://block3-onboarding-managed-setup-klassenportal-commercial.nicosiedel.workers.dev'; do
+            echo "######## HOST $base ########"
+            for path in '/produkt' '/plattform-admin' '/api/platform/onboarding-invitations' '/einrichtung/not-a-real-token' '/api/onboarding/not-a-real-token'; do
+              echo "=== GET $path ==="
               curl -sS --max-time 20 -D /tmp/h -o /tmp/b -w 'HTTP=%{http_code}\n' "$base$path" || true
-            fi
-            tr -d '\r' </tmp/h | grep -Ei '^(content-type|location|cache-control):' || true
-            head -c 300 /tmp/b; echo; echo
+              tr -d '\r' </tmp/h | grep -Ei '^(content-type|location|cache-control):' || true
+              head -c 240 /tmp/b; echo; echo
+            done
           done
       - name: Probe VFA13 runtime/auth routes
         shell: bash
