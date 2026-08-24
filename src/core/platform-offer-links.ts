@@ -19,5 +19,5 @@ export async function publishOrRotatePlatformOffer(env:Env,auth:CoreAuthContext,
     env.DB.prepare('INSERT INTO commercial_offer_events(id,quote_id,event_type,detail_json,created_at) VALUES(?,?,?,?,?)').bind(id('ofe_'),quoteId,'published',JSON.stringify({rotated}),ts),
   ]);
   await audit(env.DB,auth.userId,rotated?'commerce.offer.link_rotated':'commerce.offer.published',undefined,undefined,'commercial_quote',quoteId);
-  const origin=env.APP_ORIGIN||new URL(request.url).origin;return{offer:await getPlatformOffer(env,auth,quoteId),publicUrl:`${origin}/angebot/${encodeURIComponent(raw)}`,rotated};
+  const origin=new URL(request.url).origin;return{offer:await getPlatformOffer(env,auth,quoteId),publicUrl:`${origin}/angebot/${encodeURIComponent(raw)}`,rotated};
 }

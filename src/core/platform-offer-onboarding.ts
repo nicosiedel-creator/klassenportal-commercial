@@ -2,10 +2,11 @@ import type { CoreAuthContext, Env } from './types.js';
 import { requirePlatform } from './permissions.js';
 import { audit } from './audit.js';
 import { b64, id, nowIso, randomBytes, sha256Text } from './utils.js';
+import { deliverOnboardingLinkMail } from './platform-onboarding-mail.js';
 
 export async function reissueAcceptedOfferOnboarding(env:Env,auth:CoreAuthContext,quoteId:string,request:Request){
   requirePlatform(auth);
-  const q=await env.DB.prepare("SELECT id,quote_number,status,customer_email,plan_id,onboarding_invitation_id,tenant_id FROM commercial_quotes WHERE id=?").bind(quoteId).first<{id:string;quote_number:string;status:string;customer_email:string;plan_id:string;onboarding_invitation_id:string|null;tenant_id:string|null}>();
+  const q=await env.DB.prepare("SELECT id,quote_number,status,customer_email,accepted_name,accepted_email,plan_id,onboarding_invitation_id,tenant_id FROM commercial_quotes WHERE id=?").bind(quoteId).first<{id:string;quote_number:string;status:string;customer_email:string;accepted_name:string|null;accepted_email:string|null;plan_id:string;onboarding_invitation_id:string|null;tenant_id:string|null}>();
   if(!q)throw new Error('OFFER_NOT_FOUND');if(q.status!=='accepted')throw new Error('OFFER_NOT_ACCEPTED');if(q.tenant_id)throw new Error('OFFER_ONBOARDING_ALREADY_COMPLETED');
   const ts=nowIso();
   if(q.onboarding_invitation_id)await env.DB.prepare("UPDATE onboarding_invitations SET status='revoked' WHERE id=? AND status='open'").bind(q.onboarding_invitation_id).run();
@@ -16,5 +17,8 @@ export async function reissueAcceptedOfferOnboarding(env:Env,auth:CoreAuthContex
     env.DB.prepare("INSERT INTO commercial_offer_events(id,quote_id,event_type,detail_json,created_at) VALUES(?,?,'onboarding_created',?,?)").bind(id('ofe_'),q.id,JSON.stringify({invitationId,reissued:true}),ts),
   ]);
   await audit(env.DB,auth.userId,'commerce.offer.onboarding_link_reissued',undefined,undefined,'commercial_quote',q.id,{quoteNumber:q.quote_number,invitationId});
-  const origin=env.APP_ORIGIN||new URL(request.url).origin;return{onboardingUrl:`${origin}/einrichtung/${encodeURIComponent(raw)}`,onboardingExpiresAt:expires,quoteNumber:q.quote_number};
+  const origin=new URL(request.url).origin,onboardingUrl=`${origin}/einrichtung/${encodeURIComponent(raw)}`;
+  const delivery=await deliverOnboardingLinkMail(env,{to:q.accepted_email||q.customer_email,name:q.accepted_name,quoteNumber:q.quote_number,onboardingUrl,expiresAt:expires,idemKey:`offer-onboarding-reissue:${q.id}:${invitationId}`});
+  await audit(env.DB,auth.userId,delivery.sent?'commerce.offer.onboarding_emailed':'commerce.offer.onboarding_email_failed',undefined,undefined,'commercial_quote',q.id,{quoteNumber:q.quote_number,recipient:q.accepted_email||q.customer_email,mailId:delivery.mailId,error:delivery.error});
+  return{onboardingUrl,onboardingExpiresAt:expires,quoteNumber:q.quote_number,delivery};
 }
