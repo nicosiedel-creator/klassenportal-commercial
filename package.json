@@ -11,7 +11,8 @@
     "deploy": "npm run ci:cloudflare && npm run db:migrate && node scripts/seed-demo-nico-teacher.mjs && wrangler deploy"
   },
   "dependencies": {
-    "pdfjs-dist": "5.7.284"
+    "pdfjs-dist": "5.7.284",
+    "postal-mime": "3.0.0"
   },
   "devDependencies": {
     "@types/node": "24.0.0",
