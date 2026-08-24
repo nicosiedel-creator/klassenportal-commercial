@@ -3,6 +3,7 @@ import { getSession, resolvePortabilityAuth } from './core/auth.js';
 import { serveTenantLogo } from './core/branding.js';
 import { refreshTrialStates } from './core/commerce-offers.js';
 import { assertPaymentWriteAccess } from './core/payment-access.js';
+import { paymentsEnabled } from './core/payment-policy.js';
 import { augmentPaidOnboardingResponse, handlePaymentApi } from './core/payment-router.js';
 import { handleBillingLifecycleApi } from './core/billing-lifecycle-router.js';
 import { processScheduledModuleCancellations } from './core/module-cancellation.js';
@@ -98,7 +99,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   const attendance=await handleAttendanceApi(request,env);if(attendance)return attendance;
   const participant360Response=await handleParticipant360Api(request,env);if(participant360Response)return participant360Response;
 
-  const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);if(onboardingPost){const payload=await request.clone().json().catch(()=>({}))as Record<string,unknown>;if(String(payload.commercial_action||'trial')==='book'&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);}
+  const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);if(onboardingPost){const payload=await request.clone().json().catch(()=>({}))as Record<string,unknown>;if(String(payload.commercial_action||'trial')==='book'&&paymentsEnabled(env)&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);}
   const tenantId=url.searchParams.get('tenant_id'),mutating=request.method!=='GET'&&request.method!=='HEAD',exemptMutation=url.pathname==='/api/timetable/preview'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/onboarding/')||url.pathname.startsWith('/api/platform/');if(tenantId&&mutating&&!exemptMutation){try{await assertPaymentWriteAccess(env,tenantId);}catch(e){return accessError(e);}}
   if(url.pathname.startsWith('/api/enterprise/')){const enterprise=await handleEnterpriseRouter(request,env);if(enterprise)return enterprise;}
   const portability=await handlePortabilityRequest(request,env,portabilityConfig,r=>resolvePortabilityAuth(env,r));if(portability)return portability;
