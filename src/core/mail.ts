@@ -1,4 +1,5 @@
 import type { Env } from './types.js';
+import { assertEuSafeMail } from './data-residency.js';
 import { id, safeString } from './utils.js';
 
 export function mailConfigured(env:Env):boolean{
@@ -12,6 +13,7 @@ function escapeHtml(v:unknown):string{return String(v??'').replace(/[&<>"']/g,c=
 
 export async function sendMail(env:Env,to:string,subject:string,text:string,html:string,idemKey?:string):Promise<string>{
   if(!mailConfigured(env))throw new Error('MAIL_PROVIDER_NOT_CONFIGURED');
+  assertEuSafeMail(env);
   const dedupe=String(idemKey||id('mail_')).slice(0,180);
   try{
     const result=await env.EMAIL!.send({to,from:cloudflareSender(env),subject,html,text,headers:{'X-Klassenportal-Message-Key':dedupe}});
