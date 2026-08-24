@@ -26,7 +26,6 @@ assert.doesNotMatch(provision,/temporaryPassword\s*:/,'tenant provisioning must 
 assert.match(users,/createActivationForUser/,'new users must use activation links');
 assert.match(users,/createAdminPasswordReset/,'admin password reset must use reset links');
 assert.match(provision,/MAIL_PROVIDER_NOT_CONFIGURED/,'manual provisioning must fail closed if activation mail cannot be delivered');
-
 assert.match(recovery,/sha256Text\(raw\)/,'account action tokens must be stored only as hashes');
 assert.match(recovery,/RESET_MINUTES=30/,'password reset token must expire quickly');
 assert.match(recovery,/ACTIVATION_HOURS=48/,'activation token must expire quickly');
@@ -34,7 +33,6 @@ assert.match(recovery,/is_platform_admin===1\)return\{accepted:true\}/,'owner pa
 assert.match(recovery,/DELETE FROM sessions WHERE user_id=\?/,'password reset must revoke active sessions');
 assert.match(recoveryRouter,/SELECT id FROM memberships WHERE tenant_id=\? AND user_id=\?/,'tenant admin may resend activation only within selected tenant');
 assert.match(accountPage,/Aus Sicherheitsgründen zeigen wir nicht an/,'forgot-password UI must prevent account enumeration');
-
 assert.match(mail,/env\.EMAIL/,'transactional mail must use the native Cloudflare Email binding');
 assert.match(mail,/env\.EMAIL!?\.send/,'outbound messages must be sent through Cloudflare Email Service');
 assert.match(mail,/MAIL_FROM/,'transactional mail must require an explicit verified sender');
@@ -48,7 +46,6 @@ assert.match(residency,/EU_BACKUP_STORAGE_ATTESTED/,'EU-strict launch must attes
 assert.match(residency,/EU_METADATA_BOUNDARY_ATTESTED/,'EU metadata boundary must be tracked separately');
 assert.match(residency,/cloudflare_email/,'Cloudflare Email must be the only configured transactional provider');
 assert.match(residency,/keine ausschließliche EU-Verarbeitung/,'mail residency must not make an unsupported EU-only claim');
-
 assert.match(inbound,/PostalMime/,'Cloudflare Email Worker must parse raw RFC822 mail safely');
 assert.match(inbound,/INBOUND_MAIL_DOMAIN/,'inbound mail must be constrained to configured domain');
 assert.match(inbound,/intake_channels/,'inbound mail must resolve an active tenant intake channel');
@@ -62,7 +59,6 @@ assert.match(inbound,/setReject/,'unknown/unsafe inbound mail must fail closed a
 assert.doesNotMatch(intakeRouter,/\/api\/inbound\/(?:brevo|resend)/,'legacy inbound webhooks must no longer be exposed');
 assert.match(index,/async email\(/,'worker must expose a Cloudflare Email handler');
 assert.match(index,/handleCloudflareInboundEmail/,'worker email handler must call the intake pipeline');
-
 assert.match(legal,/documents_enabled/,'legal publication must require an explicit owner switch');
 assert.match(legal,/document_version/,'legal documents must be versioned');
 assert.match(legal,/sellerComplete/,'legal publication must fail closed without provider identity/address');
@@ -77,7 +73,6 @@ assert.doesNotMatch(legalEu,/Brevo|Resend/,'current EU legal overlay must not di
 assert.match(legalSchema,/ensureLegalDocumentSchema/,'legal schema must self-heal before publication checks');
 assert.match(legalReport,/legal_content_report_limits/,'legal notice endpoint must be rate limited');
 assert.match(legalReport,/sendMail/,'legal notice endpoint must notify contact when mail is configured');
-
 assert.match(backups,/manifest\.version!==1/,'backup verification must validate manifest identity/version');
 assert.match(backups,/BACKUP_RESOURCE_ROWCOUNT_MISMATCH/,'backup verification must verify row counts');
 assert.match(backups,/BACKUP_FILE_SIZE_MISMATCH/,'backup verification must compare stored file sizes');
@@ -106,5 +101,4 @@ assert.match(wrangler,/"APP_ORIGIN": "https:\/\/klassenportal\.app"/,'production
 assert.match(wrangler,/"PAYMENTS_ENABLED": "false"/,'payment execution must be frozen');
 assert.match(wrangler,/"send_email"/,'Cloudflare Email binding must be configured');
 assert.match(wrangler,/version_metadata/,'Worker version metadata binding must be configured');
-
 console.log('Launch readiness, Cloudflare outbound/inbound mail, payment freeze, legal, EU-first storage, recovery and strong backup safety checks: OK');
