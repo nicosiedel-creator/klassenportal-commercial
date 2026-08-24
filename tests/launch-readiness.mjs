@@ -36,7 +36,7 @@ assert.match(recoveryRouter,/SELECT id FROM memberships WHERE tenant_id=\? AND u
 assert.match(accountPage,/Aus Sicherheitsgründen zeigen wir nicht an/,'forgot-password UI must prevent account enumeration');
 
 assert.match(mail,/env\.EMAIL/,'transactional mail must use the native Cloudflare Email binding');
-assert.match(mail,/env\.EMAIL\.send/,'outbound messages must be sent through Cloudflare Email Service');
+assert.match(mail,/env\.EMAIL!?\.send/,'outbound messages must be sent through Cloudflare Email Service');
 assert.match(mail,/MAIL_FROM/,'transactional mail must require an explicit verified sender');
 assert.match(mail,/APP_ORIGIN/,'action links must use the configured production origin');
 assert.match(mail,/assertEuSafeMail/,'mail sending must fail closed when mail/origin policy is not met');
