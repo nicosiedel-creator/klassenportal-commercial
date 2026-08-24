@@ -13,10 +13,14 @@
   ],
   "vars": {
     "APP_ORIGIN": "https://klassenportal.app",
-    "MAIL_PROVIDER": "brevo",
     "MAIL_FROM": "Klassenportal <noreply@klassenportal.app>",
     "PAYMENTS_ENABLED": "false"
   },
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
   "build": {
     "command": "node scripts/workers-ci-guard.mjs"
   },
