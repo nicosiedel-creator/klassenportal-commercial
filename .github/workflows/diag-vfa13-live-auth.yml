@@ -14,33 +14,30 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Probe live VFA13 auth runtime
+      - name: Probe active VFA13 production deployment and canonical host
         shell: bash
         run: |
           set -euo pipefail
-          base='https://vfa13-klassenportal.pages.dev'
-          call(){
-            label="$1"; shift
-            echo "=== $label ==="
-            : >/tmp/h; : >/tmp/b
-            code=$(curl -sS --max-time 20 -D /tmp/h -o /tmp/b -w '%{http_code}' "$@" || true)
-            echo "HTTP=$code"
-            tr -d '\r' </tmp/h | grep -Ei '^(content-type|x-vfa13-upgrade|cf-ray|server|retry-after|etag|cache-control):' || true
-            cat /tmp/b; echo; echo
-          }
-          call health "$base/api/v2/health"
-          call public "$base/api/v2/public"
-          call challenge "$base/api/v2/auth/challenge?login=diag-vfa13-20260824@example.invalid"
-          call invalid-proof -X POST -H 'content-type: application/json' -H "origin: $base" --data '{"display_name":"VFA Diagnose","email":"diag-vfa13-20260824@example.invalid","password_salt":"AAAAAAAAAAAAAAAAAAAAAA","password_proof":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","kdf_iterations":120000}' "$base/api/v2/auth/register"
-          call legacy-calendar "$base/api/calendar?from=2026-08-24&to=2026-08-31"
-          echo '=== LIVE AUTH ASSET ==='
-          curl -fsS --max-time 20 "$base/v2-embed.js?diag=20260824" -o /tmp/v2.js
-          echo "bytes=$(wc -c </tmp/v2.js) sha=$(sha256sum /tmp/v2.js | awk '{print $1}')"
-          grep -oE '20260824-[0-9]+' /tmp/v2.js | sort -u || true
-          grep -oE 'pattern="[^"]+"' /tmp/v2.js | head -20 || true
-          grep -oE 'minlength="[^"]+"' /tmp/v2.js | sort -u || true
-          grep -nE 'Passwort|validSelfPassword|password_confirm|auth/challenge' /tmp/v2.js | head -20 || true
-          echo '=== LIVE ROOT REFERENCES ==='
-          curl -fsS --max-time 20 "$base/?diag=20260824" -o /tmp/root.html
-          grep -oE 'v2-embed\.js[^"< ]*' /tmp/root.html | head -5 || true
-          grep -oE 'sw\.js[^"< ]*' /tmp/root.html | head -5 || true
+          for base in 'https://0e6fb4b7.vfa13-klassenportal.pages.dev' 'https://vfa13-klassenportal.pages.dev'; do
+            echo "##### BASE $base #####"
+            for path in '/api/v2/health' '/api/v2/public'; do
+              echo "=== $path ==="
+              : >/tmp/h; : >/tmp/b
+              code=$(curl -sS --max-time 20 -D /tmp/h -o /tmp/b -w '%{http_code}' "$base$path" || true)
+              echo "HTTP=$code"
+              tr -d '\r' </tmp/h | grep -Ei '^(content-type|x-vfa13-upgrade|cf-ray|server|etag|cache-control):' || true
+              head -c 400 /tmp/b; echo; echo
+            done
+            echo '=== v2-embed.js ==='
+            curl -fsS --max-time 20 "$base/v2-embed.js?diag=20260824-0912" -o /tmp/v2.js
+            echo "bytes=$(wc -c </tmp/v2.js) sha=$(sha256sum /tmp/v2.js | awk '{print $1}')"
+            echo 'release markers:'
+            grep -oE '20260824-[0-9]+' /tmp/v2.js | sort -u || true
+            echo 'patterns:'
+            grep -oE 'pattern="[^"]+"' /tmp/v2.js | head -20 || true
+            echo 'minlengths:'
+            grep -oE 'minlength="[^"]+"' /tmp/v2.js | sort -u || true
+            echo 'auth markers:'
+            grep -nE 'auth/challenge|password_proof|password_confirm|validSelfPassword|pattern=' /tmp/v2.js | head -30 || true
+            echo
+          done
