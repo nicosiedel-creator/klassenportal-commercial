@@ -15,7 +15,12 @@
     "APP_ORIGIN": "https://klassenportal.app",
     "MAIL_FROM": "Klassenportal <noreply@klassenportal.app>",
     "INBOUND_MAIL_DOMAIN": "klassenportal.app",
-    "PAYMENTS_ENABLED": "false"
+    "PAYMENTS_ENABLED": "false",
+    "DATA_RESIDENCY_MODE": "eu_strict",
+    "EU_D1_JURISDICTION_ATTESTED": "true",
+    "EU_R2_JURISDICTION_ATTESTED": "true",
+    "EU_BACKUP_STORAGE_ATTESTED": "false",
+    "EU_STORAGE_MIGRATION_REQUIRED": "true"
   },
   "send_email": [
     {
@@ -66,13 +71,18 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "klassenportal-commercial",
-      "database_id": "beaf2c0a-d671-4468-a989-b9932c48f43f"
+      "database_name": "klassenportal-commercial-eu",
+      "database_id": "a060de73-a4f6-4410-b4f2-25f5bee87754"
     }
   ],
   "r2_buckets": [
     {
       "binding": "FILES",
+      "bucket_name": "klassenportal-commercial-files-eu",
+      "jurisdiction": "eu"
+    },
+    {
+      "binding": "LEGACY_FILES",
       "bucket_name": "klassenportal-commercial-files"
     }
   ],

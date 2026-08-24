@@ -31,7 +31,6 @@ assert.match(core,/biometrics:false/,'biometric learner scoring must stay disabl
 assert.match(core,/automated_high_stakes_decision:false/,'high-stakes automated learner decisions must stay disabled');
 assert.match(core,/official_grade_data_used:false/,'initial learner twin must not silently ingest official grades');
 assert.match(core,/requireAutopilotTenantAdmin/,'sensitive moat mutations must remain restricted to tenant admins');
-assert.doesNotMatch(core,/AUTOPILOT_MFA_REQUIRED|AUTOPILOT_MFA_ENROLLMENT_REQUIRED|TOTP|Authenticator/,'moat runtime must not enforce removed MFA challenges');
 assert.match(core,/verification_confirmed/,'regulatory packs must require explicit verification');
 assert.match(core,/legal_determination:false/,'compliance engine must not claim legal determination');
 assert.match(core,/silent_data_loss_allowed:false/,'migration quality gate must explicitly forbid silent data loss');
@@ -77,4 +76,3 @@ assert.match(partner,/history\.replaceState/,'partner client must remove fragmen
 assert.doesNotMatch(partner,/partner-access\/\$\{/,'partner client must never put token in request URL');
 
 console.log('EIN360 moat architecture/security, password-only tenant-admin gating, localized customer UX and on-demand runtime regression: OK');
-

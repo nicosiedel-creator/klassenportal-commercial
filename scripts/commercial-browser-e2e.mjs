@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 
-const base=(process.env.COMMERCIAL_BASE_URL||'https://klassenportal-commercial.nicosiedel.workers.dev').replace(/\/$/,'');
+const base=(process.env.COMMERCIAL_BASE_URL||'https://klassenportal.app').replace(/\/$/,'');
 const adminEmail=String(process.env.E2E_PLATFORM_EMAIL||'').trim();
 const adminPassword=String(process.env.E2E_PLATFORM_PASSWORD||'');
 const fail=(msg)=>{throw new Error(msg);};
@@ -11,7 +11,6 @@ const pageErrors=[];page.on('pageerror',e=>pageErrors.push(String(e)));
 async function route(path,{allowStatuses=[200]}={}){
   const response=await page.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});
   if(!response)fail(`No response for ${path}`);
-  if(response.status()>=500)fail(`${path} returned ${response.status()}`);
   if(!allowStatuses.includes(response.status()))fail(`${path} returned unexpected ${response.status()}`);
   const text=(await page.locator('body').innerText()).slice(0,5000);
   if(/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`${path} rendered a Cloudflare/server error`);
@@ -20,16 +19,22 @@ async function route(path,{allowStatuses=[200]}={}){
 }
 
 try{
-  for(const path of ['/produkt','/plattform-admin','/kunden-admin','/dozentenportal']) await route(path);
+  await route('/plattform-admin');
+  for(const path of ['/produkt','/kunden-admin','/dozentenportal']){
+    const text=await route(path,{allowStatuses:[503]});
+    if(!/noch nicht für den Produktivbetrieb freigegeben/i.test(text))fail(`${path} did not render the fail-closed version gate`);
+  }
 
   const health=await page.request.get(base+'/api/public/product');
-  if(health.status()>=500)fail(`/api/public/product returned ${health.status()}`);
+  if(health.status()!==503)fail(`/api/public/product must remain release-locked, got ${health.status()}`);
   const invitation=await page.request.get(base+'/api/platform/onboarding-invitations');
   if(![401,403].includes(invitation.status()))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status()}`);
   const invalidOffer=await page.request.get(base+'/api/offers/browser-e2e-invalid-token');
-  if(![400,404,410].includes(invalidOffer.status()))fail(`invalid offer token must fail closed, got ${invalidOffer.status()}`);
+  if(invalidOffer.status()!==503)fail(`invalid offer token must remain release-locked, got ${invalidOffer.status()}`);
   const fakeSetup=await page.request.get(base+'/api/onboarding/browser-e2e-invalid-token');
-  if(![400,404,410].includes(fakeSetup.status()))fail(`invalid onboarding token must fail closed, got ${fakeSetup.status()}`);
+  if(fakeSetup.status()!==503)fail(`invalid onboarding token must remain release-locked, got ${fakeSetup.status()}`);
+  const frozenWebhook=await page.request.post(base+'/api/payments/stripe/webhook',{data:{}}),frozenWebhookBody=await frozenWebhook.json();
+  if(frozenWebhook.status()!==200||frozenWebhookBody?.ignored!==true||frozenWebhookBody?.paymentProcessing!=='disabled')fail('payment webhook did not remain side-effect-free while production is locked');
 
   if(adminEmail&&adminPassword){
     await route('/plattform-admin');

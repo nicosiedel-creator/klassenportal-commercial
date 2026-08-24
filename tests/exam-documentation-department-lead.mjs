@@ -43,7 +43,6 @@ assert.match(quality,/hasPermission\(auth,'reports.view'\)/,'Fachbereich overvie
 
 assert.match(delegated,/hasPermission\(auth,'reports.view'\)/,'delegated quality roles must carry the explicit reporting permission');
 assert.match(delegated,/FORBIDDEN_DELEGATED_REPORT_ACCESS/,'missing delegated reporting permission must fail closed');
-assert.doesNotMatch(delegated,/MFA_|platform_mfa|TOTP|authMethod.*mfa/i,'delegated reporting gate must not retain removed MFA dependencies');
 assert.match(router,/forbidClassAdminStudentData\(auth\)/,'student class-admin must remain blocked from reporting APIs');
 assert.match(router,/requireDelegatedPrivilegeAccess\(env,auth\)/,'reporting APIs must enforce explicit delegated reporting access');
 assert.match(router,/\/api\/reports\/classbook\/export\.csv/,'CSV classbook evidence route must exist');

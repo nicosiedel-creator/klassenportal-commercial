@@ -31,7 +31,7 @@ Das System behauptet keine absolute Unverwundbarkeit. Sicherheitsziel ist ein ko
 
 ### Plattformadmin – kein Ersatz-Kundenadmin
 - Kann die Plattform betreiben, ist aber **ausdrücklich kein Ersatz-Kundenadmin im Autopiloten**.
-- `requireAutopilotTenantAdminMfa` blockiert Plattformadmin als Tenant-Autopilot-Akteur.
+- `requireAutopilotTenantAdmin` blockiert Plattformadmin als Tenant-Autopilot-Akteur.
 - Plattformadmin-UI wird durch Education OS nicht umgebaut.
 
 ## Datenminimierung im Live Education Twin
@@ -178,4 +178,3 @@ Vor einer echten Live-Freigabe bleiben reale End-to-End-Abnahmen erforderlich:
 - ggf. fachliche Validierung kundenspezifischer Kammer-/Prüfungsanforderungen
 
 Diese Punkte dürfen durch Unit-/Source-Regressionen nicht als „erledigt“ ausgegeben werden.
-

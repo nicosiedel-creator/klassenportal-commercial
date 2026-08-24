@@ -19,6 +19,17 @@ if(result.error){
 if((result.status??1)!==0)process.exit(result.status??1);
 
 if(branch===productionBranch){
+  console.log('Running the guarded one-time EU D1 cutover before production migrations...');
+  const cutover=spawnSync(process.execPath,['scripts/eu-d1-cutover.mjs'],{
+    stdio:'inherit',
+    env:{...process.env,WORKERS_CI_GUARD_ACTIVE:'1'},
+  });
+  if(cutover.error){
+    console.error('EU D1 cutover could not start.');
+    console.error(cutover.error.message);
+    process.exit(1);
+  }
+  if((cutover.status??1)!==0)process.exit(cutover.status??1);
   console.log('Applying guarded remote D1 migrations before production Worker deployment...');
   const migration=spawnSync(npm,['run','db:migrate'],{
     stdio:'inherit',

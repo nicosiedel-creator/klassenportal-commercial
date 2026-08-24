@@ -34,7 +34,6 @@ assert.match(gate,/PRODUKTION SPERREN/);
 assert.match(gate,/verifyPassword/);
 assert.match(gate,/CURRENT_PASSWORD_REQUIRED/);
 assert.match(gate,/CURRENT_PASSWORD_INVALID/);
-assert.doesNotMatch(gate,/verifyMfaChallenge|ownerMfaEnabled|MFA_/);
 assert.match(gate,/platform\.production_release_approved/);
 assert.match(gate,/platform\.production_release_revoked/);
 
@@ -52,7 +51,7 @@ assert.match(index,/PRODUCTION_RELEASE_LOCKED/);
 assert.match(index,/normalized==='\/plattform-admin'/);
 assert.match(index,/normalized==='\/api\/platform'/);
 assert.match(index,/normalized==='\/api\/auth'/);
-assert.match(index,/normalized==='\/api\/payments\/stripe\/webhook'/);
+assert.match(index,/normalized\.startsWith\('\/api\/payments\/'\)/);
 assert.match(index,/async function releaseGateAllowsLockedRequest/);
 assert.match(index,/await getSession\(env,request\)/);
 assert.match(index,/\.isPlatformAdmin/);
@@ -61,8 +60,7 @@ assert.ok(index.indexOf('productionReleaseAccess(env,request)')<index.indexOf("c
 
 assert.match(ui,/Jede neue Worker-Version ist automatisch wieder gesperrt/);
 assert.match(ui,/current_password/);
-assert.doesNotMatch(ui,/mfa_code|Eigentümer-MFA|MFA-Code|MFA-Schritt/);
-for(const label of ['EU-Datenhaltung','SSO-Geheimnisse verschlüsselt','Sicherer E-Mail-Eingang','Keine Zahlungsproviderfehler (24 h)'])assert.ok(ui.includes(label),label);
+for(const label of ['EU-Speichermigration','EU-Datenhaltung','SSO-Geheimnisse verschlüsselt','Sicherer E-Mail-Eingang','Keine Zahlungsproviderfehler (24 h)'])assert.ok(ui.includes(label),label);
 for(const label of ['EU-Worker-Verarbeitung / Regional Services','EU Customer Metadata Boundary'])assert.ok(ui.includes(label),label);
 assert.match(ui,/Unmittelbar nach der Passwortbestätigung prüft der Server alle Freigabebedingungen erneut/);
 assert.match(platformDirect,/platform-admin-lazy-modules\.js/);

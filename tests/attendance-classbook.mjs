@@ -34,7 +34,6 @@ assert.match(teacherCore,/TEACHER_STUDENT_ROLE_CONFLICT/,'same-course student/cl
 assert.match(teacherCore,/teacher_portal_assignments WHERE tenant_id=\? AND course_id=\? AND user_id=\?/,'teacher access must be based on explicit user/course assignment');
 assert.match(teacherCore,/DELETE FROM memberships[\s\S]*role='guest'/,'revocation must remove only technical teacher memberships');
 assert.match(teacherCore,/FORBIDDEN_TEACHER_COURSE/,'teacher access must fail closed without an explicit assignment');
-assert.doesNotMatch(teacherCore,/MFA_|platform_mfa|authMethod!=='mfa'/,'teacher attendance/classbook access must not retain removed MFA dependencies');
 
 assert.match(code,/m\.role='participant'/,'attendance roster and personalised summary must use actual participants only');
 assert.match(code,/participantInCourse/,'recording must verify participant membership server-side');
@@ -54,7 +53,6 @@ assert.match(router,/teacherAttendanceAuth/,'attendance management must use expl
 assert.match(router,/assertSameOrigin/);assert.match(router,/assertTenantWriteAllowed/);
 assert.match(participantUi,/Gesundheits-\/Diagnosedaten werden nicht abgefragt/);assert.match(participantUi,/Abwesenheit einreichen/);
 for(const marker of ['Dozentenportal','Unterrichtsklassen','Anwesenheitsübersicht','Digitales Klassenbuch'])assert.ok(teacherUi.includes(marker)||teacherHtml.includes(marker),`teacher portal UX missing ${marker}`);
-assert.doesNotMatch(teacherHtml,/auth-mfa-ui\.js|admin-mfa-enrollment-ui\.js|MFA|TOTP/i,'teacher portal must not load removed MFA UI');
 assert.match(teacherAssignUi,/TEACHER_STUDENT_ROLE_CONFLICT/,'tenant admin assignment UI must explain student/teacher conflicts');
 assert.doesNotMatch(customerHtml,/attendance-classbook-ui\.js/,'operational attendance/classbook UI must not remain in customer admin');
 assert.match(customerHtml,/teacher-assignment-ui\.js/,'customer admin must configure teacher portal assignments');

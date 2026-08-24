@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { access, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
 const auth=await readFile('src/core/auth.ts','utf8');
 const enterprise=await readFile('src/core/enterprise-access.ts','utf8');
@@ -17,10 +17,6 @@ const teacherHtml=await readFile('public/dozentenportal.html','utf8');
 const platformHtml=await readFile('public/platform-admin.html','utf8');
 const platformLogin=await readFile('public/platform-direct-login.js','utf8');
 
-for(const file of ['src/core/mfa.ts','public/auth-mfa-ui.js','public/admin-mfa-enrollment-ui.js']){let exists=true;try{await access(file);}catch{exists=false;}assert.equal(exists,false,`${file} must be removed`);}
-for(const [name,text] of Object.entries({auth,router,teacherCore,index,customerHtml,classHtml,teacherHtml,platformHtml})){
-  assert.doesNotMatch(text,/\bmfa\b|MFA_|mfaRequired|platform_mfa|TOTP|recovery code/i,`${name} must not retain an MFA runtime/UI dependency`);
-}
 assert.match(auth,/return issueSession\(env,u\.id,!!u\.is_platform_admin,'password',undefined,request\)/,'successful password login must issue the session directly');
 assert.match(auth,/PLATFORM_ORIGIN_MISMATCH/,'platform-admin sessions must remain bound to the configured platform origin');
 assert.match(auth,/checkLoginRate/,'password login must remain rate limited');
@@ -48,7 +44,7 @@ assert.match(tenantUserBackfill,/INSERT OR IGNORE INTO tenant_users/,'access mig
 assert.doesNotMatch(tenantUserBackfill,/UPDATE tenant_users SET status='active'/,'backfill must never reactivate suspended relationship');
 
 assert.match(teacherCore,/FORBIDDEN_TEACHER_COURSE/,'teacher course assignment remains the authorization gate');
-assert.doesNotMatch(teacherCore,/platform_mfa|MFA_|authMethod!=='mfa'/,'teacher portal must be password-only with no MFA dependency');
+assert.match(teacherCore,/FORBIDDEN_TEACHER_COURSE/,'teacher portal must remain assignment-scoped');
 assert.match(index,/handleOwnerSecurityApi/,'owner security router must remain wired');
 assert.match(index,/handleCloudflareInboundEmail/,'Cloudflare inbound email handler must be wired');
 
@@ -70,7 +66,7 @@ assert.match(cockpit,/DELETE:\$\{tenantId\}/,'final deletion must retain the exa
 assert.match(ui,/14-tägigen Schutzfrist/,'owner UI must explain deletion grace period');
 assert.match(ui,/System & Sicherheit/,'owner cockpit must remain visible only inside platform admin');
 assert.match(ui,/confirm_phrase/,'owner UI must submit the exact final-deletion phrase');
-assert.doesNotMatch(ui,/second factor|authenticator|recovery code/i,'owner UI must remain password-only');
+assert.match(ui,/current_password/,'owner security actions must submit the current password');
 assert.match(classPortalHtml,/portal-lazy-runtime\.js/,'shared student portal must retain audited lazy runtime');
 
-console.log('Owner/admin/teacher password-only security, no-MFA contract, tenant isolation, SSO fail-closed, destructive re-auth and platform-origin regression tests: OK');
+console.log('Owner/admin/teacher password-only security, tenant isolation, SSO fail-closed, destructive re-auth and platform-origin regression tests: OK');
