@@ -15,7 +15,7 @@ export async function renderLegalDocument(env:Env,kind:Kind):Promise<Response>{
   }
   if(kind==='unterauftragsverarbeiter'){
     html=html.replace(/<tr><td><strong>Cloudflare, Inc\.<\/strong>[\s\S]*?<\/tr>/,`<tr><td><strong>Cloudflare, Inc.</strong></td><td>Cloud-/Edge-Infrastruktur, Worker-Ausführung, Datenbank-/Objektspeicher, Netzwerksicherheit, Bereitstellung.</td><td>${euStorageText(env)}</td><td>Auftrags-/Unterauftragsverarbeiter für Kundendaten je nach Dienst.</td></tr>`);
-    html=html.replace(/<tr><td><strong>[^<]+<\/strong>[\s\S]*?<td>Transaktions-E-Mail:[\s\S]*?<\/tr>/,providerRow(env));
+    html=html.replace(/<tr><td><strong>[^<]+<\/strong>(?:(?!<\/tr>)[\s\S])*?<td>Transaktions-E-Mail:(?:(?!<\/tr>)[\s\S])*?<\/tr>/,providerRow(env));
   }
   if(kind==='avv')html=html.replace(/<h2>12\. Rückgabe und Löschung<\/h2>/,`<h2>11a. EU-first Datenstandort und Drittlandminimierung</h2><p>Der Dienst ist technisch auf EU-first Speicherung ausgelegt. Die produktive Freigabe erfolgt im EU-strikten Modus erst, wenn die EU-Jurisdiktion für Datenbank, Dokument-/Dateispeicher und Backups verifiziert ist. Für E-Mail-Dienste wird keine ausschließliche EU-Verarbeitung zugesichert; etwaige internationale Übermittlungen werden transparent ausgewiesen und nach den anwendbaren Garantien behandelt. Zahlungsdienstleister erhalten keine fachlichen Teilnehmer-, Anwesenheits-, Leistungs- oder Vertragsdokumentdaten, soweit dies für die Zahlungsabwicklung nicht erforderlich ist.</p><h2>12. Rückgabe und Löschung</h2>`);
   return new Response(html,{status:base.status,headers:base.headers});
