@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 const offers=await readFile('src/core/platform-offers.ts','utf8');
 const offerLinks=await readFile('src/core/platform-offer-links.ts','utf8');
 const offerRouter=await readFile('src/core/platform-offer-router.ts','utf8');
+const offerMail=await readFile('src/core/platform-offer-mail.ts','utf8');
+const onboardingMail=await readFile('src/core/platform-onboarding-mail.ts','utf8');
 const offerAdminPreview=await readFile('src/core/platform-offer-admin-preview.ts','utf8');
 const offerSchema=await readFile('src/core/offer-schema.ts','utf8');
 const accepted=await readFile('src/core/accepted-offer-fulfillment.ts','utf8');
@@ -32,8 +34,15 @@ assert.match(offers,/terms_version,dpa_version,privacy_version/,'offer acceptanc
 assert.match(offers,/sha256Text\(raw\)/,'public offer tokens must be stored as hashes');
 assert.match(offerLinks,/publicLegal\(env\)/,'publishing must require the integrated legal documents');
 assert.match(offerLinks,/public_token_hash/,'rotating an offer link must replace the stored hash');
+assert.match(offerLinks,/new URL\(request\.url\)\.origin/,'published offer links must use the active request origin instead of a stale configured preview host');
 assert.match(offerRouter,/ensureOfferSchema\(env\)/,'offer API must self-heal a lagging D1 offer schema');
 assert.match(offerRouter,/admin-preview/,'offer API must expose an authenticated admin preview route');
+assert.match(offerRouter,/deliverPublishedPlatformOffer/,'creating and publishing an offer must automatically attempt customer email delivery');
+assert.match(offerRouter,/deliverOnboardingLinkMail/,'accepting an offer must automatically attempt onboarding-link email delivery');
+assert.match(offerRouter,/mailReady:mailConfigured\(env\)/,'offer manager must expose transactional-mail readiness rather than silently pretending a link was sent');
+assert.match(offerMail,/email_sent/,'automatic offer mail delivery must leave a durable delivery event');
+assert.match(offerMail,/MAIL_PROVIDER_NOT_CONFIGURED/,'automatic delivery must expose an unconfigured provider as an explicit failure');
+assert.match(onboardingMail,/Klassenportal jetzt einrichten/,'onboarding mail must contain the actual setup link');
 assert.match(offerAdminPreview,/getPlatformOffer\(env,auth,quoteId\)/,'admin preview must require the existing platform-admin authorization path');
 assert.doesNotMatch(offerAdminPreview,/public_token_hash|publicUrl|sha256Text/,'admin preview must never expose or regenerate the public offer secret');
 assert.match(offerSchema,/PRAGMA table_info\(\$\{table\}\)/,'offer schema guard must verify real columns before adding them');
@@ -56,7 +65,9 @@ assert.match(stripe,/price_data.*unit_amount/s,'individual offer prices must use
 assert.match(stripe,/MANUAL_OFFER_PRICE_INVALID/,'invalid custom Stripe prices must fail closed');
 assert.doesNotMatch(stripe,/payment_method_types/,'payment methods must not be hardcoded');
 
-for(const marker of ['Individueller Monatspreis','Rabatt auf laufenden Preis','Kostenloser Pilot / Testbetrieb','Als Entwurf speichern','Angebot erstellen & freigeben'])assert.ok(ownerUi.includes(marker),`owner offer UI missing: ${marker}`);
+for(const marker of ['Individueller Monatspreis','Rabatt auf laufenden Preis','Kostenloser Pilot / Testbetrieb','Als Entwurf speichern','Angebot erstellen & senden'])assert.ok(ownerUi.includes(marker),`owner offer UI missing: ${marker}`);
+assert.match(ownerUi,/E-Mailversand ist fehlgeschlagen/,'owner UI must surface automatic email failures instead of silently claiming the offer was sent');
+assert.match(ownerUi,/Freigeben & senden/,'publishing a draft must explicitly include delivery');
 assert.match(adminPreviewUi,/admin_offer/,'offer detail PDF action must open the authenticated admin preview');
 assert.match(platformLoginUi,/platform-admin-lazy-modules\.js/,'platform admin bootstrap must install the lazy module controller');
 assert.match(platformLazy,/offers:\['platform-offers-ui','platform-offer-admin-preview-ui','platform-offer-accepted-link-ui'/,'offer manager and secure preview helper must remain available on demand');
@@ -70,4 +81,4 @@ assert.match(publicUi,/confirm_dpa/,'public acceptance must affirmatively incorp
 assert.ok(wrangler.includes('"/angebot/*"')&&index.includes("/^\\/angebot\\/[^/]+\\/?$/"),'clean public offer URLs must be routed through the Worker');
 for(const col of ['monthly_override_cents','recurring_discount_cents','public_token_hash','accepted_terms','accepted_dpa'])assert.ok(migration.includes(col),`offer migration missing ${col}`);
 
-console.log('Platform offer, custom pricing, discount, safe-pilot and lazy preview checks: OK');
+console.log('Platform offer, automatic link delivery, custom pricing, safe-pilot and lazy preview checks: OK');
