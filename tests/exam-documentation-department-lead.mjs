@@ -41,11 +41,11 @@ assert.ok(!quality.includes('LEFT JOIN exams'),'exam rows must not multiply clas
 assert.match(quality,/SELECT MIN\(e.starts_at\) FROM exams/,'next exam must be a correlated aggregate');
 assert.match(quality,/hasPermission\(auth,'reports.view'\)/,'Fachbereich overview requires reporting access');
 
-assert.match(delegated,/MFA_ENROLLMENT_REQUIRED/,'delegated quality roles must enroll MFA');
-assert.match(delegated,/MFA_REQUIRED/,'delegated quality roles must use an MFA-authenticated session');
-assert.match(delegated,/method==='oidc'/,'tenant OIDC sessions may satisfy delegated strong authentication');
+assert.match(delegated,/hasPermission\(auth,'reports.view'\)/,'delegated quality roles must carry the explicit reporting permission');
+assert.match(delegated,/FORBIDDEN_DELEGATED_REPORT_ACCESS/,'missing delegated reporting permission must fail closed');
+assert.doesNotMatch(delegated,/MFA_|platform_mfa|TOTP|authMethod.*mfa/i,'delegated reporting gate must not retain removed MFA dependencies');
 assert.match(router,/forbidClassAdminStudentData\(auth\)/,'student class-admin must remain blocked from reporting APIs');
-assert.match(router,/requireDelegatedPrivilegeMfa\(env,auth\)/,'reporting APIs must enforce strong authentication for delegated roles');
+assert.match(router,/requireDelegatedPrivilegeAccess\(env,auth\)/,'reporting APIs must enforce explicit delegated reporting access');
 assert.match(router,/\/api\/reports\/classbook\/export\.csv/,'CSV classbook evidence route must exist');
 assert.match(router,/\/api\/reports\/classbook\/export\.html/,'print/PDF classbook evidence route must exist');
 assert.match(router,/\/api\/reports\/department\/overview/,'Fachbereich quality route must exist');
@@ -73,4 +73,4 @@ assert.match(customerLazy,/department-lead-admin-ui/,'customer admin must make F
 assert.doesNotMatch(customerHtml,/src="\/exam-documentation-admin-ui\.js/,'exam documentation must not regress to eager loading');
 assert.doesNotMatch(customerHtml,/src="\/department-lead-admin-ui\.js/,'Fachbereich management must not regress to eager loading');
 
-console.log('Examination documentation and Fachbereich privacy/lazy-loading checks: OK');
+console.log('Examination documentation and delegated Fachbereich privacy/access checks: OK');
