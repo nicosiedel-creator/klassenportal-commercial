@@ -1,4 +1,4 @@
-name: VFA13 redirect probe
+name: VFA13 v2 runtime probe
 
 on:
   pull_request:
@@ -14,22 +14,21 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Trace VFA13 redirects
+      - name: Probe current VFA13 V2 endpoints
         shell: bash
         run: |
           set -euo pipefail
-          for url in \
-            'https://vfa13-klassenportal.pages.dev/' \
-            'https://vfa13-klassenportal.pages.dev/index.html' \
-            'https://vfa13-klassenportal.pages.dev/v2' \
-            'https://vfa13-klassenportal.pages.dev/api/calendar?from=2026-08-01&to=2026-09-30' \
-            'https://8ec05961.vfa13-klassenportal.pages.dev/' \
-            'https://8ec05961.vfa13-klassenportal.pages.dev/api/calendar?from=2026-08-01&to=2026-09-30'; do
-            echo "=== $url ==="
-            curl -sS --max-time 20 --max-redirs 0 -D - -o /tmp/body "$url" || true
-            echo "BODY_BYTES=$(wc -c < /tmp/body 2>/dev/null || echo 0)"
-            head -c 220 /tmp/body 2>/dev/null | tr '\n\r\t' ' ' || true
-            echo; echo
+          base='https://vfa13-klassenportal.pages.dev'
+          for path in '/api/v2/health' '/api/v2/public' '/api/calendar?from=2026-08-01&to=2026-09-30'; do
+            echo "=== GET $path ==="
+            curl -sS --max-time 20 -D /tmp/h -o /tmp/b -w 'HTTP=%{http_code}\n' "$base$path" || true
+            tr -d '\r' < /tmp/h | grep -Ei '^(content-type|x-vfa13-upgrade|x-vfa13-legacy-proxy|retry-after):' || true
+            cat /tmp/b; echo; echo
           done
-          echo '=== FOLLOW ROOT ==='
-          curl -sS -L --max-time 30 --max-redirs 12 -D - -o /tmp/follow -w '\nFINAL=%{url_effective} CODE=%{http_code} REDIRS=%{num_redirects}\n' 'https://vfa13-klassenportal.pages.dev/' || true
+          echo '=== REGISTER validation probe (no account creation expected) ==='
+          curl -sS --max-time 20 -D /tmp/h -o /tmp/b -w 'HTTP=%{http_code}\n' \
+            -H 'content-type: application/json' \
+            --data '{"display_name":"x","email":"not-an-email","password":"x","password_confirm":"y"}' \
+            "$base/api/v2/auth/register" || true
+          tr -d '\r' < /tmp/h | grep -Ei '^(content-type|x-vfa13-upgrade|retry-after):' || true
+          cat /tmp/b; echo
