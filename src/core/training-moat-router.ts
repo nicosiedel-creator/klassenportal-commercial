@@ -17,7 +17,7 @@ function fail(error:unknown){
   const code=String((error as Error)?.message||'TRAINING_MOAT_ERROR');
   let status=400;
   if(code==='UNAUTHENTICATED')status=401;
-  else if(code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code.includes('MFA_REQUIRED')||code.includes('MFA_ENROLLMENT_REQUIRED'))status=403;
+  else if(code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED'))status=403;
   else if(code.includes('NOT_FOUND'))status=404;
   else if(code.includes('TOO_MANY')||code.includes('TOO_LARGE'))status=413;
   else if(code.includes('VERIFICATION_REQUIRED')||code.includes('VERSION_REQUIRED')||code.includes('OFFICIAL_SOURCE_REQUIRED')||code.includes('NOT_ACTIVE'))status=409;
@@ -69,3 +69,4 @@ export async function handleTrainingMoatApi(request:Request,env:Env):Promise<Res
     return json({ok:false,error:'TRAINING_MOAT_ROUTE_NOT_FOUND'},404);
   }catch(error){return fail(error);}
 }
+

@@ -7,9 +7,11 @@ import { createTaxStripeCheckout, ensureTaxStripeCatalog } from './stripe-tax-bi
 import { stripeMode } from './stripe-mode.js';
 import { prepareStripeModeState, stripeModeStateSummary } from './stripe-mode-state.js';
 import { nowIso } from './utils.js';
+import { assertPaymentsEnabled } from './payment-policy.js';
 
 const STRIPE_API='https://api.stripe.com/v1';
 async function stripeCall(env:Env,method:'GET'|'POST',path:string,entries:Array<[string,unknown]>=[],idempotency?:string):Promise<Record<string,any>>{
+  assertPaymentsEnabled(env);
   if(!env.STRIPE_SECRET_KEY)throw new Error('STRIPE_NOT_CONFIGURED');
   const mode=stripeMode(env),p=new URLSearchParams();for(const [k,v] of entries)if(v!==null&&v!==undefined)p.append(k,String(v));
   let url=`${STRIPE_API}${path}`;if(method==='GET'&&p.toString())url+=`?${p}`;

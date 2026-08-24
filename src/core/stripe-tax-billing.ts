@@ -4,6 +4,7 @@ import type { PriceCalculation } from './commerce.js';
 import { nowIso, safeString } from './utils.js';
 import { stripeMode } from './stripe-mode.js';
 import { persistStripeModeState, prepareStripeModeState } from './stripe-mode-state.js';
+import { assertPaymentsEnabled } from './payment-policy.js';
 
 type StripeObj=Record<string,any>;
 export type TaxCatalogRow={plan_id:string;billing_cycle:BillingCycle;currency:string;base_product_id:string;base_price_id:string;base_amount_cents:number;extra_product_id:string|null;extra_price_id:string|null;extra_amount_cents:number|null;tax_behavior:string;tax_code:string};
@@ -15,6 +16,7 @@ const TAX_BEHAVIOR='exclusive';
 function sid(v:any):string|null{return typeof v==='string'?v:v&&typeof v.id==='string'?v.id:null;}
 function params(entries:Array<[string,unknown]>):URLSearchParams{const p=new URLSearchParams();for(const [k,v] of entries)if(v!==undefined&&v!==null&&String(v)!=='')p.append(k,String(v));return p;}
 async function stripe(env:Env,method:'GET'|'POST',path:string,entries:Array<[string,unknown]>=[],idem?:string):Promise<StripeObj>{
+  assertPaymentsEnabled(env);
   if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)throw new Error('STRIPE_NOT_CONFIGURED');
   stripeMode(env);
   const p=params(entries);let url=`${API}${path}`;if(method==='GET'&&p.toString())url+=`?${p}`;

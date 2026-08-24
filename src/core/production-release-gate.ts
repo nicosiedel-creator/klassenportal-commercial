@@ -1,7 +1,6 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { audit } from './audit.js';
 import { verifyPassword } from './auth.js';
-import { createMfaChallenge, ownerMfaEnabled, verifyMfaChallenge } from './mfa.js';
 import { requirePlatform } from './permissions.js';
 import { productionReadiness } from './launch-readiness.js';
 import { currentWorkerVersion, ensureProductionReleaseSchema, productionOriginStatus } from './production-release-state.js';
@@ -9,13 +8,11 @@ import { nowIso } from './utils.js';
 
 type ApprovalRow={approved_at:string;approved_by:string;revoked_at:string|null;revoked_by:string|null};
 
-async function ownerStepUp(env:Env,auth:CoreAuthContext,password:unknown,mfaCode:unknown):Promise<void>{
+async function ownerStepUp(env:Env,auth:CoreAuthContext,password:unknown):Promise<void>{
   requirePlatform(auth);
   const current=String(password??'');if(!current)throw new Error('CURRENT_PASSWORD_REQUIRED');
   const user=await env.DB.prepare("SELECT password_hash FROM users WHERE id=? AND status='active' AND is_platform_admin=1").bind(auth.userId).first<{password_hash:string}>();
   if(!user||!(await verifyPassword(current,user.password_hash)))throw new Error('CURRENT_PASSWORD_INVALID');
-  if(!(await ownerMfaEnabled(env,auth.userId)))throw new Error('MFA_REQUIRED_FOR_PRODUCTION_RELEASE');
-  const challenge=await createMfaChallenge(env,auth.userId);await verifyMfaChallenge(env,challenge,mfaCode);
 }
 
 export async function releaseStateForOwner(env:Env,auth:CoreAuthContext){
@@ -31,7 +28,7 @@ export async function approveProductionRelease(env:Env,auth:CoreAuthContext,inpu
   const initialOrigin=productionOriginStatus(env);if(!initialOrigin.ok)throw new Error('PRODUCTION_ORIGIN_NOT_READY');
   const initialVersion=currentWorkerVersion(env);if(!initialVersion)throw new Error('WORKER_VERSION_METADATA_REQUIRED');
   const preflight=await productionReadiness(env,auth);if(!preflight.ready)throw new Error('PRODUCTION_NOT_READY');
-  await ownerStepUp(env,auth,input.current_password,input.mfa_code);
+  await ownerStepUp(env,auth,input.current_password);
   const origin=productionOriginStatus(env),version=currentWorkerVersion(env);if(!origin.ok||!version||origin.origin!==initialOrigin.origin||version.id!==initialVersion.id)throw new Error('PRODUCTION_RELEASE_STATE_CHANGED');
   const readiness=await productionReadiness(env,auth);if(!readiness.ready)throw new Error('PRODUCTION_NOT_READY_AFTER_STEP_UP');
   const ts=nowIso();
@@ -48,7 +45,7 @@ export async function revokeProductionRelease(env:Env,auth:CoreAuthContext,input
   requirePlatform(auth);await ensureProductionReleaseSchema(env);
   if(String(input.confirmation||'')!=='PRODUKTION SPERREN')throw new Error('PRODUCTION_LOCK_CONFIRMATION_REQUIRED');
   const origin=productionOriginStatus(env),version=currentWorkerVersion(env);if(!origin.ok||!version)throw new Error('PRODUCTION_RELEASE_STATE_UNAVAILABLE');
-  await ownerStepUp(env,auth,input.current_password,input.mfa_code);
+  await ownerStepUp(env,auth,input.current_password);
   const ts=nowIso(),result=await env.DB.prepare('UPDATE production_release_approvals SET revoked_at=?,revoked_by=? WHERE version_id=? AND app_origin=? AND revoked_at IS NULL').bind(ts,auth.userId,version.id,origin.origin).run();
   if(Number((result.meta as {changes?:number}|undefined)?.changes||0)!==1)throw new Error('PRODUCTION_RELEASE_NOT_ACTIVE');
   await audit(env.DB,auth.userId,'platform.production_release_revoked',undefined,undefined,'worker_version',version.id,{origin:origin.origin});

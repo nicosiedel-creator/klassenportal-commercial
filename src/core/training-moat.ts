@@ -5,7 +5,7 @@ import { personalLearningCompass } from './education-personal-compass.js';
 import { listMyAssignmentStates } from './assignment-participant-state.js';
 import { buildCourseProofGraph } from './education-proof-graph.js';
 import { stableStringify } from './education-twin.js';
-import { requireAutopilotTenantAdminMfa } from './autopilot-security.js';
+import { requireAutopilotTenantAdmin } from './autopilot-security.js';
 import { previewEducationIntent } from './education-intent.js';
 
 export const SUPPORTED_PORTAL_LOCALES = [
@@ -132,7 +132,7 @@ export async function listCompliancePrograms(env:Env,auth:CoreAuthContext,tenant
   return optionalRows(env,'SELECT * FROM tenant_compliance_programs WHERE tenant_id=? ORDER BY display_name',[tenantId]);
 }
 export async function upsertComplianceProgram(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
-  await requireAutopilotTenantAdminMfa(env,auth);
+  await requireAutopilotTenantAdmin(env,auth);
   const key=safeString(input.program_key,100),catalog=COMPLIANCE_PACK_CATALOG.find(x=>x.program_key===key);if(!catalog)throw new Error('COMPLIANCE_PROGRAM_INVALID');
   const status=String(input.status||'draft');if(!['draft','active','paused','retired'].includes(status))throw new Error('COMPLIANCE_PROGRAM_STATUS_INVALID');
   if(status==='active'&&input.verification_confirmed!==true)throw new Error('COMPLIANCE_RULE_VERIFICATION_REQUIRED');
@@ -149,7 +149,7 @@ export async function listComplianceRequirements(env:Env,auth:CoreAuthContext,te
   return optionalRows(env,sql,args);
 }
 export async function createComplianceRequirement(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
-  await requireAutopilotTenantAdminMfa(env,auth);
+  await requireAutopilotTenantAdmin(env,auth);
   const programKey=safeString(input.program_key,100),program=await env.DB.prepare("SELECT status,rules_version,source_reference FROM tenant_compliance_programs WHERE tenant_id=? AND program_key=?").bind(tenantId,programKey).first<Record<string,unknown>>();
   if(!program||String(program.status)!=='active')throw new Error('COMPLIANCE_PROGRAM_NOT_ACTIVE');
   const title=safeString(input.title,500);if(!title)throw new Error('COMPLIANCE_REQUIREMENT_TITLE_REQUIRED');
@@ -160,7 +160,7 @@ export async function createComplianceRequirement(env:Env,auth:CoreAuthContext,t
   return{id:requirementId,title,program_key:programKey,status:'open',source_reference:source||null};
 }
 export async function attachComplianceEvidence(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
-  await requireAutopilotTenantAdminMfa(env,auth);
+  await requireAutopilotTenantAdmin(env,auth);
   const requirementId=safeString(input.requirement_id,120);if(!requirementId)throw new Error('COMPLIANCE_REQUIREMENT_REQUIRED');
   const req=await env.DB.prepare('SELECT id,course_id,participant_user_id FROM compliance_requirements WHERE tenant_id=? AND id=?').bind(tenantId,requirementId).first<Record<string,unknown>>();if(!req)throw new Error('COMPLIANCE_REQUIREMENT_NOT_FOUND');
   const evidenceId=id('cev_'),ts=nowIso(),sourceType=safeString(input.source_type,80)||'document',sourceId=safeString(input.source_id,200)||null,sourceSha=safeString(input.source_sha256,128)||null;
@@ -199,7 +199,7 @@ export async function complianceOverview(env:Env,auth:CoreAuthContext,tenantId:s
   return{programs,summary:{requirements:requirements.length,fulfilled,readiness_percent:applicable?Math.round(fulfilled/applicable*1000)/10:100,open_findings:findings.length,high_findings:findings.filter(x=>['high','critical'].includes(String(x.severity))).length},findings,legal_notice:'Vollständigkeits-/Nachweisprüfung, keine automatische Rechts- oder Förderfähigkeitsentscheidung.'};
 }
 export async function createComplianceEvidencePackage(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,input:Record<string,unknown>){
-  await requireAutopilotTenantAdminMfa(env,auth);
+  await requireAutopilotTenantAdmin(env,auth);
   const graph=await buildCourseProofGraph(env,auth,tenantId,courseId,{from_date:input.from_date,to_date:input.to_date});
   const requirements=await optionalRows(env,`SELECT r.id,r.program_key,r.requirement_key,r.title,r.status,r.due_at,r.source_reference,
     (SELECT COUNT(*) FROM compliance_evidence e WHERE e.tenant_id=r.tenant_id AND e.requirement_id=r.id) evidence_count
@@ -234,7 +234,7 @@ export async function listPartnerGrants(env:Env,auth:CoreAuthContext,tenantId:st
   requireTenantAdmin(auth);return optionalRows(env,'SELECT id,partner_type,partner_name,partner_email,course_id,participant_user_id,capabilities_json,status,expires_at,created_at,revoked_at FROM partner_access_grants WHERE tenant_id=? ORDER BY created_at DESC',[tenantId]);
 }
 export async function createPartnerGrant(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
-  await requireAutopilotTenantAdminMfa(env,auth);
+  await requireAutopilotTenantAdmin(env,auth);
   const capabilities=validatePartnerCapabilities(input.capabilities),name=safeString(input.partner_name,300);if(!name)throw new Error('PARTNER_NAME_REQUIRED');
   const days=Math.max(1,Math.min(90,Number(input.expires_in_days||14))),expiresAt=new Date(Date.now()+days*86400000).toISOString(),token=await randomToken(),tokenHash=await sha256Text(token),grantId=id('pag_'),ts=nowIso();
   await env.DB.prepare('INSERT INTO partner_access_grants(id,tenant_id,partner_type,partner_name,partner_email,course_id,participant_user_id,capabilities_json,token_hash,status,expires_at,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,\'active\',?,?,?)')
@@ -242,7 +242,7 @@ export async function createPartnerGrant(env:Env,auth:CoreAuthContext,tenantId:s
   return{id:grantId,partner_name:name,capabilities,expires_at:expiresAt,access_token:token,token_shown_once:true};
 }
 export async function revokePartnerGrant(env:Env,auth:CoreAuthContext,tenantId:string,grantId:string){
-  await requireAutopilotTenantAdminMfa(env,auth);await env.DB.prepare("UPDATE partner_access_grants SET status='revoked',revoked_at=? WHERE tenant_id=? AND id=? AND status='active'").bind(nowIso(),tenantId,grantId).run();return{revoked:true};
+  await requireAutopilotTenantAdmin(env,auth);await env.DB.prepare("UPDATE partner_access_grants SET status='revoked',revoked_at=? WHERE tenant_id=? AND id=? AND status='active'").bind(nowIso(),tenantId,grantId).run();return{revoked:true};
 }
 export async function publicPartnerContext(env:Env,token:string){
   if(token.length<32||token.length>200)throw new Error('PARTNER_ACCESS_NOT_FOUND');const hash=await sha256Text(token),grant=await env.DB.prepare("SELECT * FROM partner_access_grants WHERE token_hash=? AND status='active' AND expires_at>?").bind(hash,nowIso()).first<Record<string,unknown>>();if(!grant)throw new Error('PARTNER_ACCESS_NOT_FOUND');
@@ -274,3 +274,4 @@ export async function actionCopilotPreview(env:Env,auth:CoreAuthContext,tenantId
   try{const preview=await previewEducationIntent(env,auth,tenantId,intent,input.context&&typeof input.context==='object'?input.context as Record<string,unknown>:{});if(preview.scenario_type)return{domain:'operations',action:'scenario',confidence:preview.confidence,preview,safety};}catch{}
   return{domain:'unknown',action:null,confidence:0,ambiguities:['Die Absicht kann noch keiner sicheren Aktion zugeordnet werden.'],safety};
 }
+

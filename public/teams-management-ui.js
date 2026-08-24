@@ -13,7 +13,7 @@ if(kpTeamsAdmin||kpTeamsTeacher){
     return (await api('/api/attendance/teacher/courses')).courses||[];
   }
   function normalizeCourse(c){return{tenant_id:String(c.tenant_id||tenantId()),course_id:String(c.course_id||c.id||''),course_name:String(c.course_name||c.name||'Klasse/Kurs')};}
-  function statusText(e){const code=String(e?.message||e||'');const map={MICROSOFT_CLIENT_ID_REQUIRED:'Microsoft 365 ist serverseitig noch nicht konfiguriert.',MICROSOFT_CLIENT_SECRET_REQUIRED:'Microsoft 365 ist serverseitig noch nicht vollständig konfiguriert.',TENANT_SECRETS_ENCRYPTION_KEY_REQUIRED:'Die sichere Tokenverschlüsselung ist noch nicht konfiguriert.',MFA_ENROLLMENT_REQUIRED:'Für Microsoft 365 muss zuerst MFA eingerichtet werden.',MFA_REQUIRED:'Bitte mit MFA anmelden und den Vorgang erneut starten.',MICROSOFT_ACCOUNT_NOT_CONNECTED:'Bitte zuerst Microsoft 365 verbinden.',MICROSOFT_REAUTH_REQUIRED:'Die Microsoft-Verbindung muss erneuert werden.'};return map[code]||code.replaceAll('_',' ');}
+  function statusText(e){const code=String(e?.message||e||'');const map={MICROSOFT_CLIENT_ID_REQUIRED:'Microsoft 365 ist serverseitig noch nicht konfiguriert.',MICROSOFT_CLIENT_SECRET_REQUIRED:'Microsoft 365 ist serverseitig noch nicht vollständig konfiguriert.',TENANT_SECRETS_ENCRYPTION_KEY_REQUIRED:'Die sichere Tokenverschlüsselung ist noch nicht konfiguriert.',MICROSOFT_ACCOUNT_NOT_CONNECTED:'Bitte zuerst Microsoft 365 verbinden.',MICROSOFT_REAUTH_REQUIRED:'Die Microsoft-Verbindung muss erneuert werden.'};return map[code]||code.replaceAll('_',' ');}
   async function openManager(initialCourse=''){
     let cs=(await courses()).map(normalizeCourse).filter(c=>c.tenant_id&&c.course_id);
     if(!cs.length){modal('Microsoft Teams','<div class="notice">Es ist keine für dich verwaltbare Klasse vorhanden.</div>');return;}
@@ -43,3 +43,4 @@ if(kpTeamsAdmin||kpTeamsTeacher){
   let queued=false;function install(){if(queued)return;queued=true;queueMicrotask(()=>{queued=false;installAdmin();installTeacher();});}
   new MutationObserver(install).observe(document.body,{subtree:true,childList:true});install();
 }
+

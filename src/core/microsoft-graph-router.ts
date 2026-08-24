@@ -10,7 +10,7 @@ async function body(request:Request):Promise<Record<string,unknown>>{try{return 
 function errorResponse(error:unknown):Response{
   const code=String((error as Error)?.message||'MICROSOFT_INTEGRATION_ERROR');
   const status=code==='UNAUTHENTICATED'?401
-    :code.startsWith('FORBIDDEN')||code.includes('MFA_')||code.includes('PERMISSION_REQUIRED')||code.includes('ORGANIZER_MISMATCH')?403
+    :code.startsWith('FORBIDDEN')||code.includes('STRONG_AUTH_REQUIRED')||code.includes('PERMISSION_REQUIRED')||code.includes('ORGANIZER_MISMATCH')?403
     :code.includes('NOT_FOUND')?404
     :code.includes('RATE_LIMITED')?429
     :code.includes('NOT_CONNECTED')||code.includes('REAUTH_REQUIRED')?409
@@ -26,7 +26,7 @@ function callbackHtml(ok:boolean,message:string):Response{
 async function createMeetingWithClassInvites(env:Env,auth:Awaited<ReturnType<typeof resolveCoreAuth>>,tenantId:string,courseId:string,lessonId:string){
   const meeting=await createOrSyncTeamsMeeting(env,auth,tenantId,courseId,lessonId);
   try{return{meeting,invitations:await syncCourseMeetingAttendees(env,auth,tenantId,courseId,lessonId)};}
-  catch(error){const code=String((error as Error)?.message||'MICROSOFT_CLASS_INVITE_FAILED');if(code.startsWith('FORBIDDEN')||code.includes('MFA_')||code.includes('ORGANIZER_MISMATCH'))throw error;return{meeting,invitations:{invited:null,hidden_attendees:true,warning:code}};}
+  catch(error){const code=String((error as Error)?.message||'MICROSOFT_CLASS_INVITE_FAILED');if(code.startsWith('FORBIDDEN')||code.includes('STRONG_AUTH_REQUIRED')||code.includes('ORGANIZER_MISMATCH'))throw error;return{meeting,invitations:{invited:null,hidden_attendees:true,warning:code}};}
 }
 
 export async function handleMicrosoftGraphApi(request:Request,env:Env):Promise<Response|null>{

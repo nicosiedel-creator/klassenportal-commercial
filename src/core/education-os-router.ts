@@ -11,10 +11,10 @@ import { listEducationRisks, scanTenantFutureRadar, updateRiskStatus } from './e
 import { listConsistencyFindings, scanTenantConsistency, updateConsistencyFinding } from './education-consistency.js';
 import { buildCourseProofGraph, createCourseProofPackage, getCourseProofPackage, listCourseProofPackages } from './education-proof-graph.js';
 import { computeCourseReadiness, computeTenantReadiness, captureCourseReadiness, readinessTrend } from './education-readiness.js';
-import { requireAutopilotTenantAdminMfa } from './autopilot-security.js';
+import { requireAutopilotTenantAdmin } from './autopilot-security.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(error:unknown){const code=String((error as Error)?.message||'EDUCATION_OS_ERROR');let status=400;if(code==='UNAUTHENTICATED')status=401;else if(code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code.includes('MFA_REQUIRED')||code.includes('MFA_ENROLLMENT_REQUIRED'))status=403;else if(code.includes('NOT_FOUND'))status=404;else if(code.includes('LOCKED')||code.includes('STALE')||code.includes('RESIMULATE')||code.includes('EXPIRED')||code.includes('APPROVAL_REQUIRED')||code.includes('PRECONDITION')||code.includes('RECOMMEND_ONLY')||code.includes('GUARDRAIL'))status=409;else if(code.includes('LIMIT'))status=413;return json({ok:false,error:code},status);}
+function fail(error:unknown){const code=String((error as Error)?.message||'EDUCATION_OS_ERROR');let status=400;if(code==='UNAUTHENTICATED')status=401;else if(code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED'))status=403;else if(code.includes('NOT_FOUND'))status=404;else if(code.includes('LOCKED')||code.includes('STALE')||code.includes('RESIMULATE')||code.includes('EXPIRED')||code.includes('APPROVAL_REQUIRED')||code.includes('PRECONDITION')||code.includes('RECOMMEND_ONLY')||code.includes('GUARDRAIL'))status=409;else if(code.includes('LIMIT'))status=413;return json({ok:false,error:code},status);}
 function scope(url:URL){const courseId=url.searchParams.get('course_id'),orgId=url.searchParams.get('org_unit_id');if(courseId)return{scope_type:'course' as const,scope_id:courseId};if(orgId)return{scope_type:'org' as const,scope_id:orgId};return{scope_type:'tenant' as const};}
 
 export async function handleEducationOsApi(request:Request,env:Env):Promise<Response|null>{
@@ -45,12 +45,12 @@ export async function handleEducationOsApi(request:Request,env:Env):Promise<Resp
     const rollback=path.match(/^\/api\/education-os\/executions\/([^/]+)\/rollback$/);if(rollback&&request.method==='POST')return json({ok:true,...await rollbackGuardedAutopilotExecution(env,auth,tenantId,decodeURIComponent(rollback[1]))});
 
     if(path==='/api/education-os/risks'&&request.method==='GET')return json({ok:true,risks:await listEducationRisks(env,auth,tenantId,url.searchParams.get('status')||'open')});
-    if(path==='/api/education-os/risks/scan'&&request.method==='POST'){await requireAutopilotTenantAdminMfa(env,auth);return json({ok:true,scan:await scanTenantFutureRadar(env,tenantId)});}
-    const risk=path.match(/^\/api\/education-os\/risks\/([^/]+)\/status$/);if(risk&&request.method==='PUT'){await requireAutopilotTenantAdminMfa(env,auth);const input=await body(request);return json({ok:true,...await updateRiskStatus(env,auth,tenantId,decodeURIComponent(risk[1]),String(input.status||''))});}
+    if(path==='/api/education-os/risks/scan'&&request.method==='POST'){await requireAutopilotTenantAdmin(env,auth);return json({ok:true,scan:await scanTenantFutureRadar(env,tenantId)});}
+    const risk=path.match(/^\/api\/education-os\/risks\/([^/]+)\/status$/);if(risk&&request.method==='PUT'){await requireAutopilotTenantAdmin(env,auth);const input=await body(request);return json({ok:true,...await updateRiskStatus(env,auth,tenantId,decodeURIComponent(risk[1]),String(input.status||''))});}
 
     if(path==='/api/education-os/consistency'&&request.method==='GET')return json({ok:true,findings:await listConsistencyFindings(env,auth,tenantId,url.searchParams.get('status')||'open')});
-    if(path==='/api/education-os/consistency/scan'&&request.method==='POST'){await requireAutopilotTenantAdminMfa(env,auth);return json({ok:true,scan:await scanTenantConsistency(env,tenantId)});}
-    const finding=path.match(/^\/api\/education-os\/consistency\/([^/]+)\/status$/);if(finding&&request.method==='PUT'){await requireAutopilotTenantAdminMfa(env,auth);const input=await body(request);return json({ok:true,...await updateConsistencyFinding(env,auth,tenantId,decodeURIComponent(finding[1]),String(input.status||''))});}
+    if(path==='/api/education-os/consistency/scan'&&request.method==='POST'){await requireAutopilotTenantAdmin(env,auth);return json({ok:true,scan:await scanTenantConsistency(env,tenantId)});}
+    const finding=path.match(/^\/api\/education-os\/consistency\/([^/]+)\/status$/);if(finding&&request.method==='PUT'){await requireAutopilotTenantAdmin(env,auth);const input=await body(request);return json({ok:true,...await updateConsistencyFinding(env,auth,tenantId,decodeURIComponent(finding[1]),String(input.status||''))});}
 
     if(path==='/api/education-os/proof'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');const input={from_date:url.searchParams.get('from_date'),to_date:url.searchParams.get('to_date')};return json({ok:true,graph:await buildCourseProofGraph(env,auth,tenantId,courseId,input)});}
     if(path==='/api/education-os/proof/packages'&&request.method==='GET'){if(!courseId)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,packages:await listCourseProofPackages(env,auth,tenantId,courseId)});}
@@ -60,3 +60,4 @@ export async function handleEducationOsApi(request:Request,env:Env):Promise<Resp
     return json({ok:false,error:'EDUCATION_OS_ROUTE_NOT_FOUND'},404);
   }catch(error){return fail(error);}
 }
+

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 const pkg=JSON.parse(await readFile('package.json','utf8'));
 const wrangler=await readFile('wrangler.jsonc','utf8');
 const guard=await readFile('scripts/workers-ci-guard.mjs','utf8');
-const workflows=await Promise.all(['build.yml','forced-password-flow.yml','portal-ux-check.yml','restore-safety.yml','portal-live-smoke.yml'].map(async n=>[n,await readFile(`.github/workflows/${n}`,'utf8')]));
+const workflows=await Promise.all(['build.yml','portal-ux-check.yml','restore-safety.yml','portal-live-smoke.yml'].map(async n=>[n,await readFile(`.github/workflows/${n}`,'utf8')]));
 
 assert.equal(pkg.scripts['ci:cloudflare'].includes('npm test'),true,'Cloudflare CI must run full tests');
 assert.equal(pkg.scripts['ci:cloudflare'].includes('release-check.mjs'),true,'Cloudflare CI must run release checks');

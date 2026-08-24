@@ -1,18 +1,15 @@
 import type { CoreAuthContext, Env } from './types.js';
-import { handleBrevoInboundWebhook } from './brevo-inbound.js';
 import { configuredMailProvider, euStrict } from './data-residency.js';
 import { renderSecureIntakeUploadPage } from './secure-intake-page.js';
-import { addIntakeSubmitter, applyIntakeBatch, completeAutomationTask, createIntakeChannel, createIntakeUploadLink, getIntakeBatch, getIntakeDocument, getIntakeOverview, handleIntakePublicUpload, handleResendInboundWebhook, previewIntakeBatch, revokeIntakeChannel, revokeIntakeSubmitter, updateIntakeSettings } from './intake-center.js';
+import { addIntakeSubmitter, applyIntakeBatch, completeAutomationTask, createIntakeChannel, createIntakeUploadLink, getIntakeBatch, getIntakeDocument, getIntakeOverview, handleIntakePublicUpload, previewIntakeBatch, revokeIntakeChannel, revokeIntakeSubmitter, updateIntakeSettings } from './intake-center.js';
 
 function json(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 function fail(e:unknown){const code=String((e as Error)?.message||'INTAKE_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('RATE_LIMITED')?429:code.includes('EXPIRED')||code.includes('INVALID')&&code.includes('LINK')?410:code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413:code.includes('REQUIRED')||code.includes('INVALID')?400:500;return json({ok:false,error:code},status);}
 async function body(request:Request){try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function inboundReady(env:Env){const p=configuredMailProvider(env);return p==='brevo'?!!(env.INBOUND_MAIL_DOMAIN&&env.BREVO_API_KEY&&env.BREVO_INBOUND_WEBHOOK_TOKEN):p==='resend'&&!euStrict(env)?!!(env.INBOUND_MAIL_DOMAIN&&env.RESEND_API_KEY&&env.RESEND_WEBHOOK_SECRET):false;}
+function inboundReady(env:Env){return configuredMailProvider(env)==='cloudflare_email'&&!!String(env.INBOUND_MAIL_DOMAIN||'').trim();}
 
 export async function handlePublicIntakeRoute(request:Request,env:Env):Promise<Response|null>{
   const path=new URL(request.url).pathname;
-  if(path==='/api/inbound/brevo'){if(request.method!=='POST')return new Response('Methode nicht erlaubt',{status:405});return handleBrevoInboundWebhook(env,request);}
-  if(path==='/api/inbound/resend'){if(request.method!=='POST')return new Response('Methode nicht erlaubt',{status:405});if(euStrict(env))return new Response('RESEND_DISABLED_IN_EU_STRICT',{status:410,headers:{'cache-control':'no-store'}});return handleResendInboundWebhook(env,request);}
   const page=path.match(/^\/eingang\/([^/]+)$/);if(page&&request.method==='GET')return renderSecureIntakeUploadPage(env,decodeURIComponent(page[1]));
   const upload=path.match(/^\/api\/intake\/upload\/([^/]+)$/);if(upload&&request.method==='POST'){try{return json({ok:true,...await handleIntakePublicUpload(env,decodeURIComponent(upload[1]),request)},201);}catch(e){return fail(e);}}
   return null;

@@ -1,7 +1,7 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
-import { requireDelegatedPrivilegeMfa } from './delegated-privilege.js';
+import { requireDelegatedPrivilegeAccess } from './delegated-privilege.js';
 import { assertSameOrigin, json } from './utils.js';
 import {
   getCourseSchedulingRules,linkPlanEntryResource,listPlanningBlackouts,listTeacherUnavailability,
@@ -14,7 +14,7 @@ import {
 } from './planning-resource-management.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'PLANNING_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('MFA_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('CONFLICT')||code.includes('LOCKED')||code.includes('EXISTS')?409:code.includes('REQUIRED')||code.includes('INVALID')?400:500;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=String((e as Error)?.message||'PLANNING_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')?403:code.includes('NOT_FOUND')?404:code.includes('CONFLICT')||code.includes('LOCKED')||code.includes('EXISTS')?409:code.includes('REQUIRED')||code.includes('INVALID')?400:500;return json({ok:false,error:code},status);}
 
 export async function handlePlanningApi(request:Request,env:Env):Promise<Response|null>{
   const url=new URL(request.url),path=url.pathname;
@@ -24,7 +24,7 @@ export async function handlePlanningApi(request:Request,env:Env):Promise<Respons
     assertSameOrigin(request,env.APP_ORIGIN);
     const tenantId=url.searchParams.get('tenant_id')||'';if(!tenantId)throw new Error('TENANT_REQUIRED');
     const courseId=url.searchParams.get('course_id')||undefined,auth=await resolveCoreAuth(env,request,tenantId,courseId);
-    if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'&&(auth.permissions||[]).length)await requireDelegatedPrivilegeMfa(env,auth);
+    if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'&&(auth.permissions||[]).length)await requireDelegatedPrivilegeAccess(env,auth);
     if(request.method!=='GET'&&request.method!=='HEAD')await assertTenantWriteAllowed(env,tenantId);
 
     const validate=path.match(/^\/api\/education\/timetable-plans\/([^/]+)\/validate$/);if(validate&&request.method==='POST')return json({ok:true,...await validateAdvancedTimetablePlan(env,auth,tenantId,decodeURIComponent(validate[1]))});

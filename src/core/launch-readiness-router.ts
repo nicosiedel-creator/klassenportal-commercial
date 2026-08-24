@@ -11,7 +11,7 @@ import { assertSameOrigin, json } from './utils.js';
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function fail(e:unknown):Response{
   const code=String((e as Error)?.message||'INTERNAL_ERROR');
-  const status=code==='UNAUTHENTICATED'?401:code.includes('ADMIN_REQUIRED')||code.startsWith('FORBIDDEN')||code==='CURRENT_PASSWORD_INVALID'?403:code.includes('NOT_FOUND')?404:code==='LEGAL_REPORT_RATE_LIMITED'?429:code.includes('NOT_READY')||code.includes('NOT_ACTIVE')||code.includes('STATE_CHANGED')?409:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('MFA_')||code.includes('CONFIRMATION')?400:500;
+  const status=code==='UNAUTHENTICATED'?401:code.includes('ADMIN_REQUIRED')||code.startsWith('FORBIDDEN')||code==='CURRENT_PASSWORD_INVALID'?403:code.includes('NOT_FOUND')?404:code==='LEGAL_REPORT_RATE_LIMITED'?429:code.includes('NOT_READY')||code.includes('NOT_ACTIVE')||code.includes('STATE_CHANGED')?409:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('CONFIRMATION')?400:500;
   return json({ok:false,error:code},status);
 }
 export async function handleLaunchReadinessApi(request:Request,env:Env):Promise<Response|null>{
@@ -32,3 +32,4 @@ export async function handleLaunchReadinessApi(request:Request,env:Env):Promise<
     return new Response('Methode nicht erlaubt',{status:405});
   }catch(e){return fail(e);}
 }
+

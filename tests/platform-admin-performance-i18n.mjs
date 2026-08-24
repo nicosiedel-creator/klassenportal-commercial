@@ -10,7 +10,7 @@ const [html,direct,core,i18n,lazy]=await Promise.all([
 ]);
 
 assert.doesNotMatch(html,/src="\/localization\.js/,'platform admin must not load the generic document-observer localization runtime');
-assert.match(html,/platform-direct-login\.js\?v=20260822-platform-perf-1/,'platform shell must use the performance-hardened direct login entry');
+assert.match(html,/platform-direct-login\.js\?v=20260824-sales-ready/,'platform shell must use the current performance-hardened direct login entry');
 assert.doesNotMatch(direct,/import\('\/localization\.js/,'platform direct login must never instantiate a generic localization module');
 for(const name of ['boot.js','platform-admin-ui.js','platform-admin-i18n.js','platform-admin-lazy-modules.js'])assert.ok(direct.includes(name),`platform critical path missing ${name}`);
 for(const heavy of ['platform-owner-ui','platform-offers-ui','platform-accounting-ui','platform-accounting-autopilot-ui','legal-owner-ui','owner-security-ui','launch-readiness-ui','custom-domain-ui','branding-assistant','timetable-assistant'])assert.ok(!direct.includes(`import('/${heavy}.js`),`heavy platform module must not be eager-loaded: ${heavy}`);

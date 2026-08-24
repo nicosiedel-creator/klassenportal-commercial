@@ -8,7 +8,7 @@ import { createTeacherMessage, deleteTeacherMessage, ensureLessonClassbookSessio
 import { assertSameOrigin, json } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'COMMUNICATION_ERROR'),status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code.includes('MFA_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('NOT_PUBLISHABLE')||code.includes('ACK_NOT_AVAILABLE')?409:code.includes('TOO_MANY')?413:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=String((e as Error)?.message||'COMMUNICATION_ERROR'),status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('NOT_PUBLISHABLE')||code.includes('ACK_NOT_AVAILABLE')?409:code.includes('TOO_MANY')?413:400;return json({ok:false,error:code},status);}
 
 export async function handleCommunicationsApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;if(!path.startsWith('/api/communications'))return null;
@@ -45,3 +45,4 @@ export async function handleCommunicationsApi(request:Request,env:Env):Promise<R
     return json({ok:false,error:'COMMUNICATION_ROUTE_NOT_FOUND'},404);
   }catch(e){return fail(e);}
 }
+
