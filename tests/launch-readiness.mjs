@@ -20,7 +20,6 @@ const wrangler=await readFile('wrangler.jsonc','utf8');
 const accountPage=await readFile('public/account-action.js','utf8');
 const inbound=await readFile('src/core/cloudflare-inbound.ts','utf8');
 const intakeRouter=await readFile('src/core/intake-router.ts','utf8');
-
 assert.doesNotMatch(users,/temporary_password\s*:/,'user creation/reset must never return temporary passwords');
 assert.doesNotMatch(provision,/temporaryPassword\s*:/,'tenant provisioning must never return a temporary admin password');
 assert.match(users,/createActivationForUser/,'new users must use activation links');
