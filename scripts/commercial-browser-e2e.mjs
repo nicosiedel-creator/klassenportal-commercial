@@ -16,13 +16,17 @@ async function route(path,{allowStatuses=[200]}={}){
   const text=(await page.locator('body').innerText()).slice(0,5000);if(/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`${path} rendered a Cloudflare/server error`);
   console.log(`browser route ${path}: ${response.status()}`);return text;
 }
+async function waitForBody(pattern,label,timeout=8000){
+  try{await page.waitForFunction(source=>new RegExp(source,'i').test(document.body?.innerText||''),pattern.source,{timeout});}
+  catch{const body=(await page.locator('body').innerText()).slice(0,3000);fail(`${label}; body=${body}`);}
+}
 
 try{
   for(const path of ['/produkt','/plattform-admin','/kunden-admin','/dozentenportal'])await route(path);
-  const invalidOffer=await route('/angebot/browser-e2e-invalid-token');
-  if(!/Angebot nicht verfügbar|Angebot nicht gefunden|ungültig/i.test(invalidOffer))fail('invalid offer page did not fail closed with a user-facing message');
-  const invalidSetup=await route('/einrichtung/browser-e2e-invalid-token');
-  if(!/nicht|ungültig|abgelaufen|Einrichtung/i.test(invalidSetup))fail('invalid onboarding page did not fail closed with a user-facing message');
+  await route('/angebot/browser-e2e-invalid-token');
+  await waitForBody(/Angebot nicht verfügbar|Angebot nicht gefunden|ungültig/i,'invalid offer page did not fail closed with a user-facing message');
+  await route('/einrichtung/browser-e2e-invalid-token');
+  await waitForBody(/nicht|ungültig|abgelaufen|Einrichtung/i,'invalid onboarding page did not fail closed with a user-facing message');
 
   const health=await page.request.get(base+'/api/public/product');if(health.status()>=500)fail(`/api/public/product returned ${health.status()}`);
   const invitation=await page.request.get(base+'/api/platform/onboarding-invitations');if(![401,403].includes(invitation.status()))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status()}`);
