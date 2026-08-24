@@ -7,7 +7,6 @@ const code=await readFile('src/core/attendance-classbook.ts','utf8');
 const router=await readFile('src/core/attendance-router.ts','utf8');
 const studentRole=await readFile('src/core/student-role.ts','utf8');
 const teacherCore=await readFile('src/core/teacher-portal.ts','utf8');
-const ownerSecurity=await readFile('src/core/owner-security-router.ts','utf8');
 const participantUi=await readFile('public/portal-attendance-ui.js','utf8');
 const teacherUi=await readFile('public/teacher-portal.js','utf8');
 const teacherHtml=await readFile('public/dozentenportal.html','utf8');
@@ -34,9 +33,8 @@ assert.match(studentRole,/FORBIDDEN_CLASS_ADMIN_STUDENT_DATA/,'foreign student d
 assert.match(teacherCore,/TEACHER_STUDENT_ROLE_CONFLICT/,'same-course student/class-admin accounts must never become teachers');
 assert.match(teacherCore,/teacher_portal_assignments WHERE tenant_id=\? AND course_id=\? AND user_id=\?/,'teacher access must be based on explicit user/course assignment');
 assert.match(teacherCore,/DELETE FROM memberships[\s\S]*role='guest'/,'revocation must remove only technical teacher memberships');
-assert.match(teacherCore,/MFA_ENROLLMENT_REQUIRED/,'local teacher access must require MFA enrollment');
-assert.match(teacherCore,/method!=='mfa'/,'local teacher attendance/classbook access must require an MFA-authenticated session');
-assert.match(ownerSecurity,/teacher_portal_assignments WHERE user_id=\? AND status='active'/,'teacher accounts must be admitted to the protected MFA enrollment flow');
+assert.match(teacherCore,/FORBIDDEN_TEACHER_COURSE/,'teacher access must fail closed without an explicit assignment');
+assert.doesNotMatch(teacherCore,/MFA_|platform_mfa|authMethod!=='mfa'/,'teacher attendance/classbook access must not retain removed MFA dependencies');
 
 assert.match(code,/m\.role='participant'/,'attendance roster and personalised summary must use actual participants only');
 assert.match(code,/participantInCourse/,'recording must verify participant membership server-side');
@@ -56,7 +54,7 @@ assert.match(router,/teacherAttendanceAuth/,'attendance management must use expl
 assert.match(router,/assertSameOrigin/);assert.match(router,/assertTenantWriteAllowed/);
 assert.match(participantUi,/Gesundheits-\/Diagnosedaten werden nicht abgefragt/);assert.match(participantUi,/Abwesenheit einreichen/);
 for(const marker of ['Dozentenportal','Unterrichtsklassen','Anwesenheitsübersicht','Digitales Klassenbuch'])assert.ok(teacherUi.includes(marker)||teacherHtml.includes(marker),`teacher portal UX missing ${marker}`);
-assert.match(teacherHtml,/auth-mfa-ui\.js/);assert.match(teacherHtml,/admin-mfa-enrollment-ui\.js/,'teacher portal must load challenge and enrollment protection');
+assert.doesNotMatch(teacherHtml,/auth-mfa-ui\.js|admin-mfa-enrollment-ui\.js|MFA|TOTP/i,'teacher portal must not load removed MFA UI');
 assert.match(teacherAssignUi,/TEACHER_STUDENT_ROLE_CONFLICT/,'tenant admin assignment UI must explain student/teacher conflicts');
 assert.doesNotMatch(customerHtml,/attendance-classbook-ui\.js/,'operational attendance/classbook UI must not remain in customer admin');
 assert.match(customerHtml,/teacher-assignment-ui\.js/,'customer admin must configure teacher portal assignments');
@@ -68,4 +66,4 @@ assert.match(portalLazy,/class-admin-student-tools/,'class admin extras must liv
 assert.match(index,/handleAttendanceApi/);assert.match(index,/runAttendanceAttention/);
 for(const table of ['attendance_sessions','attendance_records','absence_notices','classbook_entries','attendance_policies','attendance_events','teacher_portal_assignments'])assert.ok(readiness.includes(`'${table}'`),`live gate must require ${table}`);
 
-console.log('Class-admin-as-student privacy, dedicated MFA-protected teacher portal, lazy attendance self-service and classbook separation checks: OK');
+console.log('Class-admin-as-student privacy, assignment-protected teacher portal, lazy attendance self-service and classbook separation checks: OK');
