@@ -11,11 +11,11 @@ export async function renderLegalDocument(env:Env,kind:Kind):Promise<Response>{
   const base=await renderBase(env,kind);if(base.status!==200)return base;let html=await base.text();
   if(kind==='datenschutz'){
     html=html.replace(/<h2>6\. Hosting und Infrastruktur – Cloudflare<\/h2><p>[\s\S]*?<\/p>/,`<h2>6. Hosting und Infrastruktur – Cloudflare / EU-Datenhaltung</h2><p>Für Betrieb, Auslieferung, Datenbank-/Objektspeicher und Sicherheitsfunktionen wird Cloudflare eingesetzt. ${euStorageText(env)} Soweit für einzelne technische Randverarbeitungen oder Anbieterfunktionen internationale Übermittlungen nicht vollständig ausgeschlossen werden können, gelten die vertraglich vorgesehenen Garantien nach Art. 44 ff. DSGVO.</p>`);
-    html=html.replace(/<h2>7\. Transaktions-E-Mail(?: – Resend)?<\/h2><p>[\s\S]*?<\/p>/,`<h2>7. Transaktions-E-Mail und E-Mail-Eingang</h2><p>${mailText(env)}</p>`);
+    html=html.replace(/<h2>7\. Transaktions-E-Mail(?: – [^<]+)?<\/h2><p>[\s\S]*?<\/p>/,`<h2>7. Transaktions-E-Mail und E-Mail-Eingang</h2><p>${mailText(env)}</p>`);
   }
   if(kind==='unterauftragsverarbeiter'){
     html=html.replace(/<tr><td><strong>Cloudflare, Inc\.<\/strong>[\s\S]*?<\/tr>/,`<tr><td><strong>Cloudflare, Inc.</strong></td><td>Cloud-/Edge-Infrastruktur, Worker-Ausführung, Datenbank-/Objektspeicher, Netzwerksicherheit, Bereitstellung.</td><td>${euStorageText(env)}</td><td>Auftrags-/Unterauftragsverarbeiter für Kundendaten je nach Dienst.</td></tr>`);
-    html=html.replace(/<tr><td><strong>Plus Five Five, Inc\. \(Resend\)<\/strong>[\s\S]*?<\/tr>/,providerRow(env));
+    html=html.replace(/<tr><td><strong>[^<]+<\/strong>[\s\S]*?<td>Transaktions-E-Mail:[\s\S]*?<\/tr>/,providerRow(env));
   }
   if(kind==='avv')html=html.replace(/<h2>12\. Rückgabe und Löschung<\/h2>/,`<h2>11a. EU-first Datenstandort und Drittlandminimierung</h2><p>Der Dienst ist technisch auf EU-first Speicherung ausgelegt. Die produktive Freigabe erfolgt im EU-strikten Modus erst, wenn die EU-Jurisdiktion für Datenbank, Dokument-/Dateispeicher und Backups verifiziert ist. Für E-Mail-Dienste wird keine ausschließliche EU-Verarbeitung zugesichert; etwaige internationale Übermittlungen werden transparent ausgewiesen und nach den anwendbaren Garantien behandelt. Zahlungsdienstleister erhalten keine fachlichen Teilnehmer-, Anwesenheits-, Leistungs- oder Vertragsdokumentdaten, soweit dies für die Zahlungsabwicklung nicht erforderlich ist.</p><h2>12. Rückgabe und Löschung</h2>`);
   return new Response(html,{status:base.status,headers:base.headers});
