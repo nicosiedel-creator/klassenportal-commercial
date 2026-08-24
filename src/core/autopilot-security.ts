@@ -1,13 +1,8 @@
 import type { CoreAuthContext, Env } from './types.js';
 
-export async function requireAutopilotTenantAdminMfa(env:Env,auth:CoreAuthContext):Promise<void>{
+export async function requireAutopilotTenantAdminMfa(_env:Env,auth:CoreAuthContext):Promise<void>{
   if(auth.isPlatformAdmin)throw new Error('AUTOPILOT_TENANT_ADMIN_REQUIRED');
   if(auth.role!=='tenant_admin')throw new Error('AUTOPILOT_TENANT_ADMIN_REQUIRED');
-  const method=auth.session?.authMethod||'password';
-  if(method==='oidc')return;
-  const row=await env.DB.prepare('SELECT enabled_at FROM platform_mfa WHERE user_id=?').bind(auth.userId).first<{enabled_at:string|null}>().catch(()=>null);
-  if(!row?.enabled_at)throw new Error('AUTOPILOT_MFA_ENROLLMENT_REQUIRED');
-  if(method!=='mfa')throw new Error('AUTOPILOT_MFA_REQUIRED');
 }
 
 export async function tenantAdminCount(env:Env,tenantId:string){
