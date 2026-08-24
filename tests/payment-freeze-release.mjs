@@ -2,6 +2,8 @@ import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 import { paymentsEnabled, paymentPolicy } from '../dist/core/payment-policy.js';
 import { augmentPaidOnboardingResponse, handlePaymentApi } from '../dist/core/payment-router.js';
+import { createPaidBookingFromAcceptedOffer } from '../dist/core/accepted-offer-fulfillment.js';
+import { assertPaymentWriteAccess } from '../dist/core/payment-access.js';
 
 // Fail-closed is the release invariant: missing/unknown configuration never enables money movement.
 assert.equal(paymentsEnabled({}),false);
@@ -41,6 +43,34 @@ assert.equal(augmentedJson.commercial.checkoutUrl,null);
 assert.equal(augmentedJson.commercial.paymentProvider,'manual');
 assert.equal(augmentedJson.commercial.paymentProcessing,'disabled');
 
+// End-to-end persistence contract of a paid accepted offer with payment processing disabled.
+const quote={
+  id:'quo_1',quote_number:'ANG-TEST',plan_id:'provider',requested_courses:7,currency:'EUR',
+  recurring_monthly_cents:12900,setup_cents:4900,first_total_cents:17800,status:'accepted',
+  pricing_snapshot_json:JSON.stringify({offerKind:'paid',recurringMonthlyCents:12900,managedSetupCents:4900,firstTotalCents:17800,manualPricing:false})
+};
+const batched=[];
+const db={
+  prepare(sql){return{bind(...args){return{sql,args,async first(){if(sql.includes("FROM commercial_quotes")&&sql.includes("status='accepted'"))return quote;return null;},async run(){return{success:true};}};}};},
+  async batch(statements){batched.push(...statements);return statements.map(()=>({success:true}));}
+};
+const fulfilled=await createPaidBookingFromAcceptedOffer({DB:db,PAYMENTS_ENABLED:'false'},{tenantId:'ten_1',quoteId:'quo_1',invitationId:'oni_1',actorId:'usr_1'});
+assert.equal(fulfilled.status,'active');
+assert.equal(fulfilled.paymentProcessing,'disabled');
+assert.equal(fulfilled.paymentProvider,'manual');
+const orderStatement=batched.find(x=>x.sql.includes('INSERT INTO commercial_orders'));
+const invoiceStatement=batched.find(x=>x.sql.includes('INSERT INTO commercial_invoices'));
+const subscriptionStatement=batched.find(x=>x.sql.includes('UPDATE subscriptions'));
+assert.ok(orderStatement&&invoiceStatement&&subscriptionStatement,'commercial persistence chain incomplete');
+assert.equal(orderStatement.args[6],'active');
+assert.equal(invoiceStatement.args[4],'draft');
+assert.equal(subscriptionStatement.args[1],'active');
+assert.ok(orderStatement.args.at(-1),'manual activation timestamp missing');
+
+// The active manual commercial subscription must unlock normal tenant writes, avoiding a payment-chain lockout.
+const activeAccessEnv={DB:{prepare(sql){return{bind(){return{async first(){if(sql.includes('FROM subscriptions'))return{status:'active'};throw new Error(`UNEXPECTED_QUERY:${sql}`);}};}};}}};
+await assertPaymentWriteAccess(activeAccessEnv,'ten_1');
+
 // Static release contracts guard against accidental reintroduction of checkout/payment wording or missing gates.
 const [wrangler,indexSource,fulfillmentSource,paymentRouterSource,lifecycleSource,onboardingSource]=await Promise.all([
   readFile(new URL('../wrangler.jsonc',import.meta.url),'utf8'),
@@ -59,4 +89,4 @@ assert.match(lifecycleSource,/!paymentsEnabled\(env\).*PAYMENT_DISABLED/s);
 assert.doesNotMatch(onboardingSource,/Zur sicheren Zahlung|anschließende Zahlungsabwicklung erfolgt jetzt über den eingerichteten Zahlungsdienst/);
 assert.match(onboardingSource,/Zahlung erfolgt außerhalb des Portals/);
 
-console.log('Payment freeze release contract + 1,000-case fail-closed fuzz: OK');
+console.log('Payment freeze release contract + paid-onboarding chain + 1,000-case fail-closed fuzz: OK');
