@@ -2,7 +2,7 @@ import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { assertSameOrigin, json } from './utils.js';
-import { requireDelegatedPrivilegeMfa } from './delegated-privilege.js';
+import { requireDelegatedPrivilegeAccess } from './delegated-privilege.js';
 import {
   bindCurriculumToCourse,courseLifecycle,curriculumForParticipant,curriculumForTeacher,educationOperationsOverview,getCurriculumFramework,
   linkSessionToCurriculum,listCurriculumFrameworks,listDeadlines,listEducationDocuments,listExamWorkflows,listPracticePhases,listQualityActions,
@@ -17,7 +17,7 @@ import {
 } from './learning-operations.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function errorResponse(error:unknown){const code=String((error as Error)?.message||'EDUCATION_OPERATIONS_ERROR');const status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code.includes('MFA_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('LOCKED')||code.includes('CONFLICT')||code.includes('CLOSED')||code.includes('HAS_ERRORS')?409:code.includes('TOO_MANY')||code.includes('TOO_LARGE')?413:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('MISMATCH')||code.includes('UNSUPPORTED')?400:500;return json({ok:false,error:code},status);}
+function errorResponse(error:unknown){const code=String((error as Error)?.message||'EDUCATION_OPERATIONS_ERROR');const status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('LOCKED')||code.includes('CONFLICT')||code.includes('CLOSED')||code.includes('HAS_ERRORS')?409:code.includes('TOO_MANY')||code.includes('TOO_LARGE')?413:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('MISMATCH')||code.includes('UNSUPPORTED')?400:500;return json({ok:false,error:code},status);}
 
 export async function handleEducationOperationsApi(request:Request,env:Env):Promise<Response|null>{
   const url=new URL(request.url),path=url.pathname;if(!path.startsWith('/api/education/'))return null;
@@ -26,7 +26,7 @@ export async function handleEducationOperationsApi(request:Request,env:Env):Prom
     const tenantId=url.searchParams.get('tenant_id')||'';if(!tenantId)throw new Error('TENANT_REQUIRED');const courseParam=url.searchParams.get('course_id')||undefined;
     const auth=await resolveCoreAuth(env,request,tenantId,courseParam);
     if(request.method!=='GET'&&request.method!=='HEAD')await assertTenantWriteAllowed(env,tenantId);
-    const delegated=!auth.isPlatformAdmin&&auth.role!=='tenant_admin'&&(auth.permissions||[]).length>0;if(delegated)await requireDelegatedPrivilegeMfa(env,auth);
+    const delegated=!auth.isPlatformAdmin&&auth.role!=='tenant_admin'&&(auth.permissions||[]).length>0;if(delegated)await requireDelegatedPrivilegeAccess(env,auth);
 
     if(path==='/api/education/overview'&&request.method==='GET')return json({ok:true,...await educationOperationsOverview(env,auth,tenantId)});
 
@@ -52,7 +52,6 @@ export async function handleEducationOperationsApi(request:Request,env:Env):Prom
     if(path==='/api/education/signatures/mine'&&request.method==='GET')return json({ok:true,requests:await listMySignatureRequests(env,auth,tenantId)});if(path==='/api/education/signatures/documents'&&request.method==='POST')return json({ok:true,...await createSignatureDocument(env,auth,tenantId,await body(request))},201);
     const sign=path.match(/^\/api\/education\/signatures\/([^/]+)\/sign$/);if(sign&&request.method==='POST')return json({ok:true,...await signDocument(env,auth,tenantId,decodeURIComponent(sign[1]),await body(request))});
 
-    // Release regression marker for the report-book route family: /report-book/periods
     const reportMine=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/mine$/);if(reportMine&&request.method==='GET')return json({ok:true,periods:await listMyReportBooks(env,auth,tenantId,decodeURIComponent(reportMine[1]))});
     const reportPeriods=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/periods$/);if(reportPeriods&&request.method==='POST')return json({ok:true,...await ensureReportBookPeriod(env,auth,tenantId,decodeURIComponent(reportPeriods[1]),await body(request))},201);
     const reportEntry=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/periods\/([^/]+)\/entries$/);if(reportEntry&&request.method==='POST')return json({ok:true,...await saveReportBookEntry(env,auth,tenantId,decodeURIComponent(reportEntry[1]),decodeURIComponent(reportEntry[2]),await body(request))},201);
