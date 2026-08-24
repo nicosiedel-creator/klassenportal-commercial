@@ -1,0 +1,34 @@
+name: Diagnose Commercial onboarding live
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  probe-commercial:
+    if: github.head_ref == 'diag/vfa13-live-auth-20260824'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe canonical Commercial host
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://klassenportal-commercial.nicosiedel.workers.dev'
+          for path in '/produkt' '/plattform-admin' '/platform-direct-login.js?diag=20260824' '/platform-admin-ui.js?diag=20260824' '/api/health' '/api/platform/onboarding-invitations'; do
+            echo "=== $path ==="
+            body=$(mktemp); headers=$(mktemp)
+            code=$(curl -sS -L --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$base$path" || true)
+            echo "HTTP=$code bytes=$(wc -c < "$body" | tr -d ' ')"
+            tr -d '\r' < "$headers" | grep -Ei '^(content-type|server|cf-ray|cache-control|location):' || true
+            if [[ "$path" == *'platform-admin-ui.js'* ]]; then
+              grep -o 'Kunden-Einrichtung' "$body" | head -1 || true
+              grep -o '/api/platform/onboarding-invitations' "$body" | head -1 || true
+            elif [[ "$path" == /api/* ]]; then
+              head -c 500 "$body"; echo
+            fi
+          done
