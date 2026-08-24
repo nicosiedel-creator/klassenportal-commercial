@@ -1,46 +1,52 @@
 === https://vfa13-klassenportal.pages.dev/ ===
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:56 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=ROKexeiWGLHH1YBnnpeWEDh5OZhMraKrsneVN76QcAg8BNmL5nr8wMG4NUXXZaDVwUbPyl12Kag77lSTlBYwLtfXF%2FU%2BdGDPGGgRYkDXOlVxTN774QWK7IsMvSMGRJz5TbVH%2FziLPzNkTlXi0eWgEA%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+HTTP/2 200 
+date: Mon, 24 Aug 2026 06:30:45 GMT
+content-type: text/html; charset=utf-8
+content-length: 235233
+cf-ray: a3004f63ca48cc13-IAD
+cache-control: no-cache, no-store, must-revalidate
 server: cloudflare
-cf-ray: a2ffbbb75c6de678-SJC
+nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=5DtNOjbg1lCSJFapT6x5ivf8qH%2FQD1wvf2eOb5TT64DOy5soPlgw3FzRMJpi66gpLDZ2Liocm93pu%2BmhueR9osBdpeu67JT3uMeF2G85AVzLim8348R4ljQB1k8vbGuG%2BgEdBwJXEg1mFgaXwhuh1NJrFE2GQbBmper5AJ8UYgOp%2FXrWDg%3D%3D"}]}
+content-security-policy: default-src 'self'; script-src 'self' 'nonce-7719e4b3e212497eaccc53f46dfc2ed5' https://teams.microsoft.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://teams.microsoft.com; connect-src 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; frame-src https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; frame-ancestors 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; base-uri 'none'; form-action 'self'
+permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+referrer-policy: strict-origin-when-cross-origin
+x-content-type-options: nosniff
+x-vfa13-legacy-proxy: 1
+x-vfa13-upgrade: 20260824-3
 alt-svc: h3=":443"; ma=86400
 
-BODY_BYTES=0
-
+BODY_BYTES=235233
+<!doctype html><html lang="de" class=""><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#122b3b"><m
 
 === https://vfa13-klassenportal.pages.dev/index.html ===
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:56 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=Lqa3y95IJdA4MwNwPvgxciDFj32CxusmNCeLu1Mpr0i7TGSiVHoGvXPLbe0WUcTfzWzOjT9N7QBuSwI2X%2BYCwtaY8WHBOTjQMquvYPf6uJEe4FVzY9AKygbPH2nIRFKS0oXBr6E1RVCfstpvfdG6Ag%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+HTTP/2 404 
+date: Mon, 24 Aug 2026 06:30:45 GMT
+content-type: application/json; charset=utf-8
+content-length: 38
+cf-ray: a3004f65de6a0a90-IAD
+cache-control: no-store
 server: cloudflare
-cf-ray: a2ffbbb7de10c65e-SJC
+nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=NghNycUxMHENfexKCsCpRw4UhDuQ614XZIbV8eHeO2%2BVMMCA3Q%2FFGCcJtwrN7RpAlnHS%2BTtQnEyePmp65f8oDYQrWoj1vaop46qHZAveJm%2FEKCQmhnS8y5T%2FDpR44SmEghdvR4wbr8C2OCvanfbOR4anrD2bVJOYIbYaML9qqFsbNANJ1g%3D%3D"}]}
+referrer-policy: no-referrer
+x-content-type-options: nosniff
+x-vfa13-legacy-proxy: 1
+x-vfa13-upgrade: 20260824-3
 alt-svc: h3=":443"; ma=86400
 
-BODY_BYTES=0
-
+BODY_BYTES=38
+{"ok":false,"error":"Nicht gefunden."}
 
 === https://vfa13-klassenportal.pages.dev/v2 ===
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:56 GMT
+HTTP/2 302 
+date: Mon, 24 Aug 2026 06:30:45 GMT
 content-length: 0
-location: /v2
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=9mhKOo0NeBiD%2BJN2xAnj9ta8w%2FTPOdRFYeXAwRzJw7shDU71lJM9kJkFdhbrkLxTLXp%2FGx88SQZA8xA0POeQ8iYyxqbqMS2kO2cnTonHyqqmNdnYpCUPsjAvMKRLKMA%2BxUkTFPI9i79Lf5%2FUh%2BXVNg%3D%3D"}]}
+location: https://vfa13-klassenportal.pages.dev/#lernen-betrieb
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=stuR2yEALIanzY8HR9mfplazQ5MeiOu6O0cqlJ4ZTJkdzzvVSXyhunKf4pikyQImEfXgcjCEcF5681frRcfDkKg2rafEKbqOkW%2Fw0o%2BfkJpM%2B7GeTlUwnIdgXB3OsZkoxJ%2BAsM4%2FTEXsLCaVo69afA%3D%3D"}]}
 nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
 server: cloudflare
-cf-ray: a2ffbbb848874809-SJC
+cf-ray: a3004f67aaf43940-IAD
 alt-svc: h3=":443"; ma=86400
 
 BODY_BYTES=0
@@ -48,18 +54,18 @@ BODY_BYTES=0
 
 === https://vfa13-klassenportal.pages.dev/api/calendar?from=2026-08-01&to=2026-09-30 ===
 HTTP/2 200 
-date: Mon, 24 Aug 2026 04:49:57 GMT
+date: Mon, 24 Aug 2026 06:30:46 GMT
 content-type: application/json; charset=utf-8
 content-length: 8785
-cf-ray: a2ffbbb8db71981a-SJC
+cf-ray: a3004f681c19e5ba-IAD
 cache-control: no-store
 server: cloudflare
 nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=atU8c1B60QlmYb0uZu4jhOq7gpfiMQr4%2BlIfom2etslHS1ZV2UgWOTVWf0G%2BJhoI5o2bY61NsEpZvRKGcdFcLwKlwoNnrJQWdYQOaoiCPcbILhC1YNczS3tHaZhrSf%2FYgsdKcfrXui12lEGllX1YMx9julVhUTnFa95DQDLfGh12twDtUg%3D%3D"}]}
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=md%2Fjvih3fxZn36NNVIP%2BWq4w%2BeemD2NgjBdD6%2FH%2FlZIC%2Fw7nmJ4CicJ7YnSpWrQln9bcEefuSpV5cdvc%2F6xFZAyNWHEVRluzEjMG3N3WtCaDwgY3X3%2Ff9%2BpO%2Fzcqk7%2BVKL0%2BOo7K%2FLlrk2aYMISvJAZn4x2t%2B1oiQhTap3orlRQt3BFoEQ%3D%3D"}]}
 referrer-policy: no-referrer
 x-content-type-options: nosniff
 x-vfa13-legacy-proxy: 1
-x-vfa13-upgrade: 20260823-1
+x-vfa13-upgrade: 20260824-3
 alt-svc: h3=":443"; ma=86400
 
 BODY_BYTES=8785
@@ -67,18 +73,18 @@ BODY_BYTES=8785
 
 === https://8ec05961.vfa13-klassenportal.pages.dev/ ===
 HTTP/2 200 
-date: Mon, 24 Aug 2026 04:49:57 GMT
+date: Mon, 24 Aug 2026 06:30:46 GMT
 content-type: text/html; charset=utf-8
 content-length: 233760
 cache-control: public, max-age=300
-content-security-policy: default-src 'self'; script-src 'nonce-1f161f95446243278dfc22cea945d6a2' https://teams.microsoft.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://teams.microsoft.com; connect-src 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; frame-src https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; frame-ancestors 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; base-uri 'none'; form-action 'self'
+content-security-policy: default-src 'self'; script-src 'nonce-1e968d48b68746679016dbef3a2f8e16' https://teams.microsoft.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://teams.microsoft.com; connect-src 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; frame-src https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; frame-ancestors 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; base-uri 'none'; form-action 'self'
 permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
 referrer-policy: strict-origin-when-cross-origin
 x-content-type-options: nosniff
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=dLNWANtD70NAgqrKeE4qVbJJpRoPT6Sigoe5drshF%2FC%2BUd7186ZzaBkNSrGYsWzcc%2BJ591NarKMJFV%2ByTxUeEBqX%2BoMs725QYENpDPIsL4ISLCQ6AfVNyO9opLhd%2FdV67qZAdY4dg0rikkBN0b0dZlpr9OGn9%2F6JJw%3D%3D"}]}
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=ts3njuBizcX1UVWft8gxFm5t5jZeyjjOSsDDjFqpXnt3KXcg%2FFgZgjPmTXteJ8IHMKHwf7nfGPXuo79tHqVNyaj7wlmlA5AXpUHsUrIJgWH7tkojGLZ3tpw7%2FSsdgvh6KkSYEqWkxS94klcRWnTHaMwkcyUsiAVbuQ%3D%3D"}]}
 nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
 server: cloudflare
-cf-ray: a2ffbbbd2f2bc52e-SJC
+cf-ray: a3004f6abaf22bec-IAD
 alt-svc: h3=":443"; ma=86400
 
 BODY_BYTES=233760
@@ -86,178 +92,38 @@ BODY_BYTES=233760
 
 === https://8ec05961.vfa13-klassenportal.pages.dev/api/calendar?from=2026-08-01&to=2026-09-30 ===
 HTTP/2 200 
-date: Mon, 24 Aug 2026 04:49:57 GMT
+date: Mon, 24 Aug 2026 06:30:46 GMT
 content-type: application/json; charset=utf-8
 content-length: 8785
 cache-control: no-store
 referrer-policy: no-referrer
 x-content-type-options: nosniff
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=LHPkjUqOlX%2FeFapPYz3QatVQQYi6wvkpB8V67iom0PAGy3SQ4msaGqBThfwg8nR%2BFDNvIIYhkD%2FnTRpyKUoiI9x%2BHxEvwa6uG7AfBEaNcGh09Kk0u2yGvSzJIotiM3Qe%2FUI%2BbIYYfqATl41jwIIvYJK0GVi7ziUBjg%3D%3D"}]}
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=nf48Ae1tEWbVI%2FXZ7qQrYb14B8o%2FliOnEu7zU4gff6fKf%2Fm7%2B6LGHmS6fstU3l15bp46QrNHYW0dZrgVzg73odxRImTBW7hI0on0afqIpuQZPQsAGA5XqtZETLwSkuQy7yy762KU9xcsY8w4lIfjgxGBl%2BaKtmNWvA%3D%3D"}]}
 nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
 server: cloudflare
-cf-ray: a2ffbbbdbcc61422-SJC
+cf-ray: a3004f6b3bea9a22-IAD
 alt-svc: h3=":443"; ma=86400
 
 BODY_BYTES=8785
 {"ok":true,"entries":[{"sourceId":"53","date":"2026-08-10","subject":"BVR+BVR","teacher":"Herr Reimer, C.","homework":"Lehrbrief lesen","info":"Unterricht: BRe (Beamtenrecht)","ref
 
 === FOLLOW PRODUCTION ===
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:57 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=4s%2BH6aq9r%2BZi%2F19Q0gVIf5EBIVsNzkSk8mfNPzbroMzINaM3CJErnx5JwEts%2B28jGV4xMRJSQtbEDoqRLq%2BRyf8d%2B4L%2Bqp7EJdsZVaI5y%2FSB76m3UH0sz1aYWlYVm7SEqJS5yvVbbra05zVCGcGrrA%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+HTTP/2 200 
+date: Mon, 24 Aug 2026 06:30:46 GMT
+content-type: text/html; charset=utf-8
+content-length: 235233
+cf-ray: a3004f6d4a5c6ac7-IAD
+cache-control: no-cache, no-store, must-revalidate
 server: cloudflare
-cf-ray: a2ffbbc12a119100-SJC
+nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=s7RjcW2A2nsk8eNLLqiEGCtfxgplcGCWutucKcIgPSr5acd%2FjSaupj7mIAah1E0wMeFDrakaFsAxmMSEgJzMdTL7OrQAZEytc%2FlivVBZhrjRWisdsdnILOGoOmTOpNvhs49V5VTHzBpRbe5QYj7pfKevtTdz8hbpjJqFyvjNNUIjhU9UaQ%3D%3D"}]}
+content-security-policy: default-src 'self'; script-src 'self' 'nonce-e6e0cc45f2614a7dbe771c541ce2cbc5' https://teams.microsoft.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://teams.microsoft.com; connect-src 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; frame-src https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; frame-ancestors 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft; base-uri 'none'; form-action 'self'
+permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+referrer-policy: strict-origin-when-cross-origin
+x-content-type-options: nosniff
+x-vfa13-legacy-proxy: 1
+x-vfa13-upgrade: 20260824-3
 alt-svc: h3=":443"; ma=86400
 
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:57 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=cijpk8FeWgWzGTCM436H74arZ3b%2FT%2BQBb9dWrYOkKL2lpHK8yd%2F2ao%2BDyTxihLMgonZIzbhpo2SqNuEUK2ZCnoz%2Bg4DhMlfGV9wtnRLuFhU6v0d0ab07KzAImTxiWX3O%2F%2FAUkMazabKVQTABsShmSw%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc16a7e9100-SJC
-alt-svc: h3=":443"; ma=86400
 
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:58 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=w3C0oi1PEz2iEYar6H%2BVa%2FD6Fken40qUbnzcZMismhFePIyK6bbIssbAzdYY3bvbX7sZ5m%2Bh9qAOMIW7gKeKZ1Giup3%2FZMthX5EsA6K85QTR5iHmZhYpJ5WuR4688x92ecnOn9zYvWLOwtYX5IZjcA%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc17a989100-SJC
-alt-svc: h3=":443"; ma=86400
-
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:58 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=WrfxWY2U3pg38s6vStZ9mPEFA2ICTzjtferlhDPIOXehdRcWKjyvpu6fFJZ2yo3clr3jPTWaogaNvdb7kjpOF6PpLjhzuVcN08LWag6YcYHQyqNnt%2B%2FlbnwvsneSU0tsBU54%2BhdcRc1H3%2BCfG9jXAA%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc18aaf9100-SJC
-alt-svc: h3=":443"; ma=86400
-
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:58 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=l%2FlYMTyRUkY03BpLkMHLaXIGAAt8EPtu%2FDwcrDSMkxLAikZIs9xsf45KL7Z4LLV%2BFXhjxrI7XUmdoRUJ6S8RXf%2BZUG%2FcALvZBzu7N%2FATr%2B7HNr3GAnH%2BgF8JBuqM6mGJEdeOJLVtpN8%2FsGck0Ok41w%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc19acf9100-SJC
-alt-svc: h3=":443"; ma=86400
-
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:58 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=%2FnEYEHQGu4Uk1OKbpTaabCHoevn%2B18s0WgdcHvkt8kTh1J%2F2C2JmEncCGYpknjjMEs8Sd0JE9z95bp%2BO7qtvaWxrHrDKUFqA9Fo0ZlOkh26bc6wlSNeTbg8GLkXfHhJlYGSsuLbfy0DVPBebbbXusQ%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc1aaed9100-SJC
-alt-svc: h3=":443"; ma=86400
-
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:58 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=1I6N2tRjmlAFwtIUjo3aUssykMY3L5fXDjQ094U0fduSaMYfgopx2rFK2yWEdTAGHR%2BftC3Rzqd5Wiege%2BWkVYvxxtz9x1uNMZ4kiOL%2BjAQGMM090cdUT6qisVmSFBLzniAxEyoJqY3dGx0DBYtteQ%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc1baff9100-SJC
-alt-svc: h3=":443"; ma=86400
-
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:58 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=LzWJXsVvS6uyWolPZzLKylITzfE%2FFqHlJxxMyEou%2F35CV36DXoBF98zcJ5ccLWrQXvhU8jCiO6cIgIF8gFJ9OrYE3bEtqzDmIkyM0uSgWdovUuUA7jN4mtiqNnhqLKRI9OADzT308xkqY%2FabMjmBqw%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc1cb1b9100-SJC
-alt-svc: h3=":443"; ma=86400
-
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:58 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=D6ZOC1VvuJnp035ijJxXIMcK7zan2JssYuKBaGck8cs1wi9z1nier7glShRVrrVwAAIqeWkrs3Yrk9lCSGhMFUk3SMo2aUWka0cGtm0smPuaGLGe6S%2BwPukO57JUmxEpmFZhoLE5KSKLVM3CTTJT9Q%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc1db329100-SJC
-alt-svc: h3=":443"; ma=86400
-
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:58 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=v1Jk6m6cxRCtaWPEZGMdKhjCZd1NmupdaoZ%2FcSmllS6Y6yBhBLYXf0dV51g5yfreLHnVAF9vYaHgHtoFsKnDfzUhhGYtCuAmHOS1Meqf45%2FJx6DR18JUmSEXHTfZLGE6BncAVsA4u1%2FAHLI8X%2FQ15Q%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc1eb479100-SJC
-alt-svc: h3=":443"; ma=86400
-
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:58 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=l5MW1w9%2FUKyTktgEEoa38c1qMo4snHO6SXmY13P7AuTZ861MOkvjJIGZQ3X5tW7gseVJVDYjQ6aDUFLkEHRxUNIYasfdxUSPr5KbY2mTNr2PJGCAEm7SeqfMUG69Zf27Bip4Cx8VGc%2FCvoIkJOQfag%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc1fb5d9100-SJC
-alt-svc: h3=":443"; ma=86400
-
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:58 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=pCUPM%2FCkD%2FXUe3QVruX9n%2Fg20wN2Miho5DiY5FIUHcY4ipkwDS2oTfIysP%2FWlOvbw9uBUEg0D%2BreRP3zautkYCVYt7K7ahJHGXpQHE72C50nxWxL6KZokBFc5DS3XgFwl%2FL6DKHacXSsTsAEgjyx2w%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc20b799100-SJC
-alt-svc: h3=":443"; ma=86400
-
-HTTP/2 308 
-date: Mon, 24 Aug 2026 04:49:58 GMT
-content-length: 0
-location: /
-access-control-allow-origin: *
-referrer-policy: strict-origin-when-cross-origin
-report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=aC%2BH9J5P4vLvDU8299aVV8MQITKe9KtmzDcOMAKR1GOy3fpec9Ff9ZFzXmAopzXyrLLSIwuUlztpzwCaGgYhrDWbGZ7P%2BDWkoD%2FS48gFu0cNwu8s3gM1XWLj8%2FYiq%2BxLO%2BukwFAYJcAQNOC0Ubc6rA%3D%3D"}]}
-nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
-server: cloudflare
-cf-ray: a2ffbbc21b919100-SJC
-alt-svc: h3=":443"; ma=86400
-
-curl: (47) Maximum (12) redirects followed
-
-FINAL=https://vfa13-klassenportal.pages.dev/ CODE=308 REDIRS=12
+FINAL=https://vfa13-klassenportal.pages.dev/ CODE=200 REDIRS=0
