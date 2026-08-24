@@ -9,15 +9,21 @@ const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const consoleErrors=[];page.on('console',m=>{if(m.type()==='error')consoleErrors.push(m.text());});
 const pageErrors=[];page.on('pageerror',e=>pageErrors.push(String(e)));
 
-async function route(path){
+async function route(path,{allowStatuses=[200]}={}){
   const response=await page.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});
   if(!response)fail(`No response for ${path}`);if(response.status()>=500)fail(`${path} returned ${response.status()}`);
-  const text=(await page.locator('body').innerText()).slice(0,4000);if(/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`${path} rendered a Cloudflare/server error`);
-  console.log(`browser route ${path}: ${response.status()}`);
+  if(!allowStatuses.includes(response.status()))fail(`${path} returned unexpected ${response.status()}`);
+  const text=(await page.locator('body').innerText()).slice(0,5000);if(/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`${path} rendered a Cloudflare/server error`);
+  console.log(`browser route ${path}: ${response.status()}`);return text;
 }
 
 try{
   for(const path of ['/produkt','/plattform-admin','/kunden-admin','/dozentenportal'])await route(path);
+  const invalidOffer=await route('/angebot/browser-e2e-invalid-token');
+  if(!/Angebot nicht verfügbar|Angebot nicht gefunden|ungültig/i.test(invalidOffer))fail('invalid offer page did not fail closed with a user-facing message');
+  const invalidSetup=await route('/einrichtung/browser-e2e-invalid-token');
+  if(!/nicht|ungültig|abgelaufen|Einrichtung/i.test(invalidSetup))fail('invalid onboarding page did not fail closed with a user-facing message');
+
   const health=await page.request.get(base+'/api/public/product');if(health.status()>=500)fail(`/api/public/product returned ${health.status()}`);
   const invitation=await page.request.get(base+'/api/platform/onboarding-invitations');if(![401,403].includes(invitation.status()))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status()}`);
   const fakeSetup=await page.request.get(base+'/api/onboarding/browser-e2e-invalid-token');if(![400,404,410].includes(fakeSetup.status()))fail(`invalid onboarding token must fail closed, got ${fakeSetup.status()}`);
@@ -37,7 +43,7 @@ try{
   }else console.log('authenticated browser path skipped: E2E_PLATFORM_EMAIL/E2E_PLATFORM_PASSWORD not configured');
 
   if(pageErrors.length)fail(`page errors: ${pageErrors.join(' | ')}`);
-  const relevantConsoleErrors=consoleErrors.filter(x=>!/favicon|third-party|ERR_BLOCKED_BY_CLIENT/i.test(x));
+  const relevantConsoleErrors=consoleErrors.filter(x=>!/favicon|third-party|ERR_BLOCKED_BY_CLIENT|Failed to load resource.*404/i.test(x));
   if(relevantConsoleErrors.length)fail(`console errors: ${relevantConsoleErrors.join(' | ')}`);
   console.log('Commercial real-browser smoke: OK');
 }finally{await browser.close();}
