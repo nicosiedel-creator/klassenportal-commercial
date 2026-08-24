@@ -1,4 +1,4 @@
-name: VFA13 captured source artifact
+name: VFA13 redirect probe
 
 on:
   pull_request:
@@ -8,68 +8,28 @@ permissions:
   contents: read
 
 jobs:
-  artifact:
+  probe:
     if: github.head_ref == 'vfa13/capture-live-source-20260823'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Verify captured live source
-        run: |
-          test -s tmp/vfa13-live-capture/index.html
-          sha256sum tmp/vfa13-live-capture/index.html
-          wc -c tmp/vfa13-live-capture/index.html
-      - name: Probe live VFA13 routes
+      - name: Trace VFA13 redirects
         shell: bash
         run: |
           set -euo pipefail
-          base='https://vfa13-klassenportal.pages.dev'
-          : > tmp/vfa13-live-capture/probe.txt
-          for path in \
-            '/' \
-            '/api/calendar?from=2026-08-01&to=2026-09-30' \
-            '/api/announcements' \
-            '/api/feedback/public' \
-            '/api/poll' \
-            '/api/admin/system/status' \
-            '/manifest.webmanifest' \
-            '/sw.js' \
-            '/icon.svg'; do
-            body=$(mktemp)
-            headers=$(mktemp)
-            code=$(curl -sS -L --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$base$path" || true)
-            ctype=$(tr -d '\r' < "$headers" | awk -F': ' 'tolower($1)=="content-type"{print $2}' | tail -1)
-            bytes=$(wc -c < "$body" | tr -d ' ')
-            sha=$(sha256sum "$body" | awk '{print $1}')
-            first=$(head -c 160 "$body" | tr '\n\r\t' '   ' | sed 's/[[:space:]]\+/ /g')
-            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$path" "$code" "$ctype" "$bytes" "$sha" "$first" >> tmp/vfa13-live-capture/probe.txt
+          for url in \
+            'https://vfa13-klassenportal.pages.dev/' \
+            'https://vfa13-klassenportal.pages.dev/index.html' \
+            'https://vfa13-klassenportal.pages.dev/v2' \
+            'https://vfa13-klassenportal.pages.dev/api/calendar?from=2026-08-01&to=2026-09-30' \
+            'https://8ec05961.vfa13-klassenportal.pages.dev/' \
+            'https://8ec05961.vfa13-klassenportal.pages.dev/api/calendar?from=2026-08-01&to=2026-09-30'; do
+            echo "=== $url ==="
+            curl -sS --max-time 20 --max-redirs 0 -D - -o /tmp/body "$url" || true
+            echo "BODY_BYTES=$(wc -c < /tmp/body 2>/dev/null || echo 0)"
+            head -c 220 /tmp/body 2>/dev/null | tr '\n\r\t' ' ' || true
+            echo; echo
           done
-          cat tmp/vfa13-live-capture/probe.txt
-      - name: Upload captured source and probe
-        uses: actions/upload-artifact@v4
-        with:
-          name: vfa13-live-source-20260823
-          path: |
-            tmp/vfa13-live-capture/index.html
-            tmp/vfa13-live-capture/headers.txt
-            tmp/vfa13-live-capture/sha256.txt
-            tmp/vfa13-live-capture/probe.txt
-          if-no-files-found: error
-          retention-days: 1
-      - name: Upload current Commercial source snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: commercial-source-for-vfa13-20260823
-          path: |
-            src
-            public
-            migrations
-            scripts
-            tests
-            package.json
-            package-lock.json
-            tsconfig.json
-            tsconfig.build.json
-            wrangler.jsonc
-          if-no-files-found: error
-          retention-days: 1
+          echo '=== FOLLOW ROOT ==='
+          curl -sS -L --max-time 30 --max-redirs 12 -D - -o /tmp/follow -w '\nFINAL=%{url_effective} CODE=%{http_code} REDIRS=%{num_redirects}\n' 'https://vfa13-klassenportal.pages.dev/' || true
