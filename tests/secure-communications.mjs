@@ -46,7 +46,9 @@ assert.match(emailFanout,/communication:\$\{message\.id\}:\$\{r\.id\}/,'each par
 assert.match(emailFanout,/sendMail\(env,r\.email/,'fanout must send separately to each participant address');
 assert.doesNotMatch(emailFanout,/\bcc\s*:/i,'fanout must never use CC');
 assert.doesNotMatch(emailFanout,/\bbcc\s*:/i,'fanout must never use BCC');
-assert.match(mail,/to:\[to\]/,'mail provider call must contain exactly the single requested recipient');
+assert.match(mail,/EMAIL!\.send\(\{to,from:/,'Cloudflare mail binding must receive exactly the single requested recipient');
+assert.doesNotMatch(mail,/\bcc\s*:/i,'transactional mail provider call must not use CC');
+assert.doesNotMatch(mail,/\bbcc\s*:/i,'transactional mail provider call must not use BCC');
 assert.match(emailFanout,/attempts>=3|nextAttempts>=3/,'mail retries must be bounded');
 assert.match(emailFanout,/communication_email_delivery_failed/,'final mail failures must create an attention task');
 assert.match(emailFanout,/JSON\.stringify\(\{failed\}\)/,'attention task payload must contain only the aggregate failure count');
@@ -83,4 +85,4 @@ assert.match(index,/runCommunicationAutomation/);
 assert.match(index,/controller\?\.cron==='\*\/5 \* \* \* \*'/,'five-minute cron must return before heavy maintenance work');
 assert.ok(wrangler.includes('"*/5 * * * *"')&&wrangler.includes('"17 */6 * * *"'),'Worker must use separate lightweight and heavy cron schedules');
 
-console.log('Secure granular audiences, private email fanout, retries, lazy class-admin student delivery and communication automation checks: OK');
+console.log('Secure granular audiences, private Cloudflare email fanout, retries, lazy class-admin student delivery and communication automation checks: OK');
