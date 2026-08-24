@@ -8,6 +8,7 @@ import { publishOrRotatePlatformOffer } from './platform-offer-links.js';
 import { reissueAcceptedOfferOnboarding } from './platform-offer-onboarding.js';
 import { deliverPublishedPlatformOffer, emailPlatformOffer } from './platform-offer-mail.js';
 import { deliverOnboardingLinkMail } from './platform-onboarding-mail.js';
+import { mailConfigured } from './mail.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status,headers:{'cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -46,7 +47,7 @@ export async function handlePlatformOfferApi(request:Request,env:Env):Promise<Re
   }
   try{
     assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);
-    if(u.pathname==='/api/platform/offers/meta'&&request.method==='GET')return out({ok:true,...await platformOfferMeta(env,auth)});
+    if(u.pathname==='/api/platform/offers/meta'&&request.method==='GET')return out({ok:true,...await platformOfferMeta(env,auth),mailReady:mailConfigured(env)});
     if(u.pathname==='/api/platform/offers/preview'&&request.method==='POST')return out({ok:true,preview:await previewPlatformOffer(env,auth,await body(request))});
     if(u.pathname==='/api/platform/offers'&&request.method==='GET')return out({ok:true,offers:await listPlatformOffers(env,auth)});
     if(u.pathname==='/api/platform/offers'&&request.method==='POST'){
