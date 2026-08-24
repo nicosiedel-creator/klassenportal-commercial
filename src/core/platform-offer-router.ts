@@ -6,7 +6,7 @@ import { acceptPublicOffer, cancelPlatformOffer, createPlatformOffer, getPlatfor
 import { platformOfferAdminPreview } from './platform-offer-admin-preview.js';
 import { publishOrRotatePlatformOffer } from './platform-offer-links.js';
 import { reissueAcceptedOfferOnboarding } from './platform-offer-onboarding.js';
-import { emailPlatformOffer } from './platform-offer-mail.js';
+import { deliverPublishedPlatformOffer, emailPlatformOffer } from './platform-offer-mail.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status,headers:{'cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -21,6 +21,7 @@ function error(e:unknown):Response{
     :code==='INTERNAL_ERROR'?500:400;
   return out({ok:false,error:code},status);
 }
+function deliveryError(e:unknown){return{sent:false,mailId:null,error:String((e as Error)?.message||'MAIL_SEND_FAILED')};}
 
 export async function handlePlatformOfferApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url);
@@ -40,8 +41,16 @@ export async function handlePlatformOfferApi(request:Request,env:Env):Promise<Re
     if(u.pathname==='/api/platform/offers/meta'&&request.method==='GET')return out({ok:true,...await platformOfferMeta(env,auth)});
     if(u.pathname==='/api/platform/offers/preview'&&request.method==='POST')return out({ok:true,preview:await previewPlatformOffer(env,auth,await body(request))});
     if(u.pathname==='/api/platform/offers'&&request.method==='GET')return out({ok:true,offers:await listPlatformOffers(env,auth)});
-    if(u.pathname==='/api/platform/offers'&&request.method==='POST')return out({ok:true,...await createPlatformOffer(env,auth,await body(request),request)},201);
-    const publish=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/publish$/);if(publish&&request.method==='POST')return out({ok:true,...await publishOrRotatePlatformOffer(env,auth,decodeURIComponent(publish[1]),request)});
+    if(u.pathname==='/api/platform/offers'&&request.method==='POST'){
+      const created=await createPlatformOffer(env,auth,await body(request),request);let delivery=null;
+      if(created.publicUrl){try{delivery=await deliverPublishedPlatformOffer(env,auth,String((created.offer as Record<string,unknown>).id),created.publicUrl,false);}catch(e){delivery=deliveryError(e);}}
+      return out({ok:true,...created,delivery},201);
+    }
+    const publish=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/publish$/);if(publish&&request.method==='POST'){
+      const quoteId=decodeURIComponent(publish[1]),published=await publishOrRotatePlatformOffer(env,auth,quoteId,request);let delivery;
+      try{delivery=await deliverPublishedPlatformOffer(env,auth,quoteId,published.publicUrl,published.rotated);}catch(e){delivery=deliveryError(e);}
+      return out({ok:true,...published,delivery});
+    }
     const email=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/email$/);if(email&&request.method==='POST')return out({ok:true,...await emailPlatformOffer(env,auth,decodeURIComponent(email[1]),request)});
     const onboarding=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/onboarding-link$/);if(onboarding&&request.method==='POST')return out({ok:true,...await reissueAcceptedOfferOnboarding(env,auth,decodeURIComponent(onboarding[1]),request)});
     const adminPreview=u.pathname.match(/^\/api\/platform\/offers\/([^/]+)\/admin-preview$/);if(adminPreview&&request.method==='GET')return out({ok:true,...await platformOfferAdminPreview(env,auth,decodeURIComponent(adminPreview[1]))});
