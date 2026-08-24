@@ -5,6 +5,9 @@
   "compatibility_date": "2026-08-14",
   "compatibility_flags": ["nodejs_compat"],
   "preview_urls": false,
+  "vars": {
+    "PAYMENTS_ENABLED": "false"
+  },
   "build": {
     "command": "node scripts/workers-ci-guard.mjs"
   },
