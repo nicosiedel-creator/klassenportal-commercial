@@ -1,8 +1,10 @@
 import type { CoreAuthContext, Env } from './types.js';
+import { hasPermission } from './enterprise-access.js';
 
-// Delegated Fachbereich/quality roles intentionally remain `guest` at the base membership
-// level so they never inherit class-admin/student-data powers. Access remains role- and
-// tenant-scoped; authentication itself is handled by the normal password/OIDC session layer.
-export async function requireDelegatedPrivilegeMfa(_env:Env,auth:CoreAuthContext):Promise<void>{
+// Delegated Fachbereich/quality roles remain `guest` at the base membership level so they
+// never inherit class-admin/student-data powers. Every non-admin report request must carry
+// the explicit delegated `reports.view` permission resolved for the current tenant scope.
+export async function requireDelegatedPrivilegeAccess(_env:Env,auth:CoreAuthContext):Promise<void>{
   if(auth.isPlatformAdmin||auth.role==='tenant_admin')return;
+  if(!hasPermission(auth,'reports.view'))throw new Error('FORBIDDEN_DELEGATED_REPORT_ACCESS');
 }
