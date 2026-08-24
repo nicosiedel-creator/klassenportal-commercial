@@ -66,7 +66,9 @@ assert.match(backups,/BACKUP_FILE_SIZE_MISMATCH/,'backup verification must compa
 assert.match(backups,/BACKUP_FILE_ETAG_MISMATCH/,'backup verification must compare stored R2 etags');
 assert.match(backups,/BACKUP_RESOURCE_HASH_MISMATCH/,'backup verification must compare JSON SHA-256 hashes');
 assert.match(backups,/integrity_level!=='strong'/,'production readiness must reject legacy structural-only backup checks');
-assert.match(readiness,/Stripe läuft noch nicht mit Live-Schlüssel/,'production readiness must require live Stripe');
+assert.match(readiness,/if\(payment\.enabled\).*Stripe Live-Konfiguration fehlt/s,'Stripe must be required only when provider payment processing is explicitly enabled');
+assert.match(readiness,/Zahlungsabwicklung ist absichtlich deaktiviert/,'production readiness must explicitly allow non-payment production launch during the payment freeze');
+assert.match(readiness,/paymentsEnabled:paymentsEnabled\(env\)/,'owner readiness must expose whether payment execution is enabled');
 assert.match(readiness,/Eigentümer-MFA ist nicht aktiviert/,'production readiness must require owner MFA');
 assert.match(readiness,/Transaktions-E-Mail ist nicht vollständig konfiguriert/,'production readiness must require transactional mail');
 assert.match(readiness,/EU-Datenhaltung nicht bestätigt/,'production readiness must fail closed until EU data residence is attested');
@@ -83,4 +85,4 @@ assert.match(index,/PRODUCTION_RELEASE_LOCKED/,'worker must fail closed before e
 assert.match(index,/strict-transport-security/,'security headers must enforce HTTPS');
 assert.match(wrangler,/version_metadata/,'Worker version metadata binding must be configured');
 
-console.log('Launch readiness, legal, EU-first mail/data residency, recovery and strong backup safety checks: OK');
+console.log('Launch readiness, non-payment production release, legal, EU-first mail/data residency, recovery and strong backup safety checks: OK');
