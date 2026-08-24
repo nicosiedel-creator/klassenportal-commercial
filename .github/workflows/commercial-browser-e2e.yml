@@ -1,0 +1,31 @@
+name: Commercial browser E2E
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Click through Commercial acceptance surface
+        env:
+          COMMERCIAL_BASE_URL: https://klassenportal-commercial.nicosiedel.workers.dev
+          E2E_PLATFORM_EMAIL: ${{ secrets.E2E_PLATFORM_EMAIL }}
+          E2E_PLATFORM_PASSWORD: ${{ secrets.E2E_PLATFORM_PASSWORD }}
+        run: node scripts/commercial-browser-e2e.mjs
