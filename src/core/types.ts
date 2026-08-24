@@ -8,6 +8,7 @@ export interface Env {
   FILES: R2BucketLike;
   ASSETS: AssetBindingLike;
   APP_ORIGIN?: string;
+  PAYMENTS_ENABLED?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   OWNER_MFA_ENCRYPTION_KEY?: string;
