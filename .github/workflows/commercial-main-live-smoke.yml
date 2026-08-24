@@ -53,3 +53,14 @@ jobs:
           case "$code" in 400|404|410) ;; *) echo "Public onboarding route returned unexpected $code" >&2; cat /tmp/public >&2; exit 1;; esac
           grep -Eq 'UNAUTHENTICATED|PLATFORM_ADMIN_REQUIRED|LOGIN_REQUIRED|FORBIDDEN' /tmp/platform || true
           echo 'Commercial onboarding route contract is live.'
+      - name: Verify payment processing is frozen live
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS --max-time 15 -o /tmp/checkout -w '%{http_code}' "$BASE/api/payments/checkout-status?session_id=cs_test_release_freeze")
+          test "$code" = 503 || { echo "Checkout route must be frozen, got $code" >&2; cat /tmp/checkout >&2; exit 1; }
+          jq -e '.ok == false and .error == "PAYMENT_DISABLED"' /tmp/checkout >/dev/null
+          code=$(curl -sS --max-time 15 -o /tmp/webhook -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{}' "$BASE/api/payments/stripe/webhook")
+          test "$code" = 200 || { echo "Frozen webhook acknowledgement returned $code" >&2; cat /tmp/webhook >&2; exit 1; }
+          jq -e '.ok == true and .ignored == true and .paymentProcessing == "disabled"' /tmp/webhook >/dev/null
+          echo 'Commercial payment processing is live-frozen without provider side effects.'
