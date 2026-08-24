@@ -1,4 +1,4 @@
-name: Probe VFA13 live redirect chain
+name: Capture VFA13 live source
 
 on:
   push:
@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  probe:
+  capture:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -16,36 +16,26 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: vfa13/capture-live-source-20260823
-      - name: Probe current production and known previous deployment
+      - name: Fetch current public VFA13 deployment
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p tmp/vfa13-live-capture
-          out=tmp/vfa13-live-capture/redirect-probe.txt
-          : > "$out"
-          for url in \
-            'https://vfa13-klassenportal.pages.dev/' \
-            'https://vfa13-klassenportal.pages.dev/index.html' \
-            'https://vfa13-klassenportal.pages.dev/v2' \
-            'https://vfa13-klassenportal.pages.dev/api/calendar?from=2026-08-01&to=2026-09-30' \
-            'https://8ec05961.vfa13-klassenportal.pages.dev/' \
-            'https://8ec05961.vfa13-klassenportal.pages.dev/api/calendar?from=2026-08-01&to=2026-09-30'; do
-            echo "=== $url ===" >> "$out"
-            curl -sS --max-time 20 --max-redirs 0 -D - -o /tmp/body "$url" >> "$out" 2>&1 || true
-            echo "BODY_BYTES=$(wc -c < /tmp/body 2>/dev/null || echo 0)" >> "$out"
-            head -c 180 /tmp/body 2>/dev/null | tr '\n\r\t' '   ' >> "$out" || true
-            echo >> "$out"
-            echo >> "$out"
-          done
-          echo '=== FOLLOW PRODUCTION ===' >> "$out"
-          curl -sS -L --max-time 25 --max-redirs 12 -D - -o /tmp/follow-body -w '\nFINAL=%{url_effective} CODE=%{http_code} REDIRS=%{num_redirects}\n' 'https://vfa13-klassenportal.pages.dev/' >> "$out" 2>&1 || true
-          cat "$out"
-      - name: Commit probe result to temporary branch
+          curl -fsSL --retry 3 --retry-delay 2 --max-time 30 \
+            -D tmp/vfa13-live-capture/headers.txt \
+            https://vfa13-klassenportal.pages.dev/ \
+            -o tmp/vfa13-live-capture/index.html
+          test -s tmp/vfa13-live-capture/index.html
+          sha256sum tmp/vfa13-live-capture/index.html | tee tmp/vfa13-live-capture/sha256.txt
+          wc -c tmp/vfa13-live-capture/index.html
+      - name: Analyze current live source
+        run: node scripts/analyze-vfa13-live-source.mjs
+      - name: Commit captured source and analysis to temporary branch
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tmp/vfa13-live-capture/redirect-probe.txt
-          git commit -m 'Record VFA13 redirect probe after upload' || exit 0
+          git add tmp/vfa13-live-capture/index.html tmp/vfa13-live-capture/headers.txt tmp/vfa13-live-capture/sha256.txt tmp/vfa13-live-capture/report.json
+          git commit -m 'Capture and analyze current public VFA13 live source' || exit 0
           git push origin HEAD:vfa13/capture-live-source-20260823
