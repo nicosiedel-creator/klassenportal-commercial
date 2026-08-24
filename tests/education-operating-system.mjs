@@ -100,9 +100,10 @@ assert.doesNotMatch(customer,/<link[^>]+education-os\.css/,'Education OS styles 
 assert.doesNotMatch(customer,/src="\/education-os-ui\.js/,'Education OS workspace must not regress to eager first-paint loading');
 assert.ok(!platform.includes('education-os-ui.js'),'platform admin UI must remain untouched');
 for(const label of ['Future Radar','Scenario Lab','Self-Healing','Proof Graph','Autopilot-Sicherheitskern'])assert.ok(ui.includes(label),`Education OS UI ${label} missing`);
-assert.match(ui,/Keine direkten Schreibrechte|keine direkten Schreibrechte|keine direkten Schreibrechte/i,'UI must explain that language/AI has no direct write access');
+assert.match(ui,/Keine direkten Schreibrechte|keine direkten Schreibrechte/i,'UI must explain that language/AI has no direct write access');
 assert.match(ui,/Vier-Augen-Prinzip/,'UI must surface dual control');
 assert.match(ui,/AUTOPILOT_TWIN_CHANGED_RESIMULATE/,'UI must explain stale-snapshot safety');
+assert.doesNotMatch(ui,/\bmfa\b|MFA_|require_mfa|TOTP|Authenticator/i,'Education OS UI must not retain removed MFA concepts');
 
 for(const concept of ['Live Education Twin','Education Autopilot','Scenario Lab','Proof Graph','Future Radar','Self-healing Data'])assert.ok(product.includes(concept),`product law ${concept} missing`);
 assert.match(product,/Regelwerk vor KI/,'product strategy must keep deterministic rules before AI');
