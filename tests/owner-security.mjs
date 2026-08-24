@@ -64,10 +64,13 @@ assert.match(cockpit,/verifyOwnerPassword/,'destructive platform actions must re
 assert.match(cockpit,/CURRENT_PASSWORD_REQUIRED/,'missing current password must fail closed');
 assert.match(cockpit,/CURRENT_PASSWORD_INVALID/,'wrong current password must fail closed');
 assert.match(cockpit,/confirm_name/,'tenant deletion must require exact tenant-name confirmation');
+assert.match(cockpit,/confirm_phrase/,'final deletion must require an action-specific confirmation phrase');
 assert.match(cockpit,/ACTIVE_BILLING_MUST_END_FIRST/,'tenant deletion must refuse active billing');
 assert.match(cockpit,/DELETE:\$\{tenantId\}/,'final deletion must retain the exact destructive confirmation token');
 assert.match(ui,/14-tägigen Schutzfrist/,'owner UI must explain deletion grace period');
 assert.match(ui,/System & Sicherheit/,'owner cockpit must remain visible only inside platform admin');
+assert.match(ui,/confirm_phrase/,'owner UI must submit the exact final-deletion phrase');
+assert.doesNotMatch(ui,/second factor|authenticator|recovery code/i,'owner UI must remain password-only');
 assert.match(classPortalHtml,/portal-lazy-runtime\.js/,'shared student portal must retain audited lazy runtime');
 
 console.log('Owner/admin/teacher password-only security, no-MFA contract, tenant isolation, SSO fail-closed, destructive re-auth and platform-origin regression tests: OK');

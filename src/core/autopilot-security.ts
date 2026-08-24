@@ -1,6 +1,6 @@
 import type { CoreAuthContext, Env } from './types.js';
 
-export async function requireAutopilotTenantAdminMfa(_env:Env,auth:CoreAuthContext):Promise<void>{
+export async function requireAutopilotTenantAdmin(_env:Env,auth:CoreAuthContext):Promise<void>{
   if(auth.isPlatformAdmin)throw new Error('AUTOPILOT_TENANT_ADMIN_REQUIRED');
   if(auth.role!=='tenant_admin')throw new Error('AUTOPILOT_TENANT_ADMIN_REQUIRED');
 }
@@ -24,3 +24,4 @@ const forbiddenAutopilotNamespaces=[
 export function forbiddenAutopilotNamespace(type:string){
   return forbiddenAutopilotNamespaces.some((namespace)=>type.startsWith(namespace));
 }
+

@@ -68,7 +68,7 @@ Erforderliche echte Anbieterangaben dürfen nicht erfunden werden: tatsächliche
 B2B-only; individuelle Angebote haben Vorrang. Regeln u. a. zu Vertragsschluss, Sonderpreisen/Rabatten, Pilot ohne Auto-Abo, Leistungsumfang, Kundenpflichten, Minderjährigen-/Teilnehmerdaten, Abrechnung, Laufzeit/Kündigung, Data-Act-Wechsel/Export, Datenschutz/AVV, IP, Gewährleistung, Haftung, Unterauftragnehmern und Änderungen.
 
 ### Datenschutz
-Trennt eigene Verantwortlichkeit für Interessenten-/Vertrags-/Abrechnungs-/Sicherheits-/Supportdaten von Auftragsverarbeitung für fachliche Kunden-/Klassen-/Teilnehmerdaten. Cloudflare, Resend und Stripe werden entsprechend ihrer tatsächlichen Rolle beschrieben; Microsoft-Integrationen sind optional.
+Trennt eigene Verantwortlichkeit für Interessenten-/Vertrags-/Abrechnungs-/Sicherheits-/Supportdaten von Auftragsverarbeitung für fachliche Kunden-/Klassen-/Teilnehmerdaten. Cloudflare und optional Microsoft werden entsprechend ihrer tatsächlichen Rolle beschrieben; Microsoft-Integrationen sind optional.
 
 ### AVV
 Enthält Gegenstand/Dauer, Art/Zweck, Datenarten, Betroffenengruppen, Weisungen, Vertraulichkeit, TOM, Unterauftragsverarbeiter, Drittlandtransfer, Unterstützung, Datenschutzverletzungen, Audits und Rückgabe/Löschung. Art.-9-Daten sind ausdrücklich nicht Standardzweck und benötigen bei tatsächlicher Nutzung eine geeignete Rechtsgrundlage/zusätzliche Schutzmaßnahmen.
@@ -90,7 +90,7 @@ Bereits vorhanden:
 - Mandanten-/Klassentrennung
 - serverseitige Rollen-/Berechtigungsprüfung
 - sichere Passwort-Hashes und transparenter Upgradepfad
-- kurze Eigentümersitzungen, MFA/Recovery
+- kurze Eigentümersitzungen und erneute Passwortbestätigung
 - CSRF-/Origin-Schutz
 - Auditprotokoll
 - automatisierte Backups, Verifikation und Restore-Sicherheitsablauf
@@ -122,8 +122,8 @@ Diese Punkte sind externe Produktionskonfiguration und bleiben bis zur Eingabe d
 1. endgültige Produktionsdomain und `APP_ORIGIN`
 2. echte Anbieter-/Impressumsdaten und ausdrückliche Rechtsdokument-Freigabe
 3. Stripe Live Secret Key + Webhook Secret und Live-Konfiguration
-4. `OWNER_MFA_ENCRYPTION_KEY` und aktivierte Eigentümer-MFA
-5. Resend-Konfiguration (`RESEND_API_KEY`, `MAIL_FROM`, verifizierte Absenderdomain)
+4. erneute Passwortbestätigung und eindeutige Bestätigungsphrase für kritische Plattformaktionen
+5. Cloudflare-Email-Binding, `MAIL_FROM` und verifizierte Absenderdomain
 6. aktuelle verifizierte Kundenbackups vor Produktionsfreigabe
 7. Cloudflare-for-SaaS-Zugangsdaten nur dann, wenn eigene Kundendomains tatsächlich verkauft/aktiviert werden
 
@@ -140,3 +140,4 @@ Sicherer Standard:
 - anschließend entweder Ende/Lösch-/Exportworkflow oder neues ausdrücklich angenommenes kostenpflichtiges Angebot
 
 Vor dem Versand an einen echten Bildungsträger: reale Anbieterangaben veröffentlichen, AVV/Datenschutz bereitstellen, Transaktions-E-Mail konfigurieren und den konkreten Pilotumfang im Angebot prüfen.
+

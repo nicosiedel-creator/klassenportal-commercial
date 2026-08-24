@@ -5,6 +5,7 @@ import { ensureAdvancedModuleSchema, ensureCalendarFeedsForTenant } from './adva
 import { id, nowIso, safeString } from './utils.js';
 import { stripeMode } from './stripe-mode.js';
 import { persistStripeModeState, prepareStripeModeState } from './stripe-mode-state.js';
+import { assertPaymentsEnabled } from './payment-policy.js';
 
 const API='https://api.stripe.com/v1';
 const TAX_CODE='txcd_10103001';
@@ -15,6 +16,7 @@ type Rule={feature_key:string;display_name:string;description:string|null;catego
 function sid(v:any):string|null{return typeof v==='string'?v:v&&typeof v.id==='string'?v.id:null;}
 function form(entries:Array<[string,unknown]>){const p=new URLSearchParams();for(const [k,v] of entries)if(v!==undefined&&v!==null&&String(v)!=='')p.append(k,String(v));return p;}
 async function stripe(env:Env,method:'GET'|'POST',path:string,entries:Array<[string,unknown]>=[],idem?:string):Promise<Record<string,any>>{
+  assertPaymentsEnabled(env);
   if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)throw new Error('STRIPE_NOT_CONFIGURED');const mode=stripeMode(env),p=form(entries);let url=`${API}${path}`;if(method==='GET'&&p.toString())url+=`?${p}`;const headers:Record<string,string>={Authorization:`Bearer ${env.STRIPE_SECRET_KEY}`};if(method==='POST')headers['content-type']='application/x-www-form-urlencoded';if(idem)headers['Idempotency-Key']=`${mode}:${idem}`.slice(0,255);const r=await fetch(url,{method,headers,body:method==='POST'?p:undefined});let d:any={};try{d=await r.json();}catch{}if(!r.ok){const code=String(d?.error?.code||d?.error?.type||'API_ERROR').toUpperCase().replace(/[^A-Z0-9]+/g,'_');throw new Error(`STRIPE_${code}`);}return d;
 }
 function invoiceNumber(){const d=new Date(),date=`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}`;return`MOD-${date}-${id('').replace(/[^A-Za-z0-9]/g,'').slice(-8).toUpperCase()}`;}

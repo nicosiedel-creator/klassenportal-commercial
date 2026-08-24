@@ -1,6 +1,6 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { nowIso, safeString, sha256Text } from './utils.js';
-import { requireAutopilotTenantAdminMfa } from './autopilot-security.js';
+import { requireAutopilotTenantAdmin } from './autopilot-security.js';
 import { createPartnerGrant, scanComplianceTenant, upsertComplianceProgram } from './training-moat.js';
 
 const SAFE_PARTNER_CAPABILITIES=new Set(['course_schedule','reportbook_status','signature_status','participant_identity']);
@@ -15,7 +15,7 @@ function capabilities(input:unknown){
 }
 
 export async function upsertComplianceProgramHardened(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
-  await requireAutopilotTenantAdminMfa(env,auth);
+  await requireAutopilotTenantAdmin(env,auth);
   const status=String(input.status||'draft'),version=safeString(input.rules_version,100),source=safeString(input.source_reference,1000);
   if(status==='active'){
     if(input.verification_confirmed!==true)throw new Error('COMPLIANCE_RULE_VERIFICATION_REQUIRED');
@@ -36,7 +36,7 @@ async function validatePartnerScope(env:Env,tenantId:string,courseId:string|null
   }
 }
 export async function createPartnerGrantHardened(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
-  await requireAutopilotTenantAdminMfa(env,auth);
+  await requireAutopilotTenantAdmin(env,auth);
   const courseId=safeString(input.course_id,120)||null,participantId=safeString(input.participant_user_id,120)||null,caps=capabilities(input.capabilities);
   await validatePartnerScope(env,tenantId,courseId,participantId);
   return createPartnerGrant(env,auth,tenantId,{...input,course_id:courseId,participant_user_id:participantId,capabilities:caps});
@@ -73,5 +73,6 @@ export async function runComplianceRadarBounded(env:Env,limit=25){
 }
 
 export async function scanComplianceTenantHardened(env:Env,auth:CoreAuthContext,tenantId:string){
-  requireTenantAdmin(auth);await requireAutopilotTenantAdminMfa(env,auth);return scanComplianceTenant(env,tenantId);
+  requireTenantAdmin(auth);await requireAutopilotTenantAdmin(env,auth);return scanComplianceTenant(env,tenantId);
 }
+

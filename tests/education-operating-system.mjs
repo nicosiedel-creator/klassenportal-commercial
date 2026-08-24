@@ -90,7 +90,7 @@ assert.match(intent,/room_outage/,'intent parser must recognize room outage');
 assert.match(intent,/curriculum_recovery/,'intent parser must recognize curriculum recovery');
 
 for(const route of ['/api/education-os/twin','/api/education-os/scenarios','/api/education-os/intent/preview','/api/education-os/risks','/api/education-os/consistency','/api/education-os/proof'])assert.ok(router.includes(route),`Education OS route ${route} missing`);
-assert.match(router,/AUTOPILOT_TENANT_ADMIN_REQUIRED|requireAutopilotTenantAdminMfa/,'manual security-sensitive scans/status changes must remain tenant-admin gated');
+assert.match(router,/AUTOPILOT_TENANT_ADMIN_REQUIRED|requireAutopilotTenantAdmin/,'manual security-sensitive scans/status changes must remain tenant-admin gated');
 assert.match(bridge,/handleEducationOsApi/,'Education OS router must be connected before generic education routes');
 
 assert.match(customer,/kp-lazy-module-manifest/,'customer admin must expose an auditable on-demand module manifest');
@@ -110,3 +110,4 @@ assert.match(product,/Regelwerk vor KI/,'product strategy must keep deterministi
 assert.match(product,/Erst simulieren, dann verändern/,'product strategy must require simulation before mutation');
 
 console.log('Education Operating System architecture/security/lazy-runtime regression ok');
+

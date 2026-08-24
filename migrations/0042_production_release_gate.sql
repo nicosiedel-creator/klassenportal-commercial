@@ -1,5 +1,5 @@
 -- Production is deliberately locked per Cloudflare Worker version until the owner
--- completes all launch-readiness checks and performs a password + MFA step-up.
+-- completes all launch-readiness checks and performs a password reauthentication and explicit confirmation phrase.
 CREATE TABLE IF NOT EXISTS production_release_approvals (
   version_id TEXT PRIMARY KEY,
   version_tag TEXT,
@@ -16,3 +16,4 @@ CREATE TABLE IF NOT EXISTS production_release_approvals (
 
 CREATE INDEX IF NOT EXISTS idx_production_release_approvals_active
 ON production_release_approvals(app_origin, revoked_at, approved_at DESC);
+

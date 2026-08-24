@@ -32,7 +32,7 @@ CREATE TRIGGER IF NOT EXISTS trg_autopilot_circuit_event_immutable_delete
 BEFORE DELETE ON education_autopilot_circuit_events BEGIN SELECT RAISE(ABORT,'AUTOPILOT_CIRCUIT_EVENT_IMMUTABLE'); END;
 
 -- Three failed executions inside 15 minutes switch the tenant back to
--- recommend-only mode. A human tenant admin with MFA must deliberately re-enable
+-- recommend-only mode. A human tenant admin with explicit reauthentication must deliberately re-enable
 -- assisted execution after the root cause is understood.
 CREATE TRIGGER IF NOT EXISTS trg_autopilot_failure_circuit_breaker
 AFTER UPDATE OF status ON education_autopilot_executions
@@ -66,3 +66,4 @@ BEGIN
 END;
 
 PRAGMA foreign_keys = ON;
+

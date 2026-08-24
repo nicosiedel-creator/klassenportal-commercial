@@ -88,5 +88,15 @@ assert.match(paymentRouterSource,/pathname\.startsWith\('\/api\/payments\/'\).*d
 assert.match(lifecycleSource,/!paymentsEnabled\(env\).*PAYMENT_DISABLED/s);
 assert.doesNotMatch(onboardingSource,/Zur sicheren Zahlung|anschließende Zahlungsabwicklung erfolgt jetzt über den eingerichteten Zahlungsdienst/);
 assert.match(onboardingSource,/Zahlung erfolgt außerhalb des Portals/);
+assert.doesNotMatch(indexSource,/api\.stripe\.com|checkout\.stripe\.com/,'browser CSP must not permit frozen payment-provider traffic');
+
+for(const path of [
+  'src/core/stripe.ts','src/core/stripe-mode-safe.ts','src/core/payment-orchestration.ts',
+  'src/core/module-commerce.ts','src/core/module-cancellation.ts','src/core/stripe-tax-billing.ts',
+  'src/core/platform-accounting.ts'
+]){
+  const source=await readFile(new URL(`../${path}`,import.meta.url),'utf8');
+  assert.match(source,/assertPaymentsEnabled\(env\)/,`${path} must fail before any provider call`);
+}
 
 console.log('Payment freeze release contract + paid-onboarding chain + 1,000-case fail-closed fuzz: OK');

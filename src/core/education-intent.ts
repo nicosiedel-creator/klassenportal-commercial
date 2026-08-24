@@ -54,8 +54,9 @@ export async function previewEducationIntent(env:Env,auth:CoreAuthContext,tenant
   if(['midyear_takeover','qualification_expiry','schedule_rebalance','excursion_change','self_study_need'].includes(type)){if(course.id){resolved.course_id=course.id;resolved.course_label=course.label;}resolved.description=intent;}
   const complete=missing.length===0&&ambiguities.length===0,base=.72,confidence=Math.max(0,Math.min(1,base+(complete?0.25:0)-(ambiguities.length*.2)-(missing.length*.12)));
   if(!complete)warnings.push('Die Eingabe ist nicht eindeutig genug für eine Simulation. Fehlende oder mehrdeutige Felder müssen zuerst aufgelöst werden.');
-  explanation.push('Es wurden keine Produktivdaten verändert.');explanation.push('Auch eine vollständige Absicht erzeugt zunächst nur eine Simulation; Ausführung bleibt ein separater MFA-/Freigabeschritt.');
+  explanation.push('Es wurden keine Produktivdaten verändert.');explanation.push('Auch eine vollständige Absicht erzeugt zunächst nur eine Simulation; Ausführung bleibt ein separater Passwortbestätigungs- und Freigabeschritt.');
   return{intent,scenario_type:type,confidence:Math.round(confidence*100)/100,complete,resolved,missing:[...new Set(missing)],ambiguities,warnings,explanation};
 }
 
 export async function simulateEducationIntent(env:Env,auth:CoreAuthContext,tenantId:string,intentText:string,explicit:Record<string,unknown>={}){const preview=await previewEducationIntent(env,auth,tenantId,intentText,explicit);if(!preview.complete||!preview.scenario_type)throw new Error('INTENT_NOT_SAFE_TO_SIMULATE');const result=await simulateEducationScenario(env,auth,tenantId,preview.scenario_type,preview.resolved,intentText);return{preview,...result};}
+

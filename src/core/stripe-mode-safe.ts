@@ -5,6 +5,7 @@ import { persistStripeModeState, prepareStripeModeState } from './stripe-mode-st
 import { requireRole } from './permissions.js';
 import { nowIso } from './utils.js';
 import { handleModuleInvoiceFailed, handleModuleInvoicePaid } from './module-commerce.js';
+import { assertPaymentsEnabled } from './payment-policy.js';
 
 const API='https://api.stripe.com/v1';
 
@@ -12,6 +13,7 @@ type StripeObj=Record<string,any>;
 function sid(v:any):string|null{return typeof v==='string'?v:v&&typeof v.id==='string'?v.id:null;}
 function form(entries:Array<[string,unknown]>):URLSearchParams{const p=new URLSearchParams();for(const [k,v] of entries)if(v!==undefined&&v!==null&&String(v)!=='')p.append(k,String(v));return p;}
 async function stripePost(env:Env,path:string,entries:Array<[string,unknown]>,idem?:string):Promise<StripeObj>{
+  assertPaymentsEnabled(env);
   if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)throw new Error('STRIPE_NOT_CONFIGURED');
   const mode=stripeMode(env),headers:Record<string,string>={Authorization:`Bearer ${env.STRIPE_SECRET_KEY}`,'content-type':'application/x-www-form-urlencoded'};if(idem)headers['Idempotency-Key']=`${mode}:${idem}`.slice(0,255);
   const r=await fetch(`${API}${path}`,{method:'POST',headers,body:form(entries)});let d:any={};try{d=await r.json();}catch{}if(!r.ok){const code=String(d?.error?.code||d?.error?.type||'API_ERROR').toUpperCase().replace(/[^A-Z0-9]+/g,'_');throw new Error(`STRIPE_${code}`);}return d;
@@ -24,6 +26,7 @@ async function settleModuleInvoice(env:Env,event:StripeObj):Promise<void>{
 }
 
 export async function handleStripeWebhookModeSafe(env:Env,request:Request):Promise<Response>{
+  assertPaymentsEnabled(env);
   if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)throw new Error('STRIPE_NOT_CONFIGURED');
   const raw=await request.text();let event:StripeObj;try{event=JSON.parse(raw);}catch{return new Response('Ungültiges JSON',{status:400});}
   const mode=await prepareStripeModeState(env),eventMode=event?.livemode===true?'live':'test';if(eventMode!==mode)return new Response('Stripe-Modus stimmt nicht überein',{status:400});

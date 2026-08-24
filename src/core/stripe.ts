@@ -4,6 +4,7 @@ import type { PriceCalculation } from './commerce.js';
 import { audit } from './audit.js';
 import { id, nowIso, safeString } from './utils.js';
 import { requireRole } from './permissions.js';
+import { assertPaymentsEnabled } from './payment-policy.js';
 
 type StripeObj = Record<string, any>;
 type CatalogRow = {
@@ -35,6 +36,7 @@ function stripeMessage(d:any):string{
 }
 
 async function stripeRequest(env:Env,method:'GET'|'POST',path:string,entries:Array<[string,unknown]>=[],idempotencyKey?:string):Promise<StripeObj>{
+  assertPaymentsEnabled(env);
   if(!env.STRIPE_SECRET_KEY)throw new Error('STRIPE_NOT_CONFIGURED');
   let url=`${STRIPE_API}${path}`;const body=form(entries);
   if(method==='GET'&&body.size)url+=`?${body.toString()}`;

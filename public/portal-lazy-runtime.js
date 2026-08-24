@@ -1,6 +1,6 @@
 const PATH_OK=/^\/portal\/[^/]+\/[^/]+\/?$/.test(location.pathname);
 if(PATH_OK){
-  const V='20260824-no-mfa-1';
+  const V='20260824-password-security-1';
   const asset=name=>`/${name}.js?v=${V}`;
   const style=name=>`/${name}.css?v=${V}`;
   const loaded=new Set(),loading=new Map(),styles=new Set(),styleLoading=new Map();let bootPromise=null,backgroundStarted=false,interactionBound=false;
@@ -100,3 +100,4 @@ if(PATH_OK){
   window.addEventListener('kp:portal-base-ready',()=>void boot(),{once:true});
   if(window.__KP_PORTAL_BASE_PROMISE)window.__KP_PORTAL_BASE_PROMISE.then(()=>void boot()).catch(()=>{});
 }
+

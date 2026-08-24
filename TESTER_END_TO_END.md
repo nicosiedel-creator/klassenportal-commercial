@@ -23,7 +23,7 @@ Kopiere diesen Auftrag in deine eigene KI. Lass die KI alle Daten selbst erfinde
 - Nur fiktive Daten verwenden. Keine echten Schüler, Beschäftigten, Telefonnummern, Adressen oder Dokumente.
 - E-Mail-Adressen ausschließlich unter `example.invalid`.
 - Keine echten Kredit-/Debitkarten oder Bankdaten verwenden.
-- Zahlungen ausschließlich im Stripe-Testmodus durchführen.
+- Zahlungsfunktionen bleiben vollständig deaktiviert; keine Zahlungsdaten eingeben.
 - Nicht als Plattform-Admin testen. Du bist ein eigenständiger Kunde/Bildungsträger.
 - Nicht versuchen, absichtlich Sicherheitssysteme zu umgehen. Berechtigungsgrenzen dürfen und sollen normal getestet werden.
 
@@ -35,7 +35,7 @@ Kopiere diesen Auftrag in deine eigene KI. Lass die KI alle Daten selbst erfinde
 - Bildungsträger mit den von deiner KI erzeugten Stammdaten anlegen.
 - Paket/Testphase auswählen.
 - eigenen Kunden-Admin anlegen und anmelden.
-- Passwort-/MFA-Abläufe vollständig durchlaufen, sofern angeboten/verlangt.
+- Passwort- und Bestätigungsabläufe vollständig durchlaufen, sofern angeboten/verlangt.
 - prüfen, ob Weiterleitungen, Fehlermeldungen und Bestätigungen verständlich sind.
 
 ### B – Branding und Organisation
@@ -85,8 +85,8 @@ Kopiere diesen Auftrag in deine eigene KI. Lass die KI alle Daten selbst erfinde
 
 - Paket-/Modulübersicht öffnen.
 - mindestens ein Modul aktivieren/deaktivieren oder einen Tarifwechsel simulieren, soweit im Testmodus verfügbar.
-- Stripe-Testzahlung durchführen.
-- erfolgreiche Testzahlung sowie einen vorgesehenen Fehl-/Abbruchfall testen.
+- prüfen, dass Zahlungsrouten mit PAYMENT_DISABLED antworten.
+- prüfen, dass kein Checkout geöffnet und kein Zahlungsprovider aufgerufen wird.
 - prüfen, ob der gebuchte Umfang anschließend genau dem angezeigten Paket entspricht.
 - niemals echte Zahlungsdaten verwenden.
 
@@ -124,7 +124,7 @@ Für jeden Fehler bitte genau festhalten:
 7. ob der Fehler nach Neuladen erneut auftritt
 8. Browser/Gerät
 
-Keine Passwörter, MFA-Codes, Test-API-Schlüssel oder andere Zugangsdaten in Screenshots/Fehlerberichten mitsenden.
+Keine Passwörter, Zugangscodes, Test-API-Schlüssel oder andere Zugangsdaten in Screenshots/Fehlerberichten mitsenden.
 
 ## 5. Abschlussbewertung
 
@@ -136,3 +136,4 @@ Am Ende bitte kurz beantworten:
 - Wo hättest du eine Importvorlage oder bessere Erklärung gebraucht?
 - Welche Funktion würdest du als echter Bildungsträger als Erstes vermissen?
 - Würdest du das Portal nach diesem Test produktiv einsetzen? Warum/warum nicht?
+

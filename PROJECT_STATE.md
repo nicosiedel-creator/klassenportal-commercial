@@ -153,7 +153,7 @@ Der Education-OS-Stand ist als **feature-complete candidate** zu behandeln, nich
 - keine Emotionserkennung/Biometrie/Persönlichkeitsbewertung
 - keine kritischen produktiven KI-Schreibrechte ohne Freigabe
 - keine Rollen-/Berechtigungs-/Zahlungs-/Noten-/individuellen Anwesenheitsaktionen über den Autopilot
-- High-Risk-Aktionen mit MFA/OIDC und vorgesehenem Vier-Augen-Prinzip
+- High-Risk-Aktionen mit erneute Passwortbestätigung oder OIDC und vorgesehenem Vier-Augen-Prinzip
 - Partnerzugänge nur per Capability-Whitelist
 - kein stiller Datenverlust bei Migration
 - keine Behauptung automatischer BAMF-/AZAV-/BA-Rechtskonformität
@@ -162,7 +162,7 @@ Der Education-OS-Stand ist als **feature-complete candidate** zu behandeln, nich
 
 Sandbox-Grundpfade für erfolgreiche Karte und verzögertes SEPA sind im Projektstand dokumentiert. Vor echter Live-Zahlungsfreigabe bleibt insbesondere der absichtlich fehlgeschlagene Zahlungsfall mit sauberem Retry als realer Pflichtnachweis relevant.
 
-Provider-/Produktionswerte wie echte Stripe-Live-Secrets, Webhook-Secrets, Eigentümer-MFA-Schlüssel, verifizierte Mail-/Domainkonfiguration oder rechtliche Anbieterangaben dürfen niemals erfunden werden. Soweit diese Werte für einen konkreten Live-Start erforderlich sind, bleibt die jeweilige Funktion fail-closed, bis reale Werte und Abnahmen vorliegen.
+Provider-/Produktionswerte wie echte Stripe-Live-Secrets, Webhook-Secrets, Schlüssel für kritische Plattformaktionen, verifizierte Mail-/Domainkonfiguration oder rechtliche Anbieterangaben dürfen niemals erfunden werden. Soweit diese Werte für einen konkreten Live-Start erforderlich sind, bleibt die jeweilige Funktion fail-closed, bis reale Werte und Abnahmen vorliegen.
 
 ## VFA-13 – verbindlicher, davon getrennter Sollstand
 
@@ -217,3 +217,4 @@ Der aktuell lokal geprüfte Uploadkandidat für diese Korrektur ist **VFA-13 Rel
 ## Bereinigungsstand GitHub
 
 Am 24.08.2026 wurden die veralteten offenen VFA-PRs #133, #134 und der ausdrücklich nicht zu mergende Diagnose-PR #147 geschlossen. Nach dieser Bereinigung bestehen keine offenen eigenen Pull Requests im Repository.
+

@@ -2,7 +2,7 @@ import type { CoreAuthContext, Env } from './types.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { audit } from './audit.js';
 import { buildEducationTwin, stableStringify } from './education-twin.js';
-import { forbiddenAutopilotNamespace, requireAutopilotTenantAdminMfa, safeAutopilotActionType, tenantAdminCount } from './autopilot-security.js';
+import { forbiddenAutopilotNamespace, requireAutopilotTenantAdmin, safeAutopilotActionType, tenantAdminCount } from './autopilot-security.js';
 import { id, nowIso, safeString, sha256Text } from './utils.js';
 import type { AutopilotAction, ScenarioRisk } from './education-scenarios.js';
 
@@ -20,17 +20,17 @@ function guardExists(env:Env,sql:string,args:unknown[]){return env.DB.prepare(`S
 export async function getAutopilotPolicy(env:Env,auth:CoreAuthContext,tenantId:string){
   if(!auth.isPlatformAdmin&&!auth.tenantIds.includes(tenantId))throw new Error('FORBIDDEN_TENANT');
   const row=await env.DB.prepare('SELECT * FROM education_autopilot_policies WHERE tenant_id=?').bind(tenantId).first<Record<string,unknown>>();
-  return row||{tenant_id:tenantId,mode:'recommend_only',max_auto_risk:'low',require_mfa:1,dual_approval_from_risk:'high',max_actions_per_execution:100,max_courses_per_execution:10,allow_automatic_notifications:1};
+  return row||{tenant_id:tenantId,mode:'recommend_only',max_auto_risk:'low',require_reauthentication:1,dual_approval_from_risk:'high',max_actions_per_execution:100,max_courses_per_execution:10,allow_automatic_notifications:1};
 }
 
 export async function saveAutopilotPolicy(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
-  await requireAutopilotTenantAdminMfa(env,auth);await assertTenantWriteAllowed(env,tenantId);
+  await requireAutopilotTenantAdmin(env,auth);await assertTenantWriteAllowed(env,tenantId);
   const mode=String(input.mode||'recommend_only');if(!['recommend_only','assisted','safe_auto'].includes(mode))throw new Error('AUTOPILOT_POLICY_MODE_INVALID');
   const maxAuto=String(input.max_auto_risk||'low');if(!['low','medium'].includes(maxAuto))throw new Error('AUTOPILOT_POLICY_RISK_INVALID');
   const dual=String(input.dual_approval_from_risk||'high');if(!['medium','high','critical'].includes(dual))throw new Error('AUTOPILOT_POLICY_DUAL_INVALID');
   const maxActions=Math.max(1,Math.min(500,Number(input.max_actions_per_execution||100)||100)),maxCourses=Math.max(1,Math.min(100,Number(input.max_courses_per_execution||10)||10)),ts=nowIso();
-  await env.DB.prepare(`INSERT INTO education_autopilot_policies(tenant_id,mode,max_auto_risk,require_mfa,dual_approval_from_risk,max_actions_per_execution,max_courses_per_execution,allow_automatic_notifications,updated_by,updated_at)
-    VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET mode=excluded.mode,max_auto_risk=excluded.max_auto_risk,require_mfa=excluded.require_mfa,dual_approval_from_risk=excluded.dual_approval_from_risk,max_actions_per_execution=excluded.max_actions_per_execution,max_courses_per_execution=excluded.max_courses_per_execution,allow_automatic_notifications=excluded.allow_automatic_notifications,updated_by=excluded.updated_by,updated_at=excluded.updated_at`)
+  await env.DB.prepare(`INSERT INTO education_autopilot_policies(tenant_id,mode,max_auto_risk,require_reauthentication,dual_approval_from_risk,max_actions_per_execution,max_courses_per_execution,allow_automatic_notifications,updated_by,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET mode=excluded.mode,max_auto_risk=excluded.max_auto_risk,require_reauthentication=excluded.require_reauthentication,dual_approval_from_risk=excluded.dual_approval_from_risk,max_actions_per_execution=excluded.max_actions_per_execution,max_courses_per_execution=excluded.max_courses_per_execution,allow_automatic_notifications=excluded.allow_automatic_notifications,updated_by=excluded.updated_by,updated_at=excluded.updated_at`)
     .bind(tenantId,mode,maxAuto,1,dual,maxActions,maxCourses,input.allow_automatic_notifications===false?0:1,auth.userId,ts).run();
   await audit(env.DB,auth.userId,'education.autopilot_policy_updated',tenantId,undefined,'autopilot_policy',tenantId,{mode,maxAuto,dual,maxActions,maxCourses});return getAutopilotPolicy(env,auth,tenantId);
 }
@@ -45,7 +45,7 @@ async function scenarioBundle(env:Env,tenantId:string,scenarioId:string,optionId
 }
 
 export async function approveScenarioOption(env:Env,auth:CoreAuthContext,tenantId:string,scenarioId:string,optionId:string,input:Record<string,unknown>={}){
-  await requireAutopilotTenantAdminMfa(env,auth);await assertTenantWriteAllowed(env,tenantId);
+  await requireAutopilotTenantAdmin(env,auth);await assertTenantWriteAllowed(env,tenantId);
   const {scenario,option}=await scenarioBundle(env,tenantId,scenarioId,optionId);if(Date.parse(String(scenario.expires_at))<Date.now())throw new Error('SCENARIO_EXPIRED');
   if(!['simulated','approved'].includes(String(scenario.status)))throw new Error('SCENARIO_NOT_APPROVABLE');if(Number(option.executable)!==1)throw new Error('SCENARIO_OPTION_NOT_EXECUTABLE');
   const decision=String(input.decision||'approve');if(!['approve','reject'].includes(decision))throw new Error('APPROVAL_DECISION_INVALID');
@@ -111,7 +111,7 @@ async function prepareAction(env:Env,tenantId:string,actor:string,action:Autopil
 }
 
 export async function executeScenarioOption(env:Env,auth:CoreAuthContext,tenantId:string,scenarioId:string,optionId:string,idempotencyKey:string){
-  await requireAutopilotTenantAdminMfa(env,auth);await assertTenantWriteAllowed(env,tenantId);const {scenario,option,snapshot,actions}=await scenarioBundle(env,tenantId,scenarioId,optionId);
+  await requireAutopilotTenantAdmin(env,auth);await assertTenantWriteAllowed(env,tenantId);const {scenario,option,snapshot,actions}=await scenarioBundle(env,tenantId,scenarioId,optionId);
   if(Number(option.executable)!==1)throw new Error('SCENARIO_OPTION_NOT_EXECUTABLE');if(strongRisk(option.risk_level)==='critical')throw new Error('AUTOPILOT_CRITICAL_MANUAL_ONLY');if(Date.parse(String(scenario.expires_at))<Date.now())throw new Error('SCENARIO_EXPIRED');if(!['simulated','approved'].includes(String(scenario.status)))throw new Error('SCENARIO_NOT_EXECUTABLE');
   const key=required(idempotencyKey,'IDEMPOTENCY_KEY',200),existing=await env.DB.prepare('SELECT * FROM education_autopilot_executions WHERE tenant_id=? AND idempotency_key=?').bind(tenantId,key).first<Record<string,unknown>>();if(existing)return{replayed:true,execution:existing};
   const policy=await getAutopilotPolicy(env,auth,tenantId);if(String(policy.mode)==='recommend_only')throw new Error('AUTOPILOT_POLICY_RECOMMEND_ONLY');if(actions.length>Number(policy.max_actions_per_execution||100))throw new Error('AUTOPILOT_ACTION_LIMIT');if(actionCourses(actions).length>Number(policy.max_courses_per_execution||10))throw new Error('AUTOPILOT_COURSE_LIMIT');for(const a of actions)if(forbiddenAutopilotNamespace(a.action_type)||!safeAutopilotActionType(a.action_type))throw new Error('AUTOPILOT_ACTION_FORBIDDEN');
@@ -146,8 +146,9 @@ async function rollbackStatements(env:Env,tenantId:string,step:Record<string,unk
 }
 
 export async function rollbackAutopilotExecution(env:Env,auth:CoreAuthContext,tenantId:string,executionId:string){
-  await requireAutopilotTenantAdminMfa(env,auth);await assertTenantWriteAllowed(env,tenantId);const execution=await env.DB.prepare("SELECT * FROM education_autopilot_executions WHERE tenant_id=? AND id=? AND status='complete'").bind(tenantId,executionId).first<Record<string,unknown>>();if(!execution)throw new Error('AUTOPILOT_EXECUTION_NOT_ROLLBACKABLE');if(Date.now()-Date.parse(String(execution.completed_at))>30*60000)throw new Error('AUTOPILOT_ROLLBACK_WINDOW_EXPIRED');
+  await requireAutopilotTenantAdmin(env,auth);await assertTenantWriteAllowed(env,tenantId);const execution=await env.DB.prepare("SELECT * FROM education_autopilot_executions WHERE tenant_id=? AND id=? AND status='complete'").bind(tenantId,executionId).first<Record<string,unknown>>();if(!execution)throw new Error('AUTOPILOT_EXECUTION_NOT_ROLLBACKABLE');if(Date.now()-Date.parse(String(execution.completed_at))>30*60000)throw new Error('AUTOPILOT_ROLLBACK_WINDOW_EXPIRED');
   const rollbackId=`rollback:${executionId}`,lockExecution=String(execution.id);await acquireLock(env,tenantId,lockExecution);try{const steps=(await env.DB.prepare('SELECT * FROM education_autopilot_execution_steps WHERE tenant_id=? AND execution_id=? ORDER BY step_no DESC').bind(tenantId,executionId).all<Record<string,unknown>>()).results??[],ts=nowIso(),batch:any[]=[],skipped:string[]=[];for(const step of steps){const r=await rollbackStatements(env,tenantId,step,ts);if(r.skipped)skipped.push(String(step.action_type));else{batch.push(...r.statements);batch.push(env.DB.prepare("UPDATE education_autopilot_execution_steps SET status='rolled_back',rolled_back_at=? WHERE tenant_id=? AND id=? AND status='complete'").bind(ts,tenantId,String(step.id)));}}if(batch.length)await env.DB.batch(batch);await env.DB.batch([env.DB.prepare("UPDATE education_autopilot_executions SET status='rolled_back',completed_at=?,result_json=? WHERE tenant_id=? AND id=? AND status='complete'").bind(ts,JSON.stringify({rollback_id:rollbackId,rolled_back_at:ts,non_reversible_actions:skipped}),tenantId,executionId),env.DB.prepare("UPDATE education_scenarios SET status='simulated',updated_at=? WHERE tenant_id=? AND id=? AND status='executed'").bind(ts,tenantId,String(execution.scenario_id)),env.DB.prepare('INSERT INTO education_twin_events(id,tenant_id,course_id,correlation_id,event_type,entity_type,entity_id,source_type,source_id,payload_json,occurred_at,created_at) VALUES(?,?,NULL,?,?,?,?,?,?,?,?,?)').bind(id('tev_'),tenantId,executionId,'autopilot.rollback','autopilot_execution',executionId,'autopilot_rollback',executionId,JSON.stringify({non_reversible_actions:skipped}),ts,ts)]);await audit(env.DB,auth.userId,'education.autopilot_rolled_back',tenantId,undefined,'autopilot_execution',executionId,{skipped});return{execution_id:executionId,status:'rolled_back',non_reversible_actions:skipped};}finally{await releaseLock(env,tenantId,lockExecution);}
 }
 
 export async function listAutopilotExecutions(env:Env,auth:CoreAuthContext,tenantId:string,limit=50){if(!auth.isPlatformAdmin&&!auth.tenantIds.includes(tenantId))throw new Error('FORBIDDEN_TENANT');return((await env.DB.prepare('SELECT id,scenario_id,option_id,status,requested_by,precondition_snapshot_sha256,plan_sha256,started_at,completed_at,result_json,error_code FROM education_autopilot_executions WHERE tenant_id=? ORDER BY COALESCE(started_at,completed_at) DESC LIMIT ?').bind(tenantId,Math.max(1,Math.min(200,limit))).all<Record<string,unknown>>()).results??[]);}
+

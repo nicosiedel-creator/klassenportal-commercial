@@ -47,9 +47,7 @@ export interface Env {
 }
 
 export type Role = 'platform_admin' | 'tenant_admin' | 'class_admin' | 'participant' | 'guest';
-// `mfa` is retained only as a legacy/historical auth marker for persisted audit/signature rows.
-// New sessions no longer depend on or issue MFA authentication.
-export type AuthMethod = 'password'|'oidc'|'api'|'scim'|'mfa';
+export type AuthMethod = 'password'|'oidc'|'api'|'scim';
 
 export interface SessionUser {
   userId: string;

@@ -37,7 +37,7 @@ Dieser Kandidat darf erst nach den folgenden Gates als **produktiv abgenommen** 
 - kein Autopilot-Execute
 
 ### Kundenadmin
-- Autopilot-Policy, Freigabe und Ausführung nur mit MFA/OIDC
+- Autopilot-Policy, Freigabe und Ausführung nur mit erneute Passwortbestätigung oder OIDC
 - hohes Risiko benötigt zwei verschiedene Kundenadmins
 - kritischer Plan nicht ausführbar
 
@@ -91,7 +91,7 @@ Mindestens mit zwei Klassen testen:
 ## 6. Autopilot-Sicherheitsabnahme
 
 - Standardpolicy `recommend_only`
-- ohne MFA keine Freigabe/Ausführung
+- ohne erneute Passwortbestätigung keine Freigabe/Ausführung
 - mit nur einem Kundenadmin kein High-Risk-Execute
 - veränderter Live-Zustand nach Approval → `stale` / Resimulation
 - Idempotency-Key verhindert doppelte Ausführung
@@ -184,3 +184,4 @@ Vor allgemeiner Produktivfreigabe:
 ## Definition „Education OS produktiv abgenommen“
 
 Erst wenn Code-Gates **und** die realen externen Abnahmen bestanden sind. Bis dahin darf der Stand als `feature-complete candidate`, nicht als vollständig produktiv abgenommen bezeichnet werden.
+

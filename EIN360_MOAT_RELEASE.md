@@ -19,7 +19,7 @@ Der Ausbau soll Klassenportal nicht durch eine bloß größere Featureliste diff
 - Plattformadmin ist kein Ersatz-Kundenadmin für Tenant-Operationen.
 - Compliance-Regelpakete werden nie allein durch Software als rechtlich/förderrechtlich verbindlich bezeichnet.
 - Aktivierung eines Compliance-Packs verlangt bestätigten Regelstand und offizielle Quelle.
-- Sensible Compliance-, Evidence- und Partner-Mutationen verlangen Kundenadmin + MFA/OIDC.
+- Sensible Compliance-, Evidence- und Partner-Mutationen verlangen Kundenadmin + erneute Passwortbestätigung oder OIDC.
 - Partner-Tokens werden nur gehasht gespeichert und nur bei Erstellung einmal angezeigt.
 - Partnerzugriffe haben eine Positivliste; Noten, individuelle Anwesenheit, Gesundheit, private Notizen, Abrechnung, Rollen und Berechtigungen bleiben ausgeschlossen.
 - Learner Twin nutzt nur eigene Teilnehmerdaten, keine Peer-Vergleiche, keine Emotionserkennung, keine Biometrie und keine Persönlichkeitsbewertung.
@@ -49,7 +49,7 @@ Der Block darf erst nach folgenden Prüfungen als produktiv abgenommen gelten:
 5. Learner Twin zeigt keine Peer-Daten und keine verbotenen Hochrisikomerkmale.
 6. Partner-Token kann nach Speicherung nicht aus der Datenbank rekonstruiert werden.
 7. Partnerzugang zeigt nur explizit freigegebene Capability-Daten.
-8. Compliance-Pack lässt sich ohne MFA bzw. ohne Regelstandsbestätigung nicht aktivieren.
+8. Compliance-Pack lässt sich ohne erneute Passwortbestätigung bzw. ohne Regelstandsbestätigung nicht aktivieren.
 9. Evidence Package reproduzierbar über SHA-256.
 10. Migration mit Dublette, fehlendem Pflichtfeld und unplausibler E-Mail wird korrekt markiert/blockiert.
 11. Action Copilot führt aus Freitext keine direkte kritische Produktivänderung aus.
@@ -62,3 +62,4 @@ Der Block darf erst nach folgenden Prüfungen als produktiv abgenommen gelten:
 - kein Ersatz professioneller Buchhaltung/Payroll/Transportsoftware;
 - kein psychologisches Profiling von Teilnehmern;
 - keine vollautonome pädagogische Hochrisikoentscheidung.
+

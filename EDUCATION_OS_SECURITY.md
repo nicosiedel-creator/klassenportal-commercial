@@ -26,7 +26,7 @@ Das System behauptet keine absolute Unverwundbarkeit. Sicherheitsziel ist ein ko
 
 ### Kundenadmin
 - Einziger menschlicher Akteur für produktive Tenant-Autopilot-Ausführung.
-- MFA ist für Freigabe, Policy-Änderung, Risikostatus und Ausführung verpflichtend.
+- Erneute Passwortbestätigung und explizite Freigabe sind für Policy-Änderung, Risikostatus und Ausführung verpflichtend.
 - Hohes Risiko benötigt zwei verschiedene Kundenadmins.
 
 ### Plattformadmin – kein Ersatz-Kundenadmin
@@ -106,7 +106,7 @@ Nur eng begrenzte betriebliche Aktionen sind whitelisted, z. B.:
 - Prüfung kontrolliert verlegen
 - QM-/Wiedervorlage-Vorgang erzeugen
 
-Auch diese Aktionen benötigen Snapshot, Guardrails, Freigabe, MFA und Precondition Checks.
+Auch diese Aktionen benötigen Snapshot, Guardrails, Freigabe, erneute Passwortbestätigung und Precondition Checks.
 
 ## Deterministische Guardrails
 
@@ -178,3 +178,4 @@ Vor einer echten Live-Freigabe bleiben reale End-to-End-Abnahmen erforderlich:
 - ggf. fachliche Validierung kundenspezifischer Kammer-/Prüfungsanforderungen
 
 Diese Punkte dürfen durch Unit-/Source-Regressionen nicht als „erledigt“ ausgegeben werden.
+

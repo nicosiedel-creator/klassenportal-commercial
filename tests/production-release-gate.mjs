@@ -68,6 +68,6 @@ assert.match(ui,/Unmittelbar nach der Passwortbestätigung prüft der Server all
 assert.match(platformDirect,/platform-admin-lazy-modules\.js/);
 assert.match(platformLazy,/release:\['launch-readiness-ui'\]/);
 assert.doesNotMatch(platformDirect,/import\('\/launch-readiness-ui\.js/);
-assert.match(platformHtml,/\/platform-direct-login\.js\?v=20260822-platform-perf-1/);
+assert.match(platformHtml,/\/platform-direct-login\.js\?v=20260824-sales-ready/);
 
 console.log('Version-bound, fail-closed production release gate with password reauthentication: OK');

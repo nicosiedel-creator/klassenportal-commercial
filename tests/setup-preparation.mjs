@@ -28,10 +28,11 @@ for(const required of ['Stammdaten & Ansprechpartner','Branding','Organisation /
 assert.match(guide,/eigene KI/i,'tester guide must explicitly require each tester to use their own AI');
 assert.match(guide,/alle Daten selbst erfinden/i,'tester AI must invent independent data rather than reuse fixed fixtures');
 assert.match(guide,/20–60 fiktive Teilnehmer\/Schüler/,'tester scenario must be large enough to exercise real imports');
-assert.match(guide,/Stripe-Testmodus/,'payment testing must be limited to Stripe test mode');
+assert.match(guide,/Zahlungsfunktionen bleiben vollständig deaktiviert/,'acceptance guide must preserve the payment freeze');
+assert.match(guide,/PAYMENT_DISABLED/,'acceptance guide must verify the disabled payment response');
 assert.match(guide,/Keine echten Kredit-\/Debitkarten oder Bankdaten/,'tester guide must prohibit real payment credentials');
 assert.match(guide,/Berechtigungsgrenzen/,'tester guide must cover role and tenant boundaries');
 assert.match(guide,/Desktop und einmal Smartphone/,'tester guide must cover responsive UI behavior');
-assert.match(guide,/Keine Passwörter, MFA-Codes, Test-API-Schlüssel/,'tester reports must not contain secrets');
+assert.match(guide,/Keine Passwörter, Zugangscodes, Test-API-Schlüssel/,'tester reports must not contain secrets');
 
 console.log('Setup preparation checklist, event-driven customer status and E2E guide checks: OK');

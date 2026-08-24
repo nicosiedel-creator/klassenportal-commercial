@@ -30,7 +30,7 @@ assert.match(recovery,/max_daily_minutes/,'adaptive recovery must consider cours
 assert.match(recovery,/teacherFor/,'adaptive recovery must choose an available teacher');
 assert.match(recovery,/sha256Text\(stableStringify\(planCore\)\)/,'adaptive recovery plan must be digest-bound');
 assert.match(recoveryRouter,/RECOVERY_PLAN_DIGEST_CHANGED/,'recovery draft must be revalidated by digest');
-assert.match(recoveryRouter,/requireAutopilotTenantAdminMfa/,'creating recovery draft must require tenant admin MFA');
+assert.match(recoveryRouter,/requireAutopilotTenantAdmin/,'creating recovery draft must require tenant-admin authorization');
 assert.match(recoveryRouter,/status:'draft'/,'recovery must only create a draft timetable');
 assert.match(recoveryRouter,/automatic:false/,'recovery must never publish automatically');
 assert.match(recoveryRouter,/validateAdvancedTimetablePlan/,'recovery draft must run advanced validation');

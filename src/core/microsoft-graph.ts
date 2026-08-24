@@ -18,6 +18,9 @@ function b64url(bytes:Uint8Array):string{return b64(bytes).replace(/\+/g,'-').re
 async function pkceChallenge(verifier:string):Promise<string>{const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier)));return b64url(digest);}
 function redirectUri(env:Env):string{if(env.MICROSOFT_REDIRECT_URI)return env.MICROSOFT_REDIRECT_URI;if(!env.APP_ORIGIN)throw new Error('MICROSOFT_REDIRECT_URI_REQUIRED');return `${env.APP_ORIGIN.replace(/\/$/,'')}/api/integrations/microsoft/callback`;}
 function requireMicrosoftConfig(env:Env):void{if(!env.MICROSOFT_CLIENT_ID)throw new Error('MICROSOFT_CLIENT_ID_REQUIRED');if(!env.MICROSOFT_CLIENT_SECRET)throw new Error('MICROSOFT_CLIENT_SECRET_REQUIRED');if(!tenantSecretEncryptionReady(env))throw new Error('TENANT_SECRETS_ENCRYPTION_KEY_REQUIRED');redirectUri(env);}
+function requireStrongAuth(auth:CoreAuthContext):void{
+  if(auth.session.authMethod!=='password'&&auth.session.authMethod!=='oidc')throw new Error('STRONG_AUTH_REQUIRED');
+}
 
 async function requireOrganizer(env:Env,auth:CoreAuthContext,tenantId:string,courseId?:string):Promise<void>{
   if(auth.isPlatformAdmin)throw new Error('FORBIDDEN_PLATFORM_ADMIN_TENANT_INTEGRATION');
@@ -46,7 +49,7 @@ export async function getMicrosoftConnectionStatus(env:Env,auth:CoreAuthContext,
 }
 
 export async function startMicrosoftConnection(env:Env,auth:CoreAuthContext,tenantId:string,courseId?:string){
-  await requireOrganizer(env,auth,tenantId,courseId);requireMicrosoftConfig(env);
+  await requireOrganizer(env,auth,tenantId,courseId);requireStrongAuth(auth);requireMicrosoftConfig(env);
   const state=b64url(randomBytes(32)),verifier=b64url(randomBytes(48)),stateHash=await sha256Text(state),challenge=await pkceChallenge(verifier),ts=nowIso(),expires=new Date(Date.now()+10*60_000).toISOString();
   const encrypted=await encryptTenantSecret(env,verifier,stateAad(tenantId,auth.userId,stateHash));
   await env.DB.batch([

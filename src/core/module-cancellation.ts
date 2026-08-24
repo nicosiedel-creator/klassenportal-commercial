@@ -3,6 +3,7 @@ import { audit } from './audit.js';
 import { requireRole } from './permissions.js';
 import { id, nowIso, safeString } from './utils.js';
 import { prepareStripeModeState } from './stripe-mode-state.js';
+import { assertPaymentsEnabled } from './payment-policy.js';
 
 const API='https://api.stripe.com/v1';
 
@@ -17,9 +18,11 @@ async function ensureSchema(env:Env):Promise<void>{
 }
 function headers(env:Env):Record<string,string>{if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)throw new Error('STRIPE_NOT_CONFIGURED');return{Authorization:`Bearer ${env.STRIPE_SECRET_KEY}`};}
 async function stripeItem(env:Env,itemId:string):Promise<Record<string,any>>{
+  assertPaymentsEnabled(env);
   await prepareStripeModeState(env);const r=await fetch(`${API}/subscription_items/${encodeURIComponent(itemId)}`,{headers:headers(env)});let d:any={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(`STRIPE_${String(d?.error?.code||d?.error?.type||'API_ERROR').toUpperCase().replace(/[^A-Z0-9]+/g,'_')}`);return d;
 }
 async function removeStripeItem(env:Env,itemId:string):Promise<void>{
+  assertPaymentsEnabled(env);
   await prepareStripeModeState(env);const p=new URLSearchParams({proration_behavior:'none'});const h={...headers(env),'content-type':'application/x-www-form-urlencoded'};const r=await fetch(`${API}/subscription_items/${encodeURIComponent(itemId)}`,{method:'DELETE',headers:h,body:p});let d:any={};try{d=await r.json();}catch{}
   if(r.ok)return;const code=String(d?.error?.code||d?.error?.type||'API_ERROR').toUpperCase().replace(/[^A-Z0-9]+/g,'_');if(r.status===404||code==='RESOURCE_MISSING')return;throw new Error(`STRIPE_${code}`);
 }
