@@ -5,7 +5,16 @@
   "compatibility_date": "2026-08-14",
   "compatibility_flags": ["nodejs_compat"],
   "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "klassenportal.app",
+      "custom_domain": true
+    }
+  ],
   "vars": {
+    "APP_ORIGIN": "https://klassenportal.app",
+    "MAIL_PROVIDER": "brevo",
+    "MAIL_FROM": "Klassenportal <noreply@klassenportal.app>",
     "PAYMENTS_ENABLED": "false"
   },
   "build": {
