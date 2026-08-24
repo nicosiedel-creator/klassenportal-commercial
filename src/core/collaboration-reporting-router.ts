@@ -6,7 +6,7 @@ import { createDiscussionThread, listDiscussionMessages, listDiscussionThreads, 
 import { asStudentView, forbidClassAdminStudentData } from './student-role.js';
 import { classbookExportCsv, classbookExportHtml, deleteExamAuthorityProfile, listExamAuthorityProfiles, previewClassbookExport, reviewClassbookEntry, saveCourseExamAuthorityProfile, saveExamAuthorityProfile } from './exam-documentation.js';
 import { departmentQualityOverviewSafe } from './department-quality.js';
-import { requireDelegatedPrivilegeMfa } from './delegated-privilege.js';
+import { requireDelegatedPrivilegeAccess } from './delegated-privilege.js';
 import { teacherAttendanceAuth } from './teacher-portal.js';
 
 async function body(r:Request):Promise<Record<string,unknown>>{try{return await r.json() as Record<string,unknown>;}catch{return{};}}
@@ -35,7 +35,7 @@ export async function handleCollaborationReportingApi(request:Request,env:Env):P
     const messages=p.match(/^\/api\/collaboration\/threads\/([^/]+)\/messages$/);if(messages&&request.method==='GET')return json({ok:true,messages:await listDiscussionMessages(env,discussionAuth,tenantId,decodeURIComponent(messages[1]))});if(messages&&request.method==='POST'){const b=await body(request);return json({ok:true,...await postDiscussionMessage(env,discussionAuth,tenantId,decodeURIComponent(messages[1]),String(b.body||''))},201);}
     const hide=p.match(/^\/api\/collaboration\/threads\/([^/]+)\/messages\/([^/]+)\/hide$/);if(hide&&request.method==='POST'){const b=await body(request),moderator=await moderationAuth(env,auth,tenantId,courseId);await moderateDiscussionMessage(env,moderator,tenantId,decodeURIComponent(hide[1]),decodeURIComponent(hide[2]),String(b.reason||''));return json({ok:true});}
 
-    if(p.startsWith('/api/reports/')){forbidClassAdminStudentData(auth);await requireDelegatedPrivilegeMfa(env,auth);}
+    if(p.startsWith('/api/reports/')){forbidClassAdminStudentData(auth);await requireDelegatedPrivilegeAccess(env,auth);}
 
     if(p==='/api/reports/classbook/profiles'&&request.method==='GET')return json({ok:true,...await listExamAuthorityProfiles(env,auth,tenantId,courseId||undefined)});
     if(p==='/api/reports/classbook/profiles'&&request.method==='POST')return json({ok:true,profile:await saveExamAuthorityProfile(env,auth,tenantId,await body(request))},201);
