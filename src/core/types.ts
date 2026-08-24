@@ -2,11 +2,23 @@ import type { D1DatabaseLike, R2BucketLike } from '../portability/types.js';
 
 export interface AssetBindingLike { fetch(request: Request): Promise<Response>; }
 export interface WorkerVersionMetadataLike { id:string; tag?:string; timestamp?:string; }
+export interface SendEmailBindingLike {
+  send(message:{
+    to:string|{email:string;name?:string}|Array<string|{email:string;name?:string}>;
+    from:string|{email:string;name?:string};
+    subject:string;
+    html?:string;
+    text?:string;
+    replyTo?:string|{email:string;name?:string};
+    headers?:Record<string,string>;
+  }):Promise<{messageId:string}>;
+}
 
 export interface Env {
   DB: D1DatabaseLike;
   FILES: R2BucketLike;
   ASSETS: AssetBindingLike;
+  EMAIL?: SendEmailBindingLike;
   APP_ORIGIN?: string;
   PAYMENTS_ENABLED?: string;
   STRIPE_SECRET_KEY?: string;
@@ -19,7 +31,7 @@ export interface Env {
   CLOUDFLARE_ZONE_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
   CLOUDFLARE_SAAS_CNAME_TARGET?: string;
-  MAIL_PROVIDER?: 'brevo'|'resend';
+  MAIL_PROVIDER?: 'brevo'|'resend'|'cloudflare';
   BREVO_API_KEY?: string;
   BREVO_INBOUND_WEBHOOK_TOKEN?: string;
   RESEND_API_KEY?: string;
