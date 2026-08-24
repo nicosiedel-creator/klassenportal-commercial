@@ -23,7 +23,6 @@ export interface Env {
   PAYMENTS_ENABLED?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
-  OWNER_MFA_ENCRYPTION_KEY?: string;
   TENANT_SECRETS_ENCRYPTION_KEY?: string;
   MICROSOFT_CLIENT_ID?: string;
   MICROSOFT_CLIENT_SECRET?: string;
@@ -31,11 +30,6 @@ export interface Env {
   CLOUDFLARE_ZONE_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
   CLOUDFLARE_SAAS_CNAME_TARGET?: string;
-  MAIL_PROVIDER?: 'brevo'|'resend'|'cloudflare';
-  BREVO_API_KEY?: string;
-  BREVO_INBOUND_WEBHOOK_TOKEN?: string;
-  RESEND_API_KEY?: string;
-  RESEND_WEBHOOK_SECRET?: string;
   INBOUND_MAIL_DOMAIN?: string;
   MAIL_FROM?: string;
   DATA_RESIDENCY_MODE?: 'eu_strict'|'standard';
@@ -53,7 +47,7 @@ export interface Env {
 }
 
 export type Role = 'platform_admin' | 'tenant_admin' | 'class_admin' | 'participant' | 'guest';
-export type AuthMethod = 'password'|'oidc'|'mfa'|'api'|'scim';
+export type AuthMethod = 'password'|'oidc'|'api'|'scim';
 
 export interface SessionUser {
   userId: string;
