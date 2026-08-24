@@ -43,7 +43,8 @@ assert.match(scenarios,/allow_self_study/,'self-study recovery must require expl
 assert.match(scenarios,/allow_remote/,'remote conversion must require explicit authorization');
 
 assert.match(security,/auth\.isPlatformAdmin\)throw new Error\('AUTOPILOT_TENANT_ADMIN_REQUIRED'\)/,'platform admin must not execute tenant autopilot');
-assert.match(security,/AUTOPILOT_MFA_REQUIRED/,'autopilot execution must require MFA');
+assert.match(security,/auth\.role!=='tenant_admin'/,'autopilot execution must require a tenant admin session');
+assert.doesNotMatch(security,/AUTOPILOT_MFA_REQUIRED|AUTOPILOT_MFA_ENROLLMENT_REQUIRED|platform_mfa|TOTP/,'autopilot security core must not retain removed MFA dependencies');
 for(const forbidden of ['role','membership','permission','billing','payment','grade','attendance','signature\\.sign'])assert.match(security,new RegExp(forbidden),`forbidden autopilot namespace ${forbidden} missing`);
 assert.ok(!security.includes("'role.assign'"),'role changes must not appear in safe action whitelist');
 assert.ok(!security.includes("'grade.update'"),'grade changes must not appear in safe action whitelist');
@@ -89,7 +90,7 @@ assert.match(intent,/room_outage/,'intent parser must recognize room outage');
 assert.match(intent,/curriculum_recovery/,'intent parser must recognize curriculum recovery');
 
 for(const route of ['/api/education-os/twin','/api/education-os/scenarios','/api/education-os/intent/preview','/api/education-os/risks','/api/education-os/consistency','/api/education-os/proof'])assert.ok(router.includes(route),`Education OS route ${route} missing`);
-assert.match(router,/requireAutopilotTenantAdminMfa/,'manual security-sensitive scans/status changes must require tenant admin MFA');
+assert.match(router,/AUTOPILOT_TENANT_ADMIN_REQUIRED|requireAutopilotTenantAdminMfa/,'manual security-sensitive scans/status changes must remain tenant-admin gated');
 assert.match(bridge,/handleEducationOsApi/,'Education OS router must be connected before generic education routes');
 
 assert.match(customer,/kp-lazy-module-manifest/,'customer admin must expose an auditable on-demand module manifest');
