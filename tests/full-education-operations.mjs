@@ -60,7 +60,8 @@ assert.match(learning,/started_mid_course/,'mid-course rollout marker missing');
 
 assert.match(router,/\/api\/education\/timetable-plans/,'timetable planning routes missing');
 assert.match(router,/\/api\/education\/legacy-imports/,'legacy import routes missing');
-assert.match(router,/\/report-book\/periods/,'report book routes missing');
+assert.match(router,/const reportPeriods=path\.match/,'report book period route matcher missing');
+assert.match(router,/ensureReportBookPeriod\(env,auth,tenantId/,'report book period route handler missing');
 assert.match(router,/\/api\/education\/signatures/,'signature routes missing');
 assert.match(bridge,/handleSecureSignatureMine/,'signature request list must go through secure course-scoped route');
 assert.match(bridge,/handleCourseSignatureApi/,'course-wide confirmation route must be isolated before the generic education router');
