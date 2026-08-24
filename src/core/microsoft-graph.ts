@@ -18,11 +18,10 @@ function b64url(bytes:Uint8Array):string{return b64(bytes).replace(/\+/g,'-').re
 async function pkceChallenge(verifier:string):Promise<string>{const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier)));return b64url(digest);}
 function redirectUri(env:Env):string{if(env.MICROSOFT_REDIRECT_URI)return env.MICROSOFT_REDIRECT_URI;if(!env.APP_ORIGIN)throw new Error('MICROSOFT_REDIRECT_URI_REQUIRED');return `${env.APP_ORIGIN.replace(/\/$/,'')}/api/integrations/microsoft/callback`;}
 function requireMicrosoftConfig(env:Env):void{if(!env.MICROSOFT_CLIENT_ID)throw new Error('MICROSOFT_CLIENT_ID_REQUIRED');if(!env.MICROSOFT_CLIENT_SECRET)throw new Error('MICROSOFT_CLIENT_SECRET_REQUIRED');if(!tenantSecretEncryptionReady(env))throw new Error('TENANT_SECRETS_ENCRYPTION_KEY_REQUIRED');redirectUri(env);}
-async function requireStrongAuth(env:Env,auth:CoreAuthContext):Promise<void>{const method=auth.session?.authMethod||'password';if(method==='oidc'||method==='mfa')return;const row=await env.DB.prepare('SELECT enabled_at FROM platform_mfa WHERE user_id=?').bind(auth.userId).first<{enabled_at:string|null}>().catch(()=>null);if(!row?.enabled_at)throw new Error('MFA_ENROLLMENT_REQUIRED');throw new Error('MFA_REQUIRED');}
 
 async function requireOrganizer(env:Env,auth:CoreAuthContext,tenantId:string,courseId?:string):Promise<void>{
   if(auth.isPlatformAdmin)throw new Error('FORBIDDEN_PLATFORM_ADMIN_TENANT_INTEGRATION');
-  if(auth.role==='tenant_admin'){await requireStrongAuth(env,auth);return;}
+  if(auth.role==='tenant_admin')return;
   if(!courseId)throw new Error('COURSE_ID_REQUIRED');
   await teacherAttendanceAuth(env,auth,tenantId,courseId);
 }
