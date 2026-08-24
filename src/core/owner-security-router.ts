@@ -12,7 +12,6 @@ export async function handleOwnerSecurityApi(request:Request,env:Env):Promise<Re
   const autopilot=await handlePlatformAccountingAutopilotApi(request,env);if(autopilot)return autopilot;
   const accounting=await handlePlatformAccountingApi(request,env);if(accounting)return accounting;
   const u=new URL(request.url);
-  if(u.pathname.startsWith('/api/auth/mfa/')||u.pathname.startsWith('/api/platform/security/mfa/'))return json({ok:false,error:'NOT_FOUND'},404);
   if(!u.pathname.startsWith('/api/platform/owner/'))return null;
   try{
     assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);
