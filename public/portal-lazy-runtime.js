@@ -1,10 +1,10 @@
 const PATH_OK=/^\/portal\/[^/]+\/[^/]+\/?$/.test(location.pathname);
 if(PATH_OK){
-  const V='20260822-student-hotfix-6';
+  const V='20260824-no-mfa-1';
   const asset=name=>`/${name}.js?v=${V}`;
   const style=name=>`/${name}.css?v=${V}`;
   const loaded=new Set(),loading=new Map(),styles=new Set(),styleLoading=new Map();let bootPromise=null,backgroundStarted=false,interactionBound=false;
-  const GATE_SUPPORT=['auth-mfa-ui','account-mail-ui'];
+  const GATE_SUPPORT=['account-mail-ui'];
   const CORE_ENHANCERS=['portal-layout','portal-compact','vfa13-refinement'];
   const FEATURES=['portal-calendar-lookback','portal-targeted-messages','portal-attendance-ui','portal-assignments-ui','portal-learning-collaboration-ui','portal-teams-ui','portal-certificates-ui','portal-advanced-ui','class-admin-student-tools','lesson-hub-ui','portal-curriculum-ui','portal-learning-mode-ui','portal-report-book-ui','portal-signature-inbox-ui','legal-footer-ui'];
   const CSS_BY_MODULE={
@@ -88,7 +88,6 @@ if(PATH_OK){
       bindInteractionLoading();
       void deferredGermanLocalization(data);
       await idle(700);await loadList(CORE_ENHANCERS,2);
-      if(['class_admin','tenant_admin','platform_admin'].includes(String(data.viewer?.role||'')))void loadOne('admin-mfa-enrollment-ui');
       await idle(1400);void loadOne('student-dashboard-v2');
       void backgroundWarmup();
     })();
