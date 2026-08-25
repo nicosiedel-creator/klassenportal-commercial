@@ -1,0 +1,1 @@
+Production acceptance regression files are intentionally part of the mandatory npm test chain except scheduler-migration-contract.mjs, whose invariants are duplicated in launch-readiness.mjs and production-acceptance-contract.mjs. This file documents that redundancy to prevent accidental interpretation as an untested release path.
