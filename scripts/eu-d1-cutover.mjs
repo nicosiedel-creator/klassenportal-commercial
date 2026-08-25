@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   EU_D1_FREEZE_PREFIX,EU_D1_MARKER_TABLE,EU_D1_SOURCE,EU_D1_TARGET,EU_D1_TARGET_ID,
-  assertMatchingExports,assertSchemaOnlyTarget,freezeSql,parseWranglerJson,resetSchemaSql,sqlIdentifier,sqlText,thawSql,wranglerRows,
+  assertMatchingExports,assertSchemaOnlyTarget,chunkD1CompoundTerms,freezeSql,parseWranglerJson,resetSchemaSql,sqlIdentifier,sqlText,thawSql,wranglerRows,
 } from './eu-d1-cutover-lib.mjs';
 
 const branch=String(process.env.WORKERS_CI_BRANCH||'').trim();
@@ -19,6 +19,14 @@ function run(args,{capture=false}={}){
 }
 function query(database,sql){
   return wranglerRows(parseWranglerJson(run(['d1','execute',database,'--remote','--json','--command',sql],{capture:true})));
+}
+function tableCounts(database,tables){
+  const counts={};
+  for(const batch of chunkD1CompoundTerms(tables)){
+    const sql=batch.map(name=>`SELECT ${sqlText(name)} name,COUNT(*) n FROM ${sqlIdentifier(name)}`).join(' UNION ALL ');
+    for(const row of query(database,sql))counts[String(row.name)]=Number(row.n||0);
+  }
+  return counts;
 }
 function executeFile(database,file){run(['d1','execute',database,'--remote','--yes','--file',file]);}
 function exportDatabase(database,file){run(['d1','export',database,'--remote','--output',file]);}
@@ -38,7 +46,7 @@ if(existing){
 let targetTables=query(EU_D1_TARGET,`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name;`).map(row=>String(row.name));
 if(targetTables.length){
   const targetViews=query(EU_D1_TARGET,`SELECT name FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name;`).map(row=>String(row.name));
-  const countSql=targetTables.map(name=>`SELECT ${sqlText(name)} name,COUNT(*) n FROM ${sqlIdentifier(name)}`).join(' UNION ALL '),counts=Object.fromEntries(query(EU_D1_TARGET,countSql).map(row=>[String(row.name),Number(row.n||0)]));
+  const counts=tableCounts(EU_D1_TARGET,targetTables);
   const migrationNames=query(EU_D1_TARGET,'SELECT name FROM d1_migrations ORDER BY name;').map(row=>String(row.name));
   const expectedMigrationNames=readdirSync('migrations').filter(name=>name.endsWith('.sql')).sort();
   const userIds=query(EU_D1_TARGET,'SELECT id FROM users ORDER BY id;').map(row=>String(row.id));
