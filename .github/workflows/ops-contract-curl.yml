@@ -1,0 +1,26 @@
+name: Ops production contract curl probe
+
+on:
+  push:
+    branches: [ops/cloudflare-release-b84]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe production paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://klassenportal.app
+          for path in / /plattform-admin /produkt /kunden-admin /dozentenportal /api/platform/onboarding-invitations /api/onboarding/not-a-real-token '/api/payments/checkout-status?session_id=cs_test_release_freeze'; do
+            code=$(curl -sS --max-time 15 -o /tmp/body -w '%{http_code}' "$BASE$path" || true)
+            title=$(grep -o '<title>[^<]*' /tmp/body 2>/dev/null | head -1 || true)
+            echo "$path => $code ${title:-}"
+          done
+          code=$(curl -sS --max-time 15 -o /tmp/body -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{}' "$BASE/api/payments/stripe/webhook" || true)
+          echo "/api/payments/stripe/webhook POST => $code"
