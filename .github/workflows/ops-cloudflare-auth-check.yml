@@ -1,0 +1,24 @@
+name: Ops Cloudflare auth preflight
+
+on:
+  push:
+    branches: [ops/cloudflare-release-b84]
+
+permissions:
+  contents: read
+
+jobs:
+  auth-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Verify deploy credentials are available
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'CLOUDFLARE_API_TOKEN_MISSING'; exit 21; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'CLOUDFLARE_ACCOUNT_ID_MISSING'; exit 22; }
+          echo 'Cloudflare deploy credentials are available to GitHub Actions.'
