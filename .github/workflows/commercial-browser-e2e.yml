@@ -11,19 +11,44 @@ permissions:
 jobs:
   browser-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 16
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install Playwright Chromium
+      - name: Install project and Playwright Chromium
         run: |
+          npm install --no-audit --no-fund
           npm install --no-save --ignore-scripts playwright@1.55.0
           npx playwright install --with-deps chromium
-      - name: Click through Commercial acceptance surface
+      - name: Prepare exact local PR candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations apply DB --local
+          WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --local --ip 127.0.0.1 --port 8787 >/tmp/commercial-wrangler-e2e.log 2>&1 &
+          echo $! >/tmp/commercial-wrangler-e2e.pid
+          ready=0
+          for i in $(seq 1 45); do
+            if curl -fsS --max-time 3 http://127.0.0.1:8787/plattform-admin >/dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          if test "$ready" != 1; then
+            echo 'Local PR candidate did not become ready.' >&2
+            cat /tmp/commercial-wrangler-e2e.log >&2 || true
+            exit 1
+          fi
+          echo 'Exact local PR candidate is ready.'
+      - name: Click through exact Commercial PR candidate
         env:
-          COMMERCIAL_BASE_URL: https://klassenportal.app
-          E2E_PLATFORM_EMAIL: ${{ secrets.E2E_PLATFORM_EMAIL }}
-          E2E_PLATFORM_PASSWORD: ${{ secrets.E2E_PLATFORM_PASSWORD }}
+          COMMERCIAL_BASE_URL: http://127.0.0.1:8787
+          E2E_TARGET_MODE: candidate
         run: node scripts/commercial-browser-e2e.mjs
+      - name: Show local Worker log on failure
+        if: failure()
+        run: cat /tmp/commercial-wrangler-e2e.log || true
+      - name: Stop local PR candidate
+        if: always()
+        run: |
+          if test -f /tmp/commercial-wrangler-e2e.pid; then kill "$(cat /tmp/commercial-wrangler-e2e.pid)" 2>/dev/null || true; fi
