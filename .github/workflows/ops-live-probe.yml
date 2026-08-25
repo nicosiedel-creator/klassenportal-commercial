@@ -1,0 +1,25 @@
+name: Ops live deployment probe
+
+on:
+  push:
+    branches: [ops/cloudflare-release-b84]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Probe deployed commit on both production hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for base in https://klassenportal-commercial.nicosiedel.workers.dev https://klassenportal.app; do
+            echo "=== $base ==="
+            code=$(curl -sS -L --max-time 20 -o /tmp/meta -w '%{http_code}' "$base/build-meta.json?probe=$GITHUB_SHA" || true)
+            echo "HTTP $code"
+            head -c 1000 /tmp/meta || true
+            echo
+          done
