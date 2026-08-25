@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           npx wrangler d1 migrations apply DB --local
-          WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --local --ip 127.0.0.1 --port 8787 >/tmp/commercial-wrangler-e2e.log 2>&1 &
+          WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --local --ip 127.0.0.1 --port 8787 --var APP_ORIGIN:http://127.0.0.1:8787 >/tmp/commercial-wrangler-e2e.log 2>&1 &
           echo $! >/tmp/commercial-wrangler-e2e.pid
           ready=0
           for i in $(seq 1 45); do
