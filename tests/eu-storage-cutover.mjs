@@ -4,13 +4,19 @@ import { readFile } from 'node:fs/promises';
 import { hashPassword } from '../dist/core/auth.js';
 import { copyEuStorageBatch } from '../dist/core/eu-storage-migration.js';
 import {
-  EU_D1_SCHEMA_ONLY_COUNTS,EU_D1_SCHEMA_ONLY_USERS,EU_D1_SOURCE,EU_D1_TARGET,EU_D1_TARGET_ID,assertMatchingExports,assertSchemaOnlyTarget,freezeSql,freezeTriggerNames,normalizeD1Export,resetSchemaSql,sqlIdentifier,thawSql,
+  EU_D1_COMPOUND_SELECT_BATCH_SIZE,EU_D1_SCHEMA_ONLY_COUNTS,EU_D1_SCHEMA_ONLY_USERS,EU_D1_SOURCE,EU_D1_TARGET,EU_D1_TARGET_ID,assertMatchingExports,assertSchemaOnlyTarget,chunkD1CompoundTerms,freezeSql,freezeTriggerNames,normalizeD1Export,resetSchemaSql,sqlIdentifier,thawSql,
 } from '../scripts/eu-d1-cutover-lib.mjs';
 
 assert.equal(EU_D1_SOURCE,'klassenportal-commercial');
 assert.equal(EU_D1_TARGET,'klassenportal-commercial-eu');
 assert.equal(EU_D1_TARGET_ID,'a060de73-a4f6-4410-b4f2-25f5bee87754');
 assert.equal(sqlIdentifier('odd"table'),'"odd""table"');
+const compoundTerms=Array.from({length:251},(_,index)=>`table_${index}`),compoundBatches=chunkD1CompoundTerms(compoundTerms);
+assert.equal(EU_D1_COMPOUND_SELECT_BATCH_SIZE,40);
+assert.equal(compoundBatches.length,7);
+assert.ok(compoundBatches.every(batch=>batch.length<=EU_D1_COMPOUND_SELECT_BATCH_SIZE));
+assert.deepEqual(compoundBatches.flat(),compoundTerms);
+assert.throws(()=>chunkD1CompoundTerms(compoundTerms,0),/EU_D1_COMPOUND_SELECT_BATCH_INVALID/);
 assert.equal(freezeTriggerNames('users').length,3);
 assert.match(freezeSql(['users']),/BEFORE INSERT ON "users"/);
 assert.match(freezeSql(['users']),/EU_CUTOVER_SOURCE_FROZEN/);
@@ -76,7 +82,7 @@ assert.deepEqual(wrangler.r2_buckets[0],{binding:'FILES',bucket_name:'klassenpor
 assert.deepEqual(wrangler.r2_buckets[1],{binding:'LEGACY_FILES',bucket_name:'klassenportal-commercial-files'});
 
 const cutover=await readFile('scripts/eu-d1-cutover.mjs','utf8'),guard=await readFile('scripts/workers-ci-guard.mjs','utf8'),runtime=await readFile('src/index.ts','utf8'),ui=await readFile('public/launch-readiness-ui.js','utf8');
-for(const marker of ['assertSchemaOnlyTarget','EU_D1_TARGET_SCHEMA_RESET_FAILED','EU_D1_SOURCE_FREEZE_INCOMPLETE','assertMatchingExports','EU_D1_CUTOVER_MARKER_WRITE_FAILED'])assert.ok(cutover.includes(marker),`D1 cutover missing ${marker}`);
+for(const marker of ['assertSchemaOnlyTarget','chunkD1CompoundTerms','EU_D1_TARGET_SCHEMA_RESET_FAILED','EU_D1_SOURCE_FREEZE_INCOMPLETE','assertMatchingExports','EU_D1_CUTOVER_MARKER_WRITE_FAILED'])assert.ok(cutover.includes(marker),`D1 cutover missing ${marker}`);
 assert.match(guard,/scripts\/eu-d1-cutover\.mjs/);
 assert.ok(guard.indexOf('scripts/eu-d1-cutover.mjs')<guard.indexOf("['run','db:migrate']"),'D1 copy must precede target migrations');
 assert.match(runtime,/Scheduled writes paused during the verified EU storage migration/);

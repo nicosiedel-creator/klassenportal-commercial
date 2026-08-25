@@ -20,9 +20,17 @@ export const EU_D1_SCHEMA_ONLY_COUNTS={
   users:2,
 };
 export const EU_D1_SCHEMA_ONLY_USERS=['system_intake_service','system_workflow_service'];
+export const EU_D1_COMPOUND_SELECT_BATCH_SIZE=40;
 
 export function sqlIdentifier(value){return `"${String(value).replaceAll('"','""')}"`;}
 export function sqlText(value){return `'${String(value).replaceAll("'","''")}'`;}
+export function chunkD1CompoundTerms(values,size=EU_D1_COMPOUND_SELECT_BATCH_SIZE){
+  const width=Number(size);
+  if(!Number.isSafeInteger(width)||width<1)throw new Error('EU_D1_COMPOUND_SELECT_BATCH_INVALID');
+  const chunks=[];
+  for(let index=0;index<values.length;index+=width)chunks.push(values.slice(index,index+width));
+  return chunks;
+}
 export function freezeTriggerNames(table){
   const suffix=createHash('sha256').update(String(table)).digest('hex').slice(0,20);
   return ['insert','update','delete'].map(action=>`${EU_D1_FREEZE_PREFIX}${action[0]}_${suffix}`);
