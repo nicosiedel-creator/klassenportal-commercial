@@ -33,7 +33,7 @@ jobs:
           writeFileSync('wrangler.browser-e2e.json',JSON.stringify(config,null,2));
           NODE
           npx wrangler d1 migrations apply DB --local --config wrangler.browser-e2e.json
-          WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --config wrangler.browser-e2e.json --local --ip 127.0.0.1 --port 8787 >/tmp/commercial-wrangler-e2e.log 2>&1 &
+          WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --config wrangler.browser-e2e.json --local --ip 127.0.0.1 --port 8787 --infer-origin-from-routes=false >/tmp/commercial-wrangler-e2e.log 2>&1 &
           echo $! >/tmp/commercial-wrangler-e2e.pid
           ready=0
           for i in $(seq 1 45); do
