@@ -63,9 +63,14 @@ assert.match(ui,/current_password/);
 for(const label of ['EU-Speichermigration','EU-Datenhaltung','SSO-Geheimnisse verschlüsselt','Sicherer E-Mail-Eingang','Keine Zahlungsproviderfehler (24 h)'])assert.ok(ui.includes(label),label);
 for(const label of ['EU-Worker-Verarbeitung / Regional Services','EU Customer Metadata Boundary'])assert.ok(ui.includes(label),label);
 assert.match(ui,/Unmittelbar nach der Passwortbestätigung prüft der Server alle Freigabebedingungen erneut/);
+assert.match(ui,/\$\{releaseStatus\(r,s\)\}<div data-release-control/);
+assert.match(ui,/querySelector\('\[data-storage-control\]'\)/);
+assert.match(ui,/data-storage-control/);
+assert.match(ui,/scrollIntoView\(\{behavior:'smooth',block:'center'\}\)/);
+assert.match(ui,/focus\(\{preventScroll:true\}\)/);
 assert.match(platformDirect,/platform-admin-lazy-modules\.js/);
 assert.match(platformLazy,/release:\['launch-readiness-ui'\]/);
 assert.doesNotMatch(platformDirect,/import\('\/launch-readiness-ui\.js/);
 assert.match(platformHtml,/\/platform-direct-login\.js\?v=20260824-sales-ready/);
 
-console.log('Version-bound, fail-closed production release gate with password reauthentication: OK');
+console.log('Version-bound, fail-closed production release gate with visible password reauthentication: OK');
