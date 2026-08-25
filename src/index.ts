@@ -16,6 +16,7 @@ import { cleanupAccountActions } from './core/account-recovery.js';
 import { handleLaunchReadinessApi } from './core/launch-readiness-router.js';
 import { renderLegalDocument } from './core/legal-documents-eu.js';
 import { verifyPendingBackups } from './core/backup-verification.js';
+import { runEuStorageMigrationCycle } from './core/eu-storage-migration.js';
 import { productionReleaseAccess } from './core/production-release-state.js';
 import { acceptanceModeAllowsLockedRequest } from './core/acceptance-mode.js';
 import { publicMaterialDownload, publicOverview, publicPortalMetadata } from './core/public.js';
@@ -113,7 +114,8 @@ export default{
   async fetch(request:Request,env:Env):Promise<Response>{try{return harden(await routeRequest(request,env));}catch(error){console.error('Unhandled request error',{path:new URL(request.url).pathname,error:String((error as Error)?.message||error)});return harden(jsonError('INTERNAL_ERROR',500));}},
   async email(message:{from:string;to:string;raw:ReadableStream<Uint8Array>;rawSize?:number;headers?:Headers;setReject?(reason:string):void},env:Env):Promise<void>{await handleCloudflareInboundEmail(message,env);},
   async scheduled(controller:{cron?:string},env:Env):Promise<void>{
-    if(['1','true','yes'].includes(String(env.EU_STORAGE_MIGRATION_REQUIRED||'').trim().toLowerCase())){console.log('Scheduled writes paused during the verified EU storage migration.');return;}
+    const migration=await runEuStorageMigrationCycle(env).catch(error=>{console.error('EU storage migration cycle failed',{error:String((error as Error)?.message||error)});return{active:true,complete:false,copied:0,skipped:0,scanned:0,pending:true};});
+    if(migration.active&&!migration.complete){console.log('Scheduled customer writes remain paused while the non-destructive EU R2 migration is verified.',migration);return;}
     await runCommunicationAutomation(env).catch(e=>console.error('Communication automation failed',{error:String((e as Error)?.message||e)}));
     await runAttendanceAttention(env).catch(e=>console.error('Attendance attention automation failed',{error:String((e as Error)?.message||e)}));
     await runPlatformAutomationCycle(env).catch(e=>console.error('Platform automation cycle failed',{error:String((e as Error)?.message||e)}));
