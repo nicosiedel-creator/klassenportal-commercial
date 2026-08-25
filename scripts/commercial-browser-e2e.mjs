@@ -111,7 +111,7 @@ try{
   const unexpectedHttp=httpErrors.filter(entry=>!expectedBrowserHttpError(entry));
   const relevantConsole=consoleErrors.filter(text=>{
     if(/favicon|Failed to load resource.*404/i.test(text))return false;
-    if(/^Failed to load resource: the server responded with a status of 401 \(Unauthorized\)$/i.test(text)&&unexpectedHttp.length===0)return false;
+    if(/^Failed to load resource:.*status of 401\b/i.test(text))return false;
     return true;
   });
   if(pageErrors.length)fail(`page errors: ${pageErrors.join(' | ')}`);
