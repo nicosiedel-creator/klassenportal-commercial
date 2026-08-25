@@ -6,6 +6,7 @@ import { ensureOfferSchema } from './offer-schema.js';
 import { mailConfigured } from './mail.js';
 import { dataResidencyStatus, configuredMailProvider } from './data-residency.js';
 import { inspectEuStorageMigration } from './eu-storage-migration.js';
+import { backupReadiness } from './backup-verification.js';
 import { paymentsEnabled, paymentPolicy } from './payment-policy.js';
 import { stripeModeIfConfigured } from './stripe-mode.js';
 import { tenantSecretEncryptionReady } from './tenant-secrets.js';
@@ -20,7 +21,7 @@ async function count(env:Env,sql:string,values:unknown[]=[]):Promise<number>{con
 export async function productionReadiness(env:Env,auth:CoreAuthContext){
   requirePlatform(auth);await ensureProductionReleaseSchema(env);await ensureOfferSchema(env);await ensureLegalDocumentSchema(env);
   const blockers:string[]=[],warnings:string[]=[],origin=productionOriginStatus(env),version=currentWorkerVersion(env),residency=dataResidencyStatus(env),payment=paymentPolicy(env),stripeMode=(()=>{try{return stripeModeIfConfigured(env);}catch{return null;}})();
-  const [legal,storageMigration,missingSchema]=await Promise.all([ownerLegal(env,auth),inspectEuStorageMigration(env),essentialSchema(env)]),backups=storageMigration.backups,storageMigrationRequired=!storageMigration.complete;
+  const [legal,storageMigration,backups,missingSchema]=await Promise.all([ownerLegal(env,auth),inspectEuStorageMigration(env),backupReadiness(env,48),essentialSchema(env)]),storageMigrationRequired=!storageMigration.complete;
   if(!origin.ok)blockers.push(origin.reason!);if(!version)blockers.push('Cloudflare Worker-Versionsmetadaten fehlen; versionsgebundene Live-Freigabe ist nicht möglich');
   if(payment.enabled){if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)blockers.push('Stripe Live-Konfiguration fehlt');else if(stripeMode!=='live')blockers.push('Stripe läuft noch nicht mit Live-Schlüssel');}
   else warnings.push('Zahlungsabwicklung ist absichtlich deaktiviert; Angebote und Portale dürfen live laufen, Zahlungen erfolgen außerhalb des Portals');
