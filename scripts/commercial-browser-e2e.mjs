@@ -87,7 +87,12 @@ async function mobileSurface(){
   const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
   mobile.on('pageerror',e=>errors.push(String(e)));
   mobile.on('requestfailed',r=>failed.push(`${r.method()} ${r.url()} :: ${r.failure()?.errorText||'failed'}`));
-  mobile.on('response',r=>{if(r.status()>=500)serverErrors.push(`${r.status()} ${r.url()}`);});
+  mobile.on('response',r=>{
+    if(r.status()<500)return;
+    let path='';try{path=new URL(r.url()).pathname;}catch{}
+    const expectedLocked=mode==='locked-production'&&r.status()===503&&['/produkt','/kunden-admin','/dozentenportal'].includes(path);
+    if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);
+  });
   try{
     for(const path of ['/plattform-admin','/produkt','/kunden-admin','/dozentenportal']){
       const expected=mode==='locked-production'&&path!=='/plattform-admin'?[503]:[200];
