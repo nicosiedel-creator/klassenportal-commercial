@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { hashPassword } from '../dist/core/auth.js';
 import { copyEuStorageBatch } from '../dist/core/eu-storage-migration.js';
 import {
-  EU_D1_SOURCE,EU_D1_TARGET,EU_D1_TARGET_ID,assertMatchingExports,freezeSql,freezeTriggerNames,normalizeD1Export,sqlIdentifier,thawSql,
+  EU_D1_SCHEMA_ONLY_COUNTS,EU_D1_SCHEMA_ONLY_USERS,EU_D1_SOURCE,EU_D1_TARGET,EU_D1_TARGET_ID,assertMatchingExports,assertSchemaOnlyTarget,freezeSql,freezeTriggerNames,normalizeD1Export,resetSchemaSql,sqlIdentifier,thawSql,
 } from '../scripts/eu-d1-cutover-lib.mjs';
 
 assert.equal(EU_D1_SOURCE,'klassenportal-commercial');
@@ -15,6 +15,11 @@ assert.equal(freezeTriggerNames('users').length,3);
 assert.match(freezeSql(['users']),/BEFORE INSERT ON "users"/);
 assert.match(freezeSql(['users']),/EU_CUTOVER_SOURCE_FROZEN/);
 assert.match(thawSql(['users']),/DROP TRIGGER IF EXISTS/);
+const schemaOnlyMigrations=Array.from({length:69},(_,index)=>`${String(index).padStart(4,'0')}_migration.sql`),schemaOnlyCounts={...EU_D1_SCHEMA_ONLY_COUNTS};
+assert.equal(assertSchemaOnlyTarget({tables:Object.keys(schemaOnlyCounts),counts:schemaOnlyCounts,migrationNames:schemaOnlyMigrations,expectedMigrationNames:schemaOnlyMigrations,userIds:EU_D1_SCHEMA_ONLY_USERS}),true);
+assert.throws(()=>assertSchemaOnlyTarget({tables:[...Object.keys(schemaOnlyCounts),'tenants'],counts:{...schemaOnlyCounts,tenants:1},migrationNames:schemaOnlyMigrations,expectedMigrationNames:schemaOnlyMigrations,userIds:EU_D1_SCHEMA_ONLY_USERS}),/EU_D1_TARGET_NOT_EMPTY:tenants:1/);
+assert.throws(()=>assertSchemaOnlyTarget({tables:Object.keys(schemaOnlyCounts),counts:schemaOnlyCounts,migrationNames:schemaOnlyMigrations,expectedMigrationNames:schemaOnlyMigrations,userIds:['owner']}),/EU_D1_TARGET_SCHEMA_ONLY_USERS_MISMATCH/);
+assert.match(resetSchemaSql(['users'],['active_users']),/DROP VIEW IF EXISTS "active_users";[\s\S]*DROP TABLE IF EXISTS "users";/);
 assert.equal(normalizeD1Export('-- source\r\nCREATE TABLE x(a);  \r\n'),'CREATE TABLE x(a);');
 assert.match(assertMatchingExports('-- old\nCREATE TABLE x(a);','-- new\nCREATE TABLE x(a);'),/^[a-f0-9]{64}$/);
 assert.throws(()=>assertMatchingExports('CREATE TABLE x(a);','CREATE TABLE x(b);'),/EU_D1_EXPORT_MISMATCH/);
@@ -71,7 +76,7 @@ assert.deepEqual(wrangler.r2_buckets[0],{binding:'FILES',bucket_name:'klassenpor
 assert.deepEqual(wrangler.r2_buckets[1],{binding:'LEGACY_FILES',bucket_name:'klassenportal-commercial-files'});
 
 const cutover=await readFile('scripts/eu-d1-cutover.mjs','utf8'),guard=await readFile('scripts/workers-ci-guard.mjs','utf8'),runtime=await readFile('src/index.ts','utf8'),ui=await readFile('public/launch-readiness-ui.js','utf8');
-for(const marker of ['EU_D1_TARGET_NOT_EMPTY','EU_D1_SOURCE_FREEZE_INCOMPLETE','assertMatchingExports','EU_D1_CUTOVER_MARKER_WRITE_FAILED'])assert.ok(cutover.includes(marker),`D1 cutover missing ${marker}`);
+for(const marker of ['assertSchemaOnlyTarget','EU_D1_TARGET_SCHEMA_RESET_FAILED','EU_D1_SOURCE_FREEZE_INCOMPLETE','assertMatchingExports','EU_D1_CUTOVER_MARKER_WRITE_FAILED'])assert.ok(cutover.includes(marker),`D1 cutover missing ${marker}`);
 assert.match(guard,/scripts\/eu-d1-cutover\.mjs/);
 assert.ok(guard.indexOf('scripts/eu-d1-cutover.mjs')<guard.indexOf("['run','db:migrate']"),'D1 copy must precede target migrations');
 assert.match(runtime,/Scheduled writes paused during the verified EU storage migration/);

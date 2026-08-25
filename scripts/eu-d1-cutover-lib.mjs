@@ -5,6 +5,21 @@ export const EU_D1_TARGET='klassenportal-commercial-eu';
 export const EU_D1_TARGET_ID='a060de73-a4f6-4410-b4f2-25f5bee87754';
 export const EU_D1_MARKER_TABLE='platform_eu_storage_cutover';
 export const EU_D1_FREEZE_PREFIX='kp_eu_cutover_freeze_';
+export const EU_D1_SCHEMA_ONLY_COUNTS={
+  accounting_settings:1,
+  billing_provider_state:1,
+  commerce_policy:1,
+  d1_migrations:69,
+  legal_configuration:1,
+  managed_setup_options:5,
+  module_commerce_rules:5,
+  plan_commerce_rules:3,
+  plans:3,
+  seller_billing_profile:1,
+  stripe_provider_modes:2,
+  users:2,
+};
+export const EU_D1_SCHEMA_ONLY_USERS=['system_intake_service','system_workflow_service'];
 
 export function sqlIdentifier(value){return `"${String(value).replaceAll('"','""')}"`;}
 export function sqlText(value){return `'${String(value).replaceAll("'","''")}'`;}
@@ -24,6 +39,20 @@ export function freezeSql(tables){
 }
 export function thawSql(tables){
   return `${tables.flatMap(freezeTriggerNames).map(name=>`DROP TRIGGER IF EXISTS ${sqlIdentifier(name)};`).join('\n')}\n`;
+}
+export function assertSchemaOnlyTarget({tables,counts,migrationNames,expectedMigrationNames,userIds}){
+  const expectedTables=new Set(Object.keys(EU_D1_SCHEMA_ONLY_COUNTS)),actualCounts=new Map(Object.entries(counts||{}).map(([name,count])=>[String(name),Number(count)]));
+  for(const table of tables){const count=actualCounts.get(String(table))??0;if(count>0&&!expectedTables.has(String(table)))throw new Error(`EU_D1_TARGET_NOT_EMPTY:${table}:${count}`);}
+  for(const [table,expected] of Object.entries(EU_D1_SCHEMA_ONLY_COUNTS))if((actualCounts.get(table)??0)!==expected)throw new Error(`EU_D1_TARGET_SCHEMA_ONLY_COUNT_MISMATCH:${table}:${actualCounts.get(table)??0}:${expected}`);
+  const actualMigrations=[...(migrationNames||[])].map(String).sort(),expectedMigrations=[...(expectedMigrationNames||[])].map(String).sort();
+  if(JSON.stringify(actualMigrations)!==JSON.stringify(expectedMigrations))throw new Error('EU_D1_TARGET_SCHEMA_ONLY_MIGRATIONS_MISMATCH');
+  const actualUsers=[...(userIds||[])].map(String).sort();
+  if(JSON.stringify(actualUsers)!==JSON.stringify(EU_D1_SCHEMA_ONLY_USERS))throw new Error('EU_D1_TARGET_SCHEMA_ONLY_USERS_MISMATCH');
+  return true;
+}
+export function resetSchemaSql(tables,views=[]){
+  const statements=['PRAGMA foreign_keys=OFF;',...views.map(name=>`DROP VIEW IF EXISTS ${sqlIdentifier(name)};`),...tables.map(name=>`DROP TABLE IF EXISTS ${sqlIdentifier(name)};`)];
+  return `${statements.join('\n')}\n`;
 }
 export function normalizeD1Export(value){
   return String(value).replace(/\r\n/g,'\n').replace(/^--.*$/gm,'').replace(/[ \t]+$/gm,'').replace(/\n{3,}/g,'\n\n').trim();

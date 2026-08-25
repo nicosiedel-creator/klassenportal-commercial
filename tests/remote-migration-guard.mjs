@@ -7,10 +7,15 @@ import { d1TriggerCompatFiles,patchD1TriggerParserSql,withD1MigrationFilesForWor
 
 const script=await readFile('scripts/migrate-remote.mjs','utf8');
 const reconciler=await readFile('scripts/reconcile-runtime-schema-drift.mjs','utf8');
+const deployWrapper=await readFile('scripts/cloudflare-deploy.mjs','utf8');
+const deployGuard=await readFile('scripts/workers-ci-guard.mjs','utf8');
 const pkg=JSON.parse(await readFile('package.json','utf8'));
 
 assert.equal(pkg.scripts['db:migrate'],'node scripts/migrate-remote.mjs','remote migrations must go through guarded reconciler');
-assert.ok(String(pkg.scripts.deploy||'').includes('npm run db:migrate'),'production deploy must keep the guarded remote migration step');
+assert.equal(pkg.scripts.deploy,'node scripts/cloudflare-deploy.mjs','production deploy must use the guarded wrapper');
+assert.ok(deployWrapper.includes("['scripts/workers-ci-guard.mjs']"),'production deploy wrapper must run the release/cutover guard first');
+assert.ok(deployWrapper.includes("['wrangler','deploy']"),'production deploy wrapper must deploy only after the guard succeeds');
+assert.ok(deployGuard.includes("['run','db:migrate']"),'production deploy guard must keep the guarded remote migration step');
 assert.ok(script.includes("process.env.WORKERS_CI_BRANCH"),'Workers Builds branch must be inspected');
 assert.ok(script.includes("process.env.WORKERS_CI"),'Workers Builds execution must be detected');
 assert.ok(script.includes("branch!==productionBranch"),'non-production branches must skip remote D1 migrations');
@@ -43,9 +48,9 @@ for(const item of d1TriggerCompatFiles){
 }
 assert.throws(()=>patchD1TriggerParserSql('SELECT CASE WHEN 1 THEN 1 END;',2),/D1_TRIGGER_COMPAT_UNEXPECTED_CASE_COUNT/,'compatibility patch must fail closed if a migration changes unexpectedly');
 
-// Wrangler deploy runs the configured custom build after npm run db:migrate in the
-// same checkout. Compatibility changes therefore must always be restored before
-// control returns, including when the remote migration throws.
+// The deployment guard runs remote migration in the same checkout before the
+// wrapper invokes Wrangler. Compatibility changes therefore must always be
+// restored before control returns, including when the remote migration throws.
 const fakeFiles=[{path:'memory/0048.sql',expectedCases:1}];
 const fakeOriginal="CREATE TRIGGER t BEFORE INSERT ON x BEGIN SELECT CASE WHEN 1 THEN RAISE(ABORT,'X') END; END;";
 const makeIo=()=>{

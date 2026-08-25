@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   EU_D1_FREEZE_PREFIX,EU_D1_MARKER_TABLE,EU_D1_SOURCE,EU_D1_TARGET,EU_D1_TARGET_ID,
-  assertMatchingExports,freezeSql,parseWranglerJson,sqlText,thawSql,wranglerRows,
+  assertMatchingExports,assertSchemaOnlyTarget,freezeSql,parseWranglerJson,resetSchemaSql,sqlIdentifier,sqlText,thawSql,wranglerRows,
 } from './eu-d1-cutover-lib.mjs';
 
 const branch=String(process.env.WORKERS_CI_BRANCH||'').trim();
@@ -35,9 +35,22 @@ if(existing){
   process.exit(0);
 }
 
-const targetTables=query(EU_D1_TARGET,`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;`).map(row=>String(row.name));
-if(targetTables.length)throw new Error(`EU_D1_TARGET_NOT_EMPTY:${targetTables.join(',')}`);
-const sourceTables=query(EU_D1_SOURCE,`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND COALESCE(sql,'') NOT LIKE 'CREATE VIRTUAL TABLE%' ORDER BY name;`).map(row=>String(row.name));
+let targetTables=query(EU_D1_TARGET,`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name;`).map(row=>String(row.name));
+if(targetTables.length){
+  const targetViews=query(EU_D1_TARGET,`SELECT name FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name;`).map(row=>String(row.name));
+  const countSql=targetTables.map(name=>`SELECT ${sqlText(name)} name,COUNT(*) n FROM ${sqlIdentifier(name)}`).join(' UNION ALL '),counts=Object.fromEntries(query(EU_D1_TARGET,countSql).map(row=>[String(row.name),Number(row.n||0)]));
+  const migrationNames=query(EU_D1_TARGET,'SELECT name FROM d1_migrations ORDER BY name;').map(row=>String(row.name));
+  const expectedMigrationNames=readdirSync('migrations').filter(name=>name.endsWith('.sql')).sort();
+  const userIds=query(EU_D1_TARGET,'SELECT id FROM users ORDER BY id;').map(row=>String(row.id));
+  assertSchemaOnlyTarget({tables:targetTables,counts,migrationNames,expectedMigrationNames,userIds});
+  const resetFile=join(mkdtempSync(join(tmpdir(),'klassenportal-eu-d1-reset-')),'reset-target.sql');
+  writeFileSync(resetFile,resetSchemaSql(targetTables,targetViews),'utf8');
+  console.log(`Resetting the verified schema-only EU D1 target left by the interrupted ${EU_D1_TARGET_ID} deployment.`);
+  executeFile(EU_D1_TARGET,resetFile);
+  targetTables=query(EU_D1_TARGET,`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name;`).map(row=>String(row.name));
+  if(targetTables.length)throw new Error(`EU_D1_TARGET_SCHEMA_RESET_FAILED:${targetTables.join(',')}`);
+}
+const sourceTables=query(EU_D1_SOURCE,`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND COALESCE(sql,'') NOT LIKE 'CREATE VIRTUAL TABLE%' ORDER BY name;`).map(row=>String(row.name));
 if(!sourceTables.length)throw new Error('EU_D1_SOURCE_EMPTY');
 
 const work=mkdtempSync(join(tmpdir(),'klassenportal-eu-d1-'));
