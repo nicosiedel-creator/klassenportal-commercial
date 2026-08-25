@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 
 export const EU_D1_SOURCE='klassenportal-commercial';
 export const EU_D1_TARGET='klassenportal-commercial-eu';
@@ -20,16 +21,29 @@ export const EU_D1_SCHEMA_ONLY_COUNTS={
   users:2,
 };
 export const EU_D1_SCHEMA_ONLY_USERS=['system_intake_service','system_workflow_service'];
-export const EU_D1_COMPOUND_SELECT_BATCH_SIZE=40;
 
 export function sqlIdentifier(value){return `"${String(value).replaceAll('"','""')}"`;}
 export function sqlText(value){return `'${String(value).replaceAll("'","''")}'`;}
-export function chunkD1CompoundTerms(values,size=EU_D1_COMPOUND_SELECT_BATCH_SIZE){
-  const width=Number(size);
-  if(!Number.isSafeInteger(width)||width<1)throw new Error('EU_D1_COMPOUND_SELECT_BATCH_INVALID');
-  const chunks=[];
-  for(let index=0;index<values.length;index+=width)chunks.push(values.slice(index,index+width));
-  return chunks;
+export function inspectD1Export(value){
+  const db=new DatabaseSync(':memory:');
+  try{
+    db.exec(String(value));
+    const integrity=db.prepare('PRAGMA integrity_check;').all().map(row=>String(row.integrity_check));
+    if(integrity.length!==1||integrity[0]!=='ok')throw new Error(`EU_D1_EXPORT_INTEGRITY_FAILED:${integrity.join(',')}`);
+    const foreignKeyViolations=db.prepare('PRAGMA foreign_key_check;').all();
+    if(foreignKeyViolations.length)throw new Error(`EU_D1_EXPORT_FOREIGN_KEY_FAILED:${foreignKeyViolations.length}`);
+    const objects=db.prepare("SELECT type,name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY type,name;").all();
+    const tables=objects.filter(row=>row.type==='table').map(row=>String(row.name));
+    const views=objects.filter(row=>row.type==='view').map(row=>String(row.name));
+    const counts={};
+    for(const table of tables)counts[table]=Number(db.prepare(`SELECT COUNT(*) n FROM ${sqlIdentifier(table)};`).get().n);
+    const migrationNames=tables.includes('d1_migrations')?db.prepare('SELECT name FROM d1_migrations ORDER BY name;').all().map(row=>String(row.name)):[];
+    const userIds=tables.includes('users')?db.prepare('SELECT id FROM users ORDER BY id;').all().map(row=>String(row.id)):[];
+    return {tables,views,counts,migrationNames,userIds};
+  }catch(error){
+    if(String(error?.message||'').startsWith('EU_D1_EXPORT_'))throw error;
+    throw new Error(`EU_D1_EXPORT_INSPECTION_FAILED:${String(error?.message||error)}`,{cause:error});
+  }finally{db.close();}
 }
 export function freezeTriggerNames(table){
   const suffix=createHash('sha256').update(String(table)).digest('hex').slice(0,20);
