@@ -41,10 +41,21 @@ jobs:
           fi
           echo 'Exact local PR candidate is ready.'
       - name: Click through exact Commercial PR candidate
+        shell: bash
         env:
           COMMERCIAL_BASE_URL: http://127.0.0.1:8787
           E2E_TARGET_MODE: candidate
-        run: node scripts/commercial-browser-e2e.mjs
+        run: |
+          set +e
+          node scripts/commercial-browser-e2e.mjs 2>&1 | tee /tmp/commercial-browser-e2e.log
+          status=${PIPESTATUS[0]}
+          {
+            echo '### Commercial browser E2E diagnostic'
+            echo '```text'
+            tail -n 120 /tmp/commercial-browser-e2e.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
       - name: Show local Worker log on failure
         if: failure()
         run: cat /tmp/commercial-wrangler-e2e.log || true
