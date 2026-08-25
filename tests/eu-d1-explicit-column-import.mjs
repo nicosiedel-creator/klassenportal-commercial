@@ -8,7 +8,7 @@ import {
 } from '../scripts/eu-d1-cutover-lib.mjs';
 
 const bytes=value=>Buffer.byteLength(String(value),'utf8');
-const hugeText=`Cloudflare-D1-Export\n${'ä'.repeat(446_000)}\nEnde`;
+const hugeText=`Cloudflare-D1-Export\n${'ä'.repeat(450_000)}\nEnde`;
 const batchRows=Array.from({length:650},(_,index)=>`(${index},${sqlText(`${index}:${'x'.repeat(280)}`)})`).join(',');
 const source=`-- Cloudflare export may prefix data statements with comments.
 CREATE TABLE payloads(id INTEGER PRIMARY KEY,body TEXT NOT NULL);
