@@ -72,7 +72,13 @@ export function splitD1ExportStatements(value){
   return statements;
 }
 function insertParts(statement){
-  const match=String(statement).match(/^(\s*INSERT\s+INTO\s+(?:"(?:[^"]|"")*"|`(?:[^`]|``)*`|\[[^\]]+\]|[^\s]+)\s+VALUES\s*)([\s\S]*?)(;\s*)$/i);
+  const identifier='(?:"(?:[^"]|"")*"|`(?:[^`]|``)*`|\\[[^\\]]+\\]|[A-Za-z_][A-Za-z0-9_$]*)';
+  const target=`${identifier}(?:\\s*\\.\\s*${identifier})?`;
+  const columns=`(?:\\s*\\(\\s*${identifier}(?:\\s*,\\s*${identifier})*\\s*\\))?`;
+  const leading='\\s*(?:(?:--[^\\n]*(?:\\n|$)|\\/\\*[\\s\\S]*?\\*\\/)\\s*)*';
+  const conflict='(?:OR\\s+(?:REPLACE|ROLLBACK|ABORT|FAIL|IGNORE)\\s+)?';
+  const expression=new RegExp(`^(${leading}INSERT\\s+${conflict}INTO\\s+${target}${columns}\\s+VALUES\\s*)([\\s\\S]*?)(;\\s*)$`,'i');
+  const match=String(statement).match(expression);
   return match?{prefix:match[1],values:match[2],suffix:match[3]}:null;
 }
 function scanDelimited(value,{rows=false}={}){
