@@ -13,10 +13,18 @@ page.on('console',msg=>{if(msg.type()==='error')consoleErrors.push(msg.text());}
 page.on('requestfailed',request=>failedRequests.push(`${request.method()} ${request.url()} :: ${request.failure()?.errorText||'failed'}`));
 page.on('response',response=>{if(response.status()>=400)httpErrors.push({status:response.status(),url:response.url()});});
 
-async function route(path,{allowStatuses=[200]}={}){
+async function route(path,{allowStatuses=[200],waitForResponsePath=null}={}){
+  const backgroundResponse=waitForResponsePath?page.waitForResponse(response=>{
+    try{return new URL(response.url()).pathname===waitForResponsePath;}catch{return false;}
+  },{timeout:10000}):null;
   const response=await page.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});
   if(!response)fail(`No response for ${path}`);
   if(!allowStatuses.includes(response.status()))fail(`${path} returned unexpected ${response.status()}`);
+  if(backgroundResponse){
+    const bootstrap=await backgroundResponse;
+    if(bootstrap.status()>=400)fail(`${waitForResponsePath} bootstrap returned unexpected ${bootstrap.status()}`);
+    console.log(`browser bootstrap ${waitForResponsePath}: ${bootstrap.status()}`);
+  }
   const text=(await page.locator('body').innerText()).slice(0,5000);
   if(/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`${path} rendered a Cloudflare/server error`);
   console.log(`browser route ${path}: ${response.status()}`);
@@ -37,7 +45,7 @@ async function candidateSurface(){
   const submit=page.locator('button[type="submit"]').first();
   if(!(await email.count())||!(await password.count())||!(await submit.count()))fail('platform login controls not found on the PR candidate');
 
-  const product=await route('/produkt');
+  const product=await route('/produkt',{waitForResponsePath:'/api/public/product'});
   if(!/Klassenportal/i.test(product))fail('/produkt did not render the product surface');
   for(const path of ['/kunden-admin','/dozentenportal']){
     const text=await route(path);
