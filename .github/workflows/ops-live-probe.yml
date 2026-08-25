@@ -10,16 +10,49 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 8
     steps:
-      - name: Probe deployed commit on both production hosts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Probe production through Chromium
         shell: bash
+        env:
+          EXPECTED_SHA: b84d65d26fd5d66e57e6d18a4ee7c6c6a6b7133f
         run: |
           set -euo pipefail
-          for base in https://klassenportal-commercial.nicosiedel.workers.dev https://klassenportal.app; do
-            echo "=== $base ==="
-            code=$(curl -sS -L --max-time 20 -o /tmp/meta -w '%{http_code}' "$base/build-meta.json?probe=$GITHUB_SHA" || true)
-            echo "HTTP $code"
-            head -c 1000 /tmp/meta || true
-            echo
-          done
+          node --input-type=module <<'NODE'
+          import { chromium } from 'playwright';
+          const expected=process.env.EXPECTED_SHA;
+          const browser=await chromium.launch({headless:true,args:['--disable-blink-features=AutomationControlled']});
+          const context=await browser.newContext({
+            locale:'de-DE',
+            userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+            viewport:{width:1440,height:1000},
+          });
+          const page=await context.newPage();
+          const base='https://klassenportal.app';
+          let landing=await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
+          console.log('landing',landing?.status(),await page.title(),page.url());
+          await page.waitForTimeout(12000);
+          console.log('landing-after-wait',await page.title(),page.url());
+          const metaResponse=await page.goto(`${base}/build-meta.json?browser_probe=${Date.now()}`,{waitUntil:'domcontentloaded',timeout:60000});
+          await page.waitForTimeout(3000);
+          const body=(await page.locator('body').innerText().catch(()=>'' )).trim();
+          console.log('meta-status',metaResponse?.status());
+          console.log('meta-url',page.url());
+          console.log('meta-title',await page.title());
+          console.log('meta-body',body.slice(0,1200));
+          let commit='';
+          try{commit=JSON.parse(body).commit||'';}catch{}
+          console.log('deployed-commit',commit||'UNREADABLE');
+          if(commit!==expected){
+            console.error(`EXPECTED_DEPLOYMENT_NOT_OBSERVED:${expected}:${commit||'UNREADABLE'}`);
+            process.exitCode=23;
+          }
+          await browser.close();
+          NODE
