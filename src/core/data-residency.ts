@@ -10,10 +10,10 @@ export function configuredMailProvider(env:Env):'cloudflare_email'|'none'{
 export function euStrict(env:Env):boolean{return String(env.DATA_RESIDENCY_MODE||'eu_strict').trim().toLowerCase()!=='standard';}
 
 export function dataResidencyStatus(env:Env):ResidencyStatus{
-  const strict=euStrict(env),provider=configuredMailProvider(env),mailConfigured=provider==='cloudflare_email',checks:ResidencyCheck[]=[
+  const strict=euStrict(env),provider=configuredMailProvider(env),mailConfigured=provider==='cloudflare_email',r2Eu=yes(env.EU_R2_JURISDICTION_ATTESTED),checks:ResidencyCheck[]=[
     {key:'d1_eu',ok:yes(env.EU_D1_JURISDICTION_ATTESTED),required:strict,label:'Produktive D1-Datenbank wurde mit Cloudflare-Jurisdiktion eu neu angelegt und verifiziert'},
-    {key:'r2_eu',ok:yes(env.EU_R2_JURISDICTION_ATTESTED),required:strict,label:'Produktiver R2-Datei-/Dokumentspeicher wurde mit Cloudflare-Jurisdiktion eu neu angelegt und verifiziert'},
-    {key:'backup_eu',ok:yes(env.EU_BACKUP_STORAGE_ATTESTED),required:strict,label:'Produktive Backups verbleiben in EU-jurisdiktionalem Speicher'},
+    {key:'r2_eu',ok:r2Eu,required:strict,label:'Produktiver R2-Datei-/Dokumentspeicher wurde mit Cloudflare-Jurisdiktion eu neu angelegt und verifiziert'},
+    {key:'backup_eu',ok:r2Eu,required:strict,label:'Produktive Backups werden ausschließlich über das verifizierte EU-R2-FILES-Binding gespeichert'},
     {key:'worker_eu',ok:yes(env.EU_WORKER_PROCESSING_ATTESTED),required:false,label:'Worker-Verarbeitung ist über Cloudflare Regional Services auf EU begrenzt'},
     {key:'metadata_eu',ok:yes(env.EU_METADATA_BOUNDARY_ATTESTED),required:false,label:'Cloudflare Customer Metadata Boundary ist für Logs/Analytics auf EU begrenzt'},
     {key:'mail_configured',ok:mailConfigured,required:true,label:'Cloudflare Email Service ist für Transaktions-E-Mail mit verifiziertem Absender konfiguriert'},

@@ -1,0 +1,10 @@
+import { strict as assert } from 'node:assert';
+import { readFile } from 'node:fs/promises';
+const script=await readFile('scripts/commercial-browser-e2e.mjs','utf8');
+assert.match(script,/width:390,height:844/);
+assert.match(script,/isMobile:true/);
+assert.match(script,/hasTouch:true/);
+assert.match(script,/horizontal overflow/);
+assert.match(script,/mobile page errors/);
+assert.match(script,/mobile failed requests/);
+console.log('Desktop/mobile browser acceptance contract: OK');

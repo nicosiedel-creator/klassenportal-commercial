@@ -120,7 +120,7 @@ const wrangler=JSON.parse(await readFile('wrangler.jsonc','utf8'));
 assert.equal(wrangler.vars.PAYMENTS_ENABLED,'false');
 assert.equal(wrangler.vars.EU_D1_JURISDICTION_ATTESTED,'true');
 assert.equal(wrangler.vars.EU_R2_JURISDICTION_ATTESTED,'true');
-assert.equal(wrangler.vars.EU_BACKUP_STORAGE_ATTESTED,'false');
+assert.equal(Object.hasOwn(wrangler.vars,'EU_BACKUP_STORAGE_ATTESTED'),false,'backup EU residency must derive from the verified EU FILES binding, not a stale manual flag');
 assert.equal(wrangler.vars.EU_STORAGE_MIGRATION_REQUIRED,'true');
 assert.deepEqual(wrangler.d1_databases[0],{binding:'DB',database_name:EU_D1_TARGET,database_id:EU_D1_TARGET_ID});
 assert.deepEqual(wrangler.r2_buckets[0],{binding:'FILES',bucket_name:'klassenportal-commercial-files-eu',jurisdiction:'eu'});
@@ -132,7 +132,8 @@ assert.doesNotMatch(cutover,/UNION\s+ALL/i,'D1 target inspection must never depe
 assert.match(cutover,/executeFile\(EU_D1_TARGET,markerFile\);[\s\S]*EU_D1_CUTOVER_MARKER_WRITE_FAILED[\s\S]*thawVerifiedTarget\(\);/,'verified marker must be durable before target freeze triggers are removed');
 assert.match(guard,/scripts\/eu-d1-cutover\.mjs/);
 assert.ok(guard.indexOf('scripts/eu-d1-cutover.mjs')<guard.indexOf("['run','db:migrate']"),'D1 copy must precede target migrations');
-assert.match(runtime,/Scheduled writes paused during the verified EU storage migration/);
+assert.match(runtime,/runEuStorageMigrationCycle/,'runtime must run the evidence-based R2 migration cycle');
+assert.match(runtime,/Scheduled customer writes remain paused while the non-destructive EU R2 migration is verified/,'scheduled customer writes must remain paused until verified parity');
 for(const phrase of ['EU SPEICHER MIGRIEREN','EU MIGRATION ABSCHLIESSEN'])assert.ok(ui.includes(phrase),`migration UI missing ${phrase}`);
 
 console.log('EU D1 freeze/export verification and authenticated, idempotent R2 copy with persisted readback: OK');

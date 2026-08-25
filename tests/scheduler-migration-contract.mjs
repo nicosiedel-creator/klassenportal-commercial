@@ -1,0 +1,10 @@
+import { strict as assert } from 'node:assert';
+import { readFile } from 'node:fs/promises';
+const index=await readFile('src/index.ts','utf8');
+const migration=await readFile('src/core/eu-storage-migration.ts','utf8');
+assert.match(index,/runEuStorageMigrationCycle\(env\)/);
+assert.match(index,/migration\.active&&!migration\.complete/);
+assert.match(index,/runScheduledTenantBackups/);
+assert.match(migration,/COPY_BATCH_SIZE=40/);
+assert.match(migration,/never deletes the source/);
+console.log('Scheduler migration contract keeps customer writes paused until verified EU R2 parity: OK');

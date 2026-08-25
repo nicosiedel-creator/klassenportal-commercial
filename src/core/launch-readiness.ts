@@ -1,11 +1,12 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { requirePlatform } from './permissions.js';
-import { backupReadiness } from './backup-verification.js';
 import { ownerLegal } from './legal.js';
 import { ensureLegalDocumentSchema } from './legal-schema.js';
 import { ensureOfferSchema } from './offer-schema.js';
 import { mailConfigured } from './mail.js';
 import { dataResidencyStatus, configuredMailProvider } from './data-residency.js';
+import { inspectEuStorageMigration } from './eu-storage-migration.js';
+import { backupReadiness } from './backup-verification.js';
 import { paymentsEnabled, paymentPolicy } from './payment-policy.js';
 import { stripeModeIfConfigured } from './stripe-mode.js';
 import { tenantSecretEncryptionReady } from './tenant-secrets.js';
@@ -16,16 +17,16 @@ async function essentialSchema(env:Env){
   const rows=(await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name IN (${required.map(()=>'?').join(',')})`).bind(...required).all<{name:string}>()).results??[],set=new Set(rows.map(x=>x.name));return required.filter(x=>!set.has(x));
 }
 async function count(env:Env,sql:string,values:unknown[]=[]):Promise<number>{const stmt=env.DB.prepare(sql),bound=values.length?stmt.bind(...values):stmt;return Number(await bound.first<number>('n')||0);}
-function yes(value:unknown):boolean{return ['1','true','yes'].includes(String(value??'').trim().toLowerCase());}
 
 export async function productionReadiness(env:Env,auth:CoreAuthContext){
   requirePlatform(auth);await ensureProductionReleaseSchema(env);await ensureOfferSchema(env);await ensureLegalDocumentSchema(env);
-  const blockers:string[]=[],warnings:string[]=[],origin=productionOriginStatus(env),version=currentWorkerVersion(env),legal=await ownerLegal(env,auth),backups=await backupReadiness(env,48),missingSchema=await essentialSchema(env),residency=dataResidencyStatus(env),payment=paymentPolicy(env),stripeMode=(()=>{try{return stripeModeIfConfigured(env);}catch{return null;}})();
+  const blockers:string[]=[],warnings:string[]=[],origin=productionOriginStatus(env),version=currentWorkerVersion(env),residency=dataResidencyStatus(env),payment=paymentPolicy(env),stripeMode=(()=>{try{return stripeModeIfConfigured(env);}catch{return null;}})();
+  const [legal,storageMigration,backups,missingSchema]=await Promise.all([ownerLegal(env,auth),inspectEuStorageMigration(env),backupReadiness(env,48),essentialSchema(env)]),storageMigrationRequired=!storageMigration.complete;
   if(!origin.ok)blockers.push(origin.reason!);if(!version)blockers.push('Cloudflare Worker-Versionsmetadaten fehlen; versionsgebundene Live-Freigabe ist nicht möglich');
   if(payment.enabled){if(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET)blockers.push('Stripe Live-Konfiguration fehlt');else if(stripeMode!=='live')blockers.push('Stripe läuft noch nicht mit Live-Schlüssel');}
   else warnings.push('Zahlungsabwicklung ist absichtlich deaktiviert; Angebote und Portale dürfen live laufen, Zahlungen erfolgen außerhalb des Portals');
   if(!mailConfigured(env))blockers.push('Cloudflare Email Service ist nicht vollständig konfiguriert (EMAIL-Binding, MAIL_FROM und APP_ORIGIN erforderlich)');
-  const storageMigrationRequired=yes(env.EU_STORAGE_MIGRATION_REQUIRED);if(storageMigrationRequired)blockers.push('EU-Speichermigration ist noch nicht vollständig kopiert, verifiziert und bereinigt');
+  if(storageMigrationRequired)blockers.push(`EU-Speichermigration ist anhand des realen R2-Bestands noch nicht vollständig verifiziert (${storageMigration.missingCount} fehlend, ${storageMigration.mismatchedCount} abweichend)`);
   if(!residency.ready)for(const issue of residency.blockers)blockers.push(`EU-Datenhaltung nicht bestätigt: ${issue}`);
   if(!residency.checks.find(x=>x.key==='worker_eu')?.ok)warnings.push('Cloudflare Regional Services/EU-Worker-Verarbeitung ist noch nicht bestätigt; D1/R2-EU-Jurisdiktion schützt die Speicherung, nicht automatisch jede Worker-Ausführung');
   if(!residency.checks.find(x=>x.key==='metadata_eu')?.ok)warnings.push('Cloudflare EU Customer Metadata Boundary ist noch nicht bestätigt; Logs/Analytics-Metadaten dürfen daher nicht als EU-only beworben werden');
@@ -54,5 +55,5 @@ export async function productionReadiness(env:Env,auth:CoreAuthContext){
   const dueDeletions=Number(await env.DB.prepare("SELECT COUNT(*) AS n FROM portability_deletion_requests WHERE status='pending' AND scheduled_for<=?").bind(new Date().toISOString()).first<number>('n').catch(()=>0)||0);if(dueDeletions)warnings.push(`${dueDeletions} Kundenlöschungen haben ihre Schutzfrist erreicht und warten auf manuelle Entscheidung`);
   const expiringIntegrations=missingSchema.includes('api_tokens')?0:Number(await env.DB.prepare("SELECT (SELECT COUNT(*) FROM api_tokens WHERE revoked_at IS NULL AND expires_at BETWEEN ? AND ?) + (SELECT COUNT(*) FROM scim_tokens WHERE revoked_at IS NULL AND expires_at BETWEEN ? AND ?) AS n").bind(new Date().toISOString(),new Date(Date.now()+14*86400000).toISOString(),new Date().toISOString(),new Date(Date.now()+14*86400000).toISOString()).first<number>('n').catch(()=>0)||0);if(expiringIntegrations)warnings.push(`${expiringIntegrations} API-/SCIM-Token(s) laufen innerhalb der nächsten 14 Tage ab`);
 
-  return{ready:blockers.length===0,blockers,warnings,storageMigrationRequired,checks:{productionOrigin:origin,workerVersion:!!version,paymentsEnabled:paymentsEnabled(env),liveStripe:!payment.enabled||stripeMode==='live',transactionalMail:mailConfigured(env),storageMigration:!storageMigrationRequired,euDataResidency:residency.ready,euWorkerProcessing:!!residency.checks.find(x=>x.key==='worker_eu')?.ok,euMetadataBoundary:!!residency.checks.find(x=>x.key==='metadata_eu')?.ok,legal:legal.complete,backups:backups.ready,schema:missingSchema.length===0,ssoSecretEncryption:ssoSecretReady,inboundMail:inboundReady,customDomainProvider:customDomainProviderReady,paymentProviderFailures24h:!payment.enabled||(paymentEventsQueryOk&&providerFailures===0)},paymentPolicy:payment,paymentProviderFailureCount24h:payment.enabled&&paymentEventsQueryOk?providerFailures:null,residency,workerVersion:version,backupIssues:backups.issues,checkedAt:new Date().toISOString()};
+  return{ready:blockers.length===0,blockers,warnings,storageMigrationRequired,storageMigration:{complete:storageMigration.complete,sourceObjects:storageMigration.sourceObjects,sourceBytes:storageMigration.sourceBytes,destinationObjects:storageMigration.destinationObjects,destinationBytes:storageMigration.destinationBytes,missingCount:storageMigration.missingCount,mismatchedCount:storageMigration.mismatchedCount},checks:{productionOrigin:origin,workerVersion:!!version,paymentsEnabled:paymentsEnabled(env),liveStripe:!payment.enabled||stripeMode==='live',transactionalMail:mailConfigured(env),storageMigration:storageMigration.complete,euDataResidency:residency.ready,euWorkerProcessing:!!residency.checks.find(x=>x.key==='worker_eu')?.ok,euMetadataBoundary:!!residency.checks.find(x=>x.key==='metadata_eu')?.ok,legal:legal.complete,backups:backups.ready,schema:missingSchema.length===0,ssoSecretEncryption:ssoSecretReady,inboundMail:inboundReady,customDomainProvider:customDomainProviderReady,paymentProviderFailures24h:!payment.enabled||(paymentEventsQueryOk&&providerFailures===0)},paymentPolicy:payment,paymentProviderFailureCount24h:payment.enabled&&paymentEventsQueryOk?providerFailures:null,residency,workerVersion:version,backupIssues:backups.issues,checkedAt:new Date().toISOString()};
 }

@@ -13,7 +13,7 @@ const COPY_BATCH_SIZE=40;
 
 function yes(value:unknown):boolean{return ['1','true','yes'].includes(String(value??'').trim().toLowerCase());}
 function migrationActive(env:Env):void{
-  if(!yes(env.EU_STORAGE_MIGRATION_REQUIRED)||!env.LEGACY_FILES)throw new Error('EU_STORAGE_MIGRATION_NOT_ACTIVE');
+  if(!env.LEGACY_FILES)throw new Error('EU_STORAGE_MIGRATION_NOT_ACTIVE');
 }
 function normalizedEtag(value:unknown):string{return String(value??'').trim().replace(/^W\//,'').replace(/^"|"$/g,'');}
 function sameObject(a:{size:number;etag:string}|undefined,b:{size:number;etag:string}|undefined):boolean{return !!a&&!!b&&Number(a.size)===Number(b.size)&&normalizedEtag(a.etag)===normalizedEtag(b.etag);}
@@ -34,11 +34,51 @@ async function allObjects(bucket:R2BucketLike):Promise<Map<string,R2ListedObject
 }
 function bytes(objects:Map<string,R2ListedObjectLike>):number{return [...objects.values()].reduce((sum,object)=>sum+Number(object.size||0),0);}
 
-export async function euStorageMigrationStatus(env:Env,auth:CoreAuthContext){
-  requirePlatform(auth);migrationActive(env);const source=await allObjects(env.LEGACY_FILES!),destination=await allObjects(env.FILES),missing:string[]=[],mismatched:string[]=[];
-  for(const [key,object] of source){const target=destination.get(key);if(!target)missing.push(key);else if(!sameObject(object,target))mismatched.push(key);}
+export async function inspectEuStorageMigration(env:Env){
   const backups=await backupReadiness(env,48);
-  return{active:true,complete:missing.length===0&&mismatched.length===0,sourceObjects:source.size,sourceBytes:bytes(source),destinationObjects:destination.size,destinationBytes:bytes(destination),missingCount:missing.length,mismatchedCount:mismatched.length,missing:missing.slice(0,20),mismatched:mismatched.slice(0,20),backups};
+  if(!env.LEGACY_FILES){
+    const required=yes(env.EU_STORAGE_MIGRATION_REQUIRED);
+    return{active:false,configuredRequired:required,complete:!required,sourceObjects:0,sourceBytes:0,destinationObjects:0,destinationBytes:0,missingCount:required?1:0,mismatchedCount:0,missing:required?['LEGACY_FILES_BINDING_MISSING']:[],mismatched:[],backups};
+  }
+  const source=await allObjects(env.LEGACY_FILES),destination=await allObjects(env.FILES),missing:string[]=[],mismatched:string[]=[];
+  for(const [key,object] of source){const target=destination.get(key);if(!target)missing.push(key);else if(!sameObject(object,target))mismatched.push(key);}
+  return{active:yes(env.EU_STORAGE_MIGRATION_REQUIRED),configuredRequired:yes(env.EU_STORAGE_MIGRATION_REQUIRED),complete:missing.length===0&&mismatched.length===0,sourceObjects:source.size,sourceBytes:bytes(source),destinationObjects:destination.size,destinationBytes:bytes(destination),missingCount:missing.length,mismatchedCount:mismatched.length,missing:missing.slice(0,20),mismatched:mismatched.slice(0,20),backups};
+}
+
+/**
+ * Idempotent, non-destructive production migration cycle.
+ * It only copies legacy objects that are absent or byte-contract divergent in the EU bucket,
+ * verifies size + ETag after every write, never deletes the source, and caps writes per cycle.
+ */
+export async function runEuStorageMigrationCycle(env:Env){
+  const configuredRequired=yes(env.EU_STORAGE_MIGRATION_REQUIRED);
+  if(!configuredRequired)return{active:false,complete:true,copied:0,skipped:0,scanned:0,pending:false};
+  if(!env.LEGACY_FILES)throw new Error('EU_STORAGE_MIGRATION_LEGACY_BINDING_MISSING');
+  let cursor:string|undefined,copied=0,skipped=0,scanned=0,pending=false;
+  outer:do{
+    const page=await env.LEGACY_FILES.list({cursor,limit:1000});
+    for(const listed of page.objects){
+      scanned++;
+      const existing=await env.FILES.get(listed.key);
+      if(existing&&sameObject(listed,existing)){await cancelBody(existing);skipped++;continue;}
+      await cancelBody(existing);pending=true;
+      const source=await env.LEGACY_FILES.get(listed.key);if(!source)throw new Error('EU_R2_SOURCE_OBJECT_MISSING');
+      try{
+        await env.FILES.put(listed.key,source.body,{httpMetadata:source.httpMetadata,customMetadata:source.customMetadata});
+        const stored=await env.FILES.get(listed.key);if(!stored)throw new Error('EU_R2_COPY_READBACK_MISSING');
+        const matches=sameObject(source,stored),error=Number(source.size)!==Number(stored.size)?'EU_R2_COPY_SIZE_MISMATCH':'EU_R2_COPY_ETAG_MISMATCH';await cancelBody(stored);if(!matches)throw new Error(error);copied++;
+      }finally{await cancelBody(source);}
+      if(copied>=COPY_BATCH_SIZE)break outer;
+    }
+    if(page.truncated&&!page.cursor)throw new Error('EU_R2_CURSOR_MISSING');cursor=page.truncated?page.cursor:undefined;
+  }while(cursor);
+  if(copied>=COPY_BATCH_SIZE)return{active:true,complete:false,copied,skipped,scanned,pending:true};
+  const status=await inspectEuStorageMigration(env);
+  return{active:true,complete:status.complete,copied,skipped,scanned,pending:!status.complete,missingCount:status.missingCount,mismatchedCount:status.mismatchedCount};
+}
+
+export async function euStorageMigrationStatus(env:Env,auth:CoreAuthContext){
+  requirePlatform(auth);return inspectEuStorageMigration(env);
 }
 
 export async function copyEuStorageBatch(env:Env,auth:CoreAuthContext,input:Record<string,unknown>){
@@ -59,7 +99,7 @@ export async function copyEuStorageBatch(env:Env,auth:CoreAuthContext,input:Reco
 
 export async function finalizeEuStorageMigration(env:Env,auth:CoreAuthContext,input:Record<string,unknown>){
   requirePlatform(auth);migrationActive(env);if(String(input.confirmation||'')!==FINALIZE_CONFIRMATION)throw new Error('EU_STORAGE_FINALIZE_CONFIRMATION_REQUIRED');await ownerStepUp(env,auth,input.current_password);
-  const status=await euStorageMigrationStatus(env,auth);if(!status.complete)throw new Error('EU_STORAGE_COPY_NOT_COMPLETE');
+  const status=await inspectEuStorageMigration(env);if(!status.complete)throw new Error('EU_STORAGE_COPY_NOT_COMPLETE');
   const tenants=(await env.DB.prepare("SELECT id FROM tenants WHERE status='active' ORDER BY id").all<{id:string}>()).results??[],verified:string[]=[];
   for(const tenant of tenants){
     const backup=await createTenantBackup(env,portabilityConfig,auth,tenant.id,'automatic'),verification=await verifyBackup(env,backup.backupId);

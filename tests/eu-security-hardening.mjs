@@ -16,7 +16,9 @@ const auth=await readFile('src/core/auth.ts','utf8');
 const index=await readFile('src/index.ts','utf8');
 
 assert.match(residency,/eu_strict/);
-for(const key of ['EU_D1_JURISDICTION_ATTESTED','EU_R2_JURISDICTION_ATTESTED','EU_BACKUP_STORAGE_ATTESTED'])assert.ok(residency.includes(key),`missing EU residency gate ${key}`);
+for(const key of ['EU_D1_JURISDICTION_ATTESTED','EU_R2_JURISDICTION_ATTESTED'])assert.ok(residency.includes(key),`missing EU residency gate ${key}`);
+assert.match(residency,/backup_eu.*r2Eu/s,'backup residency must derive from the same verified EU R2 binding used by backup storage');
+assert.doesNotMatch(residency,/EU_BACKUP_STORAGE_ATTESTED/,'stale manual backup residency booleans must not override real storage topology');
 assert.match(residency,/EU_METADATA_BOUNDARY_ATTESTED/,'EU metadata boundary must be separately tracked');
 assert.match(residency,/cloudflare_email/,'Cloudflare Email Service must be the configured mail-provider model');
 assert.match(mail,/env\.EMAIL/,'outbound mail must use Cloudflare native binding');
