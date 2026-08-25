@@ -74,9 +74,11 @@ async function lockedProductionSurface(){
   if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('payment webhook did not remain side-effect-free while production is locked');
 }
 
+const expectedCandidate401Paths=new Set(['/api/auth/me','/api/attendance/teacher/courses']);
 function expectedBrowserHttpError(entry){
+  if(mode!=='candidate'||entry.status!==401)return false;
   let path='';try{path=new URL(entry.url).pathname;}catch{return false;}
-  return entry.status===401&&path==='/api/auth/me';
+  return expectedCandidate401Paths.has(path);
 }
 
 try{
@@ -108,10 +110,12 @@ try{
   }
 
   await page.waitForTimeout(250);
+  const expectedHttp=httpErrors.filter(expectedBrowserHttpError);
   const unexpectedHttp=httpErrors.filter(entry=>!expectedBrowserHttpError(entry));
+  const unexpected401=unexpectedHttp.some(entry=>entry.status===401);
   const relevantConsole=consoleErrors.filter(text=>{
     if(/favicon|Failed to load resource.*404/i.test(text))return false;
-    if(/^Failed to load resource:.*status of 401\b/i.test(text))return false;
+    if(/^Failed to load resource:.*status of 401\b/i.test(text)&&expectedHttp.length>0&&!unexpected401)return false;
     return true;
   });
   if(pageErrors.length)fail(`page errors: ${pageErrors.join(' | ')}`);
