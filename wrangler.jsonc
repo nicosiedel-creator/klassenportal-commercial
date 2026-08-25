@@ -20,7 +20,6 @@
     "DATA_RESIDENCY_MODE": "eu_strict",
     "EU_D1_JURISDICTION_ATTESTED": "true",
     "EU_R2_JURISDICTION_ATTESTED": "true",
-    "EU_BACKUP_STORAGE_ATTESTED": "false",
     "EU_STORAGE_MIGRATION_REQUIRED": "true"
   },
   "send_email": [
