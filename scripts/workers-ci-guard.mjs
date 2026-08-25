@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { stampHomepageBuildCommit } from './build-metadata-lib.mjs';
 
 if (process.env.WORKERS_CI_GUARD_ACTIVE === '1') process.exit(0);
 
@@ -62,12 +63,7 @@ if(commit){
   writeFileSync('public/build-meta.json',`${JSON.stringify(metadata)}\n`,'utf8');
 
   const indexPath='public/index.html';
-  const index=readFileSync(indexPath,'utf8');
-  const marker=`<meta name="kp-build-commit" content="${commit}">`;
-  const stamped=/<meta name="kp-build-commit" content="[^"]*">/.test(index)
-    ? index.replace(/<meta name="kp-build-commit" content="[^"]*">/,marker)
-    : index.replace('</head>',`${marker}</head>`);
-  if(stamped===index)throw new Error('BUILD_COMMIT_MARKER_STAMP_FAILED');
+  const stamped=stampHomepageBuildCommit(readFileSync(indexPath,'utf8'),commit);
   writeFileSync(indexPath,stamped,'utf8');
 
   console.log(`Bound deployed metadata and homepage marker to commit ${commit}.`);
