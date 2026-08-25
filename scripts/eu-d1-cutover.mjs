@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   EU_D1_FREEZE_PREFIX,EU_D1_MARKER_TABLE,EU_D1_SOURCE,EU_D1_TARGET,EU_D1_TARGET_ID,
-  assertMatchingExports,assertSchemaOnlyTarget,freezeSql,inspectD1Export,parseWranglerJson,resetSchemaSql,sqlIdentifier,sqlText,thawSql,wranglerRows,
+  assertMatchingExports,assertSchemaOnlyTarget,freezeSql,inspectD1Export,parseWranglerJson,prepareD1Import,resetSchemaSql,sqlIdentifier,sqlText,thawSql,wranglerRows,
 } from './eu-d1-cutover-lib.mjs';
 
 const branch=String(process.env.WORKERS_CI_BRANCH||'').trim();
@@ -88,7 +88,7 @@ if(targetTables.length){
   if(targetTables.length)throw new Error(`EU_D1_TARGET_SCHEMA_RESET_FAILED:${targetTables.join(',')}`);
 }
 
-const freezeFile=join(work,'freeze-source.sql'),sourceThawFile=join(work,'thaw-source.sql'),sourceExport=join(work,'source.sql'),targetExport=join(work,'target.sql');
+const freezeFile=join(work,'freeze-source.sql'),sourceThawFile=join(work,'thaw-source.sql'),sourceExport=join(work,'source.sql'),sourceImport=join(work,'source-import.sql'),targetExport=join(work,'target.sql');
 writeFileSync(freezeFile,freezeSql(sourceTables),'utf8');
 writeFileSync(sourceThawFile,thawSql(sourceTables),'utf8');
 const sourceWasFrozen=sourceFreezeTriggers.length===expectedFreezeTriggers;
@@ -99,10 +99,13 @@ try{
   const actualTriggers=freezeTriggerNames(EU_D1_SOURCE).length;
   if(actualTriggers!==expectedFreezeTriggers)throw new Error(`EU_D1_SOURCE_FREEZE_INCOMPLETE:${actualTriggers}:${expectedFreezeTriggers}`);
   exportDatabase(EU_D1_SOURCE,sourceExport);
-  executeFile(EU_D1_TARGET,sourceExport);
+  const sourceSql=readFileSync(sourceExport,'utf8'),importPlan=prepareD1Import(sourceSql);
+  writeFileSync(sourceImport,importPlan.sql,'utf8');
+  console.log(`Prepared D1 import with ${importPlan.rewrittenStatements} oversized statement(s) rewritten below ${importPlan.maxStatementBytes} bytes.`);
+  executeFile(EU_D1_TARGET,sourceImport);
   targetImportCompleted=true;
   exportDatabase(EU_D1_TARGET,targetExport);
-  const sourceSql=readFileSync(sourceExport,'utf8'),targetSql=readFileSync(targetExport,'utf8'),digest=assertMatchingExports(sourceSql,targetSql);
+  const targetSql=readFileSync(targetExport,'utf8'),digest=assertMatchingExports(sourceSql,targetSql);
   targetVerified=true;
   finalizeVerifiedTarget(digest);
   console.log(`EU D1 cutover verified byte-for-byte (${digest}); old source is write-frozen and target is ready.`);

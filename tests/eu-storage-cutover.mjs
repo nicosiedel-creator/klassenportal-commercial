@@ -1,10 +1,11 @@
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { hashPassword } from '../dist/core/auth.js';
 import { copyEuStorageBatch } from '../dist/core/eu-storage-migration.js';
 import {
-  EU_D1_SCHEMA_ONLY_COUNTS,EU_D1_SCHEMA_ONLY_USERS,EU_D1_SOURCE,EU_D1_TARGET,EU_D1_TARGET_ID,assertMatchingExports,assertSchemaOnlyTarget,freezeSql,freezeTriggerNames,inspectD1Export,normalizeD1Export,resetSchemaSql,sqlIdentifier,thawSql,
+  EU_D1_IMPORT_STATEMENT_BYTES,EU_D1_SCHEMA_ONLY_COUNTS,EU_D1_SCHEMA_ONLY_USERS,EU_D1_SOURCE,EU_D1_TARGET,EU_D1_TARGET_ID,assertMatchingExports,assertSchemaOnlyTarget,freezeSql,freezeTriggerNames,inspectD1Export,normalizeD1Export,prepareD1Import,resetSchemaSql,splitD1ExportStatements,sqlIdentifier,sqlText,thawSql,
 } from '../scripts/eu-d1-cutover-lib.mjs';
 
 assert.equal(EU_D1_SOURCE,'klassenportal-commercial');
@@ -45,6 +46,34 @@ assert.match(resetSchemaSql(['users'],['active_users']),/DROP VIEW IF EXISTS "ac
 assert.equal(normalizeD1Export('-- source\r\nCREATE TABLE x(a);  \r\n'),'CREATE TABLE x(a);');
 assert.match(assertMatchingExports('-- old\nCREATE TABLE x(a);','-- new\nCREATE TABLE x(a);'),/^[a-f0-9]{64}$/);
 assert.throws(()=>assertMatchingExports('CREATE TABLE x(a);','CREATE TABLE x(b);'),/EU_D1_EXPORT_MISMATCH/);
+
+const largeText=`Anfang; 'Zitat'\n${'ä'.repeat(72_000)}\nEnde`,largeBlob='ab'.repeat(70_000);
+const batchRows=Array.from({length:500},(_,index)=>`(${index},${sqlText(`${index}:${'x'.repeat(260)}`)})`).join(',');
+const oversizedExport=`PRAGMA defer_foreign_keys=TRUE;
+CREATE TABLE payloads(id INTEGER PRIMARY KEY,body TEXT,content BLOB);
+INSERT INTO payloads VALUES(1,${sqlText(largeText)},X'${largeBlob}');
+CREATE TABLE batch_rows(id INTEGER PRIMARY KEY,value TEXT);
+INSERT INTO batch_rows VALUES${batchRows};
+CREATE TABLE payload_audit(id INTEGER,note TEXT);
+CREATE TRIGGER payload_insert_audit AFTER INSERT ON payloads BEGIN
+  INSERT INTO payload_audit VALUES(new.id,'semi;colon');
+  UPDATE payload_audit SET note=CASE WHEN note='replace' THEN 'changed' ELSE note END WHERE id=new.id;
+END;`;
+assert.ok(splitD1ExportStatements(oversizedExport).some(statement=>Buffer.byteLength(statement,'utf8')>EU_D1_IMPORT_STATEMENT_BYTES),'fixture must reproduce D1 statement-too-long input');
+const preparedImport=prepareD1Import(oversizedExport);
+assert.ok(preparedImport.rewrittenStatements>=2,'large single-row and multi-row inserts must both be rewritten');
+for(const statement of splitD1ExportStatements(preparedImport.sql))assert.ok(Buffer.byteLength(statement,'utf8')<=EU_D1_IMPORT_STATEMENT_BYTES,'every rewritten D1 statement must stay below the documented 100 KB limit with safety margin');
+const originalDb=new DatabaseSync(':memory:'),rewrittenDb=new DatabaseSync(':memory:');
+try{
+  originalDb.exec(oversizedExport);rewrittenDb.exec(preparedImport.sql);
+  const query="SELECT id,body,hex(content) content,typeof(body) body_type,typeof(content) content_type FROM payloads ORDER BY id";
+  assert.deepEqual(rewrittenDb.prepare(query).all(),originalDb.prepare(query).all(),'chunked literals must preserve exact values and SQLite types');
+  assert.equal(rewrittenDb.prepare('SELECT COUNT(*) n FROM batch_rows').get().n,500);
+  assert.equal(rewrittenDb.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name LIKE 'kp_eu_import_chunks_%'").get().n,0,'chunk staging tables must not survive import');
+  originalDb.exec("INSERT INTO payloads VALUES(2,'trigger',X'00');");rewrittenDb.exec("INSERT INTO payloads VALUES(2,'trigger',X'00');");
+  assert.deepEqual(rewrittenDb.prepare('SELECT * FROM payload_audit ORDER BY id').all(),originalDb.prepare('SELECT * FROM payload_audit ORDER BY id').all(),'trigger bodies containing semicolons and CASE/END must remain intact');
+}finally{originalDb.close();rewrittenDb.close();}
+assert.throws(()=>prepareD1Import(`CREATE TABLE oversized_${'x'.repeat(EU_D1_IMPORT_STATEMENT_BYTES)}(id);`),/EU_D1_IMPORT_STATEMENT_TOO_LONG/);
 
 class MemoryR2{
   constructor(){this.objects=new Map();}
