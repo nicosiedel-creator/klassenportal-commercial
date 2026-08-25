@@ -1,0 +1,13 @@
+import { strict as assert } from 'node:assert';
+import { readFile } from 'node:fs/promises';
+const pkg=JSON.parse(await readFile('package.json','utf8'));
+const browser=await readFile('scripts/commercial-browser-e2e.mjs','utf8');
+const acceptance=await readFile('PRODUCTION_ACCEPTANCE_2026-08-25.md','utf8');
+for(const required of ['education-operating-system.mjs','education-os-readiness-guardrails.mjs','browser-mobile-contract.mjs','production-acceptance-contract.mjs'])assert.ok(pkg.scripts.test.includes(required),`missing ${required}`);
+assert.match(browser,/Commercial mobile viewport smoke/);
+assert.match(acceptance,/Education OS release gate/);
+assert.match(acceptance,/Education OS deep security/);
+assert.match(acceptance,/Education OS privacy and storage security/);
+assert.match(acceptance,/Education OS circuit breaker/);
+assert.match(acceptance,/menschlichen Freigaben/);
+console.log('Education OS production acceptance remains coupled to security, privacy, circuit-breaker and mobile browser evidence: OK');
