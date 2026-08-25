@@ -80,13 +80,22 @@ export async function createInitialCommerceBooking(env:Env,args:{tenantId:string
   return{quoteId:qid,orderId:oid,invoiceId:iid,price};
 }
 
-export async function billingSummary(env:Env,auth:CoreAuthContext,tenantId:string):Promise<Record<string,unknown>>{
+async function billingSummaryBase(env:Env,auth:CoreAuthContext,tenantId:string):Promise<Record<string,unknown>>{
   requireRole(auth,'tenant_admin');const entitlement=await env.DB.prepare(`SELECT e.*,p.name AS plan_name FROM tenant_entitlements e LEFT JOIN plans p ON p.id=e.plan_id WHERE e.tenant_id=?`).bind(tenantId).first<Record<string,unknown>>();
   const sub=await env.DB.prepare('SELECT * FROM subscriptions WHERE tenant_id=?').bind(tenantId).first<Record<string,unknown>>();
   const invoices=await env.DB.prepare('SELECT id,invoice_number,type,status,currency,net_cents,tax_cents,gross_cents,due_at,paid_at,created_at FROM commercial_invoices WHERE tenant_id=? ORDER BY created_at DESC LIMIT 25').bind(tenantId).all();
   const plans=await env.DB.prepare(`SELECT p.id,p.name,p.monthly_price_cents,p.setup_price_cents,r.included_courses,r.max_courses,r.extra_course_monthly_cents,r.currency,r.self_service_expansion,r.pricing_enabled FROM plans p LEFT JOIN plan_commerce_rules r ON r.plan_id=p.id WHERE p.is_active=1 ORDER BY COALESCE(p.monthly_price_cents,0)`).all();
+  return{entitlement,subscription:sub,invoices:invoices.results??[],plans:plans.results??[]};
+}
+
+export async function billingSummary(env:Env,auth:CoreAuthContext,tenantId:string):Promise<Record<string,unknown>>{
+  const result=await billingSummaryBase(env,auth,tenantId);
   const provider=await env.DB.prepare('SELECT provider,status,automatic_collection FROM billing_provider_state WHERE id=1').first<Record<string,unknown>>();
-  return{entitlement,subscription:sub,invoices:invoices.results??[],plans:plans.results??[],billingProvider:provider};
+  return{...result,billingProvider:provider};
+}
+
+export async function billingSummaryWithoutPayments(env:Env,auth:CoreAuthContext,tenantId:string):Promise<Record<string,unknown>>{
+  return{...await billingSummaryBase(env,auth,tenantId),billingProvider:{provider:'manual',status:'disabled',automatic_collection:0}};
 }
 
 export async function quoteExpansion(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>):Promise<Record<string,unknown>>{

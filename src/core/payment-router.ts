@@ -1,6 +1,7 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { calculateCommercialOffer, getCommercePolicy, listManagedSetupOptions, tenantTrialSummary } from './commerce-offers.js';
+import { billingSummaryWithoutPayments } from './commerce.js';
 import { billingSummaryWithStripe, createPaidBookingWithStripe, quoteExpansionWithStripe, requestExpansionWithStripe, retryInitialCheckout } from './payment-orchestration.js';
 import { createStripePortalSessionModeSafe, handleStripeWebhookModeSafe } from './stripe-mode-safe.js';
 import { createTaxStripeCheckout } from './stripe-tax-billing.js';
@@ -55,12 +56,13 @@ export async function handlePaymentApi(request:Request,env:Env):Promise<Response
   const platformModule=u.pathname.match(/^\/api\/platform\/commerce\/modules\/([^/]+)$/);
   if(platformModule&&request.method==='PUT'){try{assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);return out({ok:true,module:await updatePlatformModuleRule(env,auth,decodeURIComponent(platformModule[1]),await body(request))});}catch(e){return error(e);}}
   if(!u.pathname.startsWith('/api/billing/'))return null;
+  if(!enabled&&request.method!=='GET')return disabled();
   const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)return out({ok:false,error:'TENANT_ID_REQUIRED'},400);
   try{
     assertSameOrigin(request,env.APP_ORIGIN);
     const auth=await resolveCoreAuth(env,request,tenantId,u.searchParams.get('course_id')||undefined);
     await ensureTenantCommerceState(env,tenantId);
-    if(u.pathname==='/api/billing/summary'&&request.method==='GET'){const moduleCommerce=await tenantModuleCatalog(env,auth,tenantId).catch(()=>null);return out({ok:true,...await billingSummaryWithStripe(env,auth,tenantId),trial:await tenantTrialSummary(env,auth,tenantId),commercePolicy:await getCommercePolicy(env),setupOptions:await listManagedSetupOptions(env),moduleCommerce,paymentPolicy:paymentPolicy(env)});}
+    if(u.pathname==='/api/billing/summary'&&request.method==='GET'){const moduleCommerce=await tenantModuleCatalog(env,auth,tenantId).catch(()=>null),summary=enabled?await billingSummaryWithStripe(env,auth,tenantId):await billingSummaryWithoutPayments(env,auth,tenantId);return out({ok:true,...summary,trial:await tenantTrialSummary(env,auth,tenantId),commercePolicy:await getCommercePolicy(env),setupOptions:await listManagedSetupOptions(env),moduleCommerce,paymentPolicy:paymentPolicy(env)});}
     if(u.pathname==='/api/billing/modules'&&request.method==='GET')return out({ok:true,...await tenantModuleCatalog(env,auth,tenantId),paymentPolicy:paymentPolicy(env)});
     if(u.pathname==='/api/billing/modules/quote'&&request.method==='POST')return out({ok:true,quote:await quoteModuleSubscription(env,auth,tenantId,await body(request)),paymentPolicy:paymentPolicy(env)});
     if(u.pathname==='/api/billing/modules/subscribe'&&request.method==='POST'){if(!enabled)return disabled();return out({ok:true,...await subscribeModule(env,auth,tenantId,await body(request))},201);}

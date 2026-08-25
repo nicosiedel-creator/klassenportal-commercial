@@ -4,6 +4,7 @@ import { paymentsEnabled, paymentPolicy } from '../dist/core/payment-policy.js';
 import { augmentPaidOnboardingResponse, handlePaymentApi } from '../dist/core/payment-router.js';
 import { createPaidBookingFromAcceptedOffer } from '../dist/core/accepted-offer-fulfillment.js';
 import { assertPaymentWriteAccess } from '../dist/core/payment-access.js';
+import { billingSummaryWithoutPayments } from '../dist/core/commerce.js';
 
 // Fail-closed is the release invariant: missing/unknown configuration never enables money movement.
 assert.equal(paymentsEnabled({}),false);
@@ -33,6 +34,21 @@ assert.deepEqual(await webhook.json(),{ok:true,ignored:true,paymentProcessing:'d
 const checkout=await handlePaymentApi(new Request('https://portal.example/api/payments/checkout-status?session_id=cs_test_abc'),throwingEnv);
 assert.equal(checkout.status,503);
 assert.equal((await checkout.json()).error,'PAYMENT_DISABLED');
+for(const path of ['/api/billing/modules/quote','/api/billing/modules/subscribe','/api/billing/change-quote','/api/billing/expand','/api/billing/convert-trial','/api/billing/retry-checkout','/api/billing/stripe-portal','/api/billing/trial-quote']){
+  const response=await handlePaymentApi(new Request(`https://portal.example${path}`,{method:'POST'}),throwingEnv);
+  assert.equal(response.status,503,path);
+  assert.equal((await response.json()).error,'PAYMENT_DISABLED',path);
+}
+
+const billingReadSql=[];
+const disabledBillingEnv={PAYMENTS_ENABLED:'false',get STRIPE_SECRET_KEY(){throw new Error('STRIPE_MUST_NOT_BE_TOUCHED');},DB:{prepare(sql){
+  billingReadSql.push(sql);if(/stripe|billing_provider_state|tenant_payment_accounts/i.test(sql))throw new Error(`PAYMENT_DATA_MUST_NOT_BE_TOUCHED:${sql}`);
+  return{bind(){return this;},async first(){return null;},async all(){return{success:true,results:[]};}};
+}}};
+const tenantAdminAuth={userId:'admin-1',role:'tenant_admin',tenantIds:['ten_1'],courseIds:[],isPlatformAdmin:false,session:{userId:'admin-1',email:'admin@example.test',displayName:'Admin',isPlatformAdmin:false,mustChangePassword:false,tenantRoles:[{tenantId:'ten_1',courseId:null,role:'tenant_admin'}]}};
+const disabledBillingSummary=await billingSummaryWithoutPayments(disabledBillingEnv,tenantAdminAuth,'ten_1');
+assert.deepEqual(disabledBillingSummary.billingProvider,{provider:'manual',status:'disabled',automatic_collection:0});
+assert.ok(billingReadSql.length>=4,'disabled billing readback chain was not exercised');
 
 // Paid onboarding may activate the commercial portal but must never emit a checkout while frozen.
 const onboardingPayload={ok:true,tenant_id:'ten_1',commercial_action:'book',commercial:{orderId:'ord_1',invoiceId:'inv_1',offer:{offerKind:'paid'}}};
@@ -85,6 +101,8 @@ assert.match(indexSource,/paymentsEnabled\(env\).*STRIPE_SECRET_KEY/s);
 assert.match(fulfillmentSource,/subscriptionStatus=providerPayments\?'past_due':'active'/);
 assert.match(fulfillmentSource,/invoiceStatus=providerPayments\?'pending_provider':'draft'/);
 assert.match(paymentRouterSource,/pathname\.startsWith\('\/api\/payments\/'\).*disabled\(\)/s);
+assert.match(paymentRouterSource,/!enabled&&request\.method!=='GET'\)return disabled\(\)/);
+assert.match(paymentRouterSource,/enabled\?await billingSummaryWithStripe[\s\S]*billingSummaryWithoutPayments/);
 assert.match(lifecycleSource,/!paymentsEnabled\(env\).*PAYMENT_DISABLED/s);
 assert.doesNotMatch(onboardingSource,/Zur sicheren Zahlung|anschließende Zahlungsabwicklung erfolgt jetzt über den eingerichteten Zahlungsdienst/);
 assert.match(onboardingSource,/Zahlung erfolgt außerhalb des Portals/);

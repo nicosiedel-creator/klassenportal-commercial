@@ -4,24 +4,40 @@ import { readFile } from 'node:fs/promises';
 import { hashPassword } from '../dist/core/auth.js';
 import { copyEuStorageBatch } from '../dist/core/eu-storage-migration.js';
 import {
-  EU_D1_COMPOUND_SELECT_BATCH_SIZE,EU_D1_SCHEMA_ONLY_COUNTS,EU_D1_SCHEMA_ONLY_USERS,EU_D1_SOURCE,EU_D1_TARGET,EU_D1_TARGET_ID,assertMatchingExports,assertSchemaOnlyTarget,chunkD1CompoundTerms,freezeSql,freezeTriggerNames,normalizeD1Export,resetSchemaSql,sqlIdentifier,thawSql,
+  EU_D1_SCHEMA_ONLY_COUNTS,EU_D1_SCHEMA_ONLY_USERS,EU_D1_SOURCE,EU_D1_TARGET,EU_D1_TARGET_ID,assertMatchingExports,assertSchemaOnlyTarget,freezeSql,freezeTriggerNames,inspectD1Export,normalizeD1Export,resetSchemaSql,sqlIdentifier,thawSql,
 } from '../scripts/eu-d1-cutover-lib.mjs';
 
 assert.equal(EU_D1_SOURCE,'klassenportal-commercial');
 assert.equal(EU_D1_TARGET,'klassenportal-commercial-eu');
 assert.equal(EU_D1_TARGET_ID,'a060de73-a4f6-4410-b4f2-25f5bee87754');
 assert.equal(sqlIdentifier('odd"table'),'"odd""table"');
-const compoundTerms=Array.from({length:251},(_,index)=>`table_${index}`),compoundBatches=chunkD1CompoundTerms(compoundTerms);
-assert.equal(EU_D1_COMPOUND_SELECT_BATCH_SIZE,40);
-assert.equal(compoundBatches.length,7);
-assert.ok(compoundBatches.every(batch=>batch.length<=EU_D1_COMPOUND_SELECT_BATCH_SIZE));
-assert.deepEqual(compoundBatches.flat(),compoundTerms);
-assert.throws(()=>chunkD1CompoundTerms(compoundTerms,0),/EU_D1_COMPOUND_SELECT_BATCH_INVALID/);
 assert.equal(freezeTriggerNames('users').length,3);
 assert.match(freezeSql(['users']),/BEFORE INSERT ON "users"/);
 assert.match(freezeSql(['users']),/EU_CUTOVER_SOURCE_FROZEN/);
 assert.match(thawSql(['users']),/DROP TRIGGER IF EXISTS/);
 const schemaOnlyMigrations=Array.from({length:69},(_,index)=>`${String(index).padStart(4,'0')}_migration.sql`),schemaOnlyCounts={...EU_D1_SCHEMA_ONLY_COUNTS};
+const schemaOnlySql=['PRAGMA foreign_keys=OFF;','BEGIN TRANSACTION;'];
+for(const [table,count] of Object.entries(schemaOnlyCounts)){
+  if(table==='d1_migrations'){
+    schemaOnlySql.push('CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL);');
+    schemaOnlyMigrations.forEach((name,index)=>schemaOnlySql.push(`INSERT INTO d1_migrations(id,name) VALUES(${index+1},'${name}');`));
+  }else if(table==='users'){
+    schemaOnlySql.push('CREATE TABLE users (id TEXT PRIMARY KEY);');
+    for(const id of EU_D1_SCHEMA_ONLY_USERS)schemaOnlySql.push(`INSERT INTO users(id) VALUES('${id}');`);
+  }else{
+    schemaOnlySql.push(`CREATE TABLE ${sqlIdentifier(table)} (id INTEGER PRIMARY KEY);`);
+    for(let index=1;index<=count;index++)schemaOnlySql.push(`INSERT INTO ${sqlIdentifier(table)}(id) VALUES(${index});`);
+  }
+}
+for(let index=0;index<239;index++)schemaOnlySql.push(`CREATE TABLE ${sqlIdentifier(`empty_${String(index).padStart(3,'0')}`)} (id INTEGER PRIMARY KEY);`);
+schemaOnlySql.push('CREATE VIEW schema_only_users AS SELECT id FROM users;','COMMIT;');
+const inspectedSchemaOnly=inspectD1Export(schemaOnlySql.join('\n'));
+assert.equal(inspectedSchemaOnly.tables.length,251,'export inspection must handle the real 251-table shape without a compound query');
+assert.equal(inspectedSchemaOnly.views.length,1);
+assert.deepEqual(inspectedSchemaOnly.migrationNames,schemaOnlyMigrations);
+assert.deepEqual(inspectedSchemaOnly.userIds,EU_D1_SCHEMA_ONLY_USERS);
+assert.deepEqual(Object.fromEntries(Object.entries(inspectedSchemaOnly.counts).filter(([name])=>name in schemaOnlyCounts)),schemaOnlyCounts);
+assert.throws(()=>inspectD1Export('CREATE TABLE broken('),/EU_D1_EXPORT_INSPECTION_FAILED/);
 assert.equal(assertSchemaOnlyTarget({tables:Object.keys(schemaOnlyCounts),counts:schemaOnlyCounts,migrationNames:schemaOnlyMigrations,expectedMigrationNames:schemaOnlyMigrations,userIds:EU_D1_SCHEMA_ONLY_USERS}),true);
 assert.throws(()=>assertSchemaOnlyTarget({tables:[...Object.keys(schemaOnlyCounts),'tenants'],counts:{...schemaOnlyCounts,tenants:1},migrationNames:schemaOnlyMigrations,expectedMigrationNames:schemaOnlyMigrations,userIds:EU_D1_SCHEMA_ONLY_USERS}),/EU_D1_TARGET_NOT_EMPTY:tenants:1/);
 assert.throws(()=>assertSchemaOnlyTarget({tables:Object.keys(schemaOnlyCounts),counts:schemaOnlyCounts,migrationNames:schemaOnlyMigrations,expectedMigrationNames:schemaOnlyMigrations,userIds:['owner']}),/EU_D1_TARGET_SCHEMA_ONLY_USERS_MISMATCH/);
@@ -82,7 +98,9 @@ assert.deepEqual(wrangler.r2_buckets[0],{binding:'FILES',bucket_name:'klassenpor
 assert.deepEqual(wrangler.r2_buckets[1],{binding:'LEGACY_FILES',bucket_name:'klassenportal-commercial-files'});
 
 const cutover=await readFile('scripts/eu-d1-cutover.mjs','utf8'),guard=await readFile('scripts/workers-ci-guard.mjs','utf8'),runtime=await readFile('src/index.ts','utf8'),ui=await readFile('public/launch-readiness-ui.js','utf8');
-for(const marker of ['assertSchemaOnlyTarget','chunkD1CompoundTerms','EU_D1_TARGET_SCHEMA_RESET_FAILED','EU_D1_SOURCE_FREEZE_INCOMPLETE','assertMatchingExports','EU_D1_CUTOVER_MARKER_WRITE_FAILED'])assert.ok(cutover.includes(marker),`D1 cutover missing ${marker}`);
+for(const marker of ['assertSchemaOnlyTarget','inspectD1Export','EU_D1_TARGET_EXPORT_SCHEMA_MISMATCH','EU_D1_TARGET_SCHEMA_RESET_FAILED','EU_D1_SOURCE_FREEZE_PARTIAL','EU_D1_SOURCE_FREEZE_INCOMPLETE','EU_D1_INTERRUPTED_TARGET_FREEZE_MISMATCH','Recovered the previously imported exact EU D1 snapshot','assertMatchingExports','EU_D1_CUTOVER_MARKER_WRITE_FAILED','thawVerifiedTarget'])assert.ok(cutover.includes(marker),`D1 cutover missing ${marker}`);
+assert.doesNotMatch(cutover,/UNION\s+ALL/i,'D1 target inspection must never depend on compound SELECT limits');
+assert.match(cutover,/executeFile\(EU_D1_TARGET,markerFile\);[\s\S]*EU_D1_CUTOVER_MARKER_WRITE_FAILED[\s\S]*thawVerifiedTarget\(\);/,'verified marker must be durable before target freeze triggers are removed');
 assert.match(guard,/scripts\/eu-d1-cutover\.mjs/);
 assert.ok(guard.indexOf('scripts/eu-d1-cutover.mjs')<guard.indexOf("['run','db:migrate']"),'D1 copy must precede target migrations');
 assert.match(runtime,/Scheduled writes paused during the verified EU storage migration/);
