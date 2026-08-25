@@ -45,6 +45,38 @@ export async function inspectEuStorageMigration(env:Env){
   return{active:yes(env.EU_STORAGE_MIGRATION_REQUIRED),configuredRequired:yes(env.EU_STORAGE_MIGRATION_REQUIRED),complete:missing.length===0&&mismatched.length===0,sourceObjects:source.size,sourceBytes:bytes(source),destinationObjects:destination.size,destinationBytes:bytes(destination),missingCount:missing.length,mismatchedCount:mismatched.length,missing:missing.slice(0,20),mismatched:mismatched.slice(0,20),backups};
 }
 
+/**
+ * Idempotent, non-destructive production migration cycle.
+ * It only copies legacy objects that are absent or byte-contract divergent in the EU bucket,
+ * verifies size + ETag after every write, never deletes the source, and caps writes per cycle.
+ */
+export async function runEuStorageMigrationCycle(env:Env){
+  const configuredRequired=yes(env.EU_STORAGE_MIGRATION_REQUIRED);
+  if(!configuredRequired)return{active:false,complete:true,copied:0,skipped:0,scanned:0,pending:false};
+  if(!env.LEGACY_FILES)throw new Error('EU_STORAGE_MIGRATION_LEGACY_BINDING_MISSING');
+  let cursor:string|undefined,copied=0,skipped=0,scanned=0,pending=false;
+  outer:do{
+    const page=await env.LEGACY_FILES.list({cursor,limit:1000});
+    for(const listed of page.objects){
+      scanned++;
+      const existing=await env.FILES.get(listed.key);
+      if(existing&&sameObject(listed,existing)){await cancelBody(existing);skipped++;continue;}
+      await cancelBody(existing);pending=true;
+      const source=await env.LEGACY_FILES.get(listed.key);if(!source)throw new Error('EU_R2_SOURCE_OBJECT_MISSING');
+      try{
+        await env.FILES.put(listed.key,source.body,{httpMetadata:source.httpMetadata,customMetadata:source.customMetadata});
+        const stored=await env.FILES.get(listed.key);if(!stored)throw new Error('EU_R2_COPY_READBACK_MISSING');
+        const matches=sameObject(source,stored),error=Number(source.size)!==Number(stored.size)?'EU_R2_COPY_SIZE_MISMATCH':'EU_R2_COPY_ETAG_MISMATCH';await cancelBody(stored);if(!matches)throw new Error(error);copied++;
+      }finally{await cancelBody(source);}
+      if(copied>=COPY_BATCH_SIZE)break outer;
+    }
+    if(page.truncated&&!page.cursor)throw new Error('EU_R2_CURSOR_MISSING');cursor=page.truncated?page.cursor:undefined;
+  }while(cursor);
+  if(copied>=COPY_BATCH_SIZE)return{active:true,complete:false,copied,skipped,scanned,pending:true};
+  const status=await inspectEuStorageMigration(env);
+  return{active:true,complete:status.complete,copied,skipped,scanned,pending:!status.complete,missingCount:status.missingCount,mismatchedCount:status.mismatchedCount};
+}
+
 export async function euStorageMigrationStatus(env:Env,auth:CoreAuthContext){
   requirePlatform(auth);return inspectEuStorageMigration(env);
 }
