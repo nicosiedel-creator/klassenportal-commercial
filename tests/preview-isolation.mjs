@@ -6,6 +6,7 @@ const wrangler=JSON.parse(await readFile('wrangler.jsonc','utf8'));
 const source=await readFile('src/core/production-release-state.ts','utf8');
 const auth=await readFile('src/core/auth.ts','utf8');
 const ownerSecurity=await readFile('src/core/owner-security-router.ts','utf8');
+assert.equal(wrangler.workers_dev,true,'base workers.dev route must remain explicitly enabled for release verification');
 assert.equal(wrangler.preview_urls,false,'public version/branch preview URLs must remain disabled');
 assert.ok(source.includes(`WORKER_SERVICE_NAME='${wrangler.name}'`),'runtime preview detection must stay bound to the configured Worker name');
 assert.match(source,/custom_domain_requests/,'release gate must verify customer custom domains');
@@ -76,4 +77,4 @@ const brokenDomainEnv={...productionEnv,DB:brokenDomainDb};
 const failClosed=await productionReleaseAccess(brokenDomainEnv,new Request(customer));
 assert.equal(failClosed.allowed,false,'custom-domain verification failure must fail closed');
 
-console.log('Preview isolation, verified customer domains and password-only platform-admin origin binding: OK');
+console.log('Preview isolation, workers.dev release verification, verified customer domains and password-only platform-admin origin binding: OK');
