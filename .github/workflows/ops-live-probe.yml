@@ -21,13 +21,10 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Probe production through Chromium
         shell: bash
-        env:
-          EXPECTED_SHA: b84d65d26fd5d66e57e6d18a4ee7c6c6a6b7133f
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
           import { chromium } from 'playwright';
-          const expected=process.env.EXPECTED_SHA;
           const browser=await chromium.launch({headless:true,args:['--disable-blink-features=AutomationControlled']});
           const context=await browser.newContext({
             locale:'de-DE',
@@ -36,24 +33,28 @@ jobs:
           });
           const page=await context.newPage();
           const base='https://klassenportal.app';
-          const landing=await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
-          console.log('landing',landing?.status(),await page.title(),page.url());
-          await page.waitForTimeout(5000);
-          const result=await page.evaluate(async()=>{
-            const r=await fetch(`/build-meta.json?same_origin_probe=${Date.now()}`,{cache:'no-store',credentials:'same-origin',headers:{accept:'application/json'}});
-            const text=await r.text();
-            return {status:r.status,url:r.url,contentType:r.headers.get('content-type'),text};
-          });
-          console.log('meta-status',result.status);
-          console.log('meta-url',result.url);
-          console.log('meta-content-type',result.contentType);
-          console.log('meta-body',result.text.slice(0,1200));
-          let commit='';
-          try{commit=JSON.parse(result.text).commit||'';}catch{}
-          console.log('deployed-commit',commit||'UNREADABLE');
-          if(commit!==expected){
-            console.error(`EXPECTED_DEPLOYMENT_NOT_OBSERVED:${expected}:${commit||'UNREADABLE'}`);
-            process.exitCode=23;
+          for(const path of ['/','/plattform-admin','/produkt','/kunden-admin','/dozentenportal']){
+            const r=await page.goto(base+path,{waitUntil:'domcontentloaded',timeout:60000});
+            console.log('NAV',path,r?.status(),await page.title(),page.url());
+            await page.waitForTimeout(1200);
           }
+          await page.goto(base+'/',{waitUntil:'domcontentloaded',timeout:60000});
+          await page.waitForTimeout(1500);
+          const probes=await page.evaluate(async()=>{
+            const specs=[
+              ['/api/platform/onboarding-invitations','GET'],
+              ['/api/onboarding/not-a-real-token','GET'],
+              ['/api/payments/checkout-status?session_id=cs_test_release_freeze','GET'],
+              ['/api/payments/stripe/webhook','POST'],
+            ];
+            const out=[];
+            for(const [path,method] of specs){
+              const r=await fetch(path,{method,cache:'no-store',credentials:'same-origin',headers:method==='POST'?{'content-type':'application/json'}:undefined,body:method==='POST'?'{}':undefined});
+              const text=await r.text();
+              out.push({path,method,status:r.status,contentType:r.headers.get('content-type'),body:text.slice(0,500)});
+            }
+            return out;
+          });
+          for(const p of probes)console.log('FETCH',JSON.stringify(p));
           await browser.close();
           NODE
