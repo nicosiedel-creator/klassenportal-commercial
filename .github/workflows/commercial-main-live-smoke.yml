@@ -24,15 +24,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          marker="<meta name=\"kp-build-commit\" content=\"$GITHUB_SHA\">"
           for i in $(seq 1 60); do
-            meta=$(curl -fsS --max-time 12 "$BASE/build-meta.json?sha=$GITHUB_SHA" || true)
-            if jq -e --arg sha "$GITHUB_SHA" '.commit == $sha' <<<"$meta" >/dev/null 2>&1; then
+            home=$(curl -fsS --max-time 12 "$BASE/?sha=$GITHUB_SHA&probe=$i" || true)
+            if grep -Fq "$marker" <<<"$home"; then
               echo "Exact Commercial deployment is live: $GITHUB_SHA"
               exit 0
             fi
             sleep 10
           done
-          echo "Exact Commercial deployment did not become live on $BASE" >&2
+          echo "Exact Commercial deployment marker was not observed on $BASE" >&2
           exit 1
       - name: Verify locked-by-default production entry points
         shell: bash

@@ -1,5 +1,6 @@
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { stampHomepageBuildCommit } from './build-metadata-lib.mjs';
 
 if (process.env.WORKERS_CI_GUARD_ACTIVE === '1') process.exit(0);
 
@@ -60,6 +61,11 @@ if(commit){
     generated_at:new Date().toISOString(),
   };
   writeFileSync('public/build-meta.json',`${JSON.stringify(metadata)}\n`,'utf8');
-  console.log(`Bound deployed preview metadata to commit ${commit}.`);
+
+  const indexPath='public/index.html';
+  const stamped=stampHomepageBuildCommit(readFileSync(indexPath,'utf8'),commit);
+  writeFileSync(indexPath,stamped,'utf8');
+
+  console.log(`Bound deployed metadata and homepage marker to commit ${commit}.`);
 }
 process.exit(0);
