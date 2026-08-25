@@ -7,10 +7,11 @@ const adminPassword=String(process.env.E2E_PLATFORM_PASSWORD||'');
 const fail=(msg)=>{throw new Error(msg);};
 const browser=await chromium.launch({headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
-const pageErrors=[],consoleErrors=[],failedRequests=[];
+const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
 page.on('pageerror',e=>pageErrors.push(String(e)));
 page.on('console',msg=>{if(msg.type()==='error')consoleErrors.push(msg.text());});
 page.on('requestfailed',request=>failedRequests.push(`${request.method()} ${request.url()} :: ${request.failure()?.errorText||'failed'}`));
+page.on('response',response=>{if(response.status()>=400)httpErrors.push({status:response.status(),url:response.url()});});
 
 async function route(path,{allowStatuses=[200]}={}){
   const response=await page.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});
@@ -20,6 +21,12 @@ async function route(path,{allowStatuses=[200]}={}){
   if(/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`${path} rendered a Cloudflare/server error`);
   console.log(`browser route ${path}: ${response.status()}`);
   return text;
+}
+
+async function api(path,{method='GET',body}={}){
+  const response=await fetch(base+path,{method,headers:body===undefined?undefined:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+  let data=null;try{data=await response.json();}catch{}
+  return{status:response.status,data};
 }
 
 async function candidateSurface(){
@@ -37,16 +44,15 @@ async function candidateSurface(){
     if(!text.trim())fail(`${path} rendered an empty shell`);
   }
 
-  const productApi=await page.request.get(base+'/api/public/product');
-  if(productApi.status()!==200)fail(`/api/public/product candidate contract returned ${productApi.status()}`);
-  const invitation=await page.request.get(base+'/api/platform/onboarding-invitations');
-  if(![401,403].includes(invitation.status()))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status()}`);
-  const frozenCheckout=await page.request.get(base+'/api/payments/checkout-status?session_id=cs_test_browser_candidate');
-  if(frozenCheckout.status()!==503)fail(`candidate checkout must remain frozen, got ${frozenCheckout.status()}`);
-  const frozenCheckoutBody=await frozenCheckout.json();
-  if(frozenCheckoutBody?.error!=='PAYMENT_DISABLED')fail('candidate checkout did not return PAYMENT_DISABLED');
-  const frozenWebhook=await page.request.post(base+'/api/payments/stripe/webhook',{data:{}}),frozenWebhookBody=await frozenWebhook.json();
-  if(frozenWebhook.status()!==200||frozenWebhookBody?.ignored!==true||frozenWebhookBody?.paymentProcessing!=='disabled')fail('candidate payment webhook did not remain side-effect-free');
+  const productApi=await api('/api/public/product');
+  if(productApi.status!==200)fail(`/api/public/product candidate contract returned ${productApi.status}`);
+  const invitation=await api('/api/platform/onboarding-invitations');
+  if(![401,403].includes(invitation.status))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status}`);
+  const frozenCheckout=await api('/api/payments/checkout-status?session_id=cs_test_browser_candidate');
+  if(frozenCheckout.status!==503)fail(`candidate checkout must remain frozen, got ${frozenCheckout.status}`);
+  if(frozenCheckout.data?.error!=='PAYMENT_DISABLED')fail('candidate checkout did not return PAYMENT_DISABLED');
+  const frozenWebhook=await api('/api/payments/stripe/webhook',{method:'POST',body:{}});
+  if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('candidate payment webhook did not remain side-effect-free');
   console.log('PR candidate browser/API/payment-freeze surface: OK');
 }
 
@@ -56,16 +62,21 @@ async function lockedProductionSurface(){
     const text=await route(path,{allowStatuses:[503]});
     if(!/noch nicht für den Produktivbetrieb freigegeben/i.test(text))fail(`${path} did not render the fail-closed version gate`);
   }
-  const health=await page.request.get(base+'/api/public/product');
-  if(health.status()!==503)fail(`/api/public/product must remain release-locked, got ${health.status()}`);
-  const invitation=await page.request.get(base+'/api/platform/onboarding-invitations');
-  if(![401,403].includes(invitation.status()))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status()}`);
-  const invalidOffer=await page.request.get(base+'/api/offers/browser-e2e-invalid-token');
-  if(invalidOffer.status()!==503)fail(`invalid offer token must remain release-locked, got ${invalidOffer.status()}`);
-  const fakeSetup=await page.request.get(base+'/api/onboarding/browser-e2e-invalid-token');
-  if(fakeSetup.status()!==503)fail(`invalid onboarding token must remain release-locked, got ${fakeSetup.status()}`);
-  const frozenWebhook=await page.request.post(base+'/api/payments/stripe/webhook',{data:{}}),frozenWebhookBody=await frozenWebhook.json();
-  if(frozenWebhook.status()!==200||frozenWebhookBody?.ignored!==true||frozenWebhookBody?.paymentProcessing!=='disabled')fail('payment webhook did not remain side-effect-free while production is locked');
+  const health=await api('/api/public/product');
+  if(health.status!==503)fail(`/api/public/product must remain release-locked, got ${health.status}`);
+  const invitation=await api('/api/platform/onboarding-invitations');
+  if(![401,403].includes(invitation.status))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status}`);
+  const invalidOffer=await api('/api/offers/browser-e2e-invalid-token');
+  if(invalidOffer.status!==503)fail(`invalid offer token must remain release-locked, got ${invalidOffer.status}`);
+  const fakeSetup=await api('/api/onboarding/browser-e2e-invalid-token');
+  if(fakeSetup.status!==503)fail(`invalid onboarding token must remain release-locked, got ${fakeSetup.status}`);
+  const frozenWebhook=await api('/api/payments/stripe/webhook',{method:'POST',body:{}});
+  if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('payment webhook did not remain side-effect-free while production is locked');
+}
+
+function expectedBrowserHttpError(entry){
+  let path='';try{path=new URL(entry.url).pathname;}catch{return false;}
+  return entry.status===401&&path==='/api/auth/me';
 }
 
 try{
@@ -96,8 +107,15 @@ try{
     console.log('authenticated live browser path not configured; local PR candidate path still executed');
   }
 
-  const relevantConsole=consoleErrors.filter(x=>!/favicon|Failed to load resource.*404/i.test(x));
+  await page.waitForTimeout(250);
+  const unexpectedHttp=httpErrors.filter(entry=>!expectedBrowserHttpError(entry));
+  const relevantConsole=consoleErrors.filter(text=>{
+    if(/favicon|Failed to load resource.*404/i.test(text))return false;
+    if(/^Failed to load resource: the server responded with a status of 401 \(Unauthorized\)$/i.test(text)&&unexpectedHttp.length===0)return false;
+    return true;
+  });
   if(pageErrors.length)fail(`page errors: ${pageErrors.join(' | ')}`);
+  if(unexpectedHttp.length)fail(`unexpected browser HTTP responses: ${unexpectedHttp.map(x=>`${x.status} ${x.url}`).join(' | ')}`);
   if(relevantConsole.length)fail(`console errors: ${relevantConsole.join(' | ')}`);
   if(failedRequests.length)fail(`failed browser requests: ${failedRequests.join(' | ')}`);
   console.log(`Commercial real-browser smoke (${mode}): OK`);
