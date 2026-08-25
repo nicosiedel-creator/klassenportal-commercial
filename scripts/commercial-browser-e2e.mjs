@@ -82,6 +82,29 @@ async function lockedProductionSurface(){
   if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('payment webhook did not remain side-effect-free while production is locked');
 }
 
+async function mobileSurface(){
+  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/138.0.0.0 Mobile Safari/537.36'});
+  const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
+  mobile.on('pageerror',e=>errors.push(String(e)));
+  mobile.on('requestfailed',r=>failed.push(`${r.method()} ${r.url()} :: ${r.failure()?.errorText||'failed'}`));
+  mobile.on('response',r=>{if(r.status()>=500)serverErrors.push(`${r.status()} ${r.url()}`);});
+  try{
+    for(const path of ['/plattform-admin','/produkt','/kunden-admin','/dozentenportal']){
+      const expected=mode==='locked-production'&&path!=='/plattform-admin'?[503]:[200];
+      const response=await mobile.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});
+      if(!response||!expected.includes(response.status()))fail(`mobile ${path} returned ${response?.status()??'no response'}, expected ${expected.join('/')}`);
+      const text=(await mobile.locator('body').innerText()).slice(0,4000);
+      if(!text.trim()||/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`mobile ${path} rendered an invalid surface`);
+      const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);
+      if(overflow>4)fail(`mobile ${path} has ${overflow}px document-level horizontal overflow`);
+    }
+    if(errors.length)fail(`mobile page errors: ${errors.join(' | ')}`);
+    if(serverErrors.length)fail(`mobile server errors: ${serverErrors.join(' | ')}`);
+    if(failed.length)fail(`mobile failed requests: ${failed.join(' | ')}`);
+    console.log(`Commercial mobile viewport smoke (${mode}): OK`);
+  }finally{await context.close();}
+}
+
 const expectedCandidate401Paths=new Set(['/api/auth/me','/api/attendance/teacher/courses']);
 function expectedBrowserHttpError(entry){
   if(mode!=='candidate'||entry.status!==401)return false;
@@ -117,6 +140,7 @@ try{
     console.log('authenticated live browser path not configured; local PR candidate path still executed');
   }
 
+  await mobileSurface();
   await page.waitForTimeout(250);
   const expectedHttp=httpErrors.filter(expectedBrowserHttpError);
   const unexpectedHttp=httpErrors.filter(entry=>!expectedBrowserHttpError(entry));
