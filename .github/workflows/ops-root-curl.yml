@@ -1,0 +1,22 @@
+name: Ops root curl probe
+
+on:
+  push:
+    branches: [ops/cloudflare-release-b84]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Curl production root
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -L --max-time 20 -o /tmp/root -w '%{http_code}' https://klassenportal.app/ || true)
+          echo "HTTP $code"
+          head -c 2500 /tmp/root || true
+          echo
