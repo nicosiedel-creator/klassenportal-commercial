@@ -36,19 +36,20 @@ jobs:
           });
           const page=await context.newPage();
           const base='https://klassenportal.app';
-          let landing=await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
+          const landing=await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
           console.log('landing',landing?.status(),await page.title(),page.url());
-          await page.waitForTimeout(12000);
-          console.log('landing-after-wait',await page.title(),page.url());
-          const metaResponse=await page.goto(`${base}/build-meta.json?browser_probe=${Date.now()}`,{waitUntil:'domcontentloaded',timeout:60000});
-          await page.waitForTimeout(3000);
-          const body=(await page.locator('body').innerText().catch(()=>'' )).trim();
-          console.log('meta-status',metaResponse?.status());
-          console.log('meta-url',page.url());
-          console.log('meta-title',await page.title());
-          console.log('meta-body',body.slice(0,1200));
+          await page.waitForTimeout(5000);
+          const result=await page.evaluate(async()=>{
+            const r=await fetch(`/build-meta.json?same_origin_probe=${Date.now()}`,{cache:'no-store',credentials:'same-origin',headers:{accept:'application/json'}});
+            const text=await r.text();
+            return {status:r.status,url:r.url,contentType:r.headers.get('content-type'),text};
+          });
+          console.log('meta-status',result.status);
+          console.log('meta-url',result.url);
+          console.log('meta-content-type',result.contentType);
+          console.log('meta-body',result.text.slice(0,1200));
           let commit='';
-          try{commit=JSON.parse(body).commit||'';}catch{}
+          try{commit=JSON.parse(result.text).commit||'';}catch{}
           console.log('deployed-commit',commit||'UNREADABLE');
           if(commit!==expected){
             console.error(`EXPECTED_DEPLOYMENT_NOT_OBSERVED:${expected}:${commit||'UNREADABLE'}`);
