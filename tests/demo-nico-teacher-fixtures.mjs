@@ -15,6 +15,6 @@ assert.ok(seed.includes("weekdays('2026-09-01','2026-09-30')"),'September fixtur
 assert.ok(seed.includes("['08:15','10:00']"),'September fixtures must be morning slots');
 assert.ok(seed.includes('durationMinutes=90'),'each demo work session must be 1.5 hours');
 assert.ok(seed.includes("source_ref LIKE 'demo_nico_klassenportal_%'"),'seed must be idempotently identifiable');
-assert.ok(String(pkg.scripts.deploy||'').includes('seed-demo-nico-teacher.mjs'),'production deploy must execute the demo fixture seed');
+assert.ok(!String(pkg.scripts.deploy||'').includes('seed-demo-nico-teacher.mjs'),'production deploy must never mutate production with optional demo fixtures');
 
 console.log('Nico demo teacher fixture safety checks: OK');

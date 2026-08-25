@@ -7,7 +7,8 @@ const deletion=await readFile('src/portability/delete.ts','utf8');
 const exports=await readFile('src/portability/export.ts','utf8');
 const config=await readFile('src/portability/config.ts','utf8');
 
-assert.match(backup,/tenant_users\.json/,'backup must contain tenant-scoped user identities required for a real restore');
+assert.match(backup,/usersKey=`\$\{prefix\}\/data\/__users\.json`/,'backup must persist tenant-scoped user identities under the reserved users resource');
+assert.match(backup,/manifest\.users=\{objectKey:usersKey,rowCount:users\.length,sha256:/,'backup manifest must bind the tenant-user snapshot to its integrity digest');
 assert.match(config,/key:'memberships'/,'backup configuration must preserve tenant memberships');
 assert.match(backup,/preflightTenantBackup/,'restore must fully preflight a backup before any destructive work');
 const safetyIndex=backup.indexOf("createTenantBackup(env,config,auth,tenantId,'pre_restore')");

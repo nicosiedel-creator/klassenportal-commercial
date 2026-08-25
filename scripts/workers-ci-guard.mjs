@@ -1,12 +1,13 @@
 import { writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
-if (process.env.WORKERS_CI !== '1' || process.env.WORKERS_CI_GUARD_ACTIVE === '1') process.exit(0);
+if (process.env.WORKERS_CI_GUARD_ACTIVE === '1') process.exit(0);
 
 const npm=process.platform==='win32'?'npm.cmd':'npm';
+const workersBuild=process.env.WORKERS_CI === '1';
 const branch=String(process.env.WORKERS_CI_BRANCH||'').trim();
 const productionBranch='main';
-console.log(`Cloudflare final release gate for ${process.env.WORKERS_CI_COMMIT_SHA || 'current commit'}...`);
+console.log(`${workersBuild?'Cloudflare':'Local'} final release gate for ${process.env.WORKERS_CI_COMMIT_SHA || 'current commit'}...`);
 const result=spawnSync(npm,['run','ci:cloudflare'],{
   stdio:'inherit',
   env:{...process.env,WORKERS_CI_GUARD_ACTIVE:'1'},
@@ -18,7 +19,7 @@ if(result.error){
 }
 if((result.status??1)!==0)process.exit(result.status??1);
 
-if(branch===productionBranch){
+if(workersBuild&&branch===productionBranch){
   console.log('Running the guarded one-time EU D1 cutover before production migrations...');
   const cutover=spawnSync(process.execPath,['scripts/eu-d1-cutover.mjs'],{
     stdio:'inherit',
@@ -41,8 +42,13 @@ if(branch===productionBranch){
     process.exit(1);
   }
   if((migration.status??1)!==0)process.exit(migration.status??1);
-}else if(branch){
+}else if(workersBuild&&branch){
   console.log(`Skipping remote D1 migrations in Workers Build for non-production branch: ${branch}`);
+}else{
+  console.log('Applying guarded remote D1 migrations before the local production deployment...');
+  const migration=spawnSync(npm,['run','db:migrate'],{stdio:'inherit',env:{...process.env,WORKERS_CI_GUARD_ACTIVE:'1'}});
+  if(migration.error){console.error('Remote D1 migration could not start.');console.error(migration.error.message);process.exit(1);}
+  if((migration.status??1)!==0)process.exit(migration.status??1);
 }
 
 const commit=String(process.env.WORKERS_CI_COMMIT_SHA||'').trim();
