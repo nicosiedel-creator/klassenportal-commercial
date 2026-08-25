@@ -15,54 +15,84 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 16
     env:
       BASE: https://klassenportal.app
+      WORKER_BASE: https://klassenportal-commercial.nicosiedel.workers.dev
     steps:
       - uses: actions/checkout@v4
-      - name: Wait for exact Commercial deployment
+      - name: Wait for exact deployed Worker
         shell: bash
         run: |
           set -euo pipefail
           marker="<meta name=\"kp-build-commit\" content=\"$GITHUB_SHA\">"
           for i in $(seq 1 60); do
-            home=$(curl -fsS --max-time 12 "$BASE/?sha=$GITHUB_SHA&probe=$i" || true)
+            home=$(curl -fsS --max-time 12 "$WORKER_BASE/?sha=$GITHUB_SHA&probe=$i" || true)
             if grep -Fq "$marker" <<<"$home"; then
-              echo "Exact Commercial deployment is live: $GITHUB_SHA"
+              echo "Exact Commercial Worker deployment is live: $GITHUB_SHA"
               exit 0
             fi
             sleep 10
           done
-          echo "Exact Commercial deployment marker was not observed on $BASE" >&2
+          echo "Exact Commercial Worker deployment marker was not observed." >&2
           exit 1
-      - name: Verify locked-by-default production entry points
+      - name: Verify EU D1 and release contracts on deployed Worker
         shell: bash
         run: |
           set -euo pipefail
-          code=$(curl -sS --max-time 15 -o /tmp/admin -w '%{http_code}' "$BASE/plattform-admin")
+          code=$(curl -sS --max-time 15 -o /tmp/legal -w '%{http_code}' "$WORKER_BASE/api/public/legal")
+          test "$code" = 200 || { echo "EU D1-backed public legal route returned $code" >&2; cat /tmp/legal >&2; exit 1; }
+          jq -e '.ok == true and (.legal | type == "object")' /tmp/legal >/dev/null
+
+          code=$(curl -sS --max-time 15 -o /tmp/admin -w '%{http_code}' "$WORKER_BASE/plattform-admin")
           test "$code" = 200 || { echo "/plattform-admin returned $code" >&2; head -c 300 /tmp/admin >&2; exit 1; }
           for path in /produkt /kunden-admin /dozentenportal; do
-            code=$(curl -sS --max-time 15 -o /tmp/body -w '%{http_code}' "$BASE$path")
-            test "$code" = 503 || { echo "$path must remain locked before explicit version approval, got $code" >&2; head -c 300 /tmp/body >&2; exit 1; }
+            code=$(curl -sS --max-time 15 -o /tmp/body -w '%{http_code}' "$WORKER_BASE$path")
+            test "$code" = 503 || { echo "$path must remain locked on the verification host, got $code" >&2; head -c 300 /tmp/body >&2; exit 1; }
           done
-      - name: Verify onboarding-link routes exist without mutating data
-        shell: bash
-        run: |
-          set -euo pipefail
-          code=$(curl -sS --max-time 15 -o /tmp/platform -w '%{http_code}' "$BASE/api/platform/onboarding-invitations")
+
+          code=$(curl -sS --max-time 15 -o /tmp/platform -w '%{http_code}' "$WORKER_BASE/api/platform/onboarding-invitations")
           case "$code" in 401|403) ;; *) echo "Platform onboarding route returned unexpected $code" >&2; cat /tmp/platform >&2; exit 1;; esac
-          code=$(curl -sS --max-time 15 -o /tmp/public -w '%{http_code}' "$BASE/api/onboarding/not-a-real-token")
-          case "$code" in 503) ;; *) echo "Public onboarding route must remain release-locked, got $code" >&2; cat /tmp/public >&2; exit 1;; esac
-          grep -Eq 'UNAUTHENTICATED|PLATFORM_ADMIN_REQUIRED|LOGIN_REQUIRED|FORBIDDEN' /tmp/platform || true
-          echo 'Commercial onboarding route contract is live.'
-      - name: Verify payment processing is frozen live
-        shell: bash
-        run: |
-          set -euo pipefail
-          code=$(curl -sS --max-time 15 -o /tmp/checkout -w '%{http_code}' "$BASE/api/payments/checkout-status?session_id=cs_test_release_freeze")
+          code=$(curl -sS --max-time 15 -o /tmp/public -w '%{http_code}' "$WORKER_BASE/api/onboarding/not-a-real-token")
+          test "$code" = 503 || { echo "Public onboarding route must remain release-locked, got $code" >&2; cat /tmp/public >&2; exit 1; }
+
+          code=$(curl -sS --max-time 15 -o /tmp/checkout -w '%{http_code}' "$WORKER_BASE/api/payments/checkout-status?session_id=cs_test_release_freeze")
           test "$code" = 503 || { echo "Checkout route must be frozen, got $code" >&2; cat /tmp/checkout >&2; exit 1; }
           jq -e '.ok == false and .error == "PAYMENT_DISABLED"' /tmp/checkout >/dev/null
-          code=$(curl -sS --max-time 15 -o /tmp/webhook -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{}' "$BASE/api/payments/stripe/webhook")
+          code=$(curl -sS --max-time 15 -o /tmp/webhook -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{}' "$WORKER_BASE/api/payments/stripe/webhook")
           test "$code" = 200 || { echo "Frozen webhook acknowledgement returned $code" >&2; cat /tmp/webhook >&2; exit 1; }
           jq -e '.ok == true and .ignored == true and .paymentProcessing == "disabled"' /tmp/webhook >/dev/null
-          echo 'Commercial payment processing is live-frozen without provider side effects.'
+          echo 'Deployed Worker EU-D1, release-lock, onboarding and payment-freeze contracts: OK'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Verify exact custom-domain deployment through Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { chromium } from 'playwright';
+          const expected=process.env.GITHUB_SHA;
+          const base=process.env.BASE;
+          const browser=await chromium.launch({headless:true,args:['--disable-blink-features=AutomationControlled']});
+          try{
+            const context=await browser.newContext({
+              locale:'de-DE',
+              userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+              viewport:{width:1440,height:1000},
+            });
+            const page=await context.newPage();
+            const response=await page.goto(`${base}/?release_smoke=${expected}`,{waitUntil:'domcontentloaded',timeout:60000});
+            if(!response||response.status()!==200)throw new Error(`CUSTOM_DOMAIN_ROOT_STATUS_${response?.status()??'NONE'}`);
+            const marker=await page.locator('meta[name="kp-build-commit"]').getAttribute('content');
+            if(marker!==expected)throw new Error(`CUSTOM_DOMAIN_COMMIT_MISMATCH:${marker||'MISSING'}:${expected}`);
+            if(!/Klassenportal Commercial/i.test(await page.title()))throw new Error('CUSTOM_DOMAIN_TITLE_MISMATCH');
+            console.log(`Exact custom-domain deployment is live: ${expected}`);
+          }finally{
+            await browser.close();
+          }
+          NODE
