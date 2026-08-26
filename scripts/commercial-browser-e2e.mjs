@@ -86,7 +86,14 @@ async function mobileSurface(){
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/138.0.0.0 Mobile Safari/537.36'});
   const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
   mobile.on('pageerror',e=>errors.push(String(e)));
-  mobile.on('requestfailed',r=>failed.push(`${r.method()} ${r.url()} :: ${r.failure()?.errorText||'failed'}`));
+  mobile.on('requestfailed',r=>{
+    const errorText=r.failure()?.errorText||'failed';
+    let path='';try{path=new URL(r.url()).pathname;}catch{}
+    // Sequential route changes can legitimately cancel the shared PWA helper after the
+    // target surface rendered. Keep every other mobile request failure fatal.
+    const expectedNavigationAbort=r.method()==='GET'&&path==='/pwa-client.js'&&errorText==='net::ERR_ABORTED';
+    if(!expectedNavigationAbort)failed.push(`${r.method()} ${r.url()} :: ${errorText}`);
+  });
   mobile.on('response',r=>{
     if(r.status()<500)return;
     let path='';try{path=new URL(r.url()).pathname;}catch{}
