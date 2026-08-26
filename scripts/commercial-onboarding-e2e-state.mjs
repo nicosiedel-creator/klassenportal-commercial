@@ -45,9 +45,26 @@ const fixtures=[
 function snapshot(f){return JSON.stringify({offerKind:'paid',billingCycle:'monthly',planId:'provider',planName:'Bildungsträger',courseCount:f.courses,currency:'EUR',recurringMonthlyCents:f.monthly,annualTotalCents:f.monthly*10,managedSetupOptionId:'self_service',managedSetupName:'Selbsteinrichtung',managedSetupCents:f.setup,setupCents:f.setup,firstTotalCents:f.monthly+f.setup,manualPricing:false,pricingReady:true});}
 
 if(action==='seed'){
-  const tables=new Set(query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('tenant_users','commercial_quotes','commercial_orders','commercial_invoices','onboarding_invitations','onboarding_claims');").map(row=>String(row.name)));
-  for(const required of ['tenant_users','commercial_quotes','commercial_orders','commercial_invoices','onboarding_invitations','onboarding_claims'])assert.ok(tables.has(required),`migrated local D1 is missing ${required}`);
+  const tables=new Set(query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('tenant_users','commercial_quotes','commercial_orders','commercial_invoices','onboarding_invitations','onboarding_claims','legal_configuration','seller_billing_profile');").map(row=>String(row.name)));
+  for(const required of ['tenant_users','commercial_quotes','commercial_orders','commercial_invoices','onboarding_invitations','onboarding_claims','legal_configuration','seller_billing_profile'])assert.ok(tables.has(required),`migrated local D1 is missing ${required}`);
   const now='2026-08-26T16:00:00.000Z',validUntil='2099-12-31T23:59:59.000Z';
+
+  // Local acceptance must exercise the real integrated legal routes without depending on
+  // production owner configuration. Publish a completely fictional profile only inside the
+  // isolated browser-E2E D1. The base Wrangler config and production database are untouched.
+  execute(`
+    UPDATE seller_billing_profile SET
+      legal_name='Klassenportal Browser E2E Test GmbH',street='Teststraße 1',postal_code='10115',city='Berlin',country='Deutschland',
+      email='legal-browser-e2e@example.invalid',phone=NULL,website=NULL,vat_id=NULL,business_id=NULL,updated_at=${q(now)}
+    WHERE id=1;
+    UPDATE legal_configuration SET
+      provider_name='Klassenportal Browser E2E Test GmbH',support_email='support-browser-e2e@example.invalid',representative='Browser E2E Testleitung',
+      dsa_contact_email='dsa-browser-e2e@example.invalid',effective_date='2026-08-26',legal_form='GmbH',documents_enabled=1,
+      document_version='browser-e2e-2026-08-26',updated_at=${q(now)}
+    WHERE id=1;
+  `);
+  assert.equal(Number((query("SELECT COUNT(*) n FROM legal_configuration l JOIN seller_billing_profile s ON l.id=1 AND s.id=1 WHERE l.documents_enabled=1 AND l.provider_name IS NOT NULL AND l.legal_form IS NOT NULL AND l.representative IS NOT NULL AND l.support_email IS NOT NULL AND l.document_version IS NOT NULL AND s.legal_name IS NOT NULL AND s.street IS NOT NULL AND s.postal_code IS NOT NULL AND s.city IS NOT NULL AND s.country IS NOT NULL AND s.email IS NOT NULL;")[0]||{}).n||0),1,'local acceptance legal profile was not published');
+
   for(const f of fixtures){
     const snap=snapshot(f),hash=b64Sha256(f.token);
     execute(`
@@ -84,7 +101,7 @@ if(action==='seed'){
     `E2E_ONBOARDING_${f.key.toUpperCase()}_ADMIN=${f.admin}`,
     `E2E_ONBOARDING_${f.key.toUpperCase()}_PASSWORD=${f.password}`,
   ].join('\n')).join('\n')+'\n','utf8');
-  console.log('Seeded two accepted-offer onboarding fixtures into migrated local Wrangler D1.');
+  console.log('Seeded fictional legal readiness and two accepted-offer onboarding fixtures into migrated local Wrangler D1.');
 }else{
   const ids=fixtures.map(f=>q(f.invitation)).join(','),quotes=fixtures.map(f=>q(f.quote)).join(',');
   function count(sql){const row=query(sql)[0]||{};return Number(row.n||0);}
@@ -99,5 +116,6 @@ if(action==='seed'){
   assert.equal(count(`SELECT COUNT(*) n FROM tenant_users tu JOIN onboarding_invitations i ON i.tenant_id=tu.tenant_id WHERE i.id IN (${ids}) AND tu.status='active'`),2,'both admins need active tenant-user lifecycle links');
   assert.equal(count(`SELECT COUNT(*) n FROM memberships m JOIN onboarding_invitations i ON i.tenant_id=m.tenant_id WHERE i.id IN (${ids}) AND m.role='tenant_admin'`),2,'both admins need tenant-admin memberships');
   assert.equal(count(`SELECT COUNT(*) n FROM courses c JOIN onboarding_invitations i ON i.tenant_id=c.tenant_id WHERE i.id IN (${ids})`),2,'both onboarding paths must persist their optional first course once');
-  console.log('Verified completed onboarding, duplicate protection, tenant access, orders, draft invoices, active subscriptions and payment freeze in real local D1.');
+  assert.equal(count("SELECT COUNT(*) n FROM legal_configuration l JOIN seller_billing_profile s ON l.id=1 AND s.id=1 WHERE l.documents_enabled=1 AND l.document_version='browser-e2e-2026-08-26'"),1,'isolated legal acceptance fixture must remain published');
+  console.log('Verified completed onboarding, duplicate protection, tenant access, orders, draft invoices, active subscriptions, legal readiness and payment freeze in real local D1.');
 }
