@@ -103,7 +103,7 @@ const now=new Date().toISOString(),later=new Date(Date.now()+86400000).toISOStri
 db.prepare("INSERT INTO onboarding_invitations(id,token_hash,customer_email,plan_id,status,expires_at,created_by,created_at) VALUES(?,?,?,?, 'open',?,?,?)")
   .run('oni_full_schema','hash-full-schema','customer@example.invalid','provider',later,'platform-test',now);
 db.prepare(`INSERT INTO commercial_quotes(id,quote_number,onboarding_invitation_id,tenant_id,plan_id,requested_courses,currency,recurring_monthly_cents,setup_cents,first_total_cents,status,valid_until,pricing_snapshot_json,accepted_at,created_at,updated_at,offer_kind,billing_cycle)
-  VALUES(?,?,NULL,NULL,?,?,?,?,?,?,'accepted',?,?,?,?,?,?,'paid','monthly')`)
+  VALUES(?,?,NULL,NULL,?,?,?,?,?,?,'accepted',?,?,?,?,?,'paid','monthly')`)
   .run('quo_full_schema','ANG-FULL-SCHEMA','provider',7,'EUR',12900,4900,17800,later,JSON.stringify({offerKind:'paid',recurringMonthlyCents:12900,managedSetupCents:4900,firstTotalCents:17800,manualPricing:false}),now,now,now);
 const fulfilled=await createPaidBookingFromAcceptedOffer(fullEnv,{tenantId:fullProvision.tenantId,quoteId:'quo_full_schema',invitationId:'oni_full_schema',actorId:'onboarding:full-schema'});
 assert.equal(fulfilled.status,'active');
