@@ -9,11 +9,15 @@ const browserE2E=await readFile('scripts/commercial-browser-e2e.mjs','utf8');
 const browserState=await readFile('scripts/commercial-onboarding-e2e-state.mjs','utf8');
 
 assert.match(onboarding,/LEGACY_PARTIAL_COMPLETION/,'legacy partial completions must be detected and compensated');
-assert.match(onboarding,/UPDATE onboarding_invitations SET status='open',completed_at=NULL,tenant_id=NULL,form_json=NULL/,'successful compensation must reopen the same onboarding invitation');
+assert.match(onboarding,/UPDATE onboarding_invitations SET status='open',processing_nonce=NULL,completed_at=NULL,tenant_id=NULL,form_json=NULL/,'successful compensation must reopen and fully release the same onboarding invitation');
 assert.match(onboarding,/ONBOARDING_RECOVERY_REQUIRED/,'an unproven rollback must fail closed instead of allowing a duplicate activation');
 assert.match(onboarding,/onboarding\.rollback\.completed/,'successful compensation must leave an audit trail');
 assert.match(onboarding,/onboarding\.rollback\.failed/,'failed compensation must leave a best-effort audit trail');
 assert.match(onboarding,/DELETE FROM tenants WHERE id=\?/,'partial tenant data must be removed through tenant-scoped cascade cleanup');
+assert.match(onboarding,/SET status='processing',processing_nonce=\? WHERE id=\? AND status='open' AND expires_at>\?/,'the invitation row must be the atomic activation lock');
+assert.match(onboarding,/status='processing' AND processing_nonce=\?/,'provisioning must verify ownership of the exact activation nonce');
+assert.match(onboarding,/SET status='completed',processing_nonce=NULL,completed_at=\?,tenant_id=\?,form_json=\? WHERE id=\? AND status='processing' AND processing_nonce=\?/,'completion must consume only the exact owned processing state');
+assert.match(onboarding,/releaseUnprovisionedClaim/,'pre-provisioning failures must reopen only the owned processing claim');
 assert.match(onboarding,/INSERT INTO audit_log[\s\S]*onboarding\.completed/,'completion audit must commit in the same final batch as onboarding completion');
 assert.match(onboarding,/form_json=\?/,'a valid completed invitation must persist its full onboarding profile');
 assert.doesNotMatch(onboarding,/SET status='completed',completed_at=\?,tenant_id=\? WHERE id=\? AND status='open'/,'failure handling must never consume the invitation by marking a partial tenant completed');
@@ -108,4 +112,4 @@ assert.match(browserState,/commercial_invoices/,'D1 post-state must verify invoi
 assert.match(browserState,/onboarding_claims/,'D1 post-state must verify claim cleanup');
 assert.match(browserState,/PAYMENTS_ENABLED/,'E2E state guard must keep payment processing disabled');
 
-console.log('Onboarding activation rollback + partial runtime-schema compatibility + real Wrangler-D1 browser persistence contract: OK');
+console.log('Onboarding activation rollback + atomic claim + partial runtime-schema compatibility + real Wrangler-D1 browser persistence contract: OK');
