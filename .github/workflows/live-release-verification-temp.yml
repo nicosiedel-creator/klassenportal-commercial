@@ -1,0 +1,35 @@
+name: Temporary live release verification
+
+on:
+  push:
+    branches: [fix/pilot-offer-acceptance-foreign-key]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-live-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify production release is active
+        shell: bash
+        env:
+          BASE: https://klassenportal.app
+          EXPECTED_SHA: 0faee4fe227dfbd9f363494e9f0d3afe28a4f440
+        run: |
+          set -euo pipefail
+          root=$(curl -fsS --max-time 20 "$BASE/?post_release_verify=1")
+          grep -Fq "<meta name=\"kp-build-commit\" content=\"$EXPECTED_SHA\">" <<<"$root"
+
+          for path in /produkt /kunden-admin /dozentenportal; do
+            code=$(curl -sS --max-time 20 -o /tmp/body -w '%{http_code}' "$BASE$path?post_release_verify=1")
+            test "$code" = 200 || { echo "$path returned $code" >&2; head -c 500 /tmp/body >&2; exit 1; }
+            test -s /tmp/body || { echo "$path returned an empty body" >&2; exit 1; }
+          done
+
+          code=$(curl -sS --max-time 20 -o /tmp/product -w '%{http_code}' "$BASE/api/public/product?post_release_verify=1")
+          test "$code" = 200 || { echo "/api/public/product returned $code" >&2; cat /tmp/product >&2; exit 1; }
+          jq -e '.ok == true' /tmp/product >/dev/null
+
+          echo "LIVE_RELEASE_ACTIVE:$EXPECTED_SHA"
