@@ -9,7 +9,7 @@ import { createPaidBookingFromAcceptedOffer, startPilotFromAcceptedOffer } from 
 
 type InvitationRow={
   id:string;token_hash:string;customer_email:string;plan_id:string;status:string;expires_at:string;
-  created_by:string;created_at:string;completed_at:string|null;tenant_id:string|null;form_json:string|null;quote_id:string|null;
+  created_by:string;created_at:string;processing_nonce:string|null;completed_at:string|null;tenant_id:string|null;form_json:string|null;quote_id:string|null;
 };
 
 type OnboardingInput={
@@ -30,6 +30,7 @@ function publicErrorCode(error:unknown):string{
   const code=error instanceof Error?error.message:String(error||'');
   return /^[A-Z][A-Z0-9_]{2,80}$/.test(code)?code:'ONBOARDING_ACTIVATION_FAILED';
 }
+function changed(result:unknown):number{return Number((result as {meta?:{changes?:number}}|null)?.meta?.changes??0);}
 
 export async function createOnboardingInvitation(env:Env,auth:CoreAuthContext,request:Request):Promise<Record<string,unknown>>{
   requirePlatform(auth);
@@ -61,9 +62,11 @@ export async function revokeOnboardingInvitation(env:Env,auth:CoreAuthContext,in
   const row=await env.DB.prepare('SELECT id,status FROM onboarding_invitations WHERE id=?').bind(invitationId).first<{id:string;status:string}>();
   if(!row)throw new Error('ONBOARDING_NOT_FOUND');
   if(row.status==='completed')throw new Error('ONBOARDING_ALREADY_COMPLETED');
+  if(row.status==='processing')throw new Error('ONBOARDING_ALREADY_IN_PROGRESS');
   const claim=await env.DB.prepare('SELECT invitation_id FROM onboarding_claims WHERE invitation_id=?').bind(invitationId).first();
   if(claim)throw new Error('ONBOARDING_ALREADY_IN_PROGRESS');
-  await env.DB.prepare("UPDATE onboarding_invitations SET status='revoked' WHERE id=? AND status='open'").bind(invitationId).run();
+  const revoked=await env.DB.prepare("UPDATE onboarding_invitations SET status='revoked',processing_nonce=NULL WHERE id=? AND status='open'").bind(invitationId).run();
+  if(changed(revoked)!==1)throw new Error('ONBOARDING_UNAVAILABLE');
   await audit(env.DB,auth.userId,'onboarding.invitation.revoked',undefined,undefined,'onboarding_invitation',invitationId);
 }
 
@@ -84,7 +87,7 @@ async function rollbackProvisionedOnboarding(env:Env,args:{invitationId:string;t
     // commercial_quotes.tenant_id is ON DELETE SET NULL, so an accepted quote remains reusable.
     await env.DB.prepare('DELETE FROM tenants WHERE id=?').bind(args.tenantId).run();
     await env.DB.batch([
-      env.DB.prepare("UPDATE onboarding_invitations SET status='open',completed_at=NULL,tenant_id=NULL,form_json=NULL WHERE id=?").bind(args.invitationId),
+      env.DB.prepare("UPDATE onboarding_invitations SET status='open',processing_nonce=NULL,completed_at=NULL,tenant_id=NULL,form_json=NULL WHERE id=?").bind(args.invitationId),
       env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=?').bind(args.invitationId),
     ]);
 
@@ -123,8 +126,37 @@ async function requireOpenInvitation(env:Env,token:string):Promise<InvitationRow
   let row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
   row=await recoverInterruptedInvitation(env,row);
   if(row.status==='open'&&row.expires_at<=nowIso()){await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE id=? AND status='open'").bind(row.id).run();row.status='expired';}
-  if(row.status!=='open')throw new Error(row.status==='expired'?'ONBOARDING_EXPIRED':'ONBOARDING_UNAVAILABLE');
+  if(row.status!=='open')throw new Error(row.status==='expired'?'ONBOARDING_EXPIRED':row.status==='processing'?'ONBOARDING_ALREADY_IN_PROGRESS':'ONBOARDING_UNAVAILABLE');
   return row;
+}
+
+async function claimOpenInvitation(env:Env,invitation:InvitationRow,nonce:string):Promise<void>{
+  const claimedAt=nowIso();
+  // The invitation row itself is the authoritative lock. This closes the race where a finished
+  // request deleted onboarding_claims before a second request (which had already read "open")
+  // inserted a fresh claim and provisioned a duplicate tenant from stale state.
+  const claimed=await env.DB.prepare("UPDATE onboarding_invitations SET status='processing',processing_nonce=? WHERE id=? AND status='open' AND expires_at>?")
+    .bind(nonce,invitation.id,claimedAt).run();
+  if(changed(claimed)!==1){
+    const current=await invitationById(env,invitation.id);
+    if(current?.status==='processing')throw new Error('ONBOARDING_ALREADY_IN_PROGRESS');
+    throw new Error('ONBOARDING_UNAVAILABLE');
+  }
+  try{
+    await env.DB.prepare('INSERT INTO onboarding_claims(invitation_id,nonce,claimed_at) VALUES(?,?,?)').bind(invitation.id,nonce,claimedAt).run();
+  }catch{
+    // A stale legacy claim must not leave a newly acquired invitation lock behind.
+    await env.DB.prepare("UPDATE onboarding_invitations SET status='open',processing_nonce=NULL WHERE id=? AND status='processing' AND processing_nonce=?")
+      .bind(invitation.id,nonce).run().catch(()=>undefined);
+    throw new Error('ONBOARDING_ALREADY_IN_PROGRESS');
+  }
+}
+
+async function releaseUnprovisionedClaim(env:Env,invitationId:string,nonce:string):Promise<void>{
+  await env.DB.batch([
+    env.DB.prepare("UPDATE onboarding_invitations SET status='open',processing_nonce=NULL WHERE id=? AND status='processing' AND processing_nonce=?").bind(invitationId,nonce),
+    env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitationId,nonce),
+  ]).catch(()=>undefined);
 }
 
 export async function getPublicOnboarding(env:Env,token:string):Promise<Record<string,unknown>>{
@@ -163,13 +195,12 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
 
   const firstCourse=safeString(raw.first_course_name,200),firstCourseCode=safeString(raw.first_course_code,80),accessMode=['public','login'].includes(String(raw.access_mode||''))?String(raw.access_mode):'login';
   const nonce=id('claim_');
-  try{await env.DB.prepare('INSERT INTO onboarding_claims(invitation_id,nonce,claimed_at) VALUES(?,?,?)').bind(invitation.id,nonce,nowIso()).run();}
-  catch{throw new Error('ONBOARDING_ALREADY_IN_PROGRESS');}
+  await claimOpenInvitation(env,invitation,nonce);
 
   let provisioned:Awaited<ReturnType<typeof provisionTenantFromOnboarding>>|undefined;
   try{
-    const stillOpen=await env.DB.prepare("SELECT id FROM onboarding_invitations WHERE id=? AND status='open' AND expires_at>?").bind(invitation.id,nowIso()).first();
-    if(!stillOpen)throw new Error('ONBOARDING_UNAVAILABLE');
+    const owned=await env.DB.prepare("SELECT id FROM onboarding_invitations WHERE id=? AND status='processing' AND processing_nonce=? AND expires_at>?").bind(invitation.id,nonce,nowIso()).first();
+    if(!owned)throw new Error('ONBOARDING_UNAVAILABLE');
     provisioned=await provisionTenantFromOnboarding(env,`onboarding:${invitation.id}`,{
       name:legalName,portal_name:portalName,admin_name:adminName,admin_email:adminEmail,admin_password:password,
       course_name:firstCourse||undefined,course_code:firstCourseCode||undefined,access_mode:accessMode,plan_id:invitation.plan_id,
@@ -190,19 +221,20 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
     const ts=nowIso(),actorId=`onboarding:${invitation.id}`,auditDetails={customerEmail:invitation.customer_email,requestedCourses,commercialAction,billingCycle,setupOptionId,quoteId:invitation.quote_id||null};
     // Final customer profile, completion marker, claim release and audit entry commit together.
     // A failure here leaves no false "completed" state; the catch below compensates the provisioned tenant.
-    await env.DB.batch([
+    const completed=await env.DB.batch([
       env.DB.prepare(`INSERT INTO tenant_profiles(tenant_id,legal_name,contact_name,contact_email,phone,website,street,postal_code,city,country,billing_email,onboarding_invitation_id,updated_at)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(provisioned.tenantId,legalName,contactName,contactEmail,safeString(raw.phone,80)||null,safeString(raw.website,250)||null,street,postal,city,country,normalizeEmail(raw.billing_email||contactEmail),invitation.id,ts),
-      env.DB.prepare("UPDATE onboarding_invitations SET status='completed',completed_at=?,tenant_id=?,form_json=? WHERE id=? AND status='open'").bind(ts,provisioned.tenantId,JSON.stringify(profile),invitation.id),
+      env.DB.prepare("UPDATE onboarding_invitations SET status='completed',processing_nonce=NULL,completed_at=?,tenant_id=?,form_json=? WHERE id=? AND status='processing' AND processing_nonce=?").bind(ts,provisioned.tenantId,JSON.stringify(profile),invitation.id,nonce),
       env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce),
       env.DB.prepare('INSERT INTO audit_log(id,tenant_id,course_id,actor_user_id,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
         .bind(id('aud_'),provisioned.tenantId,provisioned.courseId??null,actorId,'onboarding.completed','onboarding_invitation',invitation.id,JSON.stringify(auditDetails),ts),
     ]);
+    if(changed(completed[1])!==1)throw new Error('ONBOARDING_CLAIM_LOST');
     return{ok:true,tenant_id:provisioned.tenantId,login_email:adminEmail,commercial_action:commercialAction,commercial};
   }catch(e){
     const code=publicErrorCode(e);
     if(!provisioned){
-      await env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce).run().catch(()=>undefined);
+      await releaseUnprovisionedClaim(env,invitation.id,nonce);
     }else{
       await rollbackProvisionedOnboarding(env,{invitationId:invitation.id,tenantId:provisioned.tenantId,reason:code});
     }
