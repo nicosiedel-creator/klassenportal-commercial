@@ -6,8 +6,19 @@ import { id, nowIso } from './utils.js';
 
 function number(prefix:string):string{const d=new Date(),date=`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}`;return `${prefix}-${date}-${id('').replace(/[^a-zA-Z0-9]/g,'').slice(-8).toUpperCase()}`;}
 
+function normalizeAcceptedOffer(row:Record<string,any>,offer:Record<string,any>):Record<string,any>{
+  const offerKind=String(row.offer_kind||offer.offerKind||'');
+  const billingCycle=String(row.billing_cycle||offer.billingCycle||'monthly')==='annual'?'annual':'monthly';
+  const recurringMonthlyCents=Number(row.recurring_monthly_cents??offer.recurringMonthlyCents);
+  const managedSetupCents=Number(row.setup_cents??offer.managedSetupCents??offer.setupCents);
+  const firstTotalCents=Number(row.first_total_cents??offer.firstTotalCents);
+  const courseCount=Number(row.requested_courses??offer.courseCount);
+  const currency=String(row.currency||offer.currency||'EUR');
+  return{...offer,offerKind,billingCycle,courseCount,currency,recurringMonthlyCents,managedSetupCents,setupCents:managedSetupCents,firstTotalCents};
+}
+
 export async function startPilotFromAcceptedOffer(env:Env,args:{tenantId:string;quoteId:string;invitationId:string;actorId:string}){
-  const {row,offer}=await acceptedQuoteForOnboarding(env,args.quoteId);if(String(offer.offerKind)!=='pilot')throw new Error('OFFER_NOT_PILOT');
+  const accepted=await acceptedQuoteForOnboarding(env,args.quoteId),row=accepted.row,offer=normalizeAcceptedOffer(row,accepted.offer);if(String(offer.offerKind)!=='pilot')throw new Error('OFFER_NOT_PILOT');
   const now=new Date(),days=Math.max(1,Math.min(365,Number(offer.pilotDays||90))),readOnly=Math.max(1,Math.min(60,Number(offer.pilotReadOnlyDays||14))),limit=Math.max(1,Math.min(10_000,Number(offer.pilotCourseLimit||row.requested_courses||1))),trialEnd=new Date(now.getTime()+days*86400000),readOnlyEnd=new Date(trialEnd.getTime()+readOnly*86400000),ts=now.toISOString();
   await env.DB.batch([
     env.DB.prepare(`INSERT INTO tenant_trials(tenant_id,target_plan_id,requested_course_count,trial_course_limit,status,started_at,trial_ends_at,read_only_ends_at,setup_option_id,pricing_snapshot_json,updated_at)
@@ -24,10 +35,10 @@ export async function startPilotFromAcceptedOffer(env:Env,args:{tenantId:string;
 }
 
 export async function createPaidBookingFromAcceptedOffer(env:Env,args:{tenantId:string;quoteId:string;invitationId:string;actorId:string}){
-  const {row,offer}=await acceptedQuoteForOnboarding(env,args.quoteId);if(String(offer.offerKind)!=='paid')throw new Error('OFFER_NOT_PAID');
+  const accepted=await acceptedQuoteForOnboarding(env,args.quoteId),row=accepted.row,offer=normalizeAcceptedOffer(row,accepted.offer);if(String(offer.offerKind)!=='paid')throw new Error('OFFER_NOT_PAID');
   const providerPayments=paymentsEnabled(env);
   if(providerPayments){const pending=await env.DB.prepare("SELECT id FROM commercial_orders WHERE tenant_id=? AND status='pending_payment' ORDER BY booked_at DESC LIMIT 1").bind(args.tenantId).first<{id:string}>();if(pending)throw new Error('PAYMENT_ALREADY_PENDING');}
-  const recurring=Number(offer.recurringMonthlyCents??row.recurring_monthly_cents),setup=Number(offer.managedSetupCents??row.setup_cents),first=Number(offer.firstTotalCents??row.first_total_cents);if(!Number.isFinite(recurring)||recurring<1||!Number.isFinite(setup)||setup<0||!Number.isFinite(first)||first<1)throw new Error('ACCEPTED_OFFER_PRICE_INVALID');
+  const recurring=Number(offer.recurringMonthlyCents),setup=Number(offer.managedSetupCents),first=Number(offer.firstTotalCents);if(!Number.isFinite(recurring)||recurring<1||!Number.isFinite(setup)||setup<0||!Number.isFinite(first)||first<1)throw new Error('ACCEPTED_OFFER_PRICE_INVALID');
   const ts=nowIso(),orderId=id('ord_'),invoiceId=id('inv_'),snapshot=JSON.stringify(offer),orderStatus=providerPayments?'pending_payment':'active',invoiceStatus=providerPayments?'pending_provider':'draft',subscriptionStatus=providerPayments?'past_due':'active',activatedAt=providerPayments?null:ts;
   await env.DB.batch([
     env.DB.prepare(`INSERT INTO tenant_entitlements(tenant_id,plan_id,course_limit,currency,recurring_monthly_cents,setup_cents,pricing_snapshot_json,updated_at)
