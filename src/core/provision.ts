@@ -38,8 +38,9 @@ function tenantUserStatement(env:Env,shape:TenantUsersShape,tenantId:string,user
   if(shape.columns.has('source')){columns.push('source');values.push('manual');}
   if(shape.columns.has('created_at')){columns.push('created_at');values.push(ts);}
   if(shape.columns.has('updated_at')){columns.push('updated_at');values.push(ts);}
-  const update=shape.columns.has('updated_at')?"status='active',updated_at=excluded.updated_at":"status='active'";
-  return env.DB.prepare(`INSERT INTO tenant_users(${columns.join(',')}) VALUES(${columns.map(()=>'?').join(',')}) ON CONFLICT(tenant_id,user_id) DO UPDATE SET ${update}`).bind(...values);
+  const base=`INSERT INTO tenant_users(${columns.join(',')}) VALUES(${columns.map(()=>'?').join(',')})`;
+  if(shape.columns.has('updated_at'))return env.DB.prepare(`${base} ON CONFLICT(tenant_id,user_id) DO UPDATE SET status='active',updated_at=excluded.updated_at`).bind(...values);
+  return env.DB.prepare(`${base} ON CONFLICT(tenant_id,user_id) DO UPDATE SET status='active'`).bind(...values);
 }
 
 async function uniqueTenantSlug(env:Env,value:string):Promise<string>{
