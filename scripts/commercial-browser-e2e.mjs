@@ -153,7 +153,12 @@ async function acceptedOfferOnboarding(){
   if(auth.status!==200||!auth.data?.user)fail(`new customer admin was not automatically authenticated: ${auth.status}`);
   const open=page.getByRole('link',{name:/Portal öffnen/i}).first();if(!(await open.count()))fail('successful onboarding has no Portal öffnen action');
   const nav=page.waitForNavigation({waitUntil:'domcontentloaded',timeout:15000});await open.click();const navResponse=await nav;if(!navResponse||navResponse.status()!==200)fail(`Portal öffnen click returned ${navResponse?.status()??'no response'}`);
-  const adminSurface=await route('/kunden-admin');if(!adminSurface.trim())fail('new customer admin cannot open customer-admin surface');
+  // The root entry immediately role-routes an authenticated tenant admin. A second page.goto
+  // can race that client navigation and Playwright then returns a null navigation response even
+  // though the Worker served /kunden-admin with HTTP 200. Verify the shell through the same
+  // authenticated browser context instead of competing with the intended role redirect.
+  const adminSurface=await page.evaluate(async()=>{const r=await fetch('/kunden-admin',{credentials:'same-origin',redirect:'follow'});return{status:r.status,text:await r.text()};});
+  if(adminSurface.status!==200||!adminSurface.text.trim())fail(`new customer admin cannot open customer-admin surface: ${adminSurface.status}`);
   const completed=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`);if(completed.status!==200||completed.data?.invitation?.status!=='completed')fail('successful browser onboarding did not persist completed invitation');
   const replay=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`,{method:'POST',body:{}});if(replay.status===200||replay.data?.error!=='ONBOARDING_UNAVAILABLE')fail(`browser onboarding replay must fail closed, got ${replay.status}/${replay.data?.error}`);
   console.log('Accepted paid offer -> browser onboarding -> auto-login -> customer portal: OK');
