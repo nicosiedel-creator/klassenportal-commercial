@@ -24,6 +24,8 @@ async function tenantUsersShape(env:Env):Promise<TenantUsersShape>{
   const rows=await env.DB.prepare('PRAGMA table_info(tenant_users)').all<TableColumn>();
   const info=rows.results??[],columns=new Set(info.map(row=>String(row.name)));
   for(const required of ['tenant_id','user_id','status'])if(!columns.has(required))throw new Error('TENANT_USERS_SCHEMA_INCOMPATIBLE');
+  const tenantPk=info.find(row=>row.name==='tenant_id')?.pk??0,userPk=info.find(row=>row.name==='user_id')?.pk??0;
+  if(tenantPk<1||userPk<1||tenantPk===userPk)throw new Error('TENANT_USERS_SCHEMA_INCOMPATIBLE');
   const supported=new Set(['tenant_id','user_id','status','external_id','source','created_at','updated_at']);
   const unknownRequired=info.filter(row=>row.notnull===1&&row.dflt_value===null&&!supported.has(String(row.name))&&row.pk===0);
   if(unknownRequired.length)throw new Error('TENANT_USERS_SCHEMA_INCOMPATIBLE');
@@ -36,7 +38,8 @@ function tenantUserStatement(env:Env,shape:TenantUsersShape,tenantId:string,user
   if(shape.columns.has('source')){columns.push('source');values.push('manual');}
   if(shape.columns.has('created_at')){columns.push('created_at');values.push(ts);}
   if(shape.columns.has('updated_at')){columns.push('updated_at');values.push(ts);}
-  return env.DB.prepare(`INSERT INTO tenant_users(${columns.join(',')}) VALUES(${columns.map(()=>'?').join(',')})`).bind(...values);
+  const update=shape.columns.has('updated_at')?"status='active',updated_at=excluded.updated_at":"status='active'";
+  return env.DB.prepare(`INSERT INTO tenant_users(${columns.join(',')}) VALUES(${columns.map(()=>'?').join(',')}) ON CONFLICT(tenant_id,user_id) DO UPDATE SET ${update}`).bind(...values);
 }
 
 async function uniqueTenantSlug(env:Env,value:string):Promise<string>{
