@@ -3,6 +3,8 @@ name: Commercial browser E2E
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: ['release-check/**']
   workflow_dispatch:
 
 permissions:
@@ -11,7 +13,7 @@ permissions:
 jobs:
   browser-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 16
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,22 +24,19 @@ jobs:
           npm install --no-audit --no-fund
           npm install --no-save --ignore-scripts playwright@1.55.0
           npx playwright install --with-deps chromium
-      - name: Prepare exact local PR candidate
+      - name: Prepare exact local PR candidate and real onboarding fixtures
         shell: bash
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync } from 'node:fs';
           const config=JSON.parse(readFileSync('wrangler.jsonc','utf8'));
-          config.vars={...config.vars,APP_ORIGIN:'http://127.0.0.1:8787'};
-          // The production custom-domain route must not influence the Request URL
-          // of the local candidate. Wrangler 4.20 otherwise uses that route as
-          // the local upstream/origin and the fail-closed release gate correctly
-          // treats the candidate as production traffic.
+          config.vars={...config.vars,APP_ORIGIN:'http://127.0.0.1:8787',PAYMENTS_ENABLED:'false'};
           delete config.routes;
           writeFileSync('wrangler.browser-e2e.json',JSON.stringify(config,null,2));
           NODE
           npx wrangler d1 migrations apply DB --local --config wrangler.browser-e2e.json
+          node scripts/commercial-onboarding-e2e-state.mjs seed wrangler.browser-e2e.json
           WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --config wrangler.browser-e2e.json --local --ip 127.0.0.1 --port 8787 --local-upstream 127.0.0.1 --upstream-protocol http >/tmp/commercial-wrangler-e2e.log 2>&1 &
           echo $! >/tmp/commercial-wrangler-e2e.pid
           ready=0
@@ -50,7 +49,7 @@ jobs:
             cat /tmp/commercial-wrangler-e2e.log >&2 || true
             exit 1
           fi
-          echo 'Exact local PR candidate is ready.'
+          echo 'Exact local PR candidate with migrated D1 fixtures is ready.'
       - name: Click through exact Commercial PR candidate
         shell: bash
         env:
@@ -63,10 +62,13 @@ jobs:
           {
             echo '### Commercial browser E2E diagnostic'
             echo '```text'
-            tail -n 120 /tmp/commercial-browser-e2e.log
+            tail -n 160 /tmp/commercial-browser-e2e.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+      - name: Verify exact persisted onboarding and payment-freeze state
+        shell: bash
+        run: node scripts/commercial-onboarding-e2e-state.mjs verify wrangler.browser-e2e.json
       - name: Upload browser E2E diagnostic
         if: failure()
         uses: actions/upload-artifact@v4

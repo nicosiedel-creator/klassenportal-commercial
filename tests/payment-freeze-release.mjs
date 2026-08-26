@@ -61,7 +61,7 @@ assert.equal(augmentedJson.commercial.paymentProcessing,'disabled');
 
 // End-to-end persistence contract of a paid accepted offer with payment processing disabled.
 const quote={
-  id:'quo_1',quote_number:'ANG-TEST',plan_id:'provider',requested_courses:7,currency:'EUR',
+  id:'quo_1',quote_number:'ANG-TEST',plan_id:'provider',requested_courses:7,currency:'EUR',offer_kind:'paid',billing_cycle:'monthly',
   recurring_monthly_cents:12900,setup_cents:4900,first_total_cents:17800,status:'accepted',
   pricing_snapshot_json:JSON.stringify({offerKind:'paid',recurringMonthlyCents:12900,managedSetupCents:4900,firstTotalCents:17800,manualPricing:false})
 };
@@ -83,6 +83,27 @@ assert.equal(invoiceStatement.args[4],'draft');
 assert.equal(subscriptionStatement.args[1],'active');
 assert.ok(orderStatement.args.at(-1),'manual activation timestamp missing');
 
+// Existing accepted offers must remain activatable even if their stored JSON snapshot is incomplete/stale.
+// Canonical accepted quote columns are authoritative for kind and booked amounts.
+const staleQuote={...quote,id:'quo_stale',quote_number:'ANG-STALE',requested_courses:11,recurring_monthly_cents:23920,setup_cents:0,first_total_cents:23920,
+  pricing_snapshot_json:JSON.stringify({manualPricing:true,planName:'Bildungsträger'})};
+const staleBatched=[];
+const staleDb={
+  prepare(sql){return{bind(...args){return{sql,args,async first(){if(sql.includes("FROM commercial_quotes")&&sql.includes("status='accepted'"))return staleQuote;return null;},async run(){return{success:true};}};}};},
+  async batch(statements){staleBatched.push(...statements);return statements.map(()=>({success:true}));}
+};
+const staleFulfilled=await createPaidBookingFromAcceptedOffer({DB:staleDb,PAYMENTS_ENABLED:'false'},{tenantId:'ten_stale',quoteId:'quo_stale',invitationId:'oni_stale',actorId:'usr_stale'});
+assert.equal(staleFulfilled.status,'active');
+assert.equal(staleFulfilled.offer.offerKind,'paid');
+assert.equal(staleFulfilled.offer.courseCount,11);
+assert.equal(staleFulfilled.offer.recurringMonthlyCents,23920);
+assert.equal(staleFulfilled.offer.managedSetupCents,0);
+assert.equal(staleFulfilled.offer.firstTotalCents,23920);
+const staleOrder=staleBatched.find(x=>x.sql.includes('INSERT INTO commercial_orders'));
+assert.ok(staleOrder,'stale accepted offer did not reach order persistence');
+assert.equal(staleOrder.args[8],23920);
+assert.equal(staleOrder.args[9],0);
+
 // The active manual commercial subscription must unlock normal tenant writes, avoiding a payment-chain lockout.
 const activeAccessEnv={DB:{prepare(sql){return{bind(){return{async first(){if(sql.includes('FROM subscriptions'))return{status:'active'};throw new Error(`UNEXPECTED_QUERY:${sql}`);}};}};}}};
 await assertPaymentWriteAccess(activeAccessEnv,'ten_1');
@@ -100,6 +121,7 @@ assert.match(wrangler,/"PAYMENTS_ENABLED"\s*:\s*"false"/);
 assert.match(indexSource,/paymentsEnabled\(env\).*STRIPE_SECRET_KEY/s);
 assert.match(fulfillmentSource,/subscriptionStatus=providerPayments\?'past_due':'active'/);
 assert.match(fulfillmentSource,/invoiceStatus=providerPayments\?'pending_provider':'draft'/);
+assert.match(fulfillmentSource,/normalizeAcceptedOffer/,'accepted offer fulfillment must normalize canonical row values over stale snapshot values');
 assert.match(paymentRouterSource,/pathname\.startsWith\('\/api\/payments\/'\).*disabled\(\)/s);
 assert.match(paymentRouterSource,/!enabled&&request\.method!=='GET'\)return disabled\(\)/);
 assert.match(paymentRouterSource,/enabled\?await billingSummaryWithStripe[\s\S]*billingSummaryWithoutPayments/);
@@ -117,4 +139,4 @@ for(const path of [
   assert.match(source,/assertPaymentsEnabled\(env\)/,`${path} must fail before any provider call`);
 }
 
-console.log('Payment freeze release contract + paid-onboarding chain + 1,000-case fail-closed fuzz: OK');
+console.log('Payment freeze release contract + paid-onboarding chain + stale-snapshot recovery + 1,000-case fail-closed fuzz: OK');

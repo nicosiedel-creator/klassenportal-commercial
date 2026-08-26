@@ -4,6 +4,12 @@ const base=(process.env.COMMERCIAL_BASE_URL||'http://127.0.0.1:8787').replace(/\
 const mode=String(process.env.E2E_TARGET_MODE||'candidate').trim();
 const adminEmail=String(process.env.E2E_PLATFORM_EMAIL||'').trim();
 const adminPassword=String(process.env.E2E_PLATFORM_PASSWORD||'');
+const onboardingToken=String(process.env.E2E_ONBOARDING_PRIMARY_TOKEN||'').trim();
+const onboardingAdmin=String(process.env.E2E_ONBOARDING_PRIMARY_ADMIN||'').trim();
+const onboardingPassword=String(process.env.E2E_ONBOARDING_PRIMARY_PASSWORD||'');
+const raceToken=String(process.env.E2E_ONBOARDING_RACE_TOKEN||'').trim();
+const raceAdmin=String(process.env.E2E_ONBOARDING_RACE_ADMIN||'').trim();
+const racePassword=String(process.env.E2E_ONBOARDING_RACE_PASSWORD||'');
 const fail=(msg)=>{throw new Error(msg);};
 const browser=await chromium.launch({headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
@@ -14,159 +20,202 @@ page.on('requestfailed',request=>failedRequests.push(`${request.method()} ${requ
 page.on('response',response=>{if(response.status()>=400)httpErrors.push({status:response.status(),url:response.url()});});
 
 async function route(path,{allowStatuses=[200],waitForResponsePath=null}={}){
-  const backgroundResponse=waitForResponsePath?page.waitForResponse(response=>{
-    try{return new URL(response.url()).pathname===waitForResponsePath;}catch{return false;}
-  },{timeout:10000}):null;
+  const backgroundResponse=waitForResponsePath?page.waitForResponse(response=>{try{return new URL(response.url()).pathname===waitForResponsePath;}catch{return false;}},{timeout:10000}):null;
   const response=await page.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});
   if(!response)fail(`No response for ${path}`);
   if(!allowStatuses.includes(response.status()))fail(`${path} returned unexpected ${response.status()}`);
-  if(backgroundResponse){
-    const bootstrap=await backgroundResponse;
-    if(bootstrap.status()>=400)fail(`${waitForResponsePath} bootstrap returned unexpected ${bootstrap.status()}`);
-    console.log(`browser bootstrap ${waitForResponsePath}: ${bootstrap.status()}`);
-  }
-  const text=(await page.locator('body').innerText()).slice(0,5000);
+  if(backgroundResponse){const bootstrap=await backgroundResponse;if(bootstrap.status()>=400)fail(`${waitForResponsePath} bootstrap returned unexpected ${bootstrap.status()}`);console.log(`browser bootstrap ${waitForResponsePath}: ${bootstrap.status()}`);}
+  const text=(await page.locator('body').innerText()).slice(0,7000);
   if(/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`${path} rendered a Cloudflare/server error`);
   console.log(`browser route ${path}: ${response.status()}`);
   return text;
 }
-
 async function api(path,{method='GET',body}={}){
   const response=await fetch(base+path,{method,headers:body===undefined?undefined:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
   let data=null;try{data=await response.json();}catch{}
   return{status:response.status,data};
 }
+function onboardingBody(email,password,course){return{admin_name:'Browser E2E Admin',admin_email:email,admin_password:password,admin_password_confirm:password,commercial_acceptance:'1',commercial_cost_confirmation:'1',first_course_name:course,first_course_code:course==='Parallelkurs'?'PAR-01':'E2E-01',access_mode:'login'};}
 
 async function candidateSurface(){
   const platform=await route('/plattform-admin');
   if(!/Plattform|Anmeld|Login/i.test(platform))fail('/plattform-admin did not render the platform entry surface');
-  const email=page.locator('input[type="email"],input[name="email"],input[name="login"]').first();
-  const password=page.locator('input[type="password"]').first();
-  const submit=page.locator('button[type="submit"]').first();
+  const email=page.locator('input[type="email"],input[name="email"],input[name="login"]').first(),password=page.locator('input[type="password"]').first(),submit=page.locator('button[type="submit"]').first();
   if(!(await email.count())||!(await password.count())||!(await submit.count()))fail('platform login controls not found on the PR candidate');
 
   const product=await route('/produkt',{waitForResponsePath:'/api/public/product'});
   if(!/Klassenportal/i.test(product))fail('/produkt did not render the product surface');
-  for(const path of ['/kunden-admin','/dozentenportal']){
-    const text=await route(path);
-    if(!text.trim())fail(`${path} rendered an empty shell`);
+  for(const path of ['/kunden-admin','/dozentenportal']){const text=await route(path);if(!text.trim())fail(`${path} rendered an empty shell`);}
+
+  const testcenter=await route('/testcenter.html');
+  if(!/Live-Abnahme|Als Tester anmelden/i.test(testcenter))fail('test center entry surface did not render');
+  await page.locator('#email').fill('not-authorized@example.invalid');
+  await page.locator('#org').fill('Nicht freigeschaltete Test GmbH');
+  await page.locator('#go').click();
+  if(!/keinem freigeschalteten Testlauf/i.test(await page.locator('#err').innerText()))fail('test center invalid-login button did not fail closed');
+  await page.locator('#lead').click();
+  await page.locator('#modal:not(.hidden)').waitFor({timeout:5000});
+  if(!/Testleitung geschützt/i.test(await page.locator('#modal').innerText()))fail('testleader button did not enforce owner authentication');
+  await page.locator('#mc').click();
+
+  for(const path of ['/impressum','/datenschutz','/agb','/avv','/unterauftragsverarbeiter','/datenportabilitaet','/rechtsverstoss-melden','/passwort-vergessen']){
+    const text=await route(path);if(!text.trim())fail(`${path} rendered empty`);
   }
 
-  const productApi=await api('/api/public/product');
-  if(productApi.status!==200)fail(`/api/public/product candidate contract returned ${productApi.status}`);
-  const invitation=await api('/api/platform/onboarding-invitations');
-  if(![401,403].includes(invitation.status))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status}`);
-  const frozenCheckout=await api('/api/payments/checkout-status?session_id=cs_test_browser_candidate');
-  if(frozenCheckout.status!==503)fail(`candidate checkout must remain frozen, got ${frozenCheckout.status}`);
-  if(frozenCheckout.data?.error!=='PAYMENT_DISABLED')fail('candidate checkout did not return PAYMENT_DISABLED');
-  const frozenWebhook=await api('/api/payments/stripe/webhook',{method:'POST',body:{}});
-  if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('candidate payment webhook did not remain side-effect-free');
-  console.log('PR candidate browser/API/payment-freeze surface: OK');
+  const productApi=await api('/api/public/product');if(productApi.status!==200)fail(`/api/public/product candidate contract returned ${productApi.status}`);
+  const invitation=await api('/api/platform/onboarding-invitations');if(![401,403].includes(invitation.status))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status}`);
+  const frozenCheckout=await api('/api/payments/checkout-status?session_id=cs_test_browser_candidate');if(frozenCheckout.status!==503||frozenCheckout.data?.error!=='PAYMENT_DISABLED')fail('candidate checkout did not remain frozen');
+  const frozenWebhook=await api('/api/payments/stripe/webhook',{method:'POST',body:{}});if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('candidate payment webhook did not remain side-effect-free');
+  console.log('PR candidate browser/API/legal/testcenter/payment-freeze surface: OK');
+}
+
+async function internalLinkAudit(paths){
+  const hrefs=new Set();
+  for(const path of paths){
+    await route(path);
+    for(const href of await page.locator('a[href]').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('href')).filter(Boolean)))hrefs.add(href);
+  }
+  for(const href of hrefs){
+    if(href.startsWith('#')||/^(mailto:|tel:|javascript:)/i.test(href))continue;
+    let url;try{url=new URL(href,base);}catch{fail(`invalid href ${href}`);}
+    if(url.origin!==new URL(base).origin)continue;
+    const response=await fetch(url,{redirect:'manual'});
+    if(response.status===404||response.status>=500)fail(`internal link ${url.pathname} returned ${response.status}`);
+  }
+  console.log(`Internal link contract: ${hrefs.size} discovered links checked without 404/5xx.`);
+}
+
+async function onboardingNegativeValidation(){
+  if(!onboardingToken||!onboardingAdmin||!onboardingPassword)fail('primary onboarding E2E fixture environment missing');
+  const path=`/api/onboarding/${encodeURIComponent(onboardingToken)}`;
+  let body=onboardingBody(onboardingAdmin,onboardingPassword,'E2E Erstkurs');
+  let response=await api(path,{method:'POST',body:{...body,admin_password_confirm:'Absichtlich-Anders-2026!'}});
+  if(response.status!==400||response.data?.error!=='PASSWORD_CONFIRMATION_MISMATCH')fail(`password mismatch must fail before mutation, got ${response.status}/${response.data?.error}`);
+  response=await api(path,{method:'POST',body:{...body,commercial_cost_confirmation:undefined}});
+  if(response.status!==400||response.data?.error!=='DOUBLE_COST_CONFIRMATION_REQUIRED')fail(`missing cost confirmation must fail before mutation, got ${response.status}/${response.data?.error}`);
+  response=await api(path,{method:'POST',body:{...body,admin_email:'ungueltig'}});
+  if(response.status!==400||response.data?.error!=='ONBOARDING_REQUIRED_FIELDS')fail(`invalid admin e-mail must fail before mutation, got ${response.status}/${response.data?.error}`);
+  const stillOpen=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`);
+  if(stillOpen.status!==200||stillOpen.data?.invitation?.status!=='open')fail('negative onboarding validation consumed the invitation');
+  console.log('Onboarding negative validation before mutation: OK');
+}
+
+async function concurrentOnboardingClaim(){
+  if(!raceToken||!raceAdmin||!racePassword)fail('race onboarding E2E fixture environment missing');
+  const path=`/api/onboarding/${encodeURIComponent(raceToken)}`,body=onboardingBody(raceAdmin,racePassword,'Parallelkurs');
+  const results=await Promise.all([api(path,{method:'POST',body}),api(path,{method:'POST',body})]);
+  const successes=results.filter(x=>x.status===200&&x.data?.ok===true),losers=results.filter(x=>x.status!==200);
+  if(successes.length!==1||losers.length!==1)fail(`concurrent onboarding must produce exactly one success, got ${results.map(x=>`${x.status}/${x.data?.error||x.data?.ok}`).join(' | ')}`);
+  if(!['ONBOARDING_ALREADY_IN_PROGRESS','ONBOARDING_UNAVAILABLE'].includes(String(losers[0].data?.error||'')))fail(`concurrent loser returned unsafe error ${losers[0].status}/${losers[0].data?.error}`);
+  if(successes[0].data?.commercial?.paymentProcessing!=='disabled'||successes[0].data?.commercial?.status!=='active')fail('concurrent winner did not preserve manual payment freeze');
+  const completed=await api(`/api/onboarding/${encodeURIComponent(raceToken)}`);if(completed.status!==200||completed.data?.invitation?.status!=='completed')fail('concurrent winner did not complete invitation');
+  const replay=await api(path,{method:'POST',body:{}});if(replay.status===200||replay.data?.error!=='ONBOARDING_UNAVAILABLE')fail(`completed onboarding replay must fail closed, got ${replay.status}/${replay.data?.error}`);
+  console.log('Concurrent double-click / duplicate-tenant protection: OK');
+}
+
+async function mobileOnboardingPreflight(){
+  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  try{
+    const mobile=await context.newPage(),response=await mobile.goto(`${base}/einrichtung/${encodeURIComponent(onboardingToken)}`,{waitUntil:'domcontentloaded',timeout:30000});
+    if(!response||response.status()!==200)fail(`mobile onboarding returned ${response?.status()??'no response'}`);
+    await mobile.locator('#onboarding-form').waitFor({timeout:10000});
+    const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);if(overflow>4)fail(`mobile onboarding has ${overflow}px horizontal overflow`);
+    const button=await mobile.locator('#submit-setup').boundingBox();if(!button||button.x<0||button.x+button.width>394)fail('mobile onboarding submit control is outside viewport width');
+    console.log('Mobile accepted-offer onboarding preflight: OK');
+  }finally{await context.close();}
+}
+
+async function acceptedOfferOnboarding(){
+  const path=`/einrichtung/${encodeURIComponent(onboardingToken)}`;
+  await route(path);
+  await page.locator('#onboarding-form').waitFor({timeout:10000});
+  const bodyText=await page.locator('body').innerText();
+  if(!/Preis aus Angebot ANG-E2E-PRIMARY/i.test(bodyText)||!/Zahlung außerhalb des Portals/i.test(bodyText))fail('accepted offer was not locked into onboarding UI');
+  const sameAdmin=page.locator('#same-admin');if(await sameAdmin.isChecked())await sameAdmin.uncheck();
+  await page.locator('input[name="admin_name"]').fill('Browser E2E Admin');
+  await page.locator('input[name="admin_email"]').fill(onboardingAdmin);
+  await page.locator('input[name="admin_password"]').fill(onboardingPassword);
+  await page.locator('input[name="admin_password_confirm"]').fill(onboardingPassword);
+  await page.locator('input[name="first_course_name"]').fill('E2E Erstkurs');
+  await page.locator('input[name="first_course_code"]').fill('E2E-01');
+  const accept=page.locator('#offer-accept'),cost=page.locator('#cost-accept'),submit=page.locator('#submit-setup');
+  await accept.check();await cost.uncheck();await submit.click();
+  if(!/bestätige Buchung und Kosten/i.test(await page.locator('#setup-error').innerText()))fail('client-side double-confirmation click guard did not fire');
+  await cost.check();
+  const responsePromise=page.waitForResponse(r=>{try{return r.request().method()==='POST'&&new URL(r.url()).pathname===`/api/onboarding/${onboardingToken}`;}catch{return false;}},{timeout:30000});
+  await submit.click();
+  const response=await responsePromise;let data=null;try{data=await response.json();}catch{}
+  if(response.status()!==200||data?.ok!==true)fail(`accepted-offer onboarding POST failed ${response.status()}/${data?.error||'NO_JSON'}`);
+  if(data?.commercial_action!=='book'||data?.commercial?.status!=='active'||data?.commercial?.paymentProcessing!=='disabled')fail('accepted-offer onboarding response has wrong commercial/payment state');
+  await page.getByText(/Buchung erfasst/i).waitFor({timeout:10000});
+  if(!/keine Zahlung ausgelöst/i.test(await page.locator('body').innerText()))fail('successful UI does not state the payment freeze');
+  const auth=await page.evaluate(async()=>{const r=await fetch('/api/auth/me',{credentials:'same-origin'});let d=null;try{d=await r.json();}catch{}return{status:r.status,data:d};});
+  if(auth.status!==200||!auth.data?.user)fail(`new customer admin was not automatically authenticated: ${auth.status}`);
+  const open=page.getByRole('link',{name:/Portal öffnen/i}).first();if(!(await open.count()))fail('successful onboarding has no Portal öffnen action');
+  const nav=page.waitForNavigation({waitUntil:'domcontentloaded',timeout:15000});await open.click();const navResponse=await nav;if(!navResponse||navResponse.status()!==200)fail(`Portal öffnen click returned ${navResponse?.status()??'no response'}`);
+  // The root entry immediately role-routes an authenticated tenant admin. A second page.goto
+  // can race that client navigation and Playwright then returns a null navigation response even
+  // though the Worker served /kunden-admin with HTTP 200. Verify the shell through the same
+  // authenticated browser context instead of competing with the intended role redirect.
+  const adminSurface=await page.evaluate(async()=>{const r=await fetch('/kunden-admin',{credentials:'same-origin',redirect:'follow'});return{status:r.status,text:await r.text()};});
+  if(adminSurface.status!==200||!adminSurface.text.trim())fail(`new customer admin cannot open customer-admin surface: ${adminSurface.status}`);
+  const completed=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`);if(completed.status!==200||completed.data?.invitation?.status!=='completed')fail('successful browser onboarding did not persist completed invitation');
+  const replay=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`,{method:'POST',body:{}});if(replay.status===200||replay.data?.error!=='ONBOARDING_UNAVAILABLE')fail(`browser onboarding replay must fail closed, got ${replay.status}/${replay.data?.error}`);
+  console.log('Accepted paid offer -> browser onboarding -> auto-login -> customer portal: OK');
 }
 
 async function lockedProductionSurface(){
   await route('/plattform-admin');
-  for(const path of ['/produkt','/kunden-admin','/dozentenportal']){
-    const text=await route(path,{allowStatuses:[503]});
-    if(!/noch nicht für den Produktivbetrieb freigegeben/i.test(text))fail(`${path} did not render the fail-closed version gate`);
-  }
-  const health=await api('/api/public/product');
-  if(health.status!==503)fail(`/api/public/product must remain release-locked, got ${health.status}`);
-  const invitation=await api('/api/platform/onboarding-invitations');
-  if(![401,403].includes(invitation.status))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status}`);
-  const invalidOffer=await api('/api/offers/browser-e2e-invalid-token');
-  if(invalidOffer.status!==503)fail(`invalid offer token must remain release-locked, got ${invalidOffer.status}`);
-  const fakeSetup=await api('/api/onboarding/browser-e2e-invalid-token');
-  if(fakeSetup.status!==503)fail(`invalid onboarding token must remain release-locked, got ${fakeSetup.status}`);
-  const frozenWebhook=await api('/api/payments/stripe/webhook',{method:'POST',body:{}});
-  if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('payment webhook did not remain side-effect-free while production is locked');
+  for(const path of ['/produkt','/kunden-admin','/dozentenportal']){const text=await route(path,{allowStatuses:[503]});if(!/noch nicht für den Produktivbetrieb freigegeben/i.test(text))fail(`${path} did not render the fail-closed version gate`);}
+  const health=await api('/api/public/product');if(health.status!==503)fail(`/api/public/product must remain release-locked, got ${health.status}`);
+  const invitation=await api('/api/platform/onboarding-invitations');if(![401,403].includes(invitation.status))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status}`);
+  const invalidOffer=await api('/api/offers/browser-e2e-invalid-token');if(invalidOffer.status!==503)fail(`invalid offer token must remain release-locked, got ${invalidOffer.status}`);
+  const fakeSetup=await api('/api/onboarding/browser-e2e-invalid-token');if(fakeSetup.status!==503)fail(`invalid onboarding token must remain release-locked, got ${fakeSetup.status}`);
+  const frozenWebhook=await api('/api/payments/stripe/webhook',{method:'POST',body:{}});if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('payment webhook did not remain side-effect-free while production is locked');
 }
 
 async function mobileSurface(){
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/138.0.0.0 Mobile Safari/537.36'});
   const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
   mobile.on('pageerror',e=>errors.push(String(e)));
-  mobile.on('requestfailed',r=>{
-    const errorText=r.failure()?.errorText||'failed';
-    let path='';try{path=new URL(r.url()).pathname;}catch{}
-    // Sequential route changes can legitimately cancel the shared PWA helper after the
-    // target surface rendered. Keep every other mobile request failure fatal.
-    const expectedNavigationAbort=r.method()==='GET'&&path==='/pwa-client.js'&&errorText==='net::ERR_ABORTED';
-    if(!expectedNavigationAbort)failed.push(`${r.method()} ${r.url()} :: ${errorText}`);
-  });
-  mobile.on('response',r=>{
-    if(r.status()<500)return;
-    let path='';try{path=new URL(r.url()).pathname;}catch{}
-    const expectedLocked=mode==='locked-production'&&r.status()===503&&['/produkt','/kunden-admin','/dozentenportal'].includes(path);
-    if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);
-  });
+  mobile.on('requestfailed',r=>{const errorText=r.failure()?.errorText||'failed';let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedNavigationAbort=r.method()==='GET'&&path==='/pwa-client.js'&&errorText==='net::ERR_ABORTED';if(!expectedNavigationAbort)failed.push(`${r.method()} ${r.url()} :: ${errorText}`);});
+  mobile.on('response',r=>{if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&r.status()===503&&['/produkt','/kunden-admin','/dozentenportal'].includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
   try{
-    for(const path of ['/plattform-admin','/produkt','/kunden-admin','/dozentenportal']){
-      const expected=mode==='locked-production'&&path!=='/plattform-admin'?[503]:[200];
-      const response=await mobile.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});
-      if(!response||!expected.includes(response.status()))fail(`mobile ${path} returned ${response?.status()??'no response'}, expected ${expected.join('/')}`);
-      const text=(await mobile.locator('body').innerText()).slice(0,4000);
-      if(!text.trim()||/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`mobile ${path} rendered an invalid surface`);
-      const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);
-      if(overflow>4)fail(`mobile ${path} has ${overflow}px document-level horizontal overflow`);
+    for(const path of ['/plattform-admin','/produkt','/kunden-admin','/dozentenportal','/testcenter.html']){
+      const expected=mode==='locked-production'&&['/produkt','/kunden-admin','/dozentenportal'].includes(path)?[503]:[200];
+      const response=await mobile.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});if(!response||!expected.includes(response.status()))fail(`mobile ${path} returned ${response?.status()??'no response'}, expected ${expected.join('/')}`);
+      const text=(await mobile.locator('body').innerText()).slice(0,4000);if(!text.trim()||/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`mobile ${path} rendered an invalid surface`);
+      const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);if(overflow>4)fail(`mobile ${path} has ${overflow}px document-level horizontal overflow`);
     }
-    if(errors.length)fail(`mobile page errors: ${errors.join(' | ')}`);
-    if(serverErrors.length)fail(`mobile server errors: ${serverErrors.join(' | ')}`);
-    if(failed.length)fail(`mobile failed requests: ${failed.join(' | ')}`);
+    if(errors.length)fail(`mobile page errors: ${errors.join(' | ')}`);if(serverErrors.length)fail(`mobile server errors: ${serverErrors.join(' | ')}`);if(failed.length)fail(`mobile failed requests: ${failed.join(' | ')}`);
     console.log(`Commercial mobile viewport smoke (${mode}): OK`);
   }finally{await context.close();}
 }
 
 const expectedCandidate401Paths=new Set(['/api/auth/me','/api/attendance/teacher/courses']);
-function expectedBrowserHttpError(entry){
-  if(mode!=='candidate'||entry.status!==401)return false;
-  let path='';try{path=new URL(entry.url).pathname;}catch{return false;}
-  return expectedCandidate401Paths.has(path);
-}
+function expectedBrowserHttpError(entry){if(mode!=='candidate'||entry.status!==401)return false;let path='';try{path=new URL(entry.url).pathname;}catch{return false;}return expectedCandidate401Paths.has(path);}
 
 try{
-  if(mode==='candidate')await candidateSurface();
-  else if(mode==='locked-production')await lockedProductionSurface();
+  if(mode==='candidate'){
+    await candidateSurface();
+    await internalLinkAudit(['/produkt','/testcenter.html','/impressum','/datenschutz']);
+    await onboardingNegativeValidation();
+    await concurrentOnboardingClaim();
+    await mobileOnboardingPreflight();
+    await acceptedOfferOnboarding();
+  }else if(mode==='locked-production')await lockedProductionSurface();
   else fail(`Unsupported E2E_TARGET_MODE: ${mode}`);
 
   if(adminEmail&&adminPassword){
     if(mode!=='locked-production')console.log('authenticated live platform path is intentionally not executed against the local PR candidate');
     else{
-      await route('/plattform-admin');
-      const email=page.locator('input[type="email"],input[name="email"],input[name="login"]').first();
-      const password=page.locator('input[type="password"]').first();
-      if(!(await email.count())||!(await password.count()))fail('platform login controls not found');
-      await email.fill(adminEmail);await password.fill(adminPassword);
-      const submit=page.locator('button[type="submit"]').first();
-      if(!(await submit.count()))fail('platform login submit not found');
-      await submit.click();await page.waitForTimeout(1200);
-      const offers=page.getByRole('button',{name:/Angebote/i}).first();
-      if(!(await offers.count()))fail('Angebote navigation not available after platform login');
-      await offers.click();await page.waitForTimeout(700);
-      if(!(await page.getByText(/Angebote können|Freigabe noch gesperrt/i).count()))fail('offer manager did not open');
-      const managerText=await page.locator('body').innerText();
-      if(!/automatisch versendet|E-Mailversand/i.test(managerText))fail('offer manager does not expose mail delivery readiness');
-      console.log('authenticated platform offer manager browser path: OK');
+      await route('/plattform-admin');const email=page.locator('input[type="email"],input[name="email"],input[name="login"]').first(),password=page.locator('input[type="password"]').first();if(!(await email.count())||!(await password.count()))fail('platform login controls not found');await email.fill(adminEmail);await password.fill(adminPassword);const submit=page.locator('button[type="submit"]').first();if(!(await submit.count()))fail('platform login submit not found');await submit.click();await page.waitForTimeout(1200);const offers=page.getByRole('button',{name:/Angebote/i}).first();if(!(await offers.count()))fail('Angebote navigation not available after platform login');await offers.click();await page.waitForTimeout(700);if(!(await page.getByText(/Angebote können|Freigabe noch gesperrt/i).count()))fail('offer manager did not open');const managerText=await page.locator('body').innerText();if(!/automatisch versendet|E-Mailversand/i.test(managerText))fail('offer manager does not expose mail delivery readiness');console.log('authenticated platform offer manager browser path: OK');
     }
-  }else{
-    console.log('authenticated live browser path not configured; local PR candidate path still executed');
-  }
+  }else console.log('authenticated live browser path not configured; local candidate onboarding/admin path still executed');
 
-  await mobileSurface();
-  await page.waitForTimeout(250);
-  const expectedHttp=httpErrors.filter(expectedBrowserHttpError);
-  const unexpectedHttp=httpErrors.filter(entry=>!expectedBrowserHttpError(entry));
-  const unexpected401=unexpectedHttp.some(entry=>entry.status===401);
-  const relevantConsole=consoleErrors.filter(text=>{
-    if(/favicon|Failed to load resource.*404/i.test(text))return false;
-    if(/^Failed to load resource:.*status of 401\b/i.test(text)&&expectedHttp.length>0&&!unexpected401)return false;
-    return true;
-  });
-  if(pageErrors.length)fail(`page errors: ${pageErrors.join(' | ')}`);
-  if(unexpectedHttp.length)fail(`unexpected browser HTTP responses: ${unexpectedHttp.map(x=>`${x.status} ${x.url}`).join(' | ')}`);
-  if(relevantConsole.length)fail(`console errors: ${relevantConsole.join(' | ')}`);
-  if(failedRequests.length)fail(`failed browser requests: ${failedRequests.join(' | ')}`);
-  console.log(`Commercial real-browser smoke (${mode}): OK`);
-}finally{
-  await browser.close();
-}
+  await mobileSurface();await page.waitForTimeout(250);
+  const expectedHttp=httpErrors.filter(expectedBrowserHttpError),unexpectedHttp=httpErrors.filter(entry=>!expectedBrowserHttpError(entry)),unexpected401=unexpectedHttp.some(entry=>entry.status===401);
+  const relevantConsole=consoleErrors.filter(text=>{if(/favicon|Failed to load resource.*404/i.test(text))return false;if(/^Failed to load resource:.*status of 401\b/i.test(text)&&expectedHttp.length>0&&!unexpected401)return false;return true;});
+  if(pageErrors.length)fail(`page errors: ${pageErrors.join(' | ')}`);if(unexpectedHttp.length)fail(`unexpected browser HTTP responses: ${unexpectedHttp.map(x=>`${x.status} ${x.url}`).join(' | ')}`);if(relevantConsole.length)fail(`console errors: ${relevantConsole.join(' | ')}`);if(failedRequests.length)fail(`failed browser requests: ${failedRequests.join(' | ')}`);
+  console.log(`Commercial real-browser acceptance (${mode}): OK`);
+}finally{await browser.close();}
