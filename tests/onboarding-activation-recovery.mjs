@@ -1,11 +1,12 @@
 import { strict as assert } from 'node:assert';
-import { readdir, readFile } from 'node:fs/promises';
-import { DatabaseSync } from 'node:sqlite';
+import { readFile } from 'node:fs/promises';
 import { provisionTenantFromOnboarding } from '../dist/core/provision.js';
-import { createPaidBookingFromAcceptedOffer } from '../dist/core/accepted-offer-fulfillment.js';
 
 const onboarding=await readFile('src/core/onboarding.ts','utf8');
 const provision=await readFile('src/core/provision.ts','utf8');
+const browserWorkflow=await readFile('.github/workflows/commercial-browser-e2e.yml','utf8');
+const browserE2E=await readFile('scripts/commercial-browser-e2e.mjs','utf8');
+const browserState=await readFile('scripts/commercial-onboarding-e2e-state.mjs','utf8');
 
 assert.match(onboarding,/LEGACY_PARTIAL_COMPLETION/,'legacy partial completions must be detected and compensated');
 assert.match(onboarding,/UPDATE onboarding_invitations SET status='open',completed_at=NULL,tenant_id=NULL,form_json=NULL/,'successful compensation must reopen the same onboarding invitation');
@@ -23,7 +24,7 @@ assert.match(provision,/sqlite_master[\s\S]*tenant_users/,'provisioning must det
 assert.match(provision,/NOT EXISTS\(SELECT 1 FROM memberships WHERE user_id=\?\)/,'orphan-user cleanup must not delete users still used by another tenant');
 assert.match(provision,/NOT EXISTS\(SELECT 1 FROM tenant_users WHERE user_id=\?\)/,'orphan-user cleanup must respect tenant lifecycle links when that table exists');
 
-function provisioningEnv(hasTenantUsers){
+function provisioningEnv(hasTenantUsers,existingUser){
   const batched=[];
   const prepared=[];
   const DB={
@@ -37,7 +38,7 @@ function provisioningEnv(hasTenantUsers){
           if(/sqlite_master/i.test(sql))return hasTenantUsers?{ok:1}:null;
           if(/SELECT id FROM tenants WHERE slug/i.test(sql))return null;
           if(/SELECT id FROM plans/i.test(sql))return{id:'provider'};
-          if(/SELECT id FROM users WHERE email/i.test(sql))return null;
+          if(/SELECT id FROM users WHERE email/i.test(sql))return existingUser?{id:'usr_existing'}:null;
           return null;
         },
         async run(){return{success:true,meta:{changes:1}};},
@@ -49,69 +50,38 @@ function provisioningEnv(hasTenantUsers){
 }
 
 for(const hasTenantUsers of [false,true]){
-  const fixture=provisioningEnv(hasTenantUsers);
-  const result=await provisionTenantFromOnboarding(fixture.env,'onboarding:test',{
-    name:hasTenantUsers?'Schema Current GmbH':'Schema Fallback GmbH',
-    portal_name:'Testportal',
-    admin_name:'Test Admin',
-    admin_email:hasTenantUsers?'admin-current@example.invalid':'admin-fallback@example.invalid',
-    admin_password:'Mindestens-10-Zeichen!',
-    plan_id:'provider',
-  });
-  assert.ok(result.tenantId.startsWith('ten_'),'provisioning must create a tenant');
-  assert.ok(fixture.batched.some(statement=>/INSERT INTO memberships/i.test(statement.sql)),'membership fallback must always be written');
-  assert.equal(fixture.batched.some(statement=>/INSERT INTO tenant_users/i.test(statement.sql)),hasTenantUsers,'tenant_users write must follow actual runtime schema availability');
-}
-
-function sqliteD1(db){
-  function statement(sql,args=[]){
-    return{
-      sql,args,
-      bind(...bound){return statement(sql,bound);},
-      async first(){return db.prepare(sql).get(...args)??null;},
-      async all(){return{success:true,results:db.prepare(sql).all(...args)};},
-      async run(){const info=db.prepare(sql).run(...args);return{success:true,meta:{changes:Number(info.changes)}};},
-    };
+  for(const existingUser of [false,true]){
+    const fixture=provisioningEnv(hasTenantUsers,existingUser);
+    const withCourse=hasTenantUsers&&!existingUser;
+    const result=await provisionTenantFromOnboarding(fixture.env,'onboarding:test',{
+      name:`Schema ${hasTenantUsers?'Current':'Fallback'} ${existingUser?'Existing':'New'} GmbH`,
+      portal_name:'Testportal',
+      admin_name:'Test Admin',
+      admin_email:`admin-${hasTenantUsers?'current':'fallback'}-${existingUser?'existing':'new'}@example.invalid`,
+      admin_password:'Mindestens-10-Zeichen!',
+      plan_id:'provider',
+      course_name:withCourse?'E2E Erstkurs':undefined,
+      course_code:withCourse?'E2E-01':undefined,
+    });
+    assert.ok(result.tenantId.startsWith('ten_'),'provisioning must create a tenant');
+    assert.ok(fixture.batched.some(statement=>/INSERT INTO memberships/i.test(statement.sql)),'membership relationship must always be written');
+    assert.equal(fixture.batched.some(statement=>/INSERT INTO tenant_users/i.test(statement.sql)),hasTenantUsers,'tenant_users write must follow actual runtime schema availability');
+    assert.equal(fixture.batched.some(statement=>/INSERT INTO users/i.test(statement.sql)),!existingUser,'existing global users must not be duplicated');
+    assert.equal(fixture.batched.some(statement=>/INSERT INTO courses/i.test(statement.sql)),withCourse,'optional first course persistence mismatch');
   }
-  return{
-    prepare(sql){return statement(sql);},
-    async batch(statements){
-      db.exec('BEGIN IMMEDIATE');
-      try{
-        const results=statements.map(item=>{const info=db.prepare(item.sql).run(...item.args);return{success:true,meta:{changes:Number(info.changes)}};});
-        db.exec('COMMIT');
-        return results;
-      }catch(error){db.exec('ROLLBACK');throw error;}
-    },
-  };
 }
 
-// Exercise the real persistence statements against the schema produced by every current migration.
-const db=new DatabaseSync(':memory:');
-db.exec('PRAGMA foreign_keys=ON');
-for(const filename of (await readdir('migrations')).filter(name=>name.endsWith('.sql')).sort()){
-  db.exec(await readFile(`migrations/${filename}`,'utf8'));
-}
-const fullEnv={DB:sqliteD1(db),PAYMENTS_ENABLED:'false'};
-const fullProvision=await provisionTenantFromOnboarding(fullEnv,'onboarding:full-schema',{
-  name:'Full Schema GmbH',portal_name:'Full Schema Portal',admin_name:'Full Admin',admin_email:'full-admin@example.invalid',admin_password:'Mindestens-10-Zeichen!',plan_id:'provider',
-});
-assert.ok(db.prepare('SELECT 1 FROM tenant_users WHERE tenant_id=? AND user_id=?').get(fullProvision.tenantId,fullProvision.adminUserId),'current schema must persist the tenant-user relationship');
-assert.ok(db.prepare("SELECT 1 FROM memberships WHERE tenant_id=? AND user_id=? AND role='tenant_admin'").get(fullProvision.tenantId,fullProvision.adminUserId),'current schema must persist the tenant-admin membership');
+// The full current schema is deliberately exercised through Wrangler D1 in the mandatory browser gate.
+// This avoids coupling the release suite to a particular Node experimental SQLite implementation.
+assert.match(browserWorkflow,/commercial-onboarding-e2e-state\.mjs seed/,'browser gate must seed a real accepted-offer onboarding fixture in Wrangler D1');
+assert.match(browserWorkflow,/commercial-onboarding-e2e-state\.mjs verify/,'browser gate must verify persisted D1 invariants after the click-through');
+assert.match(browserE2E,/acceptedOfferOnboarding/,'browser gate must execute the accepted-offer onboarding form');
+assert.match(browserE2E,/concurrentOnboardingClaim/,'browser gate must exercise duplicate-click concurrency protection');
+assert.match(browserE2E,/PASSWORD_CONFIRMATION_MISMATCH/,'browser gate must exercise negative password validation');
+assert.match(browserE2E,/DOUBLE_COST_CONFIRMATION_REQUIRED/,'browser gate must exercise double cost confirmation');
+assert.match(browserState,/commercial_orders/,'D1 post-state must verify order persistence');
+assert.match(browserState,/commercial_invoices/,'D1 post-state must verify invoice persistence');
+assert.match(browserState,/onboarding_claims/,'D1 post-state must verify claim cleanup');
+assert.match(browserState,/PAYMENTS_ENABLED/,'E2E state guard must keep payment processing disabled');
 
-const now=new Date().toISOString(),later=new Date(Date.now()+86400000).toISOString();
-db.prepare("INSERT INTO onboarding_invitations(id,token_hash,customer_email,plan_id,status,expires_at,created_by,created_at) VALUES(?,?,?,?, 'open',?,?,?)")
-  .run('oni_full_schema','hash-full-schema','customer@example.invalid','provider',later,'platform-test',now);
-db.prepare(`INSERT INTO commercial_quotes(id,quote_number,onboarding_invitation_id,tenant_id,plan_id,requested_courses,currency,recurring_monthly_cents,setup_cents,first_total_cents,status,valid_until,pricing_snapshot_json,accepted_at,created_at,updated_at,offer_kind,billing_cycle)
-  VALUES(?,?,NULL,NULL,?,?,?,?,?,?,'accepted',?,?,?,?,?,'paid','monthly')`)
-  .run('quo_full_schema','ANG-FULL-SCHEMA','provider',7,'EUR',12900,4900,17800,later,JSON.stringify({offerKind:'paid',recurringMonthlyCents:12900,managedSetupCents:4900,firstTotalCents:17800,manualPricing:false}),now,now,now);
-const fulfilled=await createPaidBookingFromAcceptedOffer(fullEnv,{tenantId:fullProvision.tenantId,quoteId:'quo_full_schema',invitationId:'oni_full_schema',actorId:'onboarding:full-schema'});
-assert.equal(fulfilled.status,'active');
-assert.equal(fulfilled.paymentProcessing,'disabled');
-assert.equal(db.prepare('SELECT status FROM commercial_orders WHERE quote_id=?').get('quo_full_schema').status,'active');
-assert.equal(db.prepare('SELECT status FROM commercial_invoices WHERE tenant_id=?').get(fullProvision.tenantId).status,'draft');
-assert.equal(db.prepare('SELECT status FROM subscriptions WHERE tenant_id=?').get(fullProvision.tenantId).status,'active');
-assert.equal(db.prepare('SELECT tenant_id FROM commercial_quotes WHERE id=?').get('quo_full_schema').tenant_id,fullProvision.tenantId);
-db.close();
-
-console.log('Onboarding activation rollback + schema-drift fallback + full migrated-schema persistence regression: OK');
+console.log('Onboarding activation rollback + runtime-schema fallback + real Wrangler-D1 browser persistence contract: OK');
