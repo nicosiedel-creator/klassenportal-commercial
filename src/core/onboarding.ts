@@ -26,6 +26,10 @@ function safeJson(value:unknown):Record<string,unknown>{return value&&typeof val
 function courseCount(v:unknown):number{const n=Number(v);if(!Number.isFinite(n)||n<1||n>10000)throw new Error('COURSE_COUNT_INVALID');return Math.round(n);}
 function action(v:unknown):'trial'|'book'{return String(v)==='book'?'book':'trial';}
 function publicInvitation(row:InvitationRow){return{customer_email:row.customer_email,plan_id:row.plan_id,status:row.status,expires_at:row.expires_at};}
+function publicErrorCode(error:unknown):string{
+  const code=error instanceof Error?error.message:String(error||'');
+  return /^[A-Z][A-Z0-9_]{2,80}$/.test(code)?code:'ONBOARDING_ACTIVATION_FAILED';
+}
 
 export async function createOnboardingInvitation(env:Env,auth:CoreAuthContext,request:Request):Promise<Record<string,unknown>>{
   requirePlatform(auth);
@@ -69,15 +73,63 @@ async function invitationByToken(env:Env,token:string):Promise<InvitationRow|nul
   return env.DB.prepare('SELECT * FROM onboarding_invitations WHERE token_hash=?').bind(hash).first<InvitationRow>();
 }
 
+async function invitationById(env:Env,idValue:string):Promise<InvitationRow|null>{
+  return env.DB.prepare('SELECT * FROM onboarding_invitations WHERE id=?').bind(idValue).first<InvitationRow>();
+}
+
+async function rollbackProvisionedOnboarding(env:Env,args:{invitationId:string;tenantId:string;reason:string}):Promise<void>{
+  const admins=await env.DB.prepare("SELECT DISTINCT user_id FROM memberships WHERE tenant_id=? AND role='tenant_admin'").bind(args.tenantId).all<{user_id:string}>();
+  try{
+    // Tenant-scoped commerce/profile/content rows are removed by the existing FK cascades.
+    // commercial_quotes.tenant_id is ON DELETE SET NULL, so an accepted quote remains reusable.
+    await env.DB.prepare('DELETE FROM tenants WHERE id=?').bind(args.tenantId).run();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE onboarding_invitations SET status='open',completed_at=NULL,tenant_id=NULL,form_json=NULL WHERE id=?").bind(args.invitationId),
+      env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=?').bind(args.invitationId),
+    ]);
+
+    for(const admin of admins.results??[]){
+      await env.DB.prepare(`DELETE FROM users
+        WHERE id=? AND is_platform_admin=0
+          AND NOT EXISTS(SELECT 1 FROM memberships WHERE user_id=?)
+          AND NOT EXISTS(SELECT 1 FROM tenant_users WHERE user_id=?)`)
+        .bind(admin.user_id,admin.user_id,admin.user_id).run().catch(()=>undefined);
+    }
+    await audit(env.DB,`onboarding:${args.invitationId}`,'onboarding.rollback.completed',undefined,undefined,'onboarding_invitation',args.invitationId,{tenantId:args.tenantId,reason:args.reason}).catch(()=>undefined);
+  }catch(rollbackError){
+    // Never reopen a link when cleanup could not be proven. That would risk a duplicate tenant/order.
+    await env.DB.batch([
+      env.DB.prepare("UPDATE onboarding_invitations SET status='processing',completed_at=NULL WHERE id=?").bind(args.invitationId),
+      env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=?').bind(args.invitationId),
+    ]).catch(()=>undefined);
+    await audit(env.DB,`onboarding:${args.invitationId}`,'onboarding.rollback.failed',args.tenantId,undefined,'onboarding_invitation',args.invitationId,{reason:args.reason,error:publicErrorCode(rollbackError)}).catch(()=>undefined);
+    throw new Error('ONBOARDING_RECOVERY_REQUIRED');
+  }
+}
+
+async function recoverInterruptedInvitation(env:Env,row:InvitationRow):Promise<InvitationRow>{
+  // The previous implementation marked post-provisioning failures as completed without form_json.
+  // That exact state is not a valid successful onboarding and is safe to compensate automatically.
+  if(row.status==='completed'&&row.tenant_id&&!row.form_json){
+    await rollbackProvisionedOnboarding(env,{invitationId:row.id,tenantId:row.tenant_id,reason:'LEGACY_PARTIAL_COMPLETION'});
+    const recovered=await invitationById(env,row.id);
+    if(!recovered)throw new Error('ONBOARDING_NOT_FOUND');
+    return recovered;
+  }
+  return row;
+}
+
 async function requireOpenInvitation(env:Env,token:string):Promise<InvitationRow>{
-  const row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
+  let row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
+  row=await recoverInterruptedInvitation(env,row);
   if(row.status==='open'&&row.expires_at<=nowIso()){await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE id=? AND status='open'").bind(row.id).run();row.status='expired';}
   if(row.status!=='open')throw new Error(row.status==='expired'?'ONBOARDING_EXPIRED':'ONBOARDING_UNAVAILABLE');
   return row;
 }
 
 export async function getPublicOnboarding(env:Env,token:string):Promise<Record<string,unknown>>{
-  const row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
+  let row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
+  row=await recoverInterruptedInvitation(env,row);
   if(row.status==='open'&&row.expires_at<=nowIso()){await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE id=? AND status='open'").bind(row.id).run();row.status='expired';}
   const policy=await getCommercePolicy(env),setupOptions=await listManagedSetupOptions(env);
   let lockedOffer:Record<string,unknown>|null=null;
@@ -135,21 +187,25 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
     }
 
     const profile={legal_name:legalName,portal_name:portalName,contact_name:contactName,contact_email:contactEmail,phone:safeString(raw.phone,80),website:safeString(raw.website,250),street,postal_code:postal,city,country,billing_email:normalizeEmail(raw.billing_email||contactEmail),vat_id:safeString(raw.vat_id,80)||null,admin_name:adminName,admin_email:adminEmail,desired_course_count:requestedCourses,first_course_name:firstCourse||null,first_course_code:firstCourseCode||null,commercial_action:commercialAction,billing_cycle:billingCycle,managed_setup_option_id:setupOptionId,double_cost_confirmation:commercialAction==='book'&&(acceptedOffer&&acceptedCosts),quote_id:invitation.quote_id||null};
-    const ts=nowIso();
+    const ts=nowIso(),actorId=`onboarding:${invitation.id}`,auditDetails={customerEmail:invitation.customer_email,requestedCourses,commercialAction,billingCycle,setupOptionId,quoteId:invitation.quote_id||null};
+    // Final customer profile, completion marker, claim release and audit entry commit together.
+    // A failure here leaves no false "completed" state; the catch below compensates the provisioned tenant.
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO tenant_profiles(tenant_id,legal_name,contact_name,contact_email,phone,website,street,postal_code,city,country,billing_email,onboarding_invitation_id,updated_at)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(provisioned.tenantId,legalName,contactName,contactEmail,safeString(raw.phone,80)||null,safeString(raw.website,250)||null,street,postal,city,country,normalizeEmail(raw.billing_email||contactEmail),invitation.id,ts),
       env.DB.prepare("UPDATE onboarding_invitations SET status='completed',completed_at=?,tenant_id=?,form_json=? WHERE id=? AND status='open'").bind(ts,provisioned.tenantId,JSON.stringify(profile),invitation.id),
       env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce),
+      env.DB.prepare('INSERT INTO audit_log(id,tenant_id,course_id,actor_user_id,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
+        .bind(id('aud_'),provisioned.tenantId,provisioned.courseId??null,actorId,'onboarding.completed','onboarding_invitation',invitation.id,JSON.stringify(auditDetails),ts),
     ]);
-    await audit(env.DB,`onboarding:${invitation.id}`,'onboarding.completed',provisioned.tenantId,provisioned.courseId,'onboarding_invitation',invitation.id,{customerEmail:invitation.customer_email,requestedCourses,commercialAction,billingCycle,setupOptionId,quoteId:invitation.quote_id||null});
     return{ok:true,tenant_id:provisioned.tenantId,login_email:adminEmail,commercial_action:commercialAction,commercial};
   }catch(e){
-    if(!provisioned)await env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce).run();
-    else await env.DB.batch([
-      env.DB.prepare("UPDATE onboarding_invitations SET status='completed',completed_at=?,tenant_id=? WHERE id=? AND status='open'").bind(nowIso(),provisioned.tenantId,invitation.id),
-      env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce),
-    ]);
-    throw e;
+    const code=publicErrorCode(e);
+    if(!provisioned){
+      await env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce).run().catch(()=>undefined);
+    }else{
+      await rollbackProvisionedOnboarding(env,{invitationId:invitation.id,tenantId:provisioned.tenantId,reason:code});
+    }
+    throw new Error(code);
   }
 }
