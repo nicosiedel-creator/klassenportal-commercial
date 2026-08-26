@@ -3,6 +3,8 @@ name: Education OS privacy and storage security
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: ['release-check/**']
   workflow_dispatch:
 
 permissions:
