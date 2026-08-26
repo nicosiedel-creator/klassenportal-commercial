@@ -12,8 +12,31 @@ const optionalFeatures=['microsoft_teams','microsoft_365','statistics','learning
 export type ProvisionInput={name?:string;slug?:string;admin_email?:string;admin_name?:string;admin_password?:string;portal_name?:string;course_name?:string;course_code?:string;access_mode?:string;access_code?:string;plan_id?:string;};
 export type ProvisionResult={tenantId:string;adminUserId:string;invitationSent?:boolean;courseId?:string};
 
+type TableColumn={name:string;notnull:number;dflt_value:string|null;pk:number};
+type TenantUsersShape={available:boolean;columns:Set<string>};
+
 async function tableExists(env:Env,name:string):Promise<boolean>{
   return !!(await env.DB.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name=?").bind(name).first());
+}
+
+async function tenantUsersShape(env:Env):Promise<TenantUsersShape>{
+  if(!await tableExists(env,'tenant_users'))return{available:false,columns:new Set()};
+  const rows=await env.DB.prepare('PRAGMA table_info(tenant_users)').all<TableColumn>();
+  const info=rows.results??[],columns=new Set(info.map(row=>String(row.name)));
+  for(const required of ['tenant_id','user_id','status'])if(!columns.has(required))throw new Error('TENANT_USERS_SCHEMA_INCOMPATIBLE');
+  const supported=new Set(['tenant_id','user_id','status','external_id','source','created_at','updated_at']);
+  const unknownRequired=info.filter(row=>row.notnull===1&&row.dflt_value===null&&!supported.has(String(row.name))&&row.pk===0);
+  if(unknownRequired.length)throw new Error('TENANT_USERS_SCHEMA_INCOMPATIBLE');
+  return{available:true,columns};
+}
+
+function tenantUserStatement(env:Env,shape:TenantUsersShape,tenantId:string,userId:string,ts:string){
+  const columns=['tenant_id','user_id','status'],values:unknown[]=[tenantId,userId,'active'];
+  if(shape.columns.has('external_id')){columns.push('external_id');values.push(null);}
+  if(shape.columns.has('source')){columns.push('source');values.push('manual');}
+  if(shape.columns.has('created_at')){columns.push('created_at');values.push(ts);}
+  if(shape.columns.has('updated_at')){columns.push('updated_at');values.push(ts);}
+  return env.DB.prepare(`INSERT INTO tenant_users(${columns.join(',')}) VALUES(${columns.map(()=>'?').join(',')})`).bind(...values);
 }
 
 async function uniqueTenantSlug(env:Env,value:string):Promise<string>{
@@ -61,13 +84,13 @@ async function provisionInternal(env:Env,actorUserId:string,input:ProvisionInput
   const effectiveUserId=existing?.id??adminUserId,needsActivation=!existing&&!suppliedPassword;
   if(needsActivation&&!mailConfigured(env))throw new Error('MAIL_PROVIDER_NOT_CONFIGURED');
   const unreachablePassword=needsActivation?b64(randomBytes(32)).replace(/[+/=]/g,'').slice(0,38)+'Aa1!':'',password=suppliedPassword||unreachablePassword;
-  const tenantUsersTable=await tableExists(env,'tenant_users');
+  const tenantUsers=await tenantUsersShape(env);
 
   const statements=[];
   statements.push(env.DB.prepare("INSERT INTO tenants(id,name,slug,status,created_at,updated_at) VALUES(?,?,?,'active',?,?)").bind(tenantId,name,slug,ts,ts));
   statements.push(env.DB.prepare('INSERT INTO tenant_settings(tenant_id,portal_name,welcome_text,updated_at) VALUES(?,?,?,?)').bind(tenantId,safeString(input.portal_name||name,200),`Willkommen bei ${name}`,ts));
   if(!existing)statements.push(env.DB.prepare("INSERT INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at) VALUES(?,?,?,?,?,0,'active',?,?)").bind(effectiveUserId,email,adminName,await hashPassword(password),suppliedPassword?0:1,ts,ts));
-  if(tenantUsersTable)statements.push(env.DB.prepare("INSERT INTO tenant_users(tenant_id,user_id,status,external_id,source,created_at,updated_at) VALUES(?,?,'active',NULL,'manual',?,?) ON CONFLICT(tenant_id,user_id) DO UPDATE SET status='active',updated_at=excluded.updated_at").bind(tenantId,effectiveUserId,ts,ts));
+  if(tenantUsers.available)statements.push(tenantUserStatement(env,tenantUsers,tenantId,effectiveUserId,ts));
   statements.push(env.DB.prepare("INSERT INTO memberships(id,tenant_id,course_id,user_id,role,created_at) VALUES(?,?,?,?, 'tenant_admin',?)").bind(id('mem_'),tenantId,null,effectiveUserId,ts));
   statements.push(env.DB.prepare("INSERT INTO subscriptions(tenant_id,plan_id,status,starts_at) VALUES(?,?,'trial',?)").bind(tenantId,planId,ts));
   for(const f of defaultFeatures)statements.push(env.DB.prepare("INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at) VALUES(?,?,1,'plan',?)").bind(tenantId,f,ts));
@@ -81,7 +104,7 @@ async function provisionInternal(env:Env,actorUserId:string,input:ProvisionInput
     courseId=id('crs_');
     statements.push(env.DB.prepare('INSERT INTO courses(id,tenant_id,name,code,access_mode,access_code_hash,is_active,created_at,updated_at) VALUES(?,?,?,?,?,?,1,?,?)').bind(courseId,tenantId,safeString(input.course_name,200),slugify(input.course_code||input.course_name).slice(0,40),mode,accessHash,ts,ts));
   }
-  statements.push(env.DB.prepare("INSERT INTO provisioning_log(id,tenant_id,action,status,detail_json,created_at) VALUES(?,?,'tenant_created','completed',?,?)").bind(id('prv_'),tenantId,JSON.stringify({adminEmail:email,courseId,planId,actorUserId,tenantUsersLinked:tenantUsersTable}),ts));
+  statements.push(env.DB.prepare("INSERT INTO provisioning_log(id,tenant_id,action,status,detail_json,created_at) VALUES(?,?,'tenant_created','completed',?,?)").bind(id('prv_'),tenantId,JSON.stringify({adminEmail:email,courseId,planId,actorUserId,tenantUsersLinked:tenantUsers.available,tenantUsersColumns:tenantUsers.available?[...tenantUsers.columns].sort():[]}),ts));
   await env.DB.batch(statements);
 
   if(needsActivation){
@@ -96,7 +119,7 @@ async function provisionInternal(env:Env,actorUserId:string,input:ProvisionInput
   }
 
   try{
-    await audit(env.DB,actorUserId,'tenant.provisioned',tenantId,courseId,'tenant',tenantId,{adminEmail:email,planId,invitationSent:needsActivation,tenantUsersLinked:tenantUsersTable});
+    await audit(env.DB,actorUserId,'tenant.provisioned',tenantId,courseId,'tenant',tenantId,{adminEmail:email,planId,invitationSent:needsActivation,tenantUsersLinked:tenantUsers.available,tenantUsersColumns:tenantUsers.available?[...tenantUsers.columns].sort():[]});
   }catch(e){
     await cleanupProvisionedTenant(env,tenantId,effectiveUserId,!existing);
     await audit(env.DB,actorUserId,'tenant.provisioning_rolled_back',undefined,undefined,'tenant',tenantId,{adminEmail:email,reason:'AUDIT_WRITE_FAILED'}).catch(()=>undefined);
