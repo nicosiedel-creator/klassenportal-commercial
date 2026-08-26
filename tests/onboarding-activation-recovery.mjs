@@ -4,23 +4,31 @@ import { provisionTenantFromOnboarding } from '../dist/core/provision.js';
 
 const onboarding=await readFile('src/core/onboarding.ts','utf8');
 const provision=await readFile('src/core/provision.ts','utf8');
+const claimTombstoneMigration=await readFile('migrations/0089_onboarding_claim_tombstone.sql','utf8');
 const browserWorkflow=await readFile('.github/workflows/commercial-browser-e2e.yml','utf8');
 const browserE2E=await readFile('scripts/commercial-browser-e2e.mjs','utf8');
 const browserState=await readFile('scripts/commercial-onboarding-e2e-state.mjs','utf8');
 
 assert.match(onboarding,/LEGACY_PARTIAL_COMPLETION/,'legacy partial completions must be detected and compensated');
-assert.match(onboarding,/UPDATE onboarding_invitations SET status='open',processing_nonce=NULL,completed_at=NULL,tenant_id=NULL,form_json=NULL/,'successful compensation must reopen and fully release the same onboarding invitation');
+assert.match(onboarding,/UPDATE onboarding_invitations SET status='open',completed_at=NULL,tenant_id=NULL,form_json=NULL/,'successful compensation must reopen the same onboarding invitation without requiring mutated 0024 columns');
 assert.match(onboarding,/ONBOARDING_RECOVERY_REQUIRED/,'an unproven rollback must fail closed instead of allowing a duplicate activation');
 assert.match(onboarding,/onboarding\.rollback\.completed/,'successful compensation must leave an audit trail');
 assert.match(onboarding,/onboarding\.rollback\.failed/,'failed compensation must leave a best-effort audit trail');
 assert.match(onboarding,/DELETE FROM tenants WHERE id=\?/,'partial tenant data must be removed through tenant-scoped cascade cleanup');
-assert.match(onboarding,/SET status='processing',processing_nonce=\? WHERE id=\? AND status='open' AND expires_at>\?/,'the invitation row must be the atomic activation lock');
-assert.match(onboarding,/status='processing' AND processing_nonce=\?/,'provisioning must verify ownership of the exact activation nonce');
-assert.match(onboarding,/SET status='completed',processing_nonce=NULL,completed_at=\?,tenant_id=\?,form_json=\? WHERE id=\? AND status='processing' AND processing_nonce=\?/,'completion must consume only the exact owned processing state');
-assert.match(onboarding,/releaseUnprovisionedClaim/,'pre-provisioning failures must reopen only the owned processing claim');
+assert.match(onboarding,/INSERT INTO onboarding_claims\(invitation_id,nonce,claimed_at\)/,'0025 onboarding_claims must remain the atomic in-flight activation claim');
+assert.match(onboarding,/SELECT id FROM onboarding_invitations WHERE id=\? AND status='open' AND expires_at>\?/,'activation must re-check the invitation after acquiring its claim');
+assert.match(onboarding,/SET status='completed',completed_at=\?,tenant_id=\?,form_json=\? WHERE id=\? AND status='open'/,'completion must remain compatible with the original 0024 status CHECK');
+assert.doesNotMatch(onboarding,/processing_nonce/,'runtime onboarding must not depend on the processing_nonce column added by mutating an already-applied migration');
+assert.doesNotMatch(onboarding,/SET status='processing',processing_nonce/,'normal activation must never require the later processing status mutation');
 assert.match(onboarding,/INSERT INTO audit_log[\s\S]*onboarding\.completed/,'completion audit must commit in the same final batch as onboarding completion');
 assert.match(onboarding,/form_json=\?/,'a valid completed invitation must persist its full onboarding profile');
 assert.doesNotMatch(onboarding,/SET status='completed',completed_at=\?,tenant_id=\? WHERE id=\? AND status='open'/,'failure handling must never consume the invitation by marking a partial tenant completed');
+
+assert.match(claimTombstoneMigration,/CREATE TABLE IF NOT EXISTS onboarding_claim_tombstones/,'successful activations need a durable replay tombstone');
+assert.match(claimTombstoneMigration,/BEFORE DELETE ON onboarding_claims[\s\S]*status='completed'[\s\S]*INSERT OR IGNORE INTO onboarding_claim_tombstones/,'successful claim cleanup must atomically create the durable replay tombstone');
+assert.match(claimTombstoneMigration,/BEFORE INSERT ON onboarding_claims[\s\S]*onboarding_claim_tombstones[\s\S]*RAISE\(ABORT,'ONBOARDING_ALREADY_USED'\)/,'a stale concurrent request must never reacquire a completed invitation claim');
+assert.match(claimTombstoneMigration,/trg_onboarding_claim_block_revoke[\s\S]*NEW\.status='revoked'[\s\S]*onboarding_claims/,'revocation must not overtake a claimed activation');
+assert.match(claimTombstoneMigration,/trg_onboarding_claim_skip_expire[\s\S]*NEW\.status='expired'[\s\S]*RAISE\(IGNORE\)/,'expiry housekeeping must not steal an active claim');
 
 assert.match(provision,/cleanupProvisionedTenant/,'provisioning must have a compensating cleanup helper');
 assert.match(provision,/AUDIT_WRITE_FAILED/,'a provisioning audit failure must roll back the just-created tenant');
@@ -112,4 +120,4 @@ assert.match(browserState,/commercial_invoices/,'D1 post-state must verify invoi
 assert.match(browserState,/onboarding_claims/,'D1 post-state must verify claim cleanup');
 assert.match(browserState,/PAYMENTS_ENABLED/,'E2E state guard must keep payment processing disabled');
 
-console.log('Onboarding activation rollback + atomic claim + partial runtime-schema compatibility + real Wrangler-D1 browser persistence contract: OK');
+console.log('Onboarding activation rollback + legacy CHECK compatibility + durable replay tombstone + partial tenant_users runtime-schema compatibility + real Wrangler-D1 browser persistence contract: OK');
