@@ -1,0 +1,22 @@
+name: Diagnostic production D1 onboarding schema
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  schema-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read schema-only diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://kp-onb-schema-diag-20260827.nicosiedel.workers.dev/schema/1f5f2d72-646f-49f5-a671-30f8f4643658'
+          curl --fail-with-body --silent --show-error --max-time 30 "$url" | tee /tmp/schema.json
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/schema.json','utf8')); if(!x.schema||!Array.isArray(x.migrations)) process.exit(2); console.log(JSON.stringify(x));"
