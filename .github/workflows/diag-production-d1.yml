@@ -11,12 +11,32 @@ permissions:
 jobs:
   schema-probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Read schema-only diagnostic
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Wrangler
+        run: npm install --no-audit --no-fund
+      - name: Confirm Cloudflare credentials are present
         shell: bash
         run: |
           set -euo pipefail
-          url='https://kp-onb-schema-diag-20260827.nicosiedel.workers.dev/schema/1f5f2d72-646f-49f5-a671-30f8f4643658'
-          curl --fail-with-body --silent --show-error --max-time 30 "$url" | tee /tmp/schema.json
-          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/schema.json','utf8')); if(!x.schema||!Array.isArray(x.migrations)) process.exit(2); console.log(JSON.stringify(x));"
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'CLOUDFLARE_API_TOKEN_MISSING'; exit 2; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'CLOUDFLARE_ACCOUNT_ID_MISSING'; exit 2; }
+          echo 'Cloudflare credentials present.'
+      - name: Read production onboarding schema only
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql="SELECT 'onboarding_invitations' object, sql detail FROM sqlite_master WHERE type='table' AND name='onboarding_invitations' UNION ALL SELECT 'onboarding_claims', sql FROM sqlite_master WHERE type='table' AND name='onboarding_claims' UNION ALL SELECT 'onboarding_claim_tombstones', sql FROM sqlite_master WHERE type='table' AND name='onboarding_claim_tombstones' UNION ALL SELECT 'tenant_users', sql FROM sqlite_master WHERE type='table' AND name='tenant_users' UNION ALL SELECT 'tenant_profiles', sql FROM sqlite_master WHERE type='table' AND name='tenant_profiles' UNION ALL SELECT 'relevant_migrations', group_concat(name, ',') FROM d1_migrations WHERE name IN ('0024_customer_onboarding.sql','0025_onboarding_claims.sql','0026_commerce.sql','0027_pricing_trial.sql','0044_legal_documents_and_pilot.sql','0045_platform_offers.sql','0046_integrated_legal_documents.sql','0048_enterprise_hierarchy_sso_scim_api.sql','0089_onboarding_claim_tombstone.sql');"
+          npx wrangler d1 execute DB --remote --json --command "$sql" | tee /tmp/schema.json
+          echo '--- COLUMN SNAPSHOT ---'
+          for t in onboarding_invitations onboarding_claims onboarding_claim_tombstones tenant_profiles tenant_users commercial_quotes commercial_offer_acceptances commercial_offer_events tenant_trials tenant_entitlements commercial_orders commercial_invoices subscriptions tenants tenant_settings users memberships feature_flags provisioning_log; do
+            echo "TABLE:$t"
+            npx wrangler d1 execute DB --remote --json --command "PRAGMA table_info($t);"
+          done
