@@ -1,0 +1,8 @@
+{
+  "name": "wrangler",
+  "version": "4.20.0-diag.1",
+  "private": true,
+  "type": "module",
+  "bin": {"wrangler":"./bin.mjs"},
+  "dependencies": {"wrangler-real":"npm:wrangler@4.20.0"}
+}
