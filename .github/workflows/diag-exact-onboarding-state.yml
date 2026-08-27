@@ -11,23 +11,16 @@ permissions:
 jobs:
   read-state:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - name: Read non-sensitive production state flags
         shell: bash
         run: |
           set -euo pipefail
-          url='https://kp-onbdiag-20260827.nicosiedel.workers.dev/state/6d5c8da4b5e64c83927d9cd6dbe74ec2'
-          for i in $(seq 1 90); do
-            code=$(curl -sS --max-time 10 -o /tmp/state.json -w '%{http_code}' "$url?attempt=$i" || true)
-            if test "$code" = 200 && jq -e '.found != null and .status != null' /tmp/state.json >/dev/null 2>&1; then
-              echo 'EXACT_ONBOARDING_STATE='
-              cat /tmp/state.json
-              echo
-              exit 0
-            fi
-            sleep 5
-          done
-          echo 'Diagnostic Worker did not become available.' >&2
-          test -f /tmp/state.json && cat /tmp/state.json >&2 || true
-          exit 1
+          url='https://34598c07-klassenportal-commercial.nicosiedel.workers.dev/__diag/onboarding/6d5c8da4b5e64c83927d9cd6dbe74ec2'
+          code=$(curl -sS --max-time 30 -o /tmp/state.json -w '%{http_code}' "$url")
+          echo "HTTP=$code"
+          cat /tmp/state.json
+          echo
+          test "$code" = 200
+          jq -e '.found != null and .status != null' /tmp/state.json >/dev/null
