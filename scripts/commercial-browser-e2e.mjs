@@ -16,7 +16,7 @@ const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
 page.on('pageerror',e=>pageErrors.push(String(e)));
 page.on('console',msg=>{if(msg.type()==='error')consoleErrors.push(msg.text());});
-page.on('requestfailed',request=>failedRequests.push(`${request.method()} ${request.url()} :: ${request.failure()?.errorText||'failed'}`));
+page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';let path='';try{path=new URL(request.url()).pathname;}catch{}const expectedNavigationAbort=request.method()==='GET'&&path==='/pwa-client.js'&&errorText==='net::ERR_ABORTED';if(!expectedNavigationAbort)failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
 page.on('response',response=>{if(response.status()>=400)httpErrors.push({status:response.status(),url:response.url()});});
 
 async function route(path,{allowStatuses=[200],waitForResponsePath=null}={}){
@@ -114,6 +114,7 @@ async function concurrentOnboardingClaim(){
 }
 
 async function mobileOnboardingPreflight(){
+  if(!onboardingToken)fail('primary onboarding E2E fixture environment missing');
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   try{
     const mobile=await context.newPage(),response=await mobile.goto(`${base}/einrichtung/${encodeURIComponent(onboardingToken)}`,{waitUntil:'domcontentloaded',timeout:30000});
