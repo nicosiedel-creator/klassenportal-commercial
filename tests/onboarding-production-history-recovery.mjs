@@ -18,6 +18,7 @@ assert.doesNotMatch(forwardMigration,/SET\s+status\s*=\s*'processing'/i,'forward
 assert.match(runtimeSchema,/STALE_CLAIM_MS/,'runtime recovery must distinguish active claims from abandoned claims');
 assert.match(runtimeSchema,/actorUserId[\s\S]*onboarding:[\s\S]*provisioning_log/,'stale recovery must identify orphan tenants by the exact onboarding actor');
 assert.match(runtimeSchema,/status IN \('open','processing'\)/,'runtime recovery must understand legacy processing rows while reopening only recoverable states');
+assert.match(runtimeSchema,/if\(invitation\.status!=='open'&&invitation\.status!=='processing'\)return;/,'completed, revoked and expired invitations must never enter destructive stale recovery');
 assert.match(runtimeSchema,/ONBOARDING_RECOVERY_REQUIRED/,'unsafe recovery must remain fail closed');
 assert.match(runtimeSchema,/SELECT id FROM onboarding_invitations WHERE tenant_id=\? AND id<>\? AND status='completed'/,'recovery must never delete a tenant owned by another completed onboarding');
 assert.match(runtimeSchema,/requireColumns\(env,'provisioning_log'/,'runtime schema check must include the recovery evidence table');
@@ -28,6 +29,7 @@ assert.ok(ensurePos>=0&&offerPos>ensurePos,'onboarding schema compatibility must
 assert.match(runtimeRouter,/recoverOnboardingRequestState\(env,decodeURIComponent\(publicMatch\[1\]\)\)/,'public onboarding requests must run deterministic stale-state recovery before the core handler');
 
 assert.doesNotMatch(onboarding,/UPDATE onboarding_invitations SET status='processing'/,'rollback must never write processing because original production 0024 can reject it');
+assert.doesNotMatch(onboarding,/LEGACY_PARTIAL_COMPLETION/,'a completed tenant must never be inferred corrupt from missing legacy form data');
 assert.match(onboarding,/Keeping the[\s\S]*claim blocks duplicate provisioning/,'failed rollback must retain the claim instead of reopening an unproven state');
 assert.match(onboarding,/ONBOARDING_PROVISIONING_FAILED/,'raw provisioning failures must become a stable stage code');
 assert.match(onboarding,/ONBOARDING_COMMERCE_FAILED/,'raw commerce failures must become a stable stage code');
