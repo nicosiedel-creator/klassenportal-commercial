@@ -24,6 +24,53 @@ jobs:
           npm install --no-audit --no-fund
           npm install --no-save --ignore-scripts playwright@1.55.0
           npx playwright install --with-deps chromium
+      - name: Diagnose real custom-domain onboarding POST edge
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { chromium } from 'playwright';
+          const base='https://klassenportal.app';
+          const invalid='/api/onboarding/production-edge-diagnostic-invalid-token-20260827';
+          const browser=await chromium.launch({headless:true,args:['--disable-blink-features=AutomationControlled']});
+          try{
+            const context=await browser.newContext({
+              locale:'de-DE',
+              userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+              viewport:{width:1440,height:1000},
+            });
+            const page=await context.newPage();
+            const root=await page.goto(base+'/?onboarding_edge_probe=1',{waitUntil:'domcontentloaded',timeout:60000});
+            if(!root||root.status()!==200)throw new Error(`CUSTOM_DOMAIN_ROOT_STATUS_${root?.status()??'NONE'}`);
+            const result=await page.evaluate(async path=>{
+              const response=await fetch(path,{
+                method:'POST',
+                credentials:'same-origin',
+                cache:'no-store',
+                headers:{'content-type':'application/json'},
+                body:JSON.stringify({}),
+              });
+              const text=await response.text();
+              return {
+                status:response.status,
+                contentType:response.headers.get('content-type'),
+                cfMitigated:response.headers.get('cf-mitigated'),
+                server:response.headers.get('server'),
+                body:text.slice(0,500),
+              };
+            },invalid);
+            console.log('CUSTOM_DOMAIN_ONBOARDING_POST_DIAGNOSTIC='+JSON.stringify(result));
+            if(result.cfMitigated==='challenge')throw new Error('CUSTOM_DOMAIN_ONBOARDING_POST_WAF_CHALLENGED');
+            if(!String(result.contentType||'').toLowerCase().includes('application/json'))throw new Error(`CUSTOM_DOMAIN_ONBOARDING_POST_NON_JSON:${result.status}:${result.contentType||'missing'}`);
+            let data=null;try{data=JSON.parse(result.body);}catch{}
+            if(!data||typeof data!=='object')throw new Error(`CUSTOM_DOMAIN_ONBOARDING_POST_INVALID_JSON:${result.status}`);
+            if(result.status>=500)throw new Error(`CUSTOM_DOMAIN_ONBOARDING_POST_SERVER_ERROR:${result.status}:${data.error||'unknown'}`);
+            if(data.error!=='ONBOARDING_NOT_FOUND')throw new Error(`CUSTOM_DOMAIN_ONBOARDING_POST_UNEXPECTED_CONTRACT:${result.status}:${data.error||'missing'}`);
+            console.log('Real custom-domain onboarding POST reaches the Worker without a Cloudflare Challenge Page.');
+          }finally{
+            await browser.close();
+          }
+          NODE
       - name: Prepare exact local PR candidate and real onboarding fixtures
         shell: bash
         run: |
