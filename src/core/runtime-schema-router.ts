@@ -5,6 +5,7 @@ import { getPortalLayout, resetPortalLayout, savePortalLayout } from './portal-l
 import { createDemoFixturePhase, demoFixtureStatus, platformTenantDetail, updatePlatformTenant } from './platform-owner.js';
 import { handlePlatformOfferApi } from './platform-offer-router.js';
 import { ensureOfferSchema } from './offer-schema.js';
+import { ensureOnboardingSchema, recoverOnboardingRequestState } from './onboarding-schema.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { applyTimetable, previewTimetable } from './timetable-v2.js';
 import { deleteTimetableTargetAlias, listTimetableTargetAliases, prepareHierarchyAwareTimetableRequest, saveTimetableTargetAlias } from './timetable-hierarchy-targeting.js';
@@ -13,7 +14,7 @@ import { assertSameOrigin, json } from './utils.js';
 type RoutedError=Error&{issues?:unknown;targeting?:unknown};
 function error(e:unknown):Response{
   const ex=e as RoutedError,code=ex?.message||'INTERNAL_ERROR';
-  const status=code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'||code==='FORBIDDEN'||code==='FORBIDDEN_COURSE'||code==='TENANT_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code==='TIMETABLE_TARGET_REVIEW_REQUIRED'?409:code.includes('EXISTS')||code.includes('INVALID')||code.includes('REQUIRED')?400:500;
+  const status=code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'||code==='FORBIDDEN'||code==='FORBIDDEN_COURSE'||code==='TENANT_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code==='TIMETABLE_TARGET_REVIEW_REQUIRED'||code==='ONBOARDING_RECOVERY_REQUIRED'?409:code==='ONBOARDING_SCHEMA_INCOMPATIBLE'?503:code.includes('EXISTS')||code.includes('INVALID')||code.includes('REQUIRED')?400:500;
   return json({ok:false,error:code,issues:ex.issues,targeting:ex.targeting},status);
 }
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -21,7 +22,14 @@ async function body(request:Request):Promise<Record<string,unknown>>{try{return 
 export async function handleRuntimeSchemaApi(request:Request,env:Env):Promise<Response|null>{
   const offerApi=await handlePlatformOfferApi(request,env);if(offerApi)return offerApi;
   const u=new URL(request.url);
-  if(u.pathname.startsWith('/api/onboarding/')||u.pathname.startsWith('/api/platform/onboarding-invitations')){try{await ensureOfferSchema(env);}catch(e){return error(e);}}
+  if(u.pathname.startsWith('/api/onboarding/')||u.pathname.startsWith('/api/platform/onboarding-invitations')){
+    try{
+      await ensureOnboardingSchema(env);
+      await ensureOfferSchema(env);
+      const publicMatch=u.pathname.match(/^\/api\/onboarding\/([^/]+)/);
+      if(publicMatch)await recoverOnboardingRequestState(env,decodeURIComponent(publicMatch[1]));
+    }catch(e){return error(e);}
+  }
 
   if((u.pathname==='/api/timetable/preview'||u.pathname==='/api/timetable/apply')&&request.method==='POST'){
     try{

@@ -30,6 +30,10 @@ function publicErrorCode(error:unknown):string{
   const code=error instanceof Error?error.message:String(error||'');
   return /^[A-Z][A-Z0-9_]{2,80}$/.test(code)?code:'ONBOARDING_ACTIVATION_FAILED';
 }
+function stageError(error:unknown,fallback:string):Error{
+  const code=publicErrorCode(error);
+  return new Error(code==='ONBOARDING_ACTIVATION_FAILED'?fallback:code);
+}
 
 export async function createOnboardingInvitation(env:Env,auth:CoreAuthContext,request:Request):Promise<Record<string,unknown>>{
   requirePlatform(auth);
@@ -78,8 +82,8 @@ async function invitationById(env:Env,idValue:string):Promise<InvitationRow|null
 }
 
 async function rollbackProvisionedOnboarding(env:Env,args:{invitationId:string;tenantId:string;reason:string}):Promise<void>{
-  const admins=await env.DB.prepare("SELECT DISTINCT user_id FROM memberships WHERE tenant_id=? AND role='tenant_admin'").bind(args.tenantId).all<{user_id:string}>();
   try{
+    const admins=await env.DB.prepare("SELECT DISTINCT user_id FROM memberships WHERE tenant_id=? AND role='tenant_admin'").bind(args.tenantId).all<{user_id:string}>();
     // Tenant-scoped commerce/profile/content rows are removed by the existing FK cascades.
     // commercial_quotes.tenant_id is ON DELETE SET NULL, so an accepted quote remains reusable.
     await env.DB.prepare('DELETE FROM tenants WHERE id=?').bind(args.tenantId).run();
@@ -87,7 +91,6 @@ async function rollbackProvisionedOnboarding(env:Env,args:{invitationId:string;t
       env.DB.prepare("UPDATE onboarding_invitations SET status='open',completed_at=NULL,tenant_id=NULL,form_json=NULL WHERE id=?").bind(args.invitationId),
       env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=?').bind(args.invitationId),
     ]);
-
     for(const admin of admins.results??[]){
       await env.DB.prepare(`DELETE FROM users
         WHERE id=? AND is_platform_admin=0
@@ -97,11 +100,9 @@ async function rollbackProvisionedOnboarding(env:Env,args:{invitationId:string;t
     }
     await audit(env.DB,`onboarding:${args.invitationId}`,'onboarding.rollback.completed',undefined,undefined,'onboarding_invitation',args.invitationId,{tenantId:args.tenantId,reason:args.reason}).catch(()=>undefined);
   }catch(rollbackError){
-    // Never reopen a link when cleanup could not be proven. That would risk a duplicate tenant/order.
-    await env.DB.batch([
-      env.DB.prepare("UPDATE onboarding_invitations SET status='processing',completed_at=NULL WHERE id=?").bind(args.invitationId),
-      env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=?').bind(args.invitationId),
-    ]).catch(()=>undefined);
+    // Fail closed. Never write the historical `processing` status here: production databases
+    // can still have the original 0024 CHECK constraint that does not allow it. Keeping the
+    // claim blocks duplicate provisioning until deterministic stale-claim recovery succeeds.
     await audit(env.DB,`onboarding:${args.invitationId}`,'onboarding.rollback.failed',args.tenantId,undefined,'onboarding_invitation',args.invitationId,{reason:args.reason,error:publicErrorCode(rollbackError)}).catch(()=>undefined);
     throw new Error('ONBOARDING_RECOVERY_REQUIRED');
   }
@@ -164,40 +165,51 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
   const firstCourse=safeString(raw.first_course_name,200),firstCourseCode=safeString(raw.first_course_code,80),accessMode=['public','login'].includes(String(raw.access_mode||''))?String(raw.access_mode):'login';
   const nonce=id('claim_');
   try{await env.DB.prepare('INSERT INTO onboarding_claims(invitation_id,nonce,claimed_at) VALUES(?,?,?)').bind(invitation.id,nonce,nowIso()).run();}
-  catch{throw new Error('ONBOARDING_ALREADY_IN_PROGRESS');}
+  catch{
+    const tombstone=await env.DB.prepare('SELECT invitation_id FROM onboarding_claim_tombstones WHERE invitation_id=?').bind(invitation.id).first().catch(()=>null);
+    if(tombstone)throw new Error('ONBOARDING_ALREADY_COMPLETED');
+    const existing=await env.DB.prepare('SELECT invitation_id FROM onboarding_claims WHERE invitation_id=?').bind(invitation.id).first().catch(()=>null);
+    throw new Error(existing?'ONBOARDING_ALREADY_IN_PROGRESS':'ONBOARDING_CLAIM_FAILED');
+  }
 
   let provisioned:Awaited<ReturnType<typeof provisionTenantFromOnboarding>>|undefined;
   try{
     const stillOpen=await env.DB.prepare("SELECT id FROM onboarding_invitations WHERE id=? AND status='open' AND expires_at>?").bind(invitation.id,nowIso()).first();
     if(!stillOpen)throw new Error('ONBOARDING_UNAVAILABLE');
-    provisioned=await provisionTenantFromOnboarding(env,`onboarding:${invitation.id}`,{
-      name:legalName,portal_name:portalName,admin_name:adminName,admin_email:adminEmail,admin_password:password,
-      course_name:firstCourse||undefined,course_code:firstCourseCode||undefined,access_mode:accessMode,plan_id:invitation.plan_id,
-    });
+    try{
+      provisioned=await provisionTenantFromOnboarding(env,`onboarding:${invitation.id}`,{
+        name:legalName,portal_name:portalName,admin_name:adminName,admin_email:adminEmail,admin_password:password,
+        course_name:firstCourse||undefined,course_code:firstCourseCode||undefined,access_mode:accessMode,plan_id:invitation.plan_id,
+      });
+    }catch(e){throw stageError(e,'ONBOARDING_PROVISIONING_FAILED');}
 
     let commercial:Record<string,unknown>;
-    if(invitation.quote_id&&lockedOffer){
-      commercial=String(lockedOffer.offerKind)==='pilot'
-        ?await startPilotFromAcceptedOffer(env,{tenantId:provisioned.tenantId,quoteId:invitation.quote_id,invitationId:invitation.id,actorId:`onboarding:${invitation.id}`})
-        :await createPaidBookingFromAcceptedOffer(env,{tenantId:provisioned.tenantId,quoteId:invitation.quote_id,invitationId:invitation.id,actorId:`onboarding:${invitation.id}`});
-    }else if(commercialAction==='trial'){
-      commercial=await startTenantTrial(env,{tenantId:provisioned.tenantId,planId:invitation.plan_id,requestedCourseCount:requestedCourses,setupOptionId:'self_service',actorId:`onboarding:${invitation.id}`});
-    }else{
-      commercial=await createPaidBooking(env,{tenantId:provisioned.tenantId,invitationId:invitation.id,planId:invitation.plan_id,courseCount:requestedCourses,billingCycle,setupOptionId,accepted:acceptedOffer&&acceptedCosts,request,actorId:`onboarding:${invitation.id}`});
-    }
+    try{
+      if(invitation.quote_id&&lockedOffer){
+        commercial=String(lockedOffer.offerKind)==='pilot'
+          ?await startPilotFromAcceptedOffer(env,{tenantId:provisioned.tenantId,quoteId:invitation.quote_id,invitationId:invitation.id,actorId:`onboarding:${invitation.id}`})
+          :await createPaidBookingFromAcceptedOffer(env,{tenantId:provisioned.tenantId,quoteId:invitation.quote_id,invitationId:invitation.id,actorId:`onboarding:${invitation.id}`});
+      }else if(commercialAction==='trial'){
+        commercial=await startTenantTrial(env,{tenantId:provisioned.tenantId,planId:invitation.plan_id,requestedCourseCount:requestedCourses,setupOptionId:'self_service',actorId:`onboarding:${invitation.id}`});
+      }else{
+        commercial=await createPaidBooking(env,{tenantId:provisioned.tenantId,invitationId:invitation.id,planId:invitation.plan_id,courseCount:requestedCourses,billingCycle,setupOptionId,accepted:acceptedOffer&&acceptedCosts,request,actorId:`onboarding:${invitation.id}`});
+      }
+    }catch(e){throw stageError(e,'ONBOARDING_COMMERCE_FAILED');}
 
     const profile={legal_name:legalName,portal_name:portalName,contact_name:contactName,contact_email:contactEmail,phone:safeString(raw.phone,80),website:safeString(raw.website,250),street,postal_code:postal,city,country,billing_email:normalizeEmail(raw.billing_email||contactEmail),vat_id:safeString(raw.vat_id,80)||null,admin_name:adminName,admin_email:adminEmail,desired_course_count:requestedCourses,first_course_name:firstCourse||null,first_course_code:firstCourseCode||null,commercial_action:commercialAction,billing_cycle:billingCycle,managed_setup_option_id:setupOptionId,double_cost_confirmation:commercialAction==='book'&&(acceptedOffer&&acceptedCosts),quote_id:invitation.quote_id||null};
     const ts=nowIso(),actorId=`onboarding:${invitation.id}`,auditDetails={customerEmail:invitation.customer_email,requestedCourses,commercialAction,billingCycle,setupOptionId,quoteId:invitation.quote_id||null};
-    // Final customer profile, completion marker, claim release and audit entry commit together.
-    // A failure here leaves no false "completed" state; the catch below compensates the provisioned tenant.
-    await env.DB.batch([
-      env.DB.prepare(`INSERT INTO tenant_profiles(tenant_id,legal_name,contact_name,contact_email,phone,website,street,postal_code,city,country,billing_email,onboarding_invitation_id,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(provisioned.tenantId,legalName,contactName,contactEmail,safeString(raw.phone,80)||null,safeString(raw.website,250)||null,street,postal,city,country,normalizeEmail(raw.billing_email||contactEmail),invitation.id,ts),
-      env.DB.prepare("UPDATE onboarding_invitations SET status='completed',completed_at=?,tenant_id=?,form_json=? WHERE id=? AND status='open'").bind(ts,provisioned.tenantId,JSON.stringify(profile),invitation.id),
-      env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce),
-      env.DB.prepare('INSERT INTO audit_log(id,tenant_id,course_id,actor_user_id,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
-        .bind(id('aud_'),provisioned.tenantId,provisioned.courseId??null,actorId,'onboarding.completed','onboarding_invitation',invitation.id,JSON.stringify(auditDetails),ts),
-    ]);
+    try{
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO tenant_profiles(tenant_id,legal_name,contact_name,contact_email,phone,website,street,postal_code,city,country,billing_email,onboarding_invitation_id,updated_at)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(provisioned.tenantId,legalName,contactName,contactEmail,safeString(raw.phone,80)||null,safeString(raw.website,250)||null,street,postal,city,country,normalizeEmail(raw.billing_email||contactEmail),invitation.id,ts),
+        env.DB.prepare("UPDATE onboarding_invitations SET status='completed',completed_at=?,tenant_id=?,form_json=? WHERE id=? AND status='open'").bind(ts,provisioned.tenantId,JSON.stringify(profile),invitation.id),
+        env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce),
+        env.DB.prepare('INSERT INTO audit_log(id,tenant_id,course_id,actor_user_id,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
+          .bind(id('aud_'),provisioned.tenantId,provisioned.courseId??null,actorId,'onboarding.completed','onboarding_invitation',invitation.id,JSON.stringify(auditDetails),ts),
+      ]);
+      const completed=await env.DB.prepare("SELECT id FROM onboarding_invitations WHERE id=? AND status='completed' AND tenant_id=? AND form_json IS NOT NULL").bind(invitation.id,provisioned.tenantId).first();
+      if(!completed)throw new Error('ONBOARDING_FINALIZATION_FAILED');
+    }catch(e){throw stageError(e,'ONBOARDING_FINALIZATION_FAILED');}
     return{ok:true,tenant_id:provisioned.tenantId,login_email:adminEmail,commercial_action:commercialAction,commercial};
   }catch(e){
     const code=publicErrorCode(e);
