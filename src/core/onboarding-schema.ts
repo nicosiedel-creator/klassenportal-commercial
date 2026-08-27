@@ -2,7 +2,6 @@ import type { Env } from './types.js';
 import { audit } from './audit.js';
 import { nowIso, sha256Text } from './utils.js';
 
-type TableColumn={name:string;notnull:number;dflt_value:string|null;pk:number};
 type InvitationState={id:string;status:string;tenant_id:string|null;form_json:string|null};
 type ClaimState={invitation_id:string;claimed_at:string};
 
@@ -13,8 +12,8 @@ async function tableExists(env:Env,name:string):Promise<boolean>{
 }
 
 async function tableColumns(env:Env,name:string):Promise<Set<string>>{
-  const rows=await env.DB.prepare(`PRAGMA table_info(${name})`).all<TableColumn>();
-  return new Set((rows.results??[]).map(row=>String(row.name)));
+  const rows=await env.DB.prepare(`PRAGMA table_info(${name})`).all<Record<string,unknown>>();
+  return new Set((rows.results??[]).map(row=>String(row['name']??'' )).filter(Boolean));
 }
 
 async function requireColumns(env:Env,table:string,required:string[]):Promise<void>{
@@ -70,6 +69,7 @@ async function ensureRecoveryTables(env:Env):Promise<void>{
 export async function ensureOnboardingSchema(env:Env):Promise<void>{
   await requireColumns(env,'onboarding_invitations',['id','token_hash','customer_email','plan_id','status','expires_at','created_by','created_at','completed_at','tenant_id','form_json']);
   await requireColumns(env,'tenant_profiles',['tenant_id','legal_name','contact_name','contact_email','onboarding_invitation_id','updated_at']);
+  await requireColumns(env,'provisioning_log',['tenant_id','action','status','detail_json']);
   await ensureRecoveryTables(env);
   await requireColumns(env,'onboarding_claims',['invitation_id','nonce','claimed_at']);
   await requireColumns(env,'onboarding_claim_tombstones',['invitation_id','completed_at','recorded_at']);
@@ -132,8 +132,8 @@ export async function onboardingSchemaStatus(env:Env):Promise<{ready:boolean;iss
   try{await ensureOnboardingSchema(env);}catch{issues.push('onboarding_schema');}
   if(!issues.length){
     const requiredTriggers=['trg_onboarding_claim_tombstone_on_delete','trg_onboarding_claim_replay_guard','trg_onboarding_revoke_active_claim_guard','trg_onboarding_expiry_active_claim_guard'];
-    const rows=(await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name IN (${requiredTriggers.map(()=>'?').join(',')})`).bind(...requiredTriggers).all<{name:string}>()).results??[];
-    const names=new Set(rows.map(row=>row.name));
+    const rows=(await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name IN (${requiredTriggers.map(()=>'?').join(',')})`).bind(...requiredTriggers).all<Record<string,unknown>>()).results??[];
+    const names=new Set(rows.map(row=>String(row['name']??'')));
     for(const trigger of requiredTriggers)if(!names.has(trigger))issues.push(trigger);
   }
   return{ready:issues.length===0,issues};
