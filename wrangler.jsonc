@@ -1,12 +1,17 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "klassenportal-commercial",
-  "main": "src/exact-onboarding-diagnostic.ts",
+  "main": "src/index.ts",
   "compatibility_date": "2026-08-14",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
-  "preview_urls": true,
-  "routes": [],
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "klassenportal.app",
+      "custom_domain": true
+    }
+  ],
   "vars": {
     "APP_ORIGIN": "https://klassenportal.app",
     "MAIL_FROM": "Klassenportal <noreply@klassenportal.app>",
@@ -22,6 +27,9 @@
       "name": "EMAIL"
     }
   ],
+  "build": {
+    "command": "node scripts/workers-ci-guard.mjs"
+  },
   "version_metadata": {
     "binding": "CF_VERSION_METADATA"
   },
@@ -29,7 +37,36 @@
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/*"]
+    "run_worker_first": [
+      "/api/*",
+      "/scim/*",
+      "/sso/*",
+      "/eingang/*",
+      "/public/*",
+      "/brand/*",
+      "/calendar/*",
+      "/portal/*",
+      "/einrichtung/*",
+      "/angebot/*",
+      "/produkt*",
+      "/plattform-admin*",
+      "/kunden-admin*",
+      "/klassen-admin*",
+      "/dozentenportal*",
+      "/lernabend-vfa13*",
+      "/quiz/vfa13/*",
+      "/zahlung/*",
+      "/passwort-vergessen*",
+      "/passwort-zuruecksetzen*",
+      "/konto-aktivieren*",
+      "/impressum*",
+      "/datenschutz*",
+      "/agb*",
+      "/avv*",
+      "/unterauftragsverarbeiter*",
+      "/datenportabilitaet*",
+      "/rechtsverstoss-melden*"
+    ]
   },
   "d1_databases": [
     {
@@ -48,5 +85,8 @@
       "binding": "LEGACY_FILES",
       "bucket_name": "klassenportal-commercial-files"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["*/5 * * * *", "17 */6 * * *"]
+  }
 }
