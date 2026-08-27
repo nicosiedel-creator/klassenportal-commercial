@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - name: Wait for schema-only diagnostic on verification host
+      - name: Wait for schema-only diagnostic preview
         shell: bash
         run: |
           set -euo pipefail
-          url='https://klassenportal-commercial.nicosiedel.workers.dev/api/public/legal'
-          for i in $(seq 1 60); do
+          url='https://onbdiag-klassenportal-commercial.nicosiedel.workers.dev/api/public/legal'
+          for i in $(seq 1 72); do
             code=$(curl -sS --max-time 12 -o /tmp/legal.json -w '%{http_code}' "$url?diag=$i" || true)
             if test "$code" = 200 && jq -e '.legal.__onboardingSchemaDiagnostic.schema | type == "object"' /tmp/legal.json >/dev/null 2>&1; then
               jq '.legal.__onboardingSchemaDiagnostic' /tmp/legal.json
@@ -26,6 +26,6 @@ jobs:
             fi
             sleep 5
           done
-          echo 'Schema diagnostic did not become available on verification host.' >&2
+          echo 'Schema diagnostic preview did not become available.' >&2
           cat /tmp/legal.json >&2 || true
           exit 1
