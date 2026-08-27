@@ -2,7 +2,7 @@ import type { Env } from './types.js';
 import { audit } from './audit.js';
 import { nowIso, sha256Text } from './utils.js';
 
-type InvitationState={id:string;status:string;tenant_id:string|null;form_json:string|null};
+type InvitationState={id:string;status:string;tenant_id:string|null};
 type ClaimState={invitation_id:string;claimed_at:string};
 
 const STALE_CLAIM_MS=15*60_000;
@@ -13,7 +13,7 @@ async function tableExists(env:Env,name:string):Promise<boolean>{
 
 async function tableColumns(env:Env,name:string):Promise<Set<string>>{
   const rows=await env.DB.prepare(`PRAGMA table_info(${name})`).all<Record<string,unknown>>();
-  return new Set((rows.results??[]).map(row=>String(row['name']??'' )).filter(Boolean));
+  return new Set((rows.results??[]).map(row=>String(row['name']??'')).filter(Boolean));
 }
 
 async function requireColumns(env:Env,table:string,required:string[]):Promise<void>{
@@ -88,6 +88,7 @@ async function orphanTenants(env:Env,invitation:InvitationState):Promise<string[
 }
 
 async function recoverInterruptedState(env:Env,invitation:InvitationState,reason:string):Promise<void>{
+  if(invitation.status!=='open'&&invitation.status!=='processing')throw new Error('ONBOARDING_RECOVERY_REQUIRED');
   const tenantIds=await orphanTenants(env,invitation),adminIds=new Set<string>();
   for(const tenantId of tenantIds){
     const protectedTenant=await env.DB.prepare("SELECT id FROM onboarding_invitations WHERE tenant_id=? AND id<>? AND status='completed' LIMIT 1").bind(tenantId,invitation.id).first();
@@ -95,9 +96,8 @@ async function recoverInterruptedState(env:Env,invitation:InvitationState,reason
     const admins=await env.DB.prepare("SELECT DISTINCT user_id FROM memberships WHERE tenant_id=? AND role='tenant_admin'").bind(tenantId).all<{user_id:string}>();
     for(const admin of admins.results??[])adminIds.add(String(admin.user_id));
   }
-  const statements=[];
+  const statements=[env.DB.prepare("UPDATE onboarding_invitations SET status='open',completed_at=NULL,tenant_id=NULL,form_json=NULL WHERE id=? AND status IN ('open','processing')").bind(invitation.id)];
   for(const tenantId of tenantIds)statements.push(env.DB.prepare('DELETE FROM tenants WHERE id=?').bind(tenantId));
-  statements.push(env.DB.prepare("UPDATE onboarding_invitations SET status='open',completed_at=NULL,tenant_id=NULL,form_json=NULL WHERE id=? AND status IN ('open','processing')").bind(invitation.id));
   statements.push(env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=?').bind(invitation.id));
   try{await env.DB.batch(statements);}catch{throw new Error('ONBOARDING_RECOVERY_REQUIRED');}
 
@@ -114,8 +114,9 @@ async function recoverInterruptedState(env:Env,invitation:InvitationState,reason
 
 export async function recoverOnboardingRequestState(env:Env,token:string):Promise<void>{
   if(token.length<20||token.length>100)return;
-  const hash=await sha256Text(token),invitation=await env.DB.prepare('SELECT id,status,tenant_id,form_json FROM onboarding_invitations WHERE token_hash=?').bind(hash).first<InvitationState>();
+  const hash=await sha256Text(token),invitation=await env.DB.prepare('SELECT id,status,tenant_id FROM onboarding_invitations WHERE token_hash=?').bind(hash).first<InvitationState>();
   if(!invitation)return;
+  if(invitation.status!=='open'&&invitation.status!=='processing')return;
   const claim=await env.DB.prepare('SELECT invitation_id,claimed_at FROM onboarding_claims WHERE invitation_id=?').bind(invitation.id).first<ClaimState>();
   if(invitation.status==='processing'&&!claim){
     await recoverInterruptedState(env,invitation,'LEGACY_PROCESSING_WITHOUT_CLAIM');
