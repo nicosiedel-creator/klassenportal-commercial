@@ -19,6 +19,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Read production D1 onboarding schema diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://52df3238-klassenportal-commercial.nicosiedel.workers.dev/kp-onboarding-schema-diag-20260827.js'
+          echo "Reading read-only schema diagnostic from previous preview version."
+          curl --fail-with-body --silent --show-error --max-time 30 "$url" | tee /tmp/onboarding-schema-diag.js
+          grep -q '__KP_ONBOARDING_SCHEMA_DIAG__' /tmp/onboarding-schema-diag.js
       - name: Install project and Playwright Chromium
         run: |
           npm install --no-audit --no-fund
