@@ -77,18 +77,14 @@ async function invitationByToken(env:Env,token:string):Promise<InvitationRow|nul
   return env.DB.prepare('SELECT * FROM onboarding_invitations WHERE token_hash=?').bind(hash).first<InvitationRow>();
 }
 
-async function invitationById(env:Env,idValue:string):Promise<InvitationRow|null>{
-  return env.DB.prepare('SELECT * FROM onboarding_invitations WHERE id=?').bind(idValue).first<InvitationRow>();
-}
-
 async function rollbackProvisionedOnboarding(env:Env,args:{invitationId:string;tenantId:string;reason:string}):Promise<void>{
   try{
     const admins=await env.DB.prepare("SELECT DISTINCT user_id FROM memberships WHERE tenant_id=? AND role='tenant_admin'").bind(args.tenantId).all<{user_id:string}>();
-    // Tenant-scoped commerce/profile/content rows are removed by the existing FK cascades.
-    // commercial_quotes.tenant_id is ON DELETE SET NULL, so an accepted quote remains reusable.
-    await env.DB.prepare('DELETE FROM tenants WHERE id=?').bind(args.tenantId).run();
+    // Clear the invitation FK before deleting the tenant, in the same D1 batch. If any cleanup
+    // statement fails, the batch remains fail-closed instead of exposing an open link plus orphan tenant.
     await env.DB.batch([
-      env.DB.prepare("UPDATE onboarding_invitations SET status='open',completed_at=NULL,tenant_id=NULL,form_json=NULL WHERE id=?").bind(args.invitationId),
+      env.DB.prepare("UPDATE onboarding_invitations SET status='open',completed_at=NULL,tenant_id=NULL,form_json=NULL WHERE id=? AND status='open'").bind(args.invitationId),
+      env.DB.prepare('DELETE FROM tenants WHERE id=?').bind(args.tenantId),
       env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=?').bind(args.invitationId),
     ]);
     for(const admin of admins.results??[]){
@@ -108,29 +104,15 @@ async function rollbackProvisionedOnboarding(env:Env,args:{invitationId:string;t
   }
 }
 
-async function recoverInterruptedInvitation(env:Env,row:InvitationRow):Promise<InvitationRow>{
-  // The previous implementation marked post-provisioning failures as completed without form_json.
-  // That exact state is not a valid successful onboarding and is safe to compensate automatically.
-  if(row.status==='completed'&&row.tenant_id&&!row.form_json){
-    await rollbackProvisionedOnboarding(env,{invitationId:row.id,tenantId:row.tenant_id,reason:'LEGACY_PARTIAL_COMPLETION'});
-    const recovered=await invitationById(env,row.id);
-    if(!recovered)throw new Error('ONBOARDING_NOT_FOUND');
-    return recovered;
-  }
-  return row;
-}
-
 async function requireOpenInvitation(env:Env,token:string):Promise<InvitationRow>{
-  let row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
-  row=await recoverInterruptedInvitation(env,row);
+  const row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
   if(row.status==='open'&&row.expires_at<=nowIso()){await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE id=? AND status='open'").bind(row.id).run();row.status='expired';}
   if(row.status!=='open')throw new Error(row.status==='expired'?'ONBOARDING_EXPIRED':'ONBOARDING_UNAVAILABLE');
   return row;
 }
 
 export async function getPublicOnboarding(env:Env,token:string):Promise<Record<string,unknown>>{
-  let row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
-  row=await recoverInterruptedInvitation(env,row);
+  const row=await invitationByToken(env,token);if(!row)throw new Error('ONBOARDING_NOT_FOUND');
   if(row.status==='open'&&row.expires_at<=nowIso()){await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE id=? AND status='open'").bind(row.id).run();row.status='expired';}
   const policy=await getCommercePolicy(env),setupOptions=await listManagedSetupOptions(env);
   let lockedOffer:Record<string,unknown>|null=null;
