@@ -1,5 +1,5 @@
 import type { Env } from './types.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json } from './utils.js';
 import { changePassword, getSession, login, logout, resolveCoreAuth } from './auth.js';
 import { provisionTenant } from './provision.js';
 import { createContent, createCourse, deleteContent, deletePersonalGrade, getModules, getSettings, listContent, listCourses, listPersonalGrades, listTenants, savePersonalGrade, setExamVisibility, setModule, updateContent, updateCourse, updatePersonalGrade, updateSettings } from './data.js';
@@ -19,7 +19,7 @@ import { closeSurvey, createOrRotateCalendarFeed, createSubstitutionUpdate, crea
 
 function err(e:unknown):Response{
   const ex=e as Error&{issues?:unknown;targeting?:unknown};const code=ex?.message||'INTERNAL_ERROR';
-  const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
+  const status=authStatus(code)??(code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
     :code==='PASSWORD_CHANGE_REQUIRED'?428
     :code==='TRIAL_READ_ONLY'?423
     :code==='TRIAL_EXPIRED'||code==='ONBOARDING_EXPIRED'||code==='ONBOARDING_UNAVAILABLE'?410
@@ -28,7 +28,7 @@ function err(e:unknown):Response{
     :['ONBOARDING_ALREADY_IN_PROGRESS','ONBOARDING_ALREADY_COMPLETED','COURSE_LIMIT_REACHED','PRICING_NOT_CONFIGURED','SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','TIMETABLE_BATCH_CONFIRMATION_REQUIRED','TIMETABLE_INDIVIDUAL_CONFIRMATION_INVALID','CANNOT_REMOVE_OWN_TENANT_ADMIN','SURVEY_ALREADY_VOTED','SURVEY_CLOSED'].includes(code)?409
     :code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413
     :code==='LOGIN_RATE_LIMITED'?429
-    :code==='INTERNAL_ERROR'?500:400;
+    :code==='INTERNAL_ERROR'?500:400);
   return json({ok:false,error:code,issues:ex?.issues,targeting:ex?.targeting},status);
 }
 async function body(request:Request):Promise<Record<string,unknown>>{try{const b=await request.json() as Record<string,unknown>;if(b.course_id==='')b.course_id=null;return b;}catch{return{};}}

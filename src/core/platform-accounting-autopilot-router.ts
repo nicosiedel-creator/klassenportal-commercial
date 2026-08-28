@@ -1,10 +1,10 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json } from './utils.js';
 import { accountingAutopilotDashboard, accountingCloseCheck, autoMatchBankTransactions, importBankStatement, refreshDunningCases } from './platform-accounting-autopilot.js';
 
 async function body(r:Request):Promise<Record<string,unknown>>{try{return await r.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'ACCOUNTING_AUTOPILOT_ERROR');const status=code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code.includes('REQUIRED')?428:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=String((e as Error)?.message||'ACCOUNTING_AUTOPILOT_ERROR');const status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code.includes('REQUIRED')?428:400);return json({ok:false,error:code},status);}
 
 export async function handlePlatformAccountingAutopilotApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),p=u.pathname;if(!p.startsWith('/api/platform/accounting-autopilot'))return null;

@@ -1,7 +1,7 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json } from './utils.js';
 import { createDiscussionThread, listDiscussionMessages, listDiscussionThreads, listReportDefinitions, moderateDiscussionMessage, postDiscussionMessage, registerPushSubscription, revokePushSubscription, runSafeReport, saveDiscussionSettings, saveReportDefinition } from './collaboration-reporting.js';
 import { asStudentView, forbidClassAdminStudentData } from './student-role.js';
 import { classbookExportCsv, classbookExportHtml, deleteExamAuthorityProfile, listExamAuthorityProfiles, previewClassbookExport, reviewClassbookEntry, saveCourseExamAuthorityProfile, saveExamAuthorityProfile } from './exam-documentation.js';
@@ -10,7 +10,7 @@ import { requireDelegatedPrivilegeAccess } from './delegated-privilege.js';
 import { teacherAttendanceAuth } from './teacher-portal.js';
 
 async function body(r:Request):Promise<Record<string,unknown>>{try{return await r.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'COLLABORATION_ERROR');const status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('REQUIRED')||code.includes('DISABLED')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('LOCKED')||code.includes('RATE_LIMIT')||code.includes('OWNED')?409:code.includes('TOO_LARGE')?413:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=String((e as Error)?.message||'COLLABORATION_ERROR');const status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('REQUIRED')||code.includes('DISABLED')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('LOCKED')||code.includes('RATE_LIMIT')||code.includes('OWNED')?409:code.includes('TOO_LARGE')?413:400);return json({ok:false,error:code},status);}
 
 async function chatAuth(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string):Promise<CoreAuthContext>{
   if(auth.role==='class_admin')return asStudentView(auth);

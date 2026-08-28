@@ -1,14 +1,14 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json } from './utils.js';
 import { addQuestion, bulkGrade, cloneCourseTemplate, createQuestionBank, createQuiz, getQuizAttempt, listCourseTemplates, listQuizzes, manualGradeQuizAttempt, publishQuiz, saveCourseTemplate, saveQuizAnswer, startQuizAttempt, submitQuizAttempt } from './learning-suite.js';
 import { listBankQuestions, listQuestionBanks, listQuizAttemptsAdmin, setGradebookItemPolicy } from './learning-suite-management.js';
 import { safeAdvancedGradebook, safeOfficialGradeCsv, safeOfficialGradeReport, safeSaveGradebookCategory, safeSaveGradingScale } from './gradebook-correctness.js';
 import { asStudentView, forbidClassAdminStudentData } from './student-role.js';
 
 async function body(r:Request):Promise<Record<string,unknown>>{try{return await r.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'LEARNING_SUITE_ERROR');const status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.endsWith('_REQUIRED')?403:code.includes('NOT_FOUND')||code.includes('NOT_AVAILABLE')?404:code.includes('LOCKED')||code.includes('EXHAUSTED')||code.includes('CLOSED')||code.includes('EXPIRED')||code.includes('LIMIT_REACHED')?409:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=String((e as Error)?.message||'LEARNING_SUITE_ERROR');const status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.endsWith('_REQUIRED')?403:code.includes('NOT_FOUND')||code.includes('NOT_AVAILABLE')?404:code.includes('LOCKED')||code.includes('EXHAUSTED')||code.includes('CLOSED')||code.includes('EXPIRED')||code.includes('LIMIT_REACHED')?409:400);return json({ok:false,error:code},status);}
 
 export async function handleLearningSuiteApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),p=u.pathname;if(!p.startsWith('/api/learning-suite'))return null;

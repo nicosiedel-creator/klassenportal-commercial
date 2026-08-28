@@ -33,7 +33,16 @@ assert.match(auth,/Promise\.all\(\['org_permission_grants','org_units','course_o
 assert.match(auth,/if\(orgTables\.every\(Boolean\)\)/,'missing delegated-access schema must grant no extra delegated roles');
 assert.match(auth,/if\(!await tableExists\(env,'tenant_sso_configs'\)\)return/,'legacy databases may skip SSO only when the SSO table is proven absent');
 assert.doesNotMatch(auth,/enforceTenantSso[\s\S]{0,700}catch\(e\)/,'SSO query failures must propagate');
-assert.match(auth,/if\(tenantId\)\{if\(!a\.isPlatformAdmin&&!await tenantUserActive\(env,tenantId,s\.userId\)\)throw new Error\('TENANT_ACCESS_SUSPENDED'\)/,'platform admins must not require tenant_users membership for selected tenant administration');
+assert.match(auth,/if\(tenantId\)\{[\s\S]{0,200}if\(!a\.isPlatformAdmin\)\{[\s\S]{0,900}tenantUserActive\(env,tenantId,s\.userId\)/,'platform admins must not require tenant_users membership for selected tenant administration');
+// The tenant boundary must rest on proven membership. tenantUserActive is deliberately permissive
+// on databases created before tenant_users existed, so it can never be the only check, and the
+// fallback authorization context must not pretend the requested tenant is already granted.
+assert.doesNotMatch(auth,/tenantIds:tenantId\?\[tenantId\]:\[\]/,'the fallback authorization context must never seed the requested tenant into tenantIds');
+assert.match(auth,/if\(!a\.tenantIds\.includes\(tenantId\)\)\{[\s\S]{0,400}tenantMembershipExists\(env,tenantId,s\.userId\)/,'a caller without tenant access must be refused, and only a real member may be reported as suspended');
+{
+  const membershipCheck=auth.indexOf('!a.tenantIds.includes(tenantId)'),lifecycleCheck=auth.indexOf('tenantUserActive(env,tenantId,s.userId)');
+  assert.ok(membershipCheck>=0&&lifecycleCheck>membershipCheck,'membership must be proven before the tenant lifecycle link is consulted');
+}
 assert.match(enterprise,/sqlite_master WHERE type='table' AND name='tenant_users'/,'tenant status fallback requires proven legacy schema');
 assert.doesNotMatch(enterprise,/tenantUserActive[\s\S]{0,350}catch\{return true;\}/,'tenant access query failures must never be treated as active');
 assert.match(enterprise,/return !!x&&x\.status==='active'/,'modern tenant access must require active tenant_users row');

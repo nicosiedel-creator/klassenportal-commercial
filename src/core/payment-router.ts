@@ -10,18 +10,18 @@ import { listManagedSetupJobs, updateManagedSetupJob } from './managed-setup.js'
 import { customerSetupProgress } from './setup-progress.js';
 import { listPlatformModuleRules, quoteModuleSubscription, subscribeModule, tenantModuleCatalog, updatePlatformModuleRule } from './module-commerce.js';
 import { paymentPolicy, paymentsEnabled } from './payment-policy.js';
-import { assertSameOrigin, nowIso, safeString } from './utils.js';
+import { assertSameOrigin, authStatus, nowIso, safeString } from './utils.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status,headers:{'cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function error(e:unknown):Response{
   const code=(e as Error)?.message||'INTERNAL_ERROR';
-  const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
+  const status=authStatus(code)??(code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
     :code==='FORBIDDEN'||code==='PASSWORD_CHANGE_REQUIRED'||code==='ORIGIN_MISMATCH'||code==='CSRF_ORIGIN_MISMATCH'||code==='MODULE_SELF_SERVICE_DISABLED'?403
     :code==='STRIPE_NOT_CONFIGURED'||code==='PAYMENT_DISABLED'?503
     :code.includes('NOT_FOUND')?404
     :code.includes('REQUIRED')||code.includes('INVALID')||code.includes('CONFIRMATION')?400
-    :['SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','MODULE_ALREADY_ACTIVE','MODULE_PAYMENT_PENDING','MODULE_ALREADY_ON_SUBSCRIPTION'].includes(code)?409:500;
+    :['SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','MODULE_ALREADY_ACTIVE','MODULE_PAYMENT_PENDING','MODULE_ALREADY_ON_SUBSCRIPTION'].includes(code)?409:500);
   return out({ok:false,error:code},status);
 }
 function disabled():Response{return error(new Error('PAYMENT_DISABLED'));}

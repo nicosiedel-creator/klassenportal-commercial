@@ -1,7 +1,7 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json } from './utils.js';
 import { cancelTeamsMeeting, createOrSyncTeamsMeeting, disconnectMicrosoftAccount, finishMicrosoftConnection, getLessonMeeting, getMicrosoftConnectionStatus, linkTeamsMeeting, listCourseMeetings, startMicrosoftConnection } from './microsoft-graph.js';
 import { syncCourseMeetingAttendees } from './microsoft-course-invitations.js';
 import { listMeetingReadyLessons } from './microsoft-meeting-lessons.js';
@@ -9,13 +9,13 @@ import { listMeetingReadyLessons } from './microsoft-meeting-lessons.js';
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function errorResponse(error:unknown):Response{
   const code=String((error as Error)?.message||'MICROSOFT_INTEGRATION_ERROR');
-  const status=code==='UNAUTHENTICATED'?401
+  const status=authStatus(code)??(code==='UNAUTHENTICATED'?401
     :code.startsWith('FORBIDDEN')||code.includes('STRONG_AUTH_REQUIRED')||code.includes('PERMISSION_REQUIRED')||code.includes('ORGANIZER_MISMATCH')?403
     :code.includes('NOT_FOUND')?404
     :code.includes('RATE_LIMITED')?429
     :code.includes('NOT_CONNECTED')||code.includes('REAUTH_REQUIRED')?409
     :code.includes('CLIENT_ID_REQUIRED')||code.includes('CLIENT_SECRET_REQUIRED')||code.includes('REDIRECT_URI_REQUIRED')||code.includes('ENCRYPTION_KEY_REQUIRED')?503
-    :400;
+    :400);
   return json({ok:false,error:code},status);
 }
 function callbackHtml(ok:boolean,message:string):Response{

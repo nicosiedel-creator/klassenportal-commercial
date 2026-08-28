@@ -59,5 +59,34 @@ export async function changePassword(env:Env,request:Request):Promise<Response>{
 
 export function authForTenant(session:SessionUser,tenantId?:string,courseId?:string):CoreAuthContext{if(session.isPlatformAdmin)return{userId:session.userId,role:'platform_admin',tenantIds:tenantId?[tenantId]:session.tenantRoles.map(x=>x.tenantId),courseIds:courseId?[courseId]:[],orgUnitIds:[],permissions:[],isPlatformAdmin:true,session};const rows=session.tenantRoles.filter(x=>(!tenantId||x.tenantId===tenantId)&&(!courseId||x.courseId===null||x.courseId===courseId));if(!rows.length)throw new Error('FORBIDDEN');const rank:Record<string,number>={tenant_admin:4,class_admin:3,participant:2,guest:1},best=[...rows].sort((a,b)=>rank[b.role]-rank[a.role])[0];return{userId:session.userId,role:best.role,tenantIds:[...new Set(rows.map(x=>x.tenantId))],courseIds:rows.map(x=>x.courseId).filter((x):x is string=>!!x),orgUnitIds:[],permissions:[],isPlatformAdmin:false,session};}
 async function enforceTenantSso(env:Env,session:SessionUser,tenantId:string):Promise<void>{if(session.isPlatformAdmin)return;if(!await tableExists(env,'tenant_sso_configs'))return;const cfg=await env.DB.prepare('SELECT enabled,enforce_sso,break_glass_user_id FROM tenant_sso_configs WHERE tenant_id=?').bind(tenantId).first<{enabled:number;enforce_sso:number;break_glass_user_id:string|null}>();if(!cfg||!cfg.enabled||!cfg.enforce_sso)return;if(cfg.break_glass_user_id===session.userId)return;if(session.authMethod!=='oidc'||session.authTenantId!==tenantId)throw new Error('SSO_REQUIRED');}
-export async function resolveCoreAuth(env:Env,request:Request,tenantId?:string,courseId?:string):Promise<CoreAuthContext>{const s=await getSession(env,request);if(!s)throw new Error('UNAUTHENTICATED');if(s.mustChangePassword)throw new Error('PASSWORD_CHANGE_REQUIRED');let base:CoreAuthContext;try{base=authForTenant(s,tenantId,courseId);}catch(e){if((e as Error).message!=='FORBIDDEN')throw e;base={userId:s.userId,role:'guest',tenantIds:tenantId?[tenantId]:[],courseIds:[],orgUnitIds:[],permissions:[],isPlatformAdmin:false,session:s};}const a=await augmentOrgAuth(env,base,tenantId);if(tenantId){if(!a.isPlatformAdmin&&!await tenantUserActive(env,tenantId,s.userId))throw new Error('TENANT_ACCESS_SUSPENDED');if(!a.isPlatformAdmin&&!a.tenantIds.includes(tenantId))throw new Error('FORBIDDEN');await enforceTenantSso(env,s,tenantId);if(courseId&&!a.isPlatformAdmin&&a.role!=='tenant_admin'&&!a.courseIds.includes(courseId))throw new Error('FORBIDDEN_COURSE');}else if(!a.isPlatformAdmin&&!a.tenantIds.length)throw new Error('FORBIDDEN');return a;}
+async function tenantMembershipExists(env:Env,tenantId:string,userId:string):Promise<boolean>{return !!await env.DB.prepare('SELECT 1 AS ok FROM memberships WHERE tenant_id=? AND user_id=? LIMIT 1').bind(tenantId,userId).first();}
+
+export async function resolveCoreAuth(env:Env,request:Request,tenantId?:string,courseId?:string):Promise<CoreAuthContext>{
+  const s=await getSession(env,request);if(!s)throw new Error('UNAUTHENTICATED');if(s.mustChangePassword)throw new Error('PASSWORD_CHANGE_REQUIRED');
+  let base:CoreAuthContext;
+  try{base=authForTenant(s,tenantId,courseId);}
+  catch(e){
+    if((e as Error).message!=='FORBIDDEN')throw e;
+    // No membership grants this tenant. Start from no tenant access at all: augmentOrgAuth still
+    // adds the tenant when an org permission grant or responsibility assignment covers it. Seeding
+    // the requested tenant here would make the membership check below unreachable and leave the
+    // whole tenant boundary resting on tenant_users, which is deliberately permissive on databases
+    // created before that table existed.
+    base={userId:s.userId,role:'guest',tenantIds:[],courseIds:[],orgUnitIds:[],permissions:[],isPlatformAdmin:false,session:s};
+  }
+  const a=await augmentOrgAuth(env,base,tenantId);
+  if(tenantId){
+    if(!a.isPlatformAdmin){
+      if(!a.tenantIds.includes(tenantId)){
+        // A caller who is a member but whose tenant lifecycle link is not active is suspended;
+        // a caller with no relationship to the tenant is simply forbidden. Both deny access.
+        throw new Error(await tenantMembershipExists(env,tenantId,s.userId)?'TENANT_ACCESS_SUSPENDED':'FORBIDDEN');
+      }
+      if(!await tenantUserActive(env,tenantId,s.userId))throw new Error('TENANT_ACCESS_SUSPENDED');
+    }
+    await enforceTenantSso(env,s,tenantId);
+    if(courseId&&!a.isPlatformAdmin&&a.role!=='tenant_admin'&&!a.courseIds.includes(courseId))throw new Error('FORBIDDEN_COURSE');
+  }else if(!a.isPlatformAdmin&&!a.tenantIds.length)throw new Error('FORBIDDEN');
+  return a;
+}
 export async function resolvePortabilityAuth(env:Env,request:Request):Promise<PortabilityAuth>{const url=new URL(request.url),tenantId=url.searchParams.get('tenant_id')??undefined,a=await resolveCoreAuth(env,request,tenantId);return{userId:a.userId,role:a.role,tenantIds:a.tenantIds,isPlatformAdmin:a.isPlatformAdmin};}

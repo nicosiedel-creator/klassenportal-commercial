@@ -3,6 +3,19 @@ export const encoder = new TextEncoder();
 export function nowIso(): string { return new Date().toISOString(); }
 export function id(prefix: string): string { return `${prefix}${crypto.randomUUID()}`; }
 
+// Authentication and authorization outcomes must look the same on every route. Each router keeps
+// its own domain status mapping, but consults this first so a denial can never surface as a 400
+// "bad request" or a 500 "server error" just because one mapping did not list the code.
+const AUTH_STATUS:Record<string,number>={
+  UNAUTHENTICATED:401,LOGIN_REQUIRED:401,
+  PASSWORD_CHANGE_REQUIRED:428,
+  FORBIDDEN:403,FORBIDDEN_ROLE:403,FORBIDDEN_COURSE:403,FORBIDDEN_PERMISSION:403,
+  PLATFORM_ADMIN_REQUIRED:403,TENANT_ADMIN_REQUIRED:403,
+  TENANT_ACCESS_SUSPENDED:403,SSO_REQUIRED:403,SUPPORT_READ_ONLY:403,
+  ORIGIN_MISMATCH:403,CSRF_ORIGIN_MISMATCH:403,PLATFORM_ORIGIN_MISMATCH:403,
+};
+export function authStatus(code:string):number|null{return AUTH_STATUS[code]??(code.startsWith('FORBIDDEN')||code.endsWith('_ADMIN_REQUIRED')?403:null);}
+
 export function json(data: unknown, status = 200, headers: HeadersInit = {}): Response {
   return new Response(JSON.stringify(data), {
     status,

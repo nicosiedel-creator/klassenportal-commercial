@@ -9,12 +9,12 @@ import { ensureOnboardingSchema, recoverOnboardingRequestState } from './onboard
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { applyTimetable, previewTimetable } from './timetable-v2.js';
 import { deleteTimetableTargetAlias, listTimetableTargetAliases, prepareHierarchyAwareTimetableRequest, saveTimetableTargetAlias } from './timetable-hierarchy-targeting.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json } from './utils.js';
 
 type RoutedError=Error&{issues?:unknown;targeting?:unknown};
 function error(e:unknown):Response{
   const ex=e as RoutedError,code=ex?.message||'INTERNAL_ERROR';
-  const status=code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'||code==='FORBIDDEN'||code==='FORBIDDEN_COURSE'||code==='TENANT_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code==='TIMETABLE_TARGET_REVIEW_REQUIRED'||code==='ONBOARDING_RECOVERY_REQUIRED'?409:code==='ONBOARDING_SCHEMA_INCOMPATIBLE'?503:code.includes('EXISTS')||code.includes('INVALID')||code.includes('REQUIRED')?400:500;
+  const status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'||code==='FORBIDDEN'||code==='FORBIDDEN_COURSE'||code==='TENANT_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code==='TIMETABLE_TARGET_REVIEW_REQUIRED'||code==='ONBOARDING_RECOVERY_REQUIRED'?409:code==='ONBOARDING_SCHEMA_INCOMPATIBLE'?503:code.includes('EXISTS')||code.includes('INVALID')||code.includes('REQUIRED')?400:500);
   return json({ok:false,error:code,issues:ex.issues,targeting:ex.targeting},status);
 }
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}

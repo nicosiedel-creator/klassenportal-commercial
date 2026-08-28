@@ -1,10 +1,10 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json } from './utils.js';
 import { accountingDashboard, approveExpense, closeAccountingPeriod, createExpense, ensureAccountingDefaults, exportAccounting, postEntry, reopenAccountingPeriod, reverseEntry, saveAccountingSettings, syncCommercialAccounting, syncStripeFees, updateAccountMapping } from './platform-accounting.js';
 
 async function body(r:Request):Promise<Record<string,unknown>>{try{return await r.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'ACCOUNTING_ERROR');const status=code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code.includes('CLOSED')||code.includes('NOT_DRAFT')||code.includes('NOT_REVERSIBLE')||code.includes('HAS_DRAFTS')?409:code.includes('REQUIRED')||code.includes('NOT_CONFIGURED')?428:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=String((e as Error)?.message||'ACCOUNTING_ERROR');const status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code.includes('CLOSED')||code.includes('NOT_DRAFT')||code.includes('NOT_REVERSIBLE')||code.includes('HAS_DRAFTS')?409:code.includes('REQUIRED')||code.includes('NOT_CONFIGURED')?428:400);return json({ok:false,error:code},status);}
 export async function handlePlatformAccountingApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),p=u.pathname;if(!p.startsWith('/api/platform/accounting'))return null;
   try{assertSameOrigin(request,env.APP_ORIGIN);const auth=await resolveCoreAuth(env,request);await ensureAccountingDefaults(env,auth);
