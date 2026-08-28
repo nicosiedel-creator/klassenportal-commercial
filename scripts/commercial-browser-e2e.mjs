@@ -19,6 +19,11 @@ const raceToken=String(process.env.E2E_ONBOARDING_RACE_TOKEN||'').trim();
 const raceAdmin=String(process.env.E2E_ONBOARDING_RACE_ADMIN||'').trim();
 const racePassword=String(process.env.E2E_ONBOARDING_RACE_PASSWORD||'');
 const fail=(msg)=>{throw new Error(msg);};
+// Firefox kennt die Geräte-Emulation isMobile/hasTouch nicht und weist den Kontext rundweg ab.
+// Der Zweck der mobilen Prüfung ist aber das schmale Fenster und die mobile Kennung - beides
+// kann Firefox. Also nur die Emulationsschalter weglassen, statt die Prüfung dort auszulassen.
+const supportsDeviceEmulation=engineName!=='firefox';
+const mobileContext=extra=>({viewport:{width:390,height:844},...(supportsDeviceEmulation?{isMobile:true,hasTouch:true}:{}),...extra});
 const browser=await engine.launch({headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
@@ -147,7 +152,7 @@ async function concurrentOnboardingClaim(){
 
 async function mobileOnboardingPreflight(){
   if(!onboardingToken)fail('primary onboarding E2E fixture environment missing');
-  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  const context=await browser.newContext(mobileContext());
   try{
     const mobile=await context.newPage(),response=await navigate(mobile,`${base}/einrichtung/${encodeURIComponent(onboardingToken)}`,{waitUntil:'domcontentloaded',timeout:30000});
     if(!response||response.status()!==200)fail(`mobile onboarding returned ${response?.status()??'no response'}`);
@@ -209,7 +214,7 @@ async function lockedProductionSurface(){
 }
 
 async function mobileSurface(){
-  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/138.0.0.0 Mobile Safari/537.36'});
+  const context=await browser.newContext(mobileContext({userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/138.0.0.0 Mobile Safari/537.36'}));
   const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
   mobile.on('pageerror',e=>errors.push(String(e)));
   mobile.on('requestfailed',r=>{const errorText=r.failure()?.errorText||'failed';if(navigationAbort(r,errorText))return;failed.push(`${r.method()} ${r.url()} :: ${errorText}`);});
