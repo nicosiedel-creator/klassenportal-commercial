@@ -2,10 +2,10 @@ import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { consumeAccountToken, createActivationForUser, inspectAccountToken, requestPasswordReset } from './account-recovery.js';
 import { requireRole } from './permissions.js';
-import { assertSameOrigin, authStatus, json } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown):Response{const code=String((e as Error)?.message||'INTERNAL_ERROR');const status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('EXPIRED')?410:code.includes('INVALID')||code.includes('REQUIRED')||code.includes('LENGTH')?400:code.includes('NOT_CONFIGURED')?503:code.includes('NOT_FOUND')?404:500);return json({ok:false,error:code},status);}
+function fail(e:unknown):Response{const code=safeErrorCode(e);const status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('EXPIRED')?410:code.includes('INVALID')||code.includes('REQUIRED')||code.includes('LENGTH')?400:code.includes('NOT_CONFIGURED')?503:code.includes('NOT_FOUND')?404:500);return json({ok:false,error:code},status);}
 export async function handleAccountRecoveryApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url);
   try{

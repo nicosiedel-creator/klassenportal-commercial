@@ -7,11 +7,11 @@ import { verifyBackup } from './backup-verification.js';
 import { submitLegalContentReport } from './legal-content-report.js';
 import { publicProduct } from './public-product.js';
 import { copyEuStorageBatch, euStorageMigrationStatus, finalizeEuStorageMigration } from './eu-storage-migration.js';
-import { assertSameOrigin, authStatus, json } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function fail(e:unknown):Response{
-  const code=String((e as Error)?.message||'INTERNAL_ERROR');
+  const code=safeErrorCode(e);
   const status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.includes('ADMIN_REQUIRED')||code.startsWith('FORBIDDEN')||code==='CURRENT_PASSWORD_INVALID'?403:code.includes('NOT_FOUND')?404:code==='LEGAL_REPORT_RATE_LIMITED'?429:code.includes('NOT_READY')||code.includes('NOT_ACTIVE')||code.includes('STATE_CHANGED')?409:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('CONFIRMATION')?400:500);
   return json({ok:false,error:code},status);
 }

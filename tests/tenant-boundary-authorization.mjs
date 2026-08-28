@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { resolveCoreAuth } from '../dist/core/auth.js';
-import { authStatus, sha256Text } from '../dist/core/utils.js';
+import { authStatus, safeErrorCode, sha256Text } from '../dist/core/utils.js';
 
 // A minimal D1 adapter over node:sqlite so the real authorization code runs against real SQL
 // instead of a hand-stubbed mock that can silently drift from the queries it is meant to model.
@@ -115,17 +115,34 @@ async function denial(env,token,tenantId){
 // request or a server error, on every router.
 assert.equal(authStatus('FORBIDDEN'),403);
 assert.equal(authStatus('TENANT_ACCESS_SUSPENDED'),403);
-assert.equal(authStatus('SSO_REQUIRED'),403);
+assert.equal(authStatus('SSO_REQUIRED'),401,'an SSO-enforced tenant asks the caller to authenticate again, not to give up');
 assert.equal(authStatus('FORBIDDEN_PERMISSION'),403);
 assert.equal(authStatus('PLATFORM_ADMIN_REQUIRED'),403);
 assert.equal(authStatus('TENANT_ADMIN_REQUIRED'),403);
 assert.equal(authStatus('UNAUTHENTICATED'),401);
+assert.equal(authStatus('INTERNAL_ERROR'),500,'a redacted internal error must never be reported as a bad request');
 assert.equal(authStatus('COURSE_NOT_FOUND'),null,'domain codes must stay with the router that owns them');
+
+// No route may return a raw storage or runtime message. Only stable codes leave the Worker.
+assert.equal(safeErrorCode(new Error('FORBIDDEN')),'FORBIDDEN');
+assert.equal(safeErrorCode(new Error('D1_ERROR: UNIQUE constraint failed: courses.tenant_id, courses.code: SQLITE_CONSTRAINT')),'INTERNAL_ERROR','a storage constraint message must never reach the caller');
+assert.equal(safeErrorCode(new TypeError("Cannot read properties of undefined (reading 'id')")),'INTERNAL_ERROR');
+assert.equal(safeErrorCode(new Error('no such table: main.tenants')),'INTERNAL_ERROR');
+assert.equal(safeErrorCode(undefined),'INTERNAL_ERROR');
 
 const routers=['router','runtime-schema-router','payment-router','billing-lifecycle-router','platform-offer-router','launch-readiness-router','owner-security-router','custom-domain-router','account-recovery-router','collaboration-reporting-router','education-operations-router','learning-suite-router','live-study-router','microsoft-graph-router','platform-accounting-router','platform-accounting-autopilot-router'];
 for(const name of routers){
   const source=await readFile(`src/core/${name}.ts`,'utf8');
   assert.match(source,/const status=authStatus\(code\)\?\?\(/,`${name} must map authorization failures through the shared contract`);
+}
+
+// Every router that answers /api must redact unexpected errors before returning them.
+const routerFiles=(await readdir('src/core')).filter(name=>name.endsWith('-router.ts')).concat('router.ts');
+for(const file of routerFiles){
+  const source=await readFile(`src/core/${file}`,'utf8');
+  if(!/json\(\{ok:false,error:/.test(source))continue;
+  assert.match(source,/safeErrorCode\(/,`src/core/${file} must not return raw error messages to the caller`);
+  assert.doesNotMatch(source,/error:String\(\(e(rror)? as Error\)\?\.message/,`src/core/${file} must not return raw error messages to the caller`);
 }
 
 console.log('Tenant boundary authorization, legacy-schema fail-closed behaviour and shared authorization status contract: OK');

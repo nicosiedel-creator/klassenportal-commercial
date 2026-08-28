@@ -2,7 +2,7 @@ import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { participant360, participant360Candidates } from './participant-360.js';
 import { forbidClassAdminStudentData } from './student-role.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
 import { handleEducationOperationsApi } from './education-operations-router.js';
 import { handleEducationOsApi } from './education-os-router.js';
 import { handleEducationRoleInsightsApi } from './education-role-insights-router.js';
@@ -14,7 +14,7 @@ import { handlePlanningApi } from './planning-router.js';
 import { handlePersonalCompassApi } from './education-personal-compass-router.js';
 import { handleTrainingMoatApi } from './training-moat-router.js';
 
-function fail(e:unknown){const code=String((e as Error)?.message||'PARTICIPANT_360_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(code.includes('NOT_FOUND')?404:400);return json({ok:false,error:code},status);}
 export async function handleParticipant360Api(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;
   const moat=await handleTrainingMoatApi(request,env);if(moat)return moat;

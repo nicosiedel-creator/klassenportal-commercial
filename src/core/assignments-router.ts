@@ -1,13 +1,13 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
 import { configureAssignment, courseGradebook, deleteMySubmissionFile, downloadSubmissionFile, gradeSubmission, listAssignments, listAssignmentSubmissions, myOfficialGrades, returnSubmission, saveMySubmission, submitMyAssignment, uploadMySubmissionFile, withdrawMyAssignment } from './assignments-gradebook.js';
 import { listMyAssignmentStates, updateMyAssignmentState } from './assignment-participant-state.js';
 import { asStudentView, forbidClassAdminStudentData } from './student-role.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'ASSIGNMENT_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('REQUIRED')&&code.startsWith('PARTICIPANT')?403:code.includes('NOT_FOUND')?404:code.includes('TOO_LARGE')?413:code.includes('DEADLINE')||code.includes('LOCKED')||code.includes('SUBMITTED')||code.includes('GRADABLE')||code.includes('RETURNABLE')||code.includes('WITHDRAWAL')||code.includes('COMPLETION')?409:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('REQUIRED')&&code.startsWith('PARTICIPANT')?403:code.includes('NOT_FOUND')?404:code.includes('TOO_LARGE')?413:code.includes('DEADLINE')||code.includes('LOCKED')||code.includes('SUBMITTED')||code.includes('GRADABLE')||code.includes('RETURNABLE')||code.includes('WITHDRAWAL')||code.includes('COMPLETION')?409:400);return json({ok:false,error:code},status);}
 
 export async function handleAssignmentsApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;if(!path.startsWith('/api/assignments')&&!path.startsWith('/api/gradebook'))return null;

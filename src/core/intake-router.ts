@@ -1,10 +1,11 @@
 import type { CoreAuthContext, Env } from './types.js';
+import { authStatus, safeErrorCode } from './utils.js';
 import { configuredMailProvider, euStrict } from './data-residency.js';
 import { renderSecureIntakeUploadPage } from './secure-intake-page.js';
 import { addIntakeSubmitter, applyIntakeBatch, completeAutomationTask, createIntakeChannel, createIntakeUploadLink, getIntakeBatch, getIntakeDocument, getIntakeOverview, handleIntakePublicUpload, previewIntakeBatch, revokeIntakeChannel, revokeIntakeSubmitter, updateIntakeSettings } from './intake-center.js';
 
 function json(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
-function fail(e:unknown){const code=String((e as Error)?.message||'INTAKE_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('RATE_LIMITED')?429:code.includes('EXPIRED')||code.includes('INVALID')&&code.includes('LINK')?410:code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413:code.includes('REQUIRED')||code.includes('INVALID')?400:500;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('RATE_LIMITED')?429:code.includes('EXPIRED')||code.includes('INVALID')&&code.includes('LINK')?410:code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413:code.includes('REQUIRED')||code.includes('INVALID')?400:500);return json({ok:false,error:code},status);}
 async function body(request:Request){try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function inboundReady(env:Env){return configuredMailProvider(env)==='cloudflare_email'&&!!String(env.INBOUND_MAIL_DOMAIN||'').trim();}
 

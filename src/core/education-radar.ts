@@ -1,7 +1,7 @@
 import type { CoreAuthContext, Env, SessionUser } from './types.js';
 import { buildEducationTwin } from './education-twin.js';
 import { hasPermission } from './enterprise-access.js';
-import { id, nowIso } from './utils.js';
+import { id, nowIso, safeErrorCode } from './utils.js';
 import { audit } from './audit.js';
 
 interface RiskDraft{key:string;course_id?:string|null;category:string;severity:'info'|'low'|'medium'|'high'|'critical';horizon_date?:string|null;title:string;detail:Record<string,unknown>;evidence:Record<string,unknown>;scenario_type?:string|null;scenario_input?:Record<string,unknown>|null;}
@@ -35,7 +35,7 @@ export async function scanTenantFutureRadar(env:Env,tenantId:string){
   const ts=nowIso(),open=(await env.DB.prepare("SELECT id,risk_key FROM education_risks WHERE tenant_id=? AND status<>'resolved'").bind(tenantId).all<{id:string;risk_key:string}>()).results??[];for(const r of open)if(!seen.has(r.risk_key))await env.DB.prepare("UPDATE education_risks SET status='resolved',resolved_at=?,last_seen_at=? WHERE tenant_id=? AND id=?").bind(ts,ts,tenantId,r.id).run();return{tenant_id:tenantId,risks_seen:seen.size,open_high:(await env.DB.prepare("SELECT COUNT(*) n FROM education_risks WHERE tenant_id=? AND status='open' AND severity IN ('high','critical')").bind(tenantId).first<{n:number}>())?.n||0,courses:(p.courses||[]).length,course_names:Object.fromEntries([...courseMap].map(([k,v])=>[k,v.name]))};
 }
 
-export async function runFutureRadarAllTenants(env:Env){const tenants=(await env.DB.prepare("SELECT id FROM tenants WHERE status='active'").all<{id:string}>()).results??[],results:Record<string,unknown>[]=[];for(const t of tenants){try{results.push(await scanTenantFutureRadar(env,t.id));}catch(e){results.push({tenant_id:t.id,error:String((e as Error)?.message||e)});}}return{tenants:tenants.length,results};}
+export async function runFutureRadarAllTenants(env:Env){const tenants=(await env.DB.prepare("SELECT id FROM tenants WHERE status='active'").all<{id:string}>()).results??[],results:Record<string,unknown>[]=[];for(const t of tenants){try{results.push(await scanTenantFutureRadar(env,t.id));}catch(e){results.push({tenant_id:t.id,error:safeErrorCode(e)});}}return{tenants:tenants.length,results};}
 
 export async function listEducationRisks(env:Env,auth:CoreAuthContext,tenantId:string,status='open'){
   if(!auth.isPlatformAdmin&&!auth.tenantIds.includes(tenantId))throw new Error('FORBIDDEN_TENANT');if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'&&!hasPermission(auth,'reports.view'))throw new Error('FORBIDDEN_RISK_READ');let sql='SELECT * FROM education_risks WHERE tenant_id=?',args:unknown[]=[tenantId];if(status!=='all'){sql+=' AND status=?';args.push(status);}if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'){if(!auth.courseIds.length)return[];sql+=` AND (course_id IS NULL OR course_id IN (${auth.courseIds.map(()=>'?').join(',')}))`;args.push(...auth.courseIds);}sql+=" ORDER BY CASE severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 ELSE 1 END DESC,COALESCE(horizon_date,'9999'),last_seen_at DESC LIMIT 500";return((await env.DB.prepare(sql).bind(...args).all<Record<string,unknown>>()).results??[]).map(x=>({...x,detail:JSON.parse(String(x.detail_json||'{}')),evidence:JSON.parse(String(x.evidence_json||'{}')),suggested_input:x.suggested_input_json?JSON.parse(String(x.suggested_input_json)):null}));}

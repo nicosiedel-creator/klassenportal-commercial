@@ -3,13 +3,13 @@ import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { hasPermission } from './enterprise-access.js';
 import { audit } from './audit.js';
-import { assertSameOrigin, id, json, nowIso, safeString } from './utils.js';
+import { assertSameOrigin, authStatus, id, json, nowIso, safeErrorCode, safeString } from './utils.js';
 
 function admin(auth:any){return auth.isPlatformAdmin||auth.role==='tenant_admin';}
 function text(v:unknown,max:number){const s=safeString(v,max);if(!s)throw new Error('FIELD_REQUIRED');return s;}
 function optional(v:unknown,max:number){return safeString(v,max)||null;}
 async function sha256(value:string){const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));return[...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('');}
-function fail(e:unknown){const code=String((e as Error)?.message||'COURSE_SIGNATURE_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('PROVIDER_REQUIRED')?503:code.includes('REQUIRED')||code.includes('INVALID')?400:500;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(code.includes('NOT_FOUND')?404:code.includes('PROVIDER_REQUIRED')?503:code.includes('REQUIRED')||code.includes('INVALID')?400:500);return json({ok:false,error:code},status);}
 
 export async function handleCourseSignatureApi(request:Request,env:Env):Promise<Response|null>{
   const url=new URL(request.url);if(url.pathname!=='/api/education/course-signatures')return null;

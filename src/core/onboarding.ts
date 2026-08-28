@@ -67,7 +67,10 @@ export async function revokeOnboardingInvitation(env:Env,auth:CoreAuthContext,in
   if(row.status==='completed')throw new Error('ONBOARDING_ALREADY_COMPLETED');
   const claim=await env.DB.prepare('SELECT invitation_id FROM onboarding_claims WHERE invitation_id=?').bind(invitationId).first();
   if(claim)throw new Error('ONBOARDING_ALREADY_IN_PROGRESS');
-  await env.DB.prepare("UPDATE onboarding_invitations SET status='revoked' WHERE id=? AND status='open'").bind(invitationId).run();
+  // A revoke that changed nothing - the link already expired, or a second click on the same
+  // button - must not be reported as a fresh revocation or leave a second audit entry.
+  const result=await env.DB.prepare("UPDATE onboarding_invitations SET status='revoked' WHERE id=? AND status='open'").bind(invitationId).run();
+  if(!Number(result.meta?.changes||0)){if(row.status==='revoked')return;throw new Error('ONBOARDING_NOT_OPEN');}
   await audit(env.DB,auth.userId,'onboarding.invitation.revoked',undefined,undefined,'onboarding_invitation',invitationId);
 }
 

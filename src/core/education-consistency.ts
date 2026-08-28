@@ -1,6 +1,6 @@
 import type { CoreAuthContext, Env, SessionUser } from './types.js';
 import { hasPermission } from './enterprise-access.js';
-import { id, nowIso } from './utils.js';
+import { id, nowIso, safeErrorCode } from './utils.js';
 import { audit } from './audit.js';
 
 interface Finding{key:string;course_id?:string|null;category:string;severity:'info'|'low'|'medium'|'high'|'critical';title:string;expected?:unknown;actual?:unknown;suggested_fix?:Record<string,unknown>|null;confidence:number;}
@@ -39,7 +39,7 @@ export async function scanTenantConsistency(env:Env,tenantId:string){
   return{tenant_id:tenantId,findings_seen:seen.size,open_high:Number((await env.DB.prepare("SELECT COUNT(*) n FROM education_consistency_findings WHERE tenant_id=? AND status='open' AND severity IN ('high','critical')").bind(tenantId).first<{n:number}>())?.n||0)};
 }
 
-export async function runConsistencyAllTenants(env:Env){const tenants=await rows<{id:string}>(env,"SELECT id FROM tenants WHERE status='active'");const results:Record<string,unknown>[]=[];for(const t of tenants){try{results.push(await scanTenantConsistency(env,String(t.id)));}catch(e){results.push({tenant_id:t.id,error:String((e as Error)?.message||e)});}}return{tenants:tenants.length,results};}
+export async function runConsistencyAllTenants(env:Env){const tenants=await rows<{id:string}>(env,"SELECT id FROM tenants WHERE status='active'");const results:Record<string,unknown>[]=[];for(const t of tenants){try{results.push(await scanTenantConsistency(env,String(t.id)));}catch(e){results.push({tenant_id:t.id,error:safeErrorCode(e)});}}return{tenants:tenants.length,results};}
 
 export async function listConsistencyFindings(env:Env,auth:CoreAuthContext,tenantId:string,status='open'){
   if(!canRead(auth)||!auth.isPlatformAdmin&&!auth.tenantIds.includes(tenantId))throw new Error('FORBIDDEN_CONSISTENCY_READ');let sql='SELECT * FROM education_consistency_findings WHERE tenant_id=?',args:unknown[]=[tenantId];if(status!=='all'){sql+=' AND status=?';args.push(status);}if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'){if(!auth.courseIds.length)return[];sql+=` AND (course_id IS NULL OR course_id IN (${auth.courseIds.map(()=>'?').join(',')}))`;args.push(...auth.courseIds);}sql+=" ORDER BY CASE severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 ELSE 1 END DESC,updated_at DESC LIMIT 500";return((await env.DB.prepare(sql).bind(...args).all<Record<string,unknown>>()).results??[]).map(x=>({...x,expected:x.expected_json?JSON.parse(String(x.expected_json)):null,actual:x.actual_json?JSON.parse(String(x.actual_json)):null,suggested_fix:x.suggested_fix_json?JSON.parse(String(x.suggested_fix_json)):null}));

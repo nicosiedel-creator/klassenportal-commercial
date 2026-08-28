@@ -1,6 +1,6 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
-import { assertSameOrigin, json, safeString } from './utils.js';
+import { assertSameOrigin, json, safeErrorCode, safeString } from './utils.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { buildEducationTwin, captureEducationTwinSnapshot, getEducationTwinSnapshot, twinSummary } from './education-twin.js';
 import { getEducationScenario, listEducationScenarios, simulateEducationScenario } from './education-scenarios.js';
@@ -14,7 +14,7 @@ import { computeCourseReadiness, computeTenantReadiness, captureCourseReadiness,
 import { requireAutopilotTenantAdmin } from './autopilot-security.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(error:unknown){const code=String((error as Error)?.message||'EDUCATION_OS_ERROR');let status=400;if(code==='UNAUTHENTICATED')status=401;else if(code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED'))status=403;else if(code.includes('NOT_FOUND'))status=404;else if(code.includes('LOCKED')||code.includes('STALE')||code.includes('RESIMULATE')||code.includes('EXPIRED')||code.includes('APPROVAL_REQUIRED')||code.includes('PRECONDITION')||code.includes('RECOMMEND_ONLY')||code.includes('GUARDRAIL'))status=409;else if(code.includes('LIMIT'))status=413;return json({ok:false,error:code},status);}
+function fail(error:unknown){const code=safeErrorCode(error);let status=400;if(code==='UNAUTHENTICATED')status=401;else if(code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED'))status=403;else if(code.includes('NOT_FOUND'))status=404;else if(code.includes('LOCKED')||code.includes('STALE')||code.includes('RESIMULATE')||code.includes('EXPIRED')||code.includes('APPROVAL_REQUIRED')||code.includes('PRECONDITION')||code.includes('RECOMMEND_ONLY')||code.includes('GUARDRAIL'))status=409;else if(code.includes('LIMIT'))status=413;return json({ok:false,error:code},status);}
 function scope(url:URL){const courseId=url.searchParams.get('course_id'),orgId=url.searchParams.get('org_unit_id');if(courseId)return{scope_type:'course' as const,scope_id:courseId};if(orgId)return{scope_type:'org' as const,scope_id:orgId};return{scope_type:'tenant' as const};}
 
 export async function handleEducationOsApi(request:Request,env:Env):Promise<Response|null>{

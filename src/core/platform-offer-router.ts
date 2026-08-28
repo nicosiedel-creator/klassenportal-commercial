@@ -1,6 +1,6 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
-import { assertSameOrigin, authStatus, safeString } from './utils.js';
+import { assertSameOrigin, authStatus, safeErrorCode, safeString } from './utils.js';
 import { ensureOfferSchema } from './offer-schema.js';
 import { cancelPlatformOffer, createPlatformOffer, getPlatformOffer, listPlatformOffers, platformOfferMeta, previewPlatformOffer, publicOffer } from './platform-offers.js';
 import { acceptPublicOffer } from './platform-offer-acceptance.js';
@@ -14,7 +14,7 @@ import { mailConfigured } from './mail.js';
 function out(data:unknown,status=200):Response{return Response.json(data,{status,headers:{'cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function error(e:unknown):Response{
-  const code=String((e as Error)?.message||'INTERNAL_ERROR');
+  const code=safeErrorCode(e);
   const status=authStatus(code)??(code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
     :code==='PLATFORM_ADMIN_REQUIRED'||code==='FORBIDDEN'?403
     :code.includes('NOT_FOUND')?404

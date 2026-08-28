@@ -1,14 +1,14 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
-import { assertSameOrigin, authStatus, json } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
 import { cancelTeamsMeeting, createOrSyncTeamsMeeting, disconnectMicrosoftAccount, finishMicrosoftConnection, getLessonMeeting, getMicrosoftConnectionStatus, linkTeamsMeeting, listCourseMeetings, startMicrosoftConnection } from './microsoft-graph.js';
 import { syncCourseMeetingAttendees } from './microsoft-course-invitations.js';
 import { listMeetingReadyLessons } from './microsoft-meeting-lessons.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function errorResponse(error:unknown):Response{
-  const code=String((error as Error)?.message||'MICROSOFT_INTEGRATION_ERROR');
+  const code=safeErrorCode(error);
   const status=authStatus(code)??(code==='UNAUTHENTICATED'?401
     :code.startsWith('FORBIDDEN')||code.includes('STRONG_AUTH_REQUIRED')||code.includes('PERMISSION_REQUIRED')||code.includes('ORGANIZER_MISMATCH')?403
     :code.includes('NOT_FOUND')?404
@@ -26,7 +26,7 @@ function callbackHtml(ok:boolean,message:string):Response{
 async function createMeetingWithClassInvites(env:Env,auth:Awaited<ReturnType<typeof resolveCoreAuth>>,tenantId:string,courseId:string,lessonId:string){
   const meeting=await createOrSyncTeamsMeeting(env,auth,tenantId,courseId,lessonId);
   try{return{meeting,invitations:await syncCourseMeetingAttendees(env,auth,tenantId,courseId,lessonId)};}
-  catch(error){const code=String((error as Error)?.message||'MICROSOFT_CLASS_INVITE_FAILED');if(code.startsWith('FORBIDDEN')||code.includes('STRONG_AUTH_REQUIRED')||code.includes('ORGANIZER_MISMATCH'))throw error;return{meeting,invitations:{invited:null,hidden_attendees:true,warning:code}};}
+  catch(error){const code=safeErrorCode(error);if(code.startsWith('FORBIDDEN')||code.includes('STRONG_AUTH_REQUIRED')||code.includes('ORGANIZER_MISMATCH'))throw error;return{meeting,invitations:{invited:null,hidden_attendees:true,warning:code}};}
 }
 
 export async function handleMicrosoftGraphApi(request:Request,env:Env):Promise<Response|null>{

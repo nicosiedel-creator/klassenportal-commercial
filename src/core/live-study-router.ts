@@ -1,5 +1,5 @@
 import type { Env } from './types.js';
-import { assertSameOrigin, authStatus, json } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
 import { LIVE_STUDY_QUESTIONS, publicQuestion, questionMap } from './live-study-content.js';
 
 type SessionRow={id:string;presenter_token_hash:string;title:string;status:'learning'|'lobby'|'quiz'|'closed';duration_seconds:number;quiz_started_at:string|null;created_at:string;expires_at:string};
@@ -23,7 +23,7 @@ async function ensureLiveStudySchema(env:Env):Promise<void>{
 }
 
 function fail(e:unknown):Response{
-  const code=String((e as Error)?.message||'LIVE_STUDY_ERROR');
+  const code=safeErrorCode(e);
   const status=authStatus(code)??(code==='LIVE_STUDY_CAPACITY_REACHED'?429:code==='UNAUTHENTICATED'?401:code==='PLATFORM_ADMIN_REQUIRED'||code==='PRESENTER_TOKEN_INVALID'||code==='PARTICIPANT_TOKEN_INVALID'||code==='CSRF_ORIGIN_MISMATCH'?403:code.includes('NOT_FOUND')?404:code.includes('EXPIRED')?410:code.includes('ALREADY_SUBMITTED')||code.includes('NOT_OPEN')||code.includes('NOT_STARTED')||code.includes('CLOSED')||code.includes('ENDED')?409:code.includes('INVALID')||code.includes('REQUIRED')?400:500);
   return json({ok:false,error:code},status);
 }

@@ -154,11 +154,12 @@ async function acceptedOfferOnboarding(){
   if(auth.status!==200||!auth.data?.user)fail(`new customer admin was not automatically authenticated: ${auth.status}`);
   const open=page.getByRole('link',{name:/Portal öffnen/i}).first();if(!(await open.count()))fail('successful onboarding has no Portal öffnen action');
   const nav=page.waitForNavigation({waitUntil:'domcontentloaded',timeout:15000});await open.click();const navResponse=await nav;if(!navResponse||navResponse.status()!==200)fail(`Portal öffnen click returned ${navResponse?.status()??'no response'}`);
-  // The root entry immediately role-routes an authenticated tenant admin. A second page.goto
-  // can race that client navigation and Playwright then returns a null navigation response even
-  // though the Worker served /kunden-admin with HTTP 200. Verify the shell through the same
-  // authenticated browser context instead of competing with the intended role redirect.
-  const adminSurface=await page.evaluate(async()=>{const r=await fetch('/kunden-admin',{credentials:'same-origin',redirect:'follow'});return{status:r.status,text:await r.text()};});
+  // The root entry immediately role-routes an authenticated tenant admin. Competing with that
+  // client navigation from inside the page - page.goto or page.evaluate - either returns a null
+  // navigation response or tears down the execution context mid-call. Request the shell through
+  // the browser context's own cookie jar instead: same authenticated session, no race.
+  const adminResponse=await page.context().request.get(`${base}/kunden-admin`);
+  const adminSurface={status:adminResponse.status(),text:await adminResponse.text()};
   if(adminSurface.status!==200||!adminSurface.text.trim())fail(`new customer admin cannot open customer-admin surface: ${adminSurface.status}`);
   const completed=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`);if(completed.status!==200||completed.data?.invitation?.status!=='completed')fail('successful browser onboarding did not persist completed invitation');
   const replay=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`,{method:'POST',body:{}});if(replay.status===200||replay.data?.error!=='ONBOARDING_UNAVAILABLE')fail(`browser onboarding replay must fail closed, got ${replay.status}/${replay.data?.error}`);

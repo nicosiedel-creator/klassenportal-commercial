@@ -8,10 +8,10 @@ import { handleCollaborationReportingApi } from './collaboration-reporting-route
 import { asStudentView, forbidClassAdminStudentData } from './student-role.js';
 import { createTeacherPortalTeacher, listTeacherPortalAssignments, myTeacherPortalCourses, revokeTeacherPortalAssignment, saveTeacherPortalAssignment, teacherAttendanceAuth, teacherPortalOptions } from './teacher-portal.js';
 import { getMyLessonNote, listLessonHub, saveLessonHub, saveMyLessonNote, uploadLessonHubMaterial } from './lesson-hub.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'ATTENDANCE_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('CONFLICT')||code.includes('CANCELLED')||code.includes('NOT_PENDING')?409:code.includes('TOO_LONG')||code.includes('TOO_MANY')?413:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('CONFLICT')||code.includes('CANCELLED')||code.includes('NOT_PENDING')?409:code.includes('TOO_LONG')||code.includes('TOO_MANY')?413:400);return json({ok:false,error:code},status);}
 export async function handleAttendanceApi(request:Request,env:Env):Promise<Response|null>{
   const assignments=await handleAssignmentsApi(request,env);if(assignments)return assignments;
   const learning=await handleLearningSuiteApi(request,env);if(learning)return learning;

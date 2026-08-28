@@ -10,12 +10,12 @@ import { listManagedSetupJobs, updateManagedSetupJob } from './managed-setup.js'
 import { customerSetupProgress } from './setup-progress.js';
 import { listPlatformModuleRules, quoteModuleSubscription, subscribeModule, tenantModuleCatalog, updatePlatformModuleRule } from './module-commerce.js';
 import { paymentPolicy, paymentsEnabled } from './payment-policy.js';
-import { assertSameOrigin, authStatus, nowIso, safeString } from './utils.js';
+import { assertSameOrigin, authStatus, nowIso, safeErrorCode, safeString } from './utils.js';
 
 function out(data:unknown,status=200):Response{return Response.json(data,{status,headers:{'cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function error(e:unknown):Response{
-  const code=(e as Error)?.message||'INTERNAL_ERROR';
+  const code=safeErrorCode(e);
   const status=authStatus(code)??(code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
     :code==='FORBIDDEN'||code==='PASSWORD_CHANGE_REQUIRED'||code==='ORIGIN_MISMATCH'||code==='CSRF_ORIGIN_MISMATCH'||code==='MODULE_SELF_SERVICE_DISABLED'?403
     :code==='STRIPE_NOT_CONFIGURED'||code==='PAYMENT_DISABLED'?503

@@ -1,9 +1,9 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
 
 function requireAdmin(auth:any){if(!(auth.isPlatformAdmin||auth.role==='tenant_admin'||(auth.permissions||[]).includes('reports.view')))throw new Error('FORBIDDEN_LEARNING_ADMIN');}
-function fail(e:unknown){const code=String((e as Error)?.message||'LEARNING_ADMIN_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')?403:code.includes('NOT_FOUND')?404:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')?403:code.includes('NOT_FOUND')?404:400);return json({ok:false,error:code},status);}
 
 export async function handleLearningAdminApi(request:Request,env:Env):Promise<Response|null>{
   const url=new URL(request.url),path=url.pathname;if(!path.startsWith('/api/learning-admin/'))return null;
