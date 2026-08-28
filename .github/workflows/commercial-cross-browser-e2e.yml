@@ -19,7 +19,14 @@ concurrency:
 
 jobs:
   cross-browser:
-    runs-on: ubuntu-latest
+    # ubuntu-latest ist inzwischen ein Abbild, auf dem WebKit zwar rendert - about:blank in 7ms,
+    # ein eingebautes Dokument in 21ms - aber den lokalen Server ueber keine Adressform erreicht:
+    # Navigation ueber 127.0.0.1 und ueber localhost laufen beide in die Zeitueberschreitung,
+    # waehrend node im selben Lauf 200 bekommt und Firefox denselben Ablauf durchlaeuft. Es
+    # kommt keine einzige Anfrage im Worker-Protokoll an. Das ist kein Befund am Portal, sondern
+    # die Netzschicht dieser WebKit-Fassung auf diesem Abbild. Ein festes, aelteres Abbild fuer
+    # beide Engines, damit sie vergleichbar bleiben.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
