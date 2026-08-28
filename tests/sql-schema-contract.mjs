@@ -40,10 +40,13 @@ const unknown=[];
 for(const file of files){
   const src=await readFile(file,'utf8');
   for(const m of src.matchAll(/[`'"]\s*(SELECT|INSERT|UPDATE|DELETE)\s[\s\S]*?[`'"]/gi)){
-    const raw=m[0];
-    // Nur vollständig statische Anweisungen: alles Zusammengesetzte lässt sich hier nicht
-    // vorbereiten, ohne zu raten, was zur Laufzeit eingesetzt wird.
-    if(raw.includes('${')||raw.includes('" +')||raw.includes("' +"))continue;
+    let raw=m[0];
+    if(raw.includes('" +')||raw.includes("' +"))continue;
+    // Eine eingesetzte Platzhalterliste (?,?,?) ändert nichts an den angesprochenen Spalten, also
+    // lässt sich die Anweisung trotzdem prüfen. Anweisungen, die Tabellen- oder Spaltennamen erst
+    // zur Laufzeit einsetzen, bleiben außen vor: dafür müsste man raten, was dort steht.
+    if(/\$\{(?!marks\}|qs\}|placeholders\})/.test(raw))continue;
+    raw=raw.replace(/\$\{(?:marks|qs|placeholders)\}/g,'?');
     const sql=raw.slice(1,-1).trim();
     if(sql.length<15)continue;
     checked++;
