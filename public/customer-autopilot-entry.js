@@ -25,8 +25,14 @@ if(KP_AUTOPILOT_PATH){
   }
   function primaryButton(){
     const nav=document.querySelector('.kp-customer-nav-primary');if(!nav)return;
-    let button=nav.querySelector('#kp-autopilot-primary');
-    if(!button){button=document.createElement('button');button.id='kp-autopilot-primary';button.type='button';button.className='nav kp-autopilot-primary';button.dataset.kpAutopilotOpen='1';button.innerHTML='<span class="kp-autopilot-mark">✦</span><span><strong>Autopilot</strong><small>Änderung beschreiben → prüfen → simulieren</small></span>';button.addEventListener('click',openAutopilot);nav.prepend(button);}
+    // Die Suche lief nur innerhalb der Hauptnavigation. Sobald die Navigation die Schaltflaeche
+    // in "Weitere Bereiche" einsortiert hatte, fand sie hier nichts mehr und legte eine zweite
+    // an - zwei Elemente mit derselben Kennung, und der Autopilot stand zweimal im Menue. Die
+    // Kennung muss im ganzen Dokument eindeutig sein, also wird auch dort gesucht; liegt die
+    // vorhandene Schaltflaeche woanders, wird sie zurueckgeholt statt verdoppelt.
+    let button=document.getElementById('kp-autopilot-primary');
+    if(button){if(button.parentElement!==nav)nav.append(button);return;}
+    if(!button){button=document.createElement('button');button.id='kp-autopilot-primary';button.type='button';button.className='nav kp-autopilot-primary';button.dataset.kpAutopilotOpen='1';button.dataset.customerNavPrimary='1';button.innerHTML='<span class="kp-autopilot-mark">✦</span><span><strong>Autopilot</strong><small>Änderung beschreiben → prüfen → simulieren</small></span>';button.addEventListener('click',openAutopilot);nav.prepend(button);}
   }
   function headerButton(){
     const top=document.querySelector('.content > .top');if(!top||top.querySelector('#kp-autopilot-header'))return;
