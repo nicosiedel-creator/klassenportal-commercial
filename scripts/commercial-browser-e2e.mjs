@@ -231,6 +231,14 @@ async function acceptedOfferOnboarding(){
   const adminResponse=await page.context().request.get(`${base}/kunden-admin`);
   const adminSurface={status:adminResponse.status(),text:await adminResponse.text()};
   if(adminSurface.status!==200||!adminSurface.text.trim())fail(`new customer admin cannot open customer-admin surface: ${adminSurface.status}`);
+  // Diese Rollenweiterleitung laeuft noch, wenn der naechste Schritt selbst /kunden-admin
+  // aufruft - beide Navigationen zielen auf dieselbe Adresse, und Playwright bricht die eigene
+  // mit "interrupted by another navigation" ab. Das ist kein Fehler des Portals, sondern ein
+  // Wettlauf des Laufs mit ihm: erst die Weiterleitung ankommen lassen, dann weiterarbeiten.
+  await page.waitForURL(url=>new URL(url).pathname==='/kunden-admin',{timeout:20000})
+    .catch(()=>fail(`role routing did not land on the customer admin surface, stopped at ${new URL(page.url()).pathname}`));
+  await settle(page);
+
   const completed=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`);if(completed.status!==200||completed.data?.invitation?.status!=='completed')fail('successful browser onboarding did not persist completed invitation');
   const replay=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`,{method:'POST',body:{}});if(replay.status===200||replay.data?.error!=='ONBOARDING_UNAVAILABLE')fail(`browser onboarding replay must fail closed, got ${replay.status}/${replay.data?.error}`);
   console.log('Accepted paid offer -> browser onboarding -> auto-login -> customer portal: OK');
@@ -471,10 +479,37 @@ function expectedBrowserHttpError(entry){if(mode!=='candidate'||entry.status!==4
 // las sich dann wie ein Fehler von /plattform-admin. Der Kaltstart bekommt deshalb sein eigenes,
 // benanntes Zeitfenster und meldet, wie lange er wirklich gedauert hat - die eigentlichen
 // Prüfungen danach behalten ihr unverändertes Budget.
+// Bleibt die erste Navigation haengen, sagt "Timeout" allein nicht, woran es lag. Drei Faelle
+// sehen gleich aus und brauchen ganz verschiedene Antworten: die Engine laedt ueberhaupt nichts
+// (kaputte Installation), sie laedt eingebaute Inhalte, erreicht aber den lokalen Server nicht
+// (Netzwerk), oder sie erreicht ihn und diese eine Seite haengt (Produktfehler). WebKit schickte
+// auf dem Runner in 90 Sekunden keine einzige Anfrage - das Worker-Protokoll zeigte nach den
+// Bereitschaftsabfragen nichts mehr. Diese Diagnose trennt die Faelle, statt sie zu raten.
+async function firstNavigationDiagnosis(){
+  const findings=[];
+  const probe=async(label,url,timeout)=>{
+    const started=Date.now();
+    try{await page.goto(url,{waitUntil:'domcontentloaded',timeout});findings.push(`${label}: ok in ${Date.now()-started}ms`);return true;}
+    catch(error){findings.push(`${label}: ${String(error?.message||error).split('\n')[0]}`);return false;}
+  };
+  const blank=await probe('about:blank','about:blank',15000);
+  if(blank)await probe('eingebautes Dokument','data:text/html,<title>x</title><p>x',15000);
+  let reachable=null;
+  try{
+    const response=await fetch(`${base}/plattform-admin`,{redirect:'manual'});
+    reachable=`node erreicht den Server: ${response.status()??response.status}`;
+  }catch(error){reachable=`node erreicht den Server nicht: ${String(error?.message||error).split('\n')[0]}`;}
+  findings.push(reachable);
+  return findings.join(' | ');
+}
+
 async function warmUp(){
   const started=Date.now();
   const response=await navigate(page,`${base}/plattform-admin`,{waitUntil:'domcontentloaded',timeout:90000})
-    .catch(error=>fail(`${engineName} could not open /plattform-admin at all: ${String(error?.message||error).split('\n')[0]}`));
+    .catch(async error=>{
+      const diagnosis=await firstNavigationDiagnosis().catch(problem=>`Diagnose selbst gescheitert: ${String(problem?.message||problem).split('\n')[0]}`);
+      fail(`${engineName} could not open /plattform-admin at all: ${String(error?.message||error).split('\n')[0]} -- Diagnose: ${diagnosis}`);
+    });
   if(!response)fail(`${engineName} got no response for the first navigation`);
   console.log(`${engineName} cold start to /plattform-admin: ${response.status()} in ${Date.now()-started}ms`);
 }
