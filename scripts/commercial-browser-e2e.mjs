@@ -1,4 +1,12 @@
-import { chromium } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
+
+// Der Gate läuft standardmäßig auf Chromium. Über E2E_BROWSER lässt sich derselbe Ablauf
+// unverändert auf Firefox und WebKit fahren, damit browserabhängige Fehler auffallen,
+// statt unbemerkt zu bleiben.
+const ENGINES={chromium,firefox,webkit};
+const engineName=String(process.env.E2E_BROWSER||'chromium').trim().toLowerCase();
+const engine=ENGINES[engineName];
+if(!engine)throw new Error(`Unsupported E2E_BROWSER: ${engineName}`);
 
 const base=(process.env.COMMERCIAL_BASE_URL||'http://127.0.0.1:8787').replace(/\/$/,'');
 const mode=String(process.env.E2E_TARGET_MODE||'candidate').trim();
@@ -11,7 +19,7 @@ const raceToken=String(process.env.E2E_ONBOARDING_RACE_TOKEN||'').trim();
 const raceAdmin=String(process.env.E2E_ONBOARDING_RACE_ADMIN||'').trim();
 const racePassword=String(process.env.E2E_ONBOARDING_RACE_PASSWORD||'');
 const fail=(msg)=>{throw new Error(msg);};
-const browser=await chromium.launch({headless:true});
+const browser=await engine.launch({headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
 page.on('pageerror',e=>pageErrors.push(String(e)));
