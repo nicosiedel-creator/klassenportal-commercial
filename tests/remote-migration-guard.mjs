@@ -16,6 +16,11 @@ assert.equal(pkg.scripts.deploy,'node scripts/cloudflare-deploy.mjs','production
 assert.ok(deployWrapper.includes("['scripts/workers-ci-guard.mjs']"),'production deploy wrapper must run the release/cutover guard first');
 assert.ok(deployWrapper.includes("['wrangler','deploy']"),'production deploy wrapper must deploy only after the guard succeeds');
 assert.ok(deployGuard.includes("['run','db:migrate']"),'production deploy guard must keep the guarded remote migration step');
+// Wrangler runs the build command for `wrangler dev` as well. Without an explicit deployment
+// marker a local development server would migrate the production database.
+assert.ok(deployWrapper.includes("KP_LOCAL_PRODUCTION_DEPLOY:'1'"),'only the deploy wrapper may ask for a local remote production migration');
+assert.ok(deployGuard.includes("process.env.KP_LOCAL_PRODUCTION_DEPLOY==='1'"),'the guard must require the deployment marker before touching production D1');
+assert.match(deployGuard,/else\{\s*(\/\/[^\n]*\n\s*)*console\.log\('Skipping remote D1 migrations: this build is not a production deployment/,'a build without the deployment marker must skip the remote migration');
 assert.ok(script.includes("process.env.WORKERS_CI_BRANCH"),'Workers Builds branch must be inspected');
 assert.ok(script.includes("process.env.WORKERS_CI"),'Workers Builds execution must be detected');
 assert.ok(script.includes("branch!==productionBranch"),'non-production branches must skip remote D1 migrations');

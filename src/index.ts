@@ -33,6 +33,8 @@ import { runCommunicationAutomation } from './core/secure-communications.js';
 import { handleAttendanceApi } from './core/attendance-router.js';
 import { runAttendanceAttention } from './core/attendance-classbook.js';
 import { handleParticipant360Api } from './core/participant-360-router.js';
+import { handleCertificatesApi } from './core/certificates-router.js';
+import { handleWorkflowApi } from './core/workflow-router.js';
 import { runPlatformAutomationCycle } from './core/automation-cycle.js';
 import { handleMicrosoftGraphApi } from './core/microsoft-graph-router.js';
 import { handleCollaborationReportingApi } from './core/collaboration-reporting-router.js';
@@ -100,6 +102,11 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   const communications=await handleCommunicationsApi(request,env);if(communications)return communications;
   const attendance=await handleAttendanceApi(request,env);if(attendance)return attendance;
   const participant360Response=await handleParticipant360Api(request,env);if(participant360Response)return participant360Response;
+  // Beide Router waren gebaut und in der Oberfläche verdrahtet, wurden hier aber nie aufgerufen:
+  // jede Anfrage lief in den Sammelzweig von handleCoreApi und endete als 404 bzw. als
+  // TENANT_ID_REQUIRED auf der öffentlichen Zeugnisprüfung.
+  const certificates=await handleCertificatesApi(request,env);if(certificates)return certificates;
+  const workflows=await handleWorkflowApi(request,env);if(workflows)return workflows;
 
   const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);if(onboardingPost){const payload=await request.clone().json().catch(()=>({}))as Record<string,unknown>;if(String(payload.commercial_action||'trial')==='book'&&paymentsEnabled(env)&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);}
   const tenantId=url.searchParams.get('tenant_id'),mutating=request.method!=='GET'&&request.method!=='HEAD',exemptMutation=url.pathname==='/api/timetable/preview'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/onboarding/')||url.pathname.startsWith('/api/platform/');if(tenantId&&mutating&&!exemptMutation){try{await assertPaymentWriteAccess(env,tenantId);}catch(e){return accessError(e);}}
