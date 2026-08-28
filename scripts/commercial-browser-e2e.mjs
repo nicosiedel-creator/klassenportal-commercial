@@ -298,7 +298,21 @@ async function adminDialogContract(path){
 const expectedCandidate401Paths=new Set(['/api/auth/me','/api/attendance/teacher/courses']);
 function expectedBrowserHttpError(entry){if(mode!=='candidate'||entry.status!==401)return false;let path='';try{path=new URL(entry.url).pathname;}catch{return false;}return expectedCandidate401Paths.has(path);}
 
+// Die erste Navigation trägt den Kaltstart der Engine mit. WebKit brauchte dafür auf dem Runner
+// mehr als die 30 Sekunden, die für eine einzelne Route gedacht sind, und die Zeitüberschreitung
+// las sich dann wie ein Fehler von /plattform-admin. Der Kaltstart bekommt deshalb sein eigenes,
+// benanntes Zeitfenster und meldet, wie lange er wirklich gedauert hat - die eigentlichen
+// Prüfungen danach behalten ihr unverändertes Budget.
+async function warmUp(){
+  const started=Date.now();
+  const response=await navigate(page,`${base}/plattform-admin`,{waitUntil:'domcontentloaded',timeout:90000})
+    .catch(error=>fail(`${engineName} could not open /plattform-admin at all: ${String(error?.message||error).split('\n')[0]}`));
+  if(!response)fail(`${engineName} got no response for the first navigation`);
+  console.log(`${engineName} cold start to /plattform-admin: ${response.status()} in ${Date.now()-started}ms`);
+}
+
 try{
+  await warmUp();
   if(mode==='candidate'){
     await candidateSurface();
     await internalLinkAudit(['/produkt','/testcenter.html','/impressum','/datenschutz']);
