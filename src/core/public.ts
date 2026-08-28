@@ -1,7 +1,7 @@
 import type { Env, SessionUser } from './types.js';
 import { verifyPassword } from './auth.js';
 import { ensureBrandingSchema } from './branding-schema.js';
-import { safeFilename } from '../portability/utils.js';
+import { contentDisposition } from '../portability/utils.js';
 
 function viewerRole(session:SessionUser|null,tenantId:string,courseId:string):string|null{
   if(!session||session.mustChangePassword)return null;
@@ -145,6 +145,5 @@ export async function publicMaterialDownload(env:Env,tenantSlug:string,courseCod
   const row=await env.DB.prepare(`SELECT object_key,original_name,content_type,size_bytes FROM portability_files
     WHERE id=? AND tenant_id=? AND purpose='learning_material' AND visible=1 AND (course_id=? OR course_id IS NULL)`).bind(materialId,access.tenantId,access.courseId).first<Record<string,unknown>>();
   if(!row)throw new Error('MATERIAL_NOT_FOUND');const obj=await env.FILES.get(String(row.object_key));if(!obj)throw new Error('MATERIAL_FILE_NOT_FOUND');
-  const filename=safeFilename(String(row.original_name||'material'));
-  return new Response(obj.body,{status:200,headers:{'content-type':String(row.content_type||obj.httpMetadata?.contentType||'application/octet-stream'),'content-length':String(obj.size),'content-disposition':`attachment; filename="${filename}"`,'cache-control':'private, max-age=0, no-store','x-content-type-options':'nosniff'}});
+  return new Response(obj.body,{status:200,headers:{'content-type':String(row.content_type||obj.httpMetadata?.contentType||'application/octet-stream'),'content-length':String(obj.size),'content-disposition':contentDisposition(String(row.original_name||'material')),'cache-control':'private, max-age=0, no-store','x-content-type-options':'nosniff'}});
 }

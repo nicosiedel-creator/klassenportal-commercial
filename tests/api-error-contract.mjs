@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { readdir, readFile } from 'node:fs/promises';
+import { contentDisposition } from '../dist/portability/utils.js';
 
 // Returning a promise from inside a try block does not route its rejection through the catch.
 // A handler invoked that way loses its router's status mapping and is answered by the top-level
@@ -33,4 +34,23 @@ for(const handler of ['login','logout','changePassword','downloadLearningMateria
   assert.match(router,new RegExp(`return await ${handler}\\(`),`${handler} must be awaited so its failure keeps its documented status`);
 assert.match(router,/code==='LOGIN_RATE_LIMITED'\?429/,'brute-force protection must answer 429, not a server error');
 
-console.log('API transport error contract: awaited handlers and status-preserving auth routes: OK');
+// A download name is data the caller supplied, never a location, and a German product must not
+// mangle umlauts out of it.
+const dispositions=[
+  ['../../etc/passwd.pdf','passwd.pdf'],
+  ['..\\..\\windows\\cmd.exe','cmd.exe'],
+  ['   ...hidden.pdf','hidden.pdf'],
+  ['a"b.pdf','ab.pdf'],
+  ['','export'],
+];
+for(const [input,expectedAscii] of dispositions){
+  const header=contentDisposition(input);
+  assert.match(header,new RegExp(`^attachment; filename="${expectedAscii.replace(/\./g,'\\.')}"`),`a download name must never carry a path segment: ${JSON.stringify(input)} -> ${header}`);
+  assert.doesNotMatch(header,/%2F|%5C|\.\.|[\r\n]/i,`the RFC 5987 form must not carry a path segment either: ${header}`);
+}
+const german=contentDisposition('Lernmaterial Übung 1.pdf');
+assert.match(german,/filename\*=UTF-8''Lernmaterial%20%C3%9Cbung%201\.pdf$/,'a German file name must survive the download unchanged');
+assert.match(german,/filename="Lernmaterial_U_bung_1\.pdf"/,'the ASCII fallback must stay for clients that ignore filename*');
+assert.match(contentDisposition('bericht.html','inline'),/^inline; /,'inline reports must keep their disposition type');
+
+console.log('API transport contract: awaited handlers, status-preserving auth routes and safe download names: OK');

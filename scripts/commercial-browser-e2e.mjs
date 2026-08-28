@@ -16,12 +16,19 @@ const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
 page.on('pageerror',e=>pageErrors.push(String(e)));
 page.on('console',msg=>{if(msg.type()==='error')consoleErrors.push(msg.text());});
-page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';let path='';try{path=new URL(request.url()).pathname;}catch{}const expectedNavigationAbort=request.method()==='GET'&&path==='/pwa-client.js'&&errorText==='net::ERR_ABORTED';if(!expectedNavigationAbort)failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
+// A GET aborted while a navigation is in flight was cancelled by that navigation, not by the
+// application. Classifying it by cause keeps the audit honest instead of whitelisting one path
+// at a time as new in-flight requests appear.
+const navigation={depth:0};
+function navigationAbort(request,errorText){return navigation.depth>0&&request.method()==='GET'&&errorText==='net::ERR_ABORTED';}
+async function settle(target){await target.waitForLoadState('networkidle',{timeout:8000}).catch(()=>undefined);}
+async function navigate(target,url,options){navigation.depth++;try{return await target.goto(url,options);}finally{await settle(target);navigation.depth--;}}
+page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';if(navigationAbort(request,errorText))return;failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
 page.on('response',response=>{if(response.status()>=400)httpErrors.push({status:response.status(),url:response.url()});});
 
 async function route(path,{allowStatuses=[200],waitForResponsePath=null}={}){
   const backgroundResponse=waitForResponsePath?page.waitForResponse(response=>{try{return new URL(response.url()).pathname===waitForResponsePath;}catch{return false;}},{timeout:10000}):null;
-  const response=await page.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});
+  const response=await navigate(page,base+path,{waitUntil:'domcontentloaded',timeout:30000});
   if(!response)fail(`No response for ${path}`);
   if(!allowStatuses.includes(response.status()))fail(`${path} returned unexpected ${response.status()}`);
   if(backgroundResponse){const bootstrap=await backgroundResponse;if(bootstrap.status()>=400)fail(`${waitForResponsePath} bootstrap returned unexpected ${bootstrap.status()}`);console.log(`browser bootstrap ${waitForResponsePath}: ${bootstrap.status()}`);}
@@ -129,7 +136,7 @@ async function mobileOnboardingPreflight(){
   if(!onboardingToken)fail('primary onboarding E2E fixture environment missing');
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   try{
-    const mobile=await context.newPage(),response=await mobile.goto(`${base}/einrichtung/${encodeURIComponent(onboardingToken)}`,{waitUntil:'domcontentloaded',timeout:30000});
+    const mobile=await context.newPage(),response=await navigate(mobile,`${base}/einrichtung/${encodeURIComponent(onboardingToken)}`,{waitUntil:'domcontentloaded',timeout:30000});
     if(!response||response.status()!==200)fail(`mobile onboarding returned ${response?.status()??'no response'}`);
     await mobile.locator('#onboarding-form').waitFor({timeout:10000});
     const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);if(overflow>4)fail(`mobile onboarding has ${overflow}px horizontal overflow`);
@@ -192,12 +199,12 @@ async function mobileSurface(){
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/138.0.0.0 Mobile Safari/537.36'});
   const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
   mobile.on('pageerror',e=>errors.push(String(e)));
-  mobile.on('requestfailed',r=>{const errorText=r.failure()?.errorText||'failed';let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedNavigationAbort=r.method()==='GET'&&path==='/pwa-client.js'&&errorText==='net::ERR_ABORTED';if(!expectedNavigationAbort)failed.push(`${r.method()} ${r.url()} :: ${errorText}`);});
+  mobile.on('requestfailed',r=>{const errorText=r.failure()?.errorText||'failed';if(navigationAbort(r,errorText))return;failed.push(`${r.method()} ${r.url()} :: ${errorText}`);});
   mobile.on('response',r=>{if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&r.status()===503&&['/produkt','/kunden-admin','/dozentenportal'].includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
   try{
     for(const path of ['/plattform-admin','/produkt','/kunden-admin','/dozentenportal','/testcenter.html']){
       const expected=mode==='locked-production'&&['/produkt','/kunden-admin','/dozentenportal'].includes(path)?[503]:[200];
-      const response=await mobile.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});if(!response||!expected.includes(response.status()))fail(`mobile ${path} returned ${response?.status()??'no response'}, expected ${expected.join('/')}`);
+      const response=await navigate(mobile,base+path,{waitUntil:'domcontentloaded',timeout:30000});if(!response||!expected.includes(response.status()))fail(`mobile ${path} returned ${response?.status()??'no response'}, expected ${expected.join('/')}`);
       const text=(await mobile.locator('body').innerText()).slice(0,4000);if(!text.trim()||/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`mobile ${path} rendered an invalid surface`);
       const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);if(overflow>4)fail(`mobile ${path} has ${overflow}px document-level horizontal overflow`);
     }

@@ -3,6 +3,17 @@ export const textDecoder = new TextDecoder();
 export function randomId(prefix = ''): string { return prefix + crypto.randomUUID(); }
 export function json(data: unknown, status = 200): Response { return new Response(JSON.stringify(data, null, 2), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }); }
 export function safeFilename(value: string): string { return value.normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120) || 'export'; }
+// German file names are the norm in this product. The ASCII form stays as the fallback every
+// client understands, and RFC 5987 filename* carries the real name so a download keeps its
+// umlauts instead of arriving as "Lernmaterial__bung_1.pdf". Neither form may carry a path
+// segment or a control character: the caller's name is data, not a location.
+export function contentDisposition(value: string, kind: 'attachment' | 'inline' = 'attachment'): string {
+  const base = String(value ?? '').split(/[\\/]/).pop() ?? '';
+  const unicode = base.replace(/[\u0000-\u001f\u007f"]/g, '').replace(/^[.\s]+/, '').trim().slice(0, 150);
+  const ascii = safeFilename(unicode);
+  const utf8 = encodeURIComponent(unicode || ascii).replace(/['()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  return `${kind}; filename="${ascii}"; filename*=UTF-8''${utf8}`;
+}
 export function normalizeHeader(value: string): string { return value.trim().toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''); }
 export function csvEscape(value: unknown): string { if (value === null || value === undefined) return ''; const s=String(value); return /["\r\n;,]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; }
 export function asIso(value: unknown): string | null { if(value===null||value===undefined||value==='')return null; if(value instanceof Date&&!Number.isNaN(value.getTime()))return value.toISOString(); if(typeof value==='number'){const d=new Date(Date.UTC(1899,11,30)+value*86400000);return Number.isNaN(d.getTime())?null:d.toISOString();} const d=new Date(String(value).trim());return Number.isNaN(d.getTime())?null:d.toISOString(); }

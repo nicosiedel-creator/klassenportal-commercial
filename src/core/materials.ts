@@ -2,7 +2,7 @@ import type { CoreAuthContext, Env } from './types.js';
 import { audit } from './audit.js';
 import { requireCourseAccess, requireRole } from './permissions.js';
 import { id, nowIso, safeString } from './utils.js';
-import { safeFilename } from '../portability/utils.js';
+import { contentDisposition, safeFilename } from '../portability/utils.js';
 
 const MAX_BYTES=25*1024*1024;
 const allowedExtensions=new Set(['pdf','doc','docx','xls','xlsx','ppt','pptx','odt','ods','odp','txt','csv','rtf','zip','jpg','jpeg','png','webp']);
@@ -87,6 +87,5 @@ export async function downloadLearningMaterial(env:Env,auth:CoreAuthContext,tena
   if(!row)throw new Error('MATERIAL_NOT_FOUND');rowScopeAllowed(auth,row.course_id?String(row.course_id):null);
   if((auth.role==='participant'||auth.role==='guest')&&Number(row.visible)!==1)throw new Error('MATERIAL_NOT_FOUND');
   const obj=await env.FILES.get(String(row.object_key));if(!obj)throw new Error('MATERIAL_FILE_NOT_FOUND');
-  const filename=safeFilename(String(row.original_name||'material'));
-  return new Response(obj.body,{status:200,headers:{'content-type':String(row.content_type||obj.httpMetadata?.contentType||'application/octet-stream'),'content-length':String(obj.size),'content-disposition':`attachment; filename="${filename}"`,'cache-control':'private, max-age=0, no-store','x-content-type-options':'nosniff'}});
+  return new Response(obj.body,{status:200,headers:{'content-type':String(row.content_type||obj.httpMetadata?.contentType||'application/octet-stream'),'content-length':String(obj.size),'content-disposition':contentDisposition(String(row.original_name||'material')),'cache-control':'private, max-age=0, no-store','x-content-type-options':'nosniff'}});
 }
