@@ -15,7 +15,7 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 16
+    timeout-minutes: 45
     env:
       BASE: https://klassenportal.app
       WORKER_BASE: https://klassenportal-commercial.nicosiedel.workers.dev
@@ -25,16 +25,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # The production Workers Build is not just a deploy: it installs, runs the full
+          # regression suite, the release checks, the local D1 migrations, the EU D1 cutover and
+          # the remote D1 migrations before Wrangler publishes. That pipeline routinely needs well
+          # over ten minutes, so a shorter budget here fails a release that is in fact healthy.
+          # Budget generously and report how long we actually waited when it really does not land.
           marker="<meta name=\"kp-build-commit\" content=\"$GITHUB_SHA\">"
-          for i in $(seq 1 60); do
-            home=$(curl -fsS --max-time 12 "$WORKER_BASE/?sha=$GITHUB_SHA&probe=$i" || true)
+          deadline=$(( SECONDS + 30 * 60 ))
+          probe=0
+          while (( SECONDS < deadline )); do
+            probe=$(( probe + 1 ))
+            home=$(curl -fsS --max-time 12 "$WORKER_BASE/?sha=$GITHUB_SHA&probe=$probe" || true)
             if grep -Fq "$marker" <<<"$home"; then
-              echo "Exact Commercial Worker deployment is live: $GITHUB_SHA"
+              echo "Exact Commercial Worker deployment is live after ${SECONDS}s: $GITHUB_SHA"
               exit 0
             fi
+            if (( probe % 12 == 0 )); then echo "Still waiting for $GITHUB_SHA after ${SECONDS}s ..."; fi
             sleep 10
           done
-          echo "Exact Commercial Worker deployment marker was not observed." >&2
+          echo "Exact Commercial Worker deployment marker was not observed within ${SECONDS}s." >&2
+          echo "Check the Workers Build for this commit before re-running this workflow." >&2
           exit 1
       - name: Verify EU D1 and release contracts on deployed Worker
         shell: bash
