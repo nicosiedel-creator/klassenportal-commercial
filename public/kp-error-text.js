@@ -77,6 +77,22 @@
     MATERIAL_FILE_TYPE_INVALID:'Dieser Dateityp ist nicht zugelassen.',
     MATERIAL_NOT_FOUND:'Die Datei ist nicht mehr vorhanden.',
 
+    // Importe: Der Nutzer muss erfahren, was er an seiner Datei ändern soll.
+    IMPORT_FILE_REQUIRED:'Bitte wähle eine Datei aus.',
+    IMPORT_FILE_TOO_LARGE:'Die Datei ist zu groß. Erlaubt sind bis zu 15 MB.',
+    IMPORT_JSON_INVALID:'Die JSON-Datei ist nicht lesbar. Bitte das Format prüfen.',
+    UNSUPPORTED_PARTICIPANT_IMPORT_FILE:'Dieses Dateiformat wird nicht unterstützt. Möglich sind CSV, XLSX, JSON und Text.',
+    PDF_CLIENT_EXTRACTION_REQUIRED:'PDF-Dateien werden direkt im Browser ausgelesen. Bitte die Datei über die PDF-Auswahl hochladen.',
+    PARTICIPANT_IMPORT_DATA_REQUIRED:'Die Datei enthält keine auswertbaren Zeilen. Bitte prüfen, ob Kopfzeile und mindestens ein Datensatz vorhanden sind.',
+    PARTICIPANT_IMPORT_TOO_LARGE:'Die Datei enthält zu viele Zeilen für einen Durchgang. Bitte in kleineren Teilen importieren.',
+    PARTICIPANT_IMPORT_NOT_FOUND:'Diese Importvorschau ist nicht mehr vorhanden. Bitte die Datei erneut hochladen.',
+    PARTICIPANT_IMPORT_EXPIRED:'Die Importvorschau ist abgelaufen. Bitte die Datei erneut hochladen.',
+    PARTICIPANT_IMPORT_NOT_PENDING:'Dieser Import wurde bereits abgeschlossen oder verworfen.',
+    PARTICIPANT_IMPORT_PREVIEW_CHANGED:'Die Daten haben sich seit der Vorschau geändert. Bitte die Vorschau neu erzeugen und erneut prüfen.',
+    ORG_IMPORT_DATA_REQUIRED:'Die Datei enthält keine auswertbaren Zeilen.',
+    REVIEW_REQUIRED:'Einige Zeilen müssen vor dem Übernehmen geprüft und bestätigt werden.',
+    VALUE_TOO_LONG:'Ein Feld ist zu lang. Bitte die Eingabe kürzen.',
+
     // Technisch
     INTERNAL_ERROR:'Die Aktion konnte gerade nicht ausgeführt werden. Bitte später erneut versuchen.',
     METHOD_NOT_ALLOWED:'Diese Aktion ist hier nicht möglich.',
