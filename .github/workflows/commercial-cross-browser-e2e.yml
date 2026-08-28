@@ -50,16 +50,7 @@ jobs:
           node scripts/commercial-onboarding-e2e-state.mjs seed wrangler.browser-e2e.json
           WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --config wrangler.browser-e2e.json --local --ip 127.0.0.1 --port 8787 --local-upstream 127.0.0.1 --upstream-protocol http >/tmp/commercial-wrangler-e2e.log 2>&1 &
           echo $! >/tmp/commercial-wrangler-e2e.pid
-          ready=0
-          for i in $(seq 1 45); do
-            if curl -fsS --max-time 3 http://127.0.0.1:8787/plattform-admin >/dev/null; then ready=1; break; fi
-            sleep 1
-          done
-          if test "$ready" != 1; then
-            echo 'Local PR candidate did not become ready.' >&2
-            cat /tmp/commercial-wrangler-e2e.log >&2 || true
-            exit 1
-          fi
+          node scripts/wait-for-local-candidate.mjs http://127.0.0.1:8787/plattform-admin /tmp/commercial-wrangler-e2e.log
       - name: Click through the candidate in ${{ matrix.browser }}
         shell: bash
         env:

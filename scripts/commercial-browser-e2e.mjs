@@ -36,7 +36,15 @@ page.on('console',msg=>{if(msg.type()==='error')consoleErrors.push(msg.text());}
 // application. Classifying it by cause keeps the audit honest instead of whitelisting one path
 // at a time as new in-flight requests appear.
 const navigation={depth:0};
-function navigationAbort(request,errorText){return navigation.depth>0&&request.method()==='GET'&&errorText==='net::ERR_ABORTED';}
+// Beim Verlassen einer Seite bricht der Browser die noch laufenden Anfragen des alten Dokuments
+// ab. Das ist kein Produktfehler, aber jede Engine benennt es anders - Playwright selbst
+// erkennt den Abbruch an genau diesen drei Markern (crNetworkManager: event.canceled ->
+// net::ERR_ABORTED, ffNetworkManager: NS_BINDING_ABORTED, wkPage: errorText enthaelt
+// "cancelled"). Bisher stand hier nur die Chromium-Schreibweise, weshalb Firefox 21 abgebrochene
+// Anfragen als Fehler meldete. Die Bedingung bleibt eng: nur GET, und nur waehrend eine
+// Navigation laeuft. Ein echter Verbindungsfehler faellt weiterhin auf.
+const NAVIGATION_ABORT=[/^net::ERR_ABORTED\b/,/^NS_BINDING_ABORTED\b/,/cancelled/i];
+function navigationAbort(request,errorText){return navigation.depth>0&&request.method()==='GET'&&NAVIGATION_ABORT.some(pattern=>pattern.test(errorText));}
 async function settle(target){await target.waitForLoadState('networkidle',{timeout:8000}).catch(()=>undefined);}
 async function navigate(target,url,options){navigation.depth++;try{return await target.goto(url,options);}finally{await settle(target);navigation.depth--;}}
 page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';if(navigationAbort(request,errorText))return;failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
