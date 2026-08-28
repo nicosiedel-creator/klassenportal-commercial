@@ -1,7 +1,22 @@
 name: Commercial cross-browser E2E
 
-# Firefox und WebKit fahren denselben Ablauf wie der Chromium-Gate. Der Workflow läuft
-# absichtlich nicht bei jedem Pull Request: Er ist neu, seine Befunde sind noch unbekannt,
+# Firefox und WebKit fahren denselben Ablauf wie der Chromium-Gate.
+#
+# Stand der WebKit-Untersuchung: WebKit erreicht auf den GitHub-Runnern den lokalen Server
+# nicht. Die Diagnose im Lauf meldet jedes Mal dasselbe - "about:blank: ok in 7-9ms |
+# eingebautes Dokument: ok in 10-21ms | node erreicht den Server: 200 | Navigation über IP:
+# Timeout | Navigation über localhost: Timeout" - und im Worker-Protokoll kommt keine einzige
+# Anfrage von WebKit an. Ausgeschlossen sind damit: eine kaputte Installation (die Engine
+# rendert in einstelligen Millisekunden), das Runner-Abbild (identisch auf ubuntu-latest und
+# ubuntu-24.04), die Adressform (127.0.0.1 und localhost laufen beide in die
+# Zeitueberschreitung), die Erreichbarkeit des Servers (node bekommt 200, und die
+# Bereitschaftspruefung verlangt vorher fuenf Antworten in Folge) und die Playwright-Fassung
+# (1.55.0 und 1.62.1 verhalten sich gleich). Firefox faehrt denselben Ablauf auf demselben
+# Runner gegen denselben Server vollstaendig durch. Es ist also kein Befund am Portal - es
+# erreicht das Portal nichts. Wer hier weitersucht, faengt bei der Netzschicht dieser
+# WebKit-Fassung unter Linux an, nicht bei den vier oben ausgeschlossenen Ursachen.
+#
+# Der Workflow läuft absichtlich nicht bei jedem Pull Request: Er ist neu, seine Befunde sind noch unbekannt,
 # und browserabhängige Fehler sollen gefunden und behoben werden, ohne einen gesunden
 # Release aufzuhalten. Sobald er stabil grün läuft, kann er auf pull_request erweitert
 # und zum Pflicht-Gate gemacht werden.
@@ -40,12 +55,7 @@ jobs:
       - name: Install project and ${{ matrix.browser }}
         run: |
           npm install --no-audit --no-fund
-          # WebKit aus Playwright 1.55.0 rendert einwandfrei, erreicht aber auf zwei
-          # verschiedenen Runner-Abbildern den lokalen Server ueber keine Adressform - waehrend
-          # Firefox aus derselben Installation und node im selben Lauf ihn erreichen. Das Abbild
-          # ist damit ausgeschlossen, die Fassung nicht: 1.55.0 liegt inzwischen sieben
-          # Nebenversionen zurueck. Der Lauf holt deshalb die aktuelle.
-          npm install --no-save --ignore-scripts playwright@1.62.1
+          npm install --no-save --ignore-scripts playwright@1.55.0
           npx playwright install --with-deps ${{ matrix.browser }}
       # WebKit schickte auf dem Runner in 90 Sekunden keine einzige Anfrage an den lokalen
       # Server, waehrend Firefox denselben Ablauf durchlief. Ob die Engine ueberhaupt startet
