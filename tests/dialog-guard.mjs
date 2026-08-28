@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 
 const css=await readFile('public/admin-overlay-hardening.css','utf8');
 const js=await readFile('public/kp-dialog-guard.js','utf8');
@@ -59,10 +59,30 @@ for(const file of ['public/customer-admin.html','public/platform-admin.html']){
   assert.ok(hardening>=0,`${file} must load viewport overlay hardening`);
   assert.ok(hardening>base,`${file} must load overlay hardening after its normal stylesheet stack`);
 }
-for(const file of ['public/customer-admin.html','public/platform-admin.html','public/dozentenportal.html']){
+for(const file of ['public/customer-admin.html','public/platform-admin.html','public/dozentenportal.html',
+                   'public/department-lead.html','public/index.html']){
   const html=await readFile(file,'utf8');
   assert.match(html,/\/kp-dialog-guard\.js\?v=[\w.-]+/,`${file} must load the shared dialog guard behind a cache-busting version`);
 }
+
+// Und die Regel gilt allgemein: Wer Dialoge baut, braucht den Wächter. Zwei Ausnahmen, beide
+// begründet - VFA13 ist eine getrennte Linie und bleibt unberührt, und class-portal.html lädt
+// vfa13-refinement.js, gehört also zu dieser Linie. Wächst diese Liste, fällt es hier auf.
+const guardExempt=new Set(['class-portal.html','vfa-study-entry.html','vfa-study-presenter.html','vfa-study-quiz.html']);
+const unguarded=[];
+for(const shell of (await readdir('public')).filter(f=>f.endsWith('.html'))){
+  if(guardExempt.has(shell))continue;
+  const html=await readFile(`public/${shell}`,'utf8');
+  if(/kp-dialog-guard\.js/.test(html))continue;
+  const scripts=[...new Set((html.match(/\/[a-z0-9-]+\.js/g)||[]).map(x=>x.slice(1)))];
+  for(const file of scripts){
+    let source='';try{source=await readFile(`public/${file}`,'utf8');}catch{continue;}
+    if(/['"`](?:modal-back|class-admin-modal-back|kp-modal-back)/.test(source)){unguarded.push(`${shell} baut Dialoge in ${file}`);break;}
+  }
+}
+assert.deepEqual(unguarded,[],`diese Oberflächen bauen Dialoge ohne den gemeinsamen Wächter:\n${unguarded.join('\n')}`);
+const classPortal=await readFile('public/class-portal.html','utf8');
+assert.match(classPortal,/vfa13-refinement\.js/,'the class portal exemption only holds while it is part of the VFA13 line');
 const teacher=await readFile('public/dozentenportal.html','utf8');
 assert.doesNotMatch(teacher,/admin-overlay-hardening\.css/,'the teacher portal must not inherit the administration dialog layout');
 // Der Wächter darf kein Aussehen mitbringen, sonst wäre er in keiner fremden Shell sicher.

@@ -89,9 +89,17 @@ jobs:
             /tmp/commercial-browser-e2e.log
             /tmp/commercial-wrangler-e2e.log
           if-no-files-found: warn
+      # Der Wrangler-Mitschnitt ist lang und stand bisher am Ende des Job-Logs - er verdrängte
+      # damit genau die Zeile, die sagt, woran der Lauf gescheitert ist. Erst ein knapper
+      # Auszug, dann noch einmal der Befund, damit er die letzte Zeile des Logs ist.
       - name: Show local Worker log on failure
         if: failure()
-        run: cat /tmp/commercial-wrangler-e2e.log || true
+        run: tail -n 40 /tmp/commercial-wrangler-e2e.log || true
+      - name: Repeat the failure at the end of the log
+        if: failure()
+        run: |
+          echo '--- Browser-E2E: letzte Zeilen ---'
+          tail -n 40 /tmp/commercial-browser-e2e.log || true
       - name: Stop local PR candidate
         if: always()
         run: |

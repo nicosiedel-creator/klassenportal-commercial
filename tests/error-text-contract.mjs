@@ -32,10 +32,24 @@ assert.ok(t('').length>15,'ein leerer Fehler braucht trotzdem eine Aussage');
 
 // Jede Kundenoberfläche muss das Wörterbuch laden, sonst greift der Rückfall dort nicht.
 for(const shell of ['customer-admin.html','platform-admin.html','class-admin.html','dozentenportal.html',
-                    'class-portal.html','onboarding.html','angebot.html','index.html']){
+                    'class-portal.html','onboarding.html','angebot.html','index.html','department-lead.html']){
   const html=await readFile(`public/${shell}`,'utf8');
   assert.match(html,/kp-error-text\.js/,`${shell} lädt das gemeinsame Fehlerwörterbuch nicht`);
 }
+// Und jede Shell, deren eigene Skripte auf das Wörterbuch zurückfallen, muss es auch laden -
+// sonst ist window.KP_ERROR_TEXT dort undefiniert und der Rückfall liefert wieder den rohen Code.
+// account-action.html tat genau das.
+const missingDictionary=[];
+for(const shell of (await readdir('public')).filter(f=>f.endsWith('.html'))){
+  const html=await readFile(`public/${shell}`,'utf8');
+  if(/kp-error-text\.js/.test(html))continue;
+  const scripts=[...new Set((html.match(/\/[a-z0-9-]+\.js/g)||[]).map(x=>x.slice(1)))];
+  for(const file of scripts){
+    let source='';try{source=await readFile(`public/${file}`,'utf8');}catch{continue;}
+    if(source.includes('KP_ERROR_TEXT')){missingDictionary.push(`${shell} braucht es für ${file}`);break;}
+  }
+}
+assert.deepEqual(missingDictionary,[],`diese Shells nutzen das Wörterbuch, laden es aber nicht:\n${missingDictionary.join('\n')}`);
 
 // Keine Oberfläche darf einen Fehler mehr unübersetzt ausgeben.
 const raw=[];
