@@ -20,11 +20,11 @@ function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(c
 export async function handleEnterpriseRouter(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;
   try{
-    const ssoStart=path.match(/^\/sso\/([^/]+)$/);if(ssoStart&&request.method==='GET')return startTenantSso(env,decodeURIComponent(ssoStart[1]),request);
-    if(path==='/sso/callback'&&request.method==='GET')return finishTenantSso(env,request);
-    const scim=path.match(/^\/scim\/v2\/([^/]+)(\/.*)?$/);if(scim)return handleScimRequestV2(env,request,decodeURIComponent(scim[1]),scim[2]||'/');
+    const ssoStart=path.match(/^\/sso\/([^/]+)$/);if(ssoStart&&request.method==='GET')return await startTenantSso(env,decodeURIComponent(ssoStart[1]),request);
+    if(path==='/sso/callback'&&request.method==='GET')return await finishTenantSso(env,request);
+    const scim=path.match(/^\/scim\/v2\/([^/]+)(\/.*)?$/);if(scim)return await handleScimRequestV2(env,request,decodeURIComponent(scim[1]),scim[2]||'/');
     if(path==='/api/v1/openapi.json'&&request.method==='GET')return json(apiOpenApi(env.APP_ORIGIN||u.origin));
-    if(path.startsWith('/api/v1/'))return handlePublicApiV1(env,request);
+    if(path.startsWith('/api/v1/'))return await handlePublicApiV1(env,request);
     if(!path.startsWith('/api/enterprise/'))return null;
     assertSameOrigin(request,env.APP_ORIGIN);const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)throw new Error('TENANT_ID_REQUIRED');const auth=await resolveCoreAuth(env,request,tenantId,u.searchParams.get('course_id')||undefined);
     if(path.startsWith('/api/enterprise/intake')){const intake=await handleEnterpriseIntakeRoute(request,env,auth,tenantId);if(intake)return intake;}

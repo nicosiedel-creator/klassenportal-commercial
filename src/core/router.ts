@@ -36,17 +36,20 @@ function customerSupportRequest(request:Request):boolean{try{const ref=request.h
 
 export async function handleCoreApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url);if(!u.pathname.startsWith('/api/'))return null;
+  // Every handler below must be awaited inside this try. Returning a promise from a try block
+  // does not route its rejection through the catch, so a thrown domain code would escape to the
+  // top-level handler and be answered with 500 instead of its own status.
   try{
     assertSameOrigin(request,env.APP_ORIGIN);
     if(u.pathname==='/api/health')return json({ok:true,service:'klassenportal-commercial'});
-    if(u.pathname==='/api/auth/login'&&request.method==='POST')return login(env,request);
-    if(u.pathname==='/api/auth/logout'&&request.method==='POST')return logout(env,request);
+    if(u.pathname==='/api/auth/login'&&request.method==='POST')return await login(env,request);
+    if(u.pathname==='/api/auth/logout'&&request.method==='POST')return await logout(env,request);
     if(u.pathname==='/api/auth/me'&&request.method==='GET'){
       const user=await getSession(env,request);
       if(user?.isPlatformAdmin&&customerSupportRequest(request))return json({ok:true,user:{...user,isPlatformAdmin:false,supportPlatformAdmin:true,tenantRoles:[]}});
       return json({ok:true,user});
     }
-    if(u.pathname==='/api/auth/change-password'&&request.method==='POST')return changePassword(env,request);
+    if(u.pathname==='/api/auth/change-password'&&request.method==='POST')return await changePassword(env,request);
 
     const publicQuote=u.pathname.match(/^\/api\/onboarding\/([^/]+)\/quote$/);
     if(publicQuote&&request.method==='GET')return json({ok:true,quote:await getPublicOnboardingQuote(env,decodeURIComponent(publicQuote[1]),{courses:u.searchParams.get('courses')||'1',billingCycle:u.searchParams.get('billing_cycle')||'monthly',setupOptionId:u.searchParams.get('setup')||'self_service',purpose:u.searchParams.get('purpose')||'paid'})});
@@ -121,7 +124,7 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(u.pathname==='/api/materials'&&request.method==='GET')return json({ok:true,materials:await listLearningMaterials(env,a,tenantId,courseId)});
     if(u.pathname==='/api/materials'&&request.method==='POST')return json({ok:true,material:await uploadLearningMaterial(env,a,tenantId,request,courseId)},201);
     const materialDownload=u.pathname.match(/^\/api\/materials\/([^/]+)\/download$/);
-    if(materialDownload&&request.method==='GET')return downloadLearningMaterial(env,a,tenantId,decodeURIComponent(materialDownload[1]));
+    if(materialDownload&&request.method==='GET')return await downloadLearningMaterial(env,a,tenantId,decodeURIComponent(materialDownload[1]));
     const material=u.pathname.match(/^\/api\/materials\/([^/]+)$/);
     if(material&&request.method==='PATCH')return json({ok:true,material:await updateLearningMaterial(env,a,tenantId,decodeURIComponent(material[1]),await body(request))});
     if(material&&request.method==='DELETE'){await deleteLearningMaterial(env,a,tenantId,decodeURIComponent(material[1]));return json({ok:true});}

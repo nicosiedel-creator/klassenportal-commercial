@@ -66,7 +66,19 @@ async function candidateSurface(){
   const invitation=await api('/api/platform/onboarding-invitations');if(![401,403].includes(invitation.status))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status}`);
   const frozenCheckout=await api('/api/payments/checkout-status?session_id=cs_test_browser_candidate');if(frozenCheckout.status!==503||frozenCheckout.data?.error!=='PAYMENT_DISABLED')fail('candidate checkout did not remain frozen');
   const frozenWebhook=await api('/api/payments/stripe/webhook',{method:'POST',body:{}});if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('candidate payment webhook did not remain side-effect-free');
-  console.log('PR candidate browser/API/legal/testcenter/payment-freeze surface: OK');
+  // Brute-force protection is keyed per (client, e-mail), so a throwaway address cannot lock out
+  // a real account. It must answer 429 with its own code: a 500 tells the user nothing and hides
+  // the block from the login surface.
+  const bruteEmail=`brute-force-probe-${Date.now()}@example.invalid`;
+  let bruteStatus=0,bruteCode='';
+  for(let attempt=0;attempt<8;attempt++){
+    const response=await api('/api/auth/login',{method:'POST',body:{email:bruteEmail,password:`falsch-${attempt}`}});
+    bruteStatus=response.status;bruteCode=String(response.data?.error||'');
+    if(bruteStatus===429)break;
+    if(bruteStatus!==401)fail(`failed login must answer 401 until the limit is reached, got ${bruteStatus}/${bruteCode}`);
+  }
+  if(bruteStatus!==429||bruteCode!=='LOGIN_RATE_LIMITED')fail(`brute-force protection must answer 429 LOGIN_RATE_LIMITED, got ${bruteStatus}/${bruteCode}`);
+  console.log('PR candidate browser/API/legal/testcenter/payment-freeze/brute-force surface: OK');
 }
 
 async function internalLinkAudit(paths){

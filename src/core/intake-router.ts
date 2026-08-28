@@ -26,7 +26,7 @@ export async function handleEnterpriseIntakeRoute(request:Request,env:Env,auth:C
     if(path==='/api/enterprise/intake/submitters'&&request.method==='POST')return json({ok:true,submitter:await addIntakeSubmitter(env,auth,tenantId,await body(request))},201);
     const submitter=path.match(/^\/api\/enterprise\/intake\/submitters\/([^/]+)$/);if(submitter&&request.method==='DELETE'){await revokeIntakeSubmitter(env,auth,tenantId,decodeURIComponent(submitter[1]));return json({ok:true});}
     if(path==='/api/enterprise/intake/upload-links'&&request.method==='POST')return json({ok:true,link:await createIntakeUploadLink(env,auth,tenantId,await body(request),request)},201);
-    const doc=path.match(/^\/api\/enterprise\/intake\/documents\/([^/]+)$/);if(doc&&request.method==='GET')return getIntakeDocument(env,auth,tenantId,decodeURIComponent(doc[1]));
+    const doc=path.match(/^\/api\/enterprise\/intake\/documents\/([^/]+)$/);if(doc&&request.method==='GET')return await getIntakeDocument(env,auth,tenantId,decodeURIComponent(doc[1]));
     const batch=path.match(/^\/api\/enterprise\/intake\/batches\/([^/]+)$/);if(batch&&request.method==='GET')return json({ok:true,...await getIntakeBatch(env,auth,tenantId,decodeURIComponent(batch[1]))});
     const preview=path.match(/^\/api\/enterprise\/intake\/batches\/([^/]+)\/preview$/);if(preview&&request.method==='POST')return json({ok:true,...await previewIntakeBatch(env,auth,tenantId,decodeURIComponent(preview[1]),await body(request))});
     const apply=path.match(/^\/api\/enterprise\/intake\/batches\/([^/]+)\/apply$/);if(apply&&request.method==='POST')return json({ok:true,...await applyIntakeBatch(env,auth,tenantId,decodeURIComponent(apply[1]),await body(request))});

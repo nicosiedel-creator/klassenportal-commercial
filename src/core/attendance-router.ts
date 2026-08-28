@@ -43,7 +43,7 @@ export async function handleAttendanceApi(request:Request,env:Env):Promise<Respo
 
     const courseId=u.searchParams.get('course_id')||'';if(!courseId)throw new Error('ATTENDANCE_SCOPE_REQUIRED');
     const auth=await resolveCoreAuth(env,request,tenantId,courseId),studentAuth=asStudentView(auth);
-    const managerAuth=async()=>{forbidClassAdminStudentData(auth);return teacherAttendanceAuth(env,auth,tenantId,courseId);};
+    const managerAuth=async()=>{forbidClassAdminStudentData(auth);return await teacherAttendanceAuth(env,auth,tenantId,courseId);};
 
     const myLessonNote=path.match(/^\/api\/attendance\/lesson-hub\/([^/]+)\/my-note$/);
     if(myLessonNote&&request.method==='GET')return json({ok:true,note:await getMyLessonNote(env,studentAuth,tenantId,courseId,decodeURIComponent(myLessonNote[1]))});
