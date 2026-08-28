@@ -7,78 +7,133 @@ type ClaimState={invitation_id:string;claimed_at:string};
 
 const STALE_CLAIM_MS=15*60_000;
 
-async function tableExists(env:Env,name:string):Promise<boolean>{
-  return !!(await env.DB.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name=?").bind(name).first());
-}
+// Canonical trigger program installed by migration 0090.
+const RECOVERY_TRIGGERS=['trg_onboarding_claim_tombstone_on_delete','trg_onboarding_claim_replay_guard','trg_onboarding_revoke_active_claim_guard','trg_onboarding_expiry_active_claim_guard'];
+// 0089 shipped the same guarantees under different names. A repaired database keeps only one set.
+const LEGACY_TRIGGERS=['trg_onboarding_claim_completed_tombstone','trg_onboarding_claim_block_replay','trg_onboarding_claim_block_revoke','trg_onboarding_claim_skip_expire'];
+const RECOVERY_TABLES=['onboarding_claims','onboarding_claim_tombstones'];
+
+// Schema shape contract: these column lists must stay identical to migrations 0025/0089/0090.
+// `CREATE TABLE IF NOT EXISTS` cannot widen an existing table, so requiring a column that the
+// historical migrations never created would fail closed on every real production database.
+const REQUIRED_COLUMNS:Record<string,string[]>={
+  onboarding_invitations:['id','token_hash','customer_email','plan_id','status','expires_at','created_by','created_at','completed_at','tenant_id','form_json'],
+  tenant_profiles:['tenant_id','legal_name','contact_name','contact_email','onboarding_invitation_id','updated_at'],
+  provisioning_log:['tenant_id','action','status','detail_json'],
+  onboarding_claims:['invitation_id','nonce','claimed_at'],
+  onboarding_claim_tombstones:['invitation_id','completed_at'],
+};
+
+// Verifying the onboarding schema costs a handful of D1 round trips. The public setup routes call
+// it on every request, and a schema only ever moves forward, so a proven-good result is cached for
+// the lifetime of the isolate. Failures are never cached.
+const verified=new WeakSet<object>();
 
 async function tableColumns(env:Env,name:string):Promise<Set<string>>{
+  // PRAGMA table_info returns an empty result for a missing table, so this doubles as an
+  // existence check without a second round trip.
   const rows=await env.DB.prepare(`PRAGMA table_info(${name})`).all<Record<string,unknown>>();
   return new Set((rows.results??[]).map(row=>String(row['name']??'')).filter(Boolean));
 }
 
-async function requireColumns(env:Env,table:string,required:string[]):Promise<void>{
-  if(!await tableExists(env,table))throw new Error('ONBOARDING_SCHEMA_INCOMPATIBLE');
+async function requireColumns(env:Env,table:string):Promise<void>{
+  const required=REQUIRED_COLUMNS[table]??[];
   const columns=await tableColumns(env,table);
-  if(required.some(column=>!columns.has(column)))throw new Error('ONBOARDING_SCHEMA_INCOMPATIBLE');
+  if(!columns.size||required.some(column=>!columns.has(column)))throw new Error('ONBOARDING_SCHEMA_INCOMPATIBLE');
+}
+
+async function schemaObjects(env:Env):Promise<Set<string>>{
+  const names=[...RECOVERY_TABLES,...RECOVERY_TRIGGERS,...LEGACY_TRIGGERS];
+  const rows=await env.DB.prepare(`SELECT name FROM sqlite_master WHERE name IN (${names.map(()=>'?').join(',')})`).bind(...names).all<Record<string,unknown>>();
+  return new Set((rows.results??[]).map(row=>String(row['name']??'')).filter(Boolean));
+}
+
+function recoverySchemaComplete(objects:Set<string>):boolean{
+  if(RECOVERY_TABLES.some(table=>!objects.has(table)))return false;
+  if(RECOVERY_TRIGGERS.some(trigger=>!objects.has(trigger)))return false;
+  return !LEGACY_TRIGGERS.some(trigger=>objects.has(trigger));
+}
+
+async function repairRecoverySchema(env:Env):Promise<void>{
+  const statements=[
+    // Shapes mirror migrations 0025 and 0089 exactly. See REQUIRED_COLUMNS above.
+    `CREATE TABLE IF NOT EXISTS onboarding_claims (
+      invitation_id TEXT PRIMARY KEY,
+      nonce TEXT NOT NULL,
+      claimed_at TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS onboarding_claim_tombstones (
+      invitation_id TEXT PRIMARY KEY,
+      completed_at TEXT NOT NULL,
+      FOREIGN KEY(invitation_id) REFERENCES onboarding_invitations(id) ON DELETE CASCADE
+    )`,
+    ...LEGACY_TRIGGERS.map(trigger=>`DROP TRIGGER IF EXISTS ${trigger}`),
+    `DROP TRIGGER IF EXISTS trg_onboarding_claim_tombstone_on_delete`,
+    `CREATE TRIGGER trg_onboarding_claim_tombstone_on_delete
+      BEFORE DELETE ON onboarding_claims
+      FOR EACH ROW
+      WHEN EXISTS(SELECT 1 FROM onboarding_invitations WHERE id=OLD.invitation_id AND status='completed')
+      BEGIN
+        INSERT OR IGNORE INTO onboarding_claim_tombstones(invitation_id,completed_at)
+        SELECT id,COALESCE(completed_at,strftime('%Y-%m-%dT%H:%M:%fZ','now')) FROM onboarding_invitations WHERE id=OLD.invitation_id;
+      END`,
+    `DROP TRIGGER IF EXISTS trg_onboarding_claim_replay_guard`,
+    `CREATE TRIGGER trg_onboarding_claim_replay_guard
+      BEFORE INSERT ON onboarding_claims
+      FOR EACH ROW
+      WHEN EXISTS(SELECT 1 FROM onboarding_claim_tombstones WHERE invitation_id=NEW.invitation_id)
+      BEGIN
+        SELECT RAISE(ABORT,'ONBOARDING_ALREADY_USED');
+      END`,
+    `DROP TRIGGER IF EXISTS trg_onboarding_revoke_active_claim_guard`,
+    `CREATE TRIGGER trg_onboarding_revoke_active_claim_guard
+      BEFORE UPDATE OF status ON onboarding_invitations
+      FOR EACH ROW
+      WHEN NEW.status='revoked' AND EXISTS(SELECT 1 FROM onboarding_claims WHERE invitation_id=OLD.id)
+      BEGIN
+        SELECT RAISE(ABORT,'ONBOARDING_ALREADY_IN_PROGRESS');
+      END`,
+    `DROP TRIGGER IF EXISTS trg_onboarding_expiry_active_claim_guard`,
+    `CREATE TRIGGER trg_onboarding_expiry_active_claim_guard
+      BEFORE UPDATE OF status ON onboarding_invitations
+      FOR EACH ROW
+      WHEN NEW.status='expired' AND EXISTS(SELECT 1 FROM onboarding_claims WHERE invitation_id=OLD.id)
+      BEGIN
+        SELECT RAISE(IGNORE);
+      END`,
+  ];
+  for(const statement of statements)await env.DB.prepare(statement).run();
 }
 
 async function ensureRecoveryTables(env:Env):Promise<void>{
-  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS onboarding_claims (
-    invitation_id TEXT PRIMARY KEY,
-    nonce TEXT NOT NULL,
-    claimed_at TEXT NOT NULL,
-    FOREIGN KEY(invitation_id) REFERENCES onboarding_invitations(id) ON DELETE CASCADE
-  )`).run();
-  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS onboarding_claim_tombstones (
-    invitation_id TEXT PRIMARY KEY,
-    completed_at TEXT NOT NULL,
-    recorded_at TEXT NOT NULL,
-    FOREIGN KEY(invitation_id) REFERENCES onboarding_invitations(id) ON DELETE CASCADE
-  )`).run();
-  await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS trg_onboarding_claim_tombstone_on_delete
-    BEFORE DELETE ON onboarding_claims
-    FOR EACH ROW
-    WHEN EXISTS(SELECT 1 FROM onboarding_invitations WHERE id=OLD.invitation_id AND status='completed')
-    BEGIN
-      INSERT OR IGNORE INTO onboarding_claim_tombstones(invitation_id,completed_at,recorded_at)
-      SELECT id,COALESCE(completed_at,CURRENT_TIMESTAMP),CURRENT_TIMESTAMP FROM onboarding_invitations WHERE id=OLD.invitation_id;
-    END`).run();
-  await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS trg_onboarding_claim_replay_guard
-    BEFORE INSERT ON onboarding_claims
-    FOR EACH ROW
-    WHEN EXISTS(SELECT 1 FROM onboarding_claim_tombstones WHERE invitation_id=NEW.invitation_id)
-    BEGIN
-      SELECT RAISE(ABORT,'ONBOARDING_ALREADY_USED');
-    END`).run();
-  await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS trg_onboarding_revoke_active_claim_guard
-    BEFORE UPDATE OF status ON onboarding_invitations
-    FOR EACH ROW
-    WHEN NEW.status='revoked' AND EXISTS(SELECT 1 FROM onboarding_claims WHERE invitation_id=OLD.id)
-    BEGIN
-      SELECT RAISE(ABORT,'ONBOARDING_ALREADY_IN_PROGRESS');
-    END`).run();
-  await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS trg_onboarding_expiry_active_claim_guard
-    BEFORE UPDATE OF status ON onboarding_invitations
-    FOR EACH ROW
-    WHEN NEW.status='expired' AND EXISTS(SELECT 1 FROM onboarding_claims WHERE invitation_id=OLD.id)
-    BEGIN
-      SELECT RAISE(IGNORE);
-    END`).run();
+  if(recoverySchemaComplete(await schemaObjects(env)))return;
+  await repairRecoverySchema(env);
+}
+
+async function verifyOnboardingSchema(env:Env):Promise<void>{
+  await requireColumns(env,'onboarding_invitations');
+  await requireColumns(env,'tenant_profiles');
+  await requireColumns(env,'provisioning_log');
+  await ensureRecoveryTables(env);
+  await requireColumns(env,'onboarding_claims');
+  await requireColumns(env,'onboarding_claim_tombstones');
 }
 
 export async function ensureOnboardingSchema(env:Env):Promise<void>{
-  await requireColumns(env,'onboarding_invitations',['id','token_hash','customer_email','plan_id','status','expires_at','created_by','created_at','completed_at','tenant_id','form_json']);
-  await requireColumns(env,'tenant_profiles',['tenant_id','legal_name','contact_name','contact_email','onboarding_invitation_id','updated_at']);
-  await requireColumns(env,'provisioning_log',['tenant_id','action','status','detail_json']);
-  await ensureRecoveryTables(env);
-  await requireColumns(env,'onboarding_claims',['invitation_id','nonce','claimed_at']);
-  await requireColumns(env,'onboarding_claim_tombstones',['invitation_id','completed_at','recorded_at']);
+  const key=env.DB as unknown as object;
+  if(key&&verified.has(key))return;
+  await verifyOnboardingSchema(env);
+  if(key)verified.add(key);
+}
+
+async function tableExists(env:Env,name:string):Promise<boolean>{
+  return !!(await env.DB.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name=?").bind(name).first());
 }
 
 async function tenantUsersAvailable(env:Env):Promise<boolean>{return tableExists(env,'tenant_users');}
 
 async function orphanTenants(env:Env,invitation:InvitationState):Promise<string[]>{
-  const actorFragment=`\"actorUserId\":\"onboarding:${invitation.id}\"`;
+  const actorFragment=`"actorUserId":"onboarding:${invitation.id}"`;
   const rows=await env.DB.prepare(`SELECT DISTINCT tenant_id FROM provisioning_log
     WHERE tenant_id IS NOT NULL AND action='tenant_created' AND status='completed' AND instr(COALESCE(detail_json,''),?)>0`)
     .bind(actorFragment).all<{tenant_id:string}>();
@@ -124,18 +179,21 @@ export async function recoverOnboardingRequestState(env:Env,token:string):Promis
   }
   if(!claim)return;
   const claimedAt=Date.parse(String(claim.claimed_at||''));
+  // An unparsable claim timestamp must not read as "fresh"; treat it as abandoned so a broken
+  // historical row can still be recovered instead of blocking the link forever.
   if(Number.isFinite(claimedAt)&&Date.now()-claimedAt<STALE_CLAIM_MS)return;
   await recoverInterruptedState(env,invitation,'STALE_CLAIM');
 }
 
 export async function onboardingSchemaStatus(env:Env):Promise<{ready:boolean;issues:string[]}>{
   const issues:string[]=[];
-  try{await ensureOnboardingSchema(env);}catch{issues.push('onboarding_schema');}
+  // Readiness is an explicit platform-admin probe: never answer it from the isolate cache.
+  try{await verifyOnboardingSchema(env);}catch{issues.push('onboarding_schema');}
   if(!issues.length){
-    const requiredTriggers=['trg_onboarding_claim_tombstone_on_delete','trg_onboarding_claim_replay_guard','trg_onboarding_revoke_active_claim_guard','trg_onboarding_expiry_active_claim_guard'];
-    const rows=(await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name IN (${requiredTriggers.map(()=>'?').join(',')})`).bind(...requiredTriggers).all<Record<string,unknown>>()).results??[];
-    const names=new Set(rows.map(row=>String(row['name']??'')));
-    for(const trigger of requiredTriggers)if(!names.has(trigger))issues.push(trigger);
+    const objects=await schemaObjects(env);
+    for(const trigger of RECOVERY_TRIGGERS)if(!objects.has(trigger))issues.push(trigger);
+    for(const trigger of LEGACY_TRIGGERS)if(objects.has(trigger))issues.push(`${trigger}_superseded`);
   }
+  if(!issues.length){const key=env.DB as unknown as object;if(key)verified.add(key);}
   return{ready:issues.length===0,issues};
 }
