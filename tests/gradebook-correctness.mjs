@@ -37,7 +37,7 @@ assert.ok(customerLazy.includes("'gradebook-policy-ui'"),'customer learning work
 assert.ok(customerLazy.includes("'gradebook-default-scale-ui'"),'customer learning workspace must lazy-load the complete default grading scale');
 assert.doesNotMatch(customerHtml,/src="\/gradebook-policy-ui\.js|src="\/gradebook-default-scale-ui\.js/,'gradebook policy modules must not execute on customer-admin first paint');
 assert.match(customerHtml,/\/admin-overlay-hardening\.css\?v=[\w.-]+/,'customer gradebook integration must preserve hardened admin dialog styles behind a cache-busting version');
-assert.match(customerHtml,/\/admin-overlay-hardening\.js\?v=[\w.-]+/,'customer gradebook integration must preserve the DOM overlay guard behind a cache-busting version');
-assert.doesNotMatch(classHtml,/gradebook-policy-ui\.js|gradebook-default-scale-ui\.js|admin-overlay-hardening\.js/,'class admin student entry must never load administrative gradebook UI');
+assert.match(customerHtml,/\/kp-dialog-guard\.js\?v=[\w.-]+/,'customer gradebook integration must preserve the DOM dialog guard behind a cache-busting version');
+assert.doesNotMatch(classHtml,/gradebook-policy-ui\.js|gradebook-default-scale-ui\.js|kp-dialog-guard\.js/,'class admin student entry must never load administrative gradebook UI');
 assert.match(classHtml,/class-admin-entry\.js/,'class admin must enter through the student portal');
 console.log('Official gradebook correctness for lazy customer administration and class-admin student privacy checks: OK');
