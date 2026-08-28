@@ -40,7 +40,12 @@ jobs:
       - name: Install project and ${{ matrix.browser }}
         run: |
           npm install --no-audit --no-fund
-          npm install --no-save --ignore-scripts playwright@1.55.0
+          # WebKit aus Playwright 1.55.0 rendert einwandfrei, erreicht aber auf zwei
+          # verschiedenen Runner-Abbildern den lokalen Server ueber keine Adressform - waehrend
+          # Firefox aus derselben Installation und node im selben Lauf ihn erreichen. Das Abbild
+          # ist damit ausgeschlossen, die Fassung nicht: 1.55.0 liegt inzwischen sieben
+          # Nebenversionen zurueck. Der Lauf holt deshalb die aktuelle.
+          npm install --no-save --ignore-scripts playwright@1.62.1
           npx playwright install --with-deps ${{ matrix.browser }}
       # WebKit schickte auf dem Runner in 90 Sekunden keine einzige Anfrage an den lokalen
       # Server, waehrend Firefox denselben Ablauf durchlief. Ob die Engine ueberhaupt startet
