@@ -17,6 +17,39 @@ assert.match(js,/MutationObserver/,'overlay guard must watch dynamically created
 assert.match(js,/el\.parentElement!==document\.body\)document\.body\.append\(el\)/,'nested backdrops must be reparented to document.body');
 assert.match(js,/kp-admin-modal-open/,'overlay guard must maintain the body modal-open state');
 
+// Jedes Verwaltungsmodul baut seine Dialoge selbst. Der gemeinsame Wächter ist der einzige Ort,
+// an dem Dialogsemantik, Tastaturbedienung und Fokus für alle gleichzeitig gelten - er darf nicht
+// stillschweigend auf das Umhängen von Overlays zurückfallen.
+assert.match(js,/setAttribute\('role','dialog'\)/,'overlay guard must expose every admin overlay as a dialog');
+assert.match(js,/setAttribute\('aria-modal','true'\)/,'overlay guard must expose every admin overlay as modal');
+assert.match(js,/aria-labelledby.*aria-label|aria-label.*aria-labelledby/s,'overlay guard must give every dialog an accessible name');
+assert.match(js,/setAttribute\('aria-label','Schließen'\)/,'a close control that reads only as a symbol must get a spoken name');
+assert.match(js,/key!=='Escape'/,'overlay guard must handle Escape');
+assert.match(js,/hasUnsavedInput/,'Escape must not discard typed input without asking');
+assert.match(js,/event\.isTrusted/,'only real keystrokes may count as unsaved input, never values a module seeded');
+assert.match(js,/\bel\.inert=true\b/,'content behind the dialog must leave the tab order and the accessibility tree');
+assert.match(js,/\bel\.inert=false\b/,'the page behind the dialog must become reachable again after closing');
+assert.match(js,/role="status"|role=\\"status\\"/,'status and error messages must stay reachable while a dialog is open');
+assert.match(js,/focus\(\{preventScroll:true\}\)/,'focus must move into the dialog and back to its opener');
+assert.match(js,/event\.key==='Tab'/,'the tab order must be closed inside the dialog; inert alone lets Tab leave the document');
+assert.match(js,/event\.shiftKey/,'the focus trap must wrap in both directions');
+assert.doesNotMatch(js,/\bnavigator\b|\bfetch\(/,'the overlay guard must stay a pure DOM guard');
+
+// Meldungen dürfen nicht hinter der Abdunklung des Dialogs verschwinden.
+const backdropZ=Number(css.match(/z-index:(\d+)!important/)?.[1]||0);
+const noticeZ=Number(css.match(/\.eo-os-note\{z-index:(\d+)!important\}/)?.[1]||0);
+assert.ok(backdropZ>0&&noticeZ>backdropZ,`status messages must render above the dialog backdrop (${noticeZ} vs ${backdropZ})`);
+for(const selector of ['body > [role="status"]','body > [role="alert"]','body > [aria-live]'])
+  assert.ok(css.includes(selector),`overlay hardening must lift ${selector} above the backdrop`);
+
+// Ein Navigationseintrag, der nichts öffnet, ist eine Sackgasse.
+const platformLazy=await readFile('public/platform-admin-lazy-modules.js','utf8');
+const configBlock=platformLazy.slice(platformLazy.indexOf('const CONFIG={'),platformLazy.indexOf('const loaded='));
+assert.doesNotMatch(configBlock,/target:null/,'every platform launcher must lead to a surface the user can actually reach');
+for(const target of configBlock.matchAll(/target:'#([\w-]+)'/g))
+  assert.ok(platformLazy.includes(`#${target[1]}`),`platform launcher target #${target[1]} must be addressable`);
+assert.match(platformLazy,/const keyboard=document\.activeElement===b/,'a launcher that replaces itself must not drop keyboard focus');
+
 for(const file of ['public/customer-admin.html','public/platform-admin.html']){
   const html=await readFile(file,'utf8');
   const base=html.lastIndexOf('/styles.css'),hardening=html.indexOf('/admin-overlay-hardening.css?v='),guard=html.indexOf('/admin-overlay-hardening.js?v=');

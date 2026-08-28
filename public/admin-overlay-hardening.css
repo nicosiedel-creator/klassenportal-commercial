@@ -27,6 +27,12 @@
   overflow:auto!important;
   overscroll-behavior:contain!important;
 }
+/* Status- und Fehlermeldungen liegen bewusst über dem Dialog: sonst meldet eine
+   fehlgeschlagene Aktion im Dialog hinter der Abdunklung und bleibt unlesbar. */
+body > [role="status"],
+body > [role="alert"],
+body > [aria-live],
+body > .eo-os-note{z-index:2147483100!important}
 body.kp-admin-modal-open{overflow:hidden!important}
 body.kp-admin-modal-open .side,
 body.kp-admin-modal-open .portal-header,

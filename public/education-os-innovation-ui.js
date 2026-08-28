@@ -3,7 +3,7 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
   const tenant=()=>document.querySelector('#tenantPick')?.value||'';
   const q=(path,t=tenant(),extra={})=>{const u=new URL(path,location.origin);u.searchParams.set('tenant_id',t);for(const[k,v]of Object.entries(extra))if(v!==null&&v!==undefined&&v!=='')u.searchParams.set(k,String(v));return u.pathname+u.search;};
   async function api(path,opt={}){const r=await fetch(path,{credentials:'same-origin',cache:'no-store',...opt,headers:{...(opt.body?{'content-type':'application/json'}:{}),...(opt.headers||{})}});let d={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(d.error||`HTTP_${r.status}`);return d;}
-  function toast(text,kind='ok'){const n=document.createElement('div');n.className=`eo-os-note ${kind==='error'?'error':kind==='warn'?'warn':'secure'}`;n.style.cssText='position:fixed;z-index:2800;right:22px;bottom:22px;max-width:440px;box-shadow:0 10px 30px #0002';n.textContent=text;document.body.append(n);setTimeout(()=>n.remove(),4200);}
+  function toast(text,kind='ok'){const n=document.createElement('div');n.className=`eo-os-note ${kind==='error'?'error':kind==='warn'?'warn':'secure'}`;n.style.cssText='position:fixed;z-index:2800;right:22px;bottom:22px;max-width:440px;box-shadow:0 10px 30px #0002';n.setAttribute('role','status');n.setAttribute('aria-live','polite');n.textContent=text;document.body.append(n);setTimeout(()=>n.remove(),4200);}
   let courses=[];
   async function loadCourses(){if(courses.length)return courses;try{courses=(await api(q('/api/courses'))).courses||[];}catch{}return courses;}
 
