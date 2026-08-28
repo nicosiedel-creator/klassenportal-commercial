@@ -38,7 +38,12 @@ async function route(path,{allowStatuses=[200],waitForResponsePath=null}={}){
   const backgroundResponse=waitForResponsePath?page.waitForResponse(response=>{try{return new URL(response.url()).pathname===waitForResponsePath;}catch{return false;}},{timeout:10000}):null;
   const response=await navigate(page,base+path,{waitUntil:'domcontentloaded',timeout:30000});
   if(!response)fail(`No response for ${path}`);
-  if(!allowStatuses.includes(response.status()))fail(`${path} returned unexpected ${response.status()}`);
+  // Ein 304 ist die richtige Antwort auf eine bedingte Anfrage: die zwischengespeicherte Seite
+  // ist noch gültig. Firefox und WebKit revalidieren beim zweiten Besuch, Chromium liefert dort
+  // aus dem Speicher heraus 200 - eine Erwartung von genau 200 prüft also den Browser, nicht das
+  // Produkt. Wo eine Seite gesperrt sein muss (503), zählt 304 weiterhin nicht als Erfolg.
+  const revalidated=response.status()===304&&allowStatuses.includes(200);
+  if(!revalidated&&!allowStatuses.includes(response.status()))fail(`${path} returned unexpected ${response.status()}`);
   if(backgroundResponse){const bootstrap=await backgroundResponse;if(bootstrap.status()>=400)fail(`${waitForResponsePath} bootstrap returned unexpected ${bootstrap.status()}`);console.log(`browser bootstrap ${waitForResponsePath}: ${bootstrap.status()}`);}
   const text=(await page.locator('body').innerText()).slice(0,7000);
   if(/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`${path} rendered a Cloudflare/server error`);
