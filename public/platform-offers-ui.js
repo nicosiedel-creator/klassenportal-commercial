@@ -11,7 +11,7 @@ if(OFFER_OWNER_PATH){
   function discountPayload(type,value){if(type==='none')return 0;if(type==='fixed')return cents(value)??0;const n=Number(String(value||'0').replace(',','.'));return Number.isFinite(n)?n:0;}
   function statusLabel(v){return({draft:'Entwurf',offered:'Freigegeben',accepted:'Angenommen',expired:'Abgelaufen',cancelled:'Storniert'})[v]||v;}
   function statusPill(v){const cls=v==='accepted'?'ok':v==='cancelled'||v==='expired'?'error':'';return `<span class="pill ${cls}">${E(statusLabel(v))}</span>`;}
-  async function copyLink(url){try{await navigator.clipboard.writeText(url);notify('Link wurde in die Zwischenablage kopiert.');}catch{const w=modal('Link',`<p class="muted">Der Browser konnte nicht automatisch in die Zwischenablage schreiben. Link markieren und kopieren:</p><input readonly value="${E(url)}" style="width:100%">`);w.querySelector('input')?.select();}}
+  async function copyLink(url){try{await navigator.clipboard.writeText(url);notify('Link wurde in die Zwischenablage kopiert.');}catch{const w=modal('Link',`<p class="muted">Der Browser konnte nicht automatisch in die Zwischenablage schreiben. Link markieren und kopieren:</p><input readonly aria-label="Angebotslink zum Kopieren" value="${E(url)}" style="width:100%">`);w.querySelector('input')?.select();}}
   async function deliveryNotice(d,prefix='Angebot freigegeben'){
     if(d?.delivery?.sent){notify(`${prefix}. Der Link wurde automatisch per E-Mail versendet.`);return;}
     if(d?.publicUrl)await copyLink(d.publicUrl);

@@ -1,8 +1,12 @@
 (()=>{
-  const selector='.modal-back,.class-admin-modal-back,.kp-modal-back';
-  const panelSelector='.modal,.class-admin-modal,.kp-modal';
+  // Der Education-OS-Overlay (Autopilot) baut sein eigenes bildschirmfuellendes Fenster mit
+  // eigenen Klassennamen und war deshalb als einziger nicht erfasst. Gemessen hiess das: keine
+  // Dialogrolle, kein Name, der Hintergrund blieb bedienbar, der Tabulator lief nach elf
+  // Spruengen aus dem Fenster heraus in die verdeckte Navigation, und Escape schloss nichts.
+  const selector='.modal-back,.class-admin-modal-back,.kp-modal-back,.eo-os-back';
+  const panelSelector='.modal,.class-admin-modal,.kp-modal,.eo-os-shell';
   const liveSelector='[role="status"],[role="alert"],[aria-live]';
-  const closeSelector='[data-close],.close,.op-close,.class-admin-close,button[id$="-close"],button[id$="-x"]';
+  const closeSelector='[data-close],.close,.op-close,.class-admin-close,.eo-os-close,button[id$="-close"],button[id$="-x"]';
   const closeLabel=/^(×|✕|✖|x|schließen|schliessen|abbrechen|zurück)$/i;
   const skipTags=['SCRIPT','LINK','STYLE','TEMPLATE','NOSCRIPT'];
   const focusableSelector='a[href],area[href],button,input,select,textarea,iframe,summary,audio[controls],video[controls],[contenteditable]:not([contenteditable="false"]),[tabindex]';

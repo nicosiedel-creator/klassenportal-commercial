@@ -19,11 +19,14 @@ const raceToken=String(process.env.E2E_ONBOARDING_RACE_TOKEN||'').trim();
 const raceAdmin=String(process.env.E2E_ONBOARDING_RACE_ADMIN||'').trim();
 const racePassword=String(process.env.E2E_ONBOARDING_RACE_PASSWORD||'');
 const fail=(msg)=>{throw new Error(msg);};
-// Firefox kennt die Geräte-Emulation isMobile/hasTouch nicht und weist den Kontext rundweg ab.
-// Der Zweck der mobilen Prüfung ist aber das schmale Fenster und die mobile Kennung - beides
-// kann Firefox. Also nur die Emulationsschalter weglassen, statt die Prüfung dort auszulassen.
-const supportsDeviceEmulation=engineName!=='firefox';
-const mobileContext=extra=>({viewport:{width:390,height:844},...(supportsDeviceEmulation?{isMobile:true,hasTouch:true}:{}),...extra});
+// Die mobile Prüfung misst ein echtes Telefonfenster: 390px Layoutbreite und eine mobile Kennung.
+// Chromiums isMobile-Emulation verbreitert bei Überlauf das Layoutfenster (shrink-to-fit) statt
+// überzulaufen - damit blieben fünf öffentliche Seiten mit bis zu 594px Querlauf jahrelang
+// unentdeckt, darunter drei rechtlich verpflichtende. Firefox weist die Emulation ohnehin ab und
+// hat den Überlauf gemeldet. Keine der Prüfungen hier bedient etwas per Berührung, also fällt die
+// Emulation weg und alle Engines messen dasselbe: was ein Telefon mit
+// width=device-width,initial-scale=1 tatsächlich anzeigt.
+const mobileContext=extra=>({viewport:{width:390,height:844},...extra});
 const browser=await engine.launch({headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
@@ -33,11 +36,41 @@ page.on('console',msg=>{if(msg.type()==='error')consoleErrors.push(msg.text());}
 // application. Classifying it by cause keeps the audit honest instead of whitelisting one path
 // at a time as new in-flight requests appear.
 const navigation={depth:0};
-function navigationAbort(request,errorText){return navigation.depth>0&&request.method()==='GET'&&errorText==='net::ERR_ABORTED';}
+// Ein Abbruch ist die ausdrueckliche Ansage des Browsers, eine Anfrage selbst verworfen zu
+// haben - beim Verlassen einer Seite, bei einer Weiterleitung aus dem Skript heraus, oder wenn
+// die Anwendung sie per AbortController zuruecknimmt. Das ist kein Netzwerkfehler. Jede Engine
+// benennt es anders; Playwright selbst erkennt den Abbruch an genau diesen drei Markern
+// (crNetworkManager: event.canceled -> net::ERR_ABORTED, ffNetworkManager: NS_BINDING_ABORTED,
+// wkPage: errorText enthaelt "cancelled").
+//
+// Bisher galt zusaetzlich "nur waehrend einer Navigation". Das traf die vom Portal selbst
+// ausgeloesten Wechsel nicht - location.replace nach dem Passwortwechsel etwa - und Firefox
+// meldete deshalb zehn abgebrochene /api/auth/me als Produktfehler. Statt die Bedingung
+// aufzuweichen, wird sie geschaerft: ein Abbruch zaehlt nur dann als unbedenklich, wenn
+// derselbe Pfad im Lauf auch mindestens einmal beantwortet wurde. Ein Pfad, der ausschliesslich
+// abbricht, faellt weiterhin auf - das ist mehr Aussage als vorher, nicht weniger.
+const NAVIGATION_ABORT=[/^net::ERR_ABORTED\b/,/^NS_BINDING_ABORTED\b/,/cancelled/i];
+const pathOf=url=>{try{return new URL(url).pathname;}catch{return url;}};
+function abortTracker(){
+  const served=new Set(),aborted=new Map();
+  return{
+    serve(response){if(response.status()<400)served.add(pathOf(response.url()));},
+    note(request,errorText){
+      if(request.method()!=='GET'||!NAVIGATION_ABORT.some(pattern=>pattern.test(errorText)))return false;
+      const path=pathOf(request.url());
+      aborted.set(path,(aborted.get(path)||0)+1);
+      return true;
+    },
+    unanswered(){return[...aborted].filter(([path])=>!served.has(path)).map(([path,count])=>`${path} (${count}x abgebrochen, nie beantwortet)`);},
+    total(){return[...aborted.values()].reduce((sum,count)=>sum+count,0);},
+  };
+}
+const aborts=abortTracker();
+function navigationAbort(request,errorText){return aborts.note(request,errorText);}
 async function settle(target){await target.waitForLoadState('networkidle',{timeout:8000}).catch(()=>undefined);}
 async function navigate(target,url,options){navigation.depth++;try{return await target.goto(url,options);}finally{await settle(target);navigation.depth--;}}
 page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';if(navigationAbort(request,errorText))return;failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
-page.on('response',response=>{if(response.status()>=400)httpErrors.push({status:response.status(),url:response.url()});});
+page.on('response',response=>{aborts.serve(response);if(response.status()>=400)httpErrors.push({status:response.status(),url:response.url()});});
 
 async function route(path,{allowStatuses=[200],waitForResponsePath=null}={}){
   const backgroundResponse=waitForResponsePath?page.waitForResponse(response=>{try{return new URL(response.url()).pathname===waitForResponsePath;}catch{return false;}},{timeout:10000}):null;
@@ -198,6 +231,14 @@ async function acceptedOfferOnboarding(){
   const adminResponse=await page.context().request.get(`${base}/kunden-admin`);
   const adminSurface={status:adminResponse.status(),text:await adminResponse.text()};
   if(adminSurface.status!==200||!adminSurface.text.trim())fail(`new customer admin cannot open customer-admin surface: ${adminSurface.status}`);
+  // Diese Rollenweiterleitung laeuft noch, wenn der naechste Schritt selbst /kunden-admin
+  // aufruft - beide Navigationen zielen auf dieselbe Adresse, und Playwright bricht die eigene
+  // mit "interrupted by another navigation" ab. Das ist kein Fehler des Portals, sondern ein
+  // Wettlauf des Laufs mit ihm: erst die Weiterleitung ankommen lassen, dann weiterarbeiten.
+  await page.waitForURL(url=>new URL(url).pathname==='/kunden-admin',{timeout:20000})
+    .catch(()=>fail(`role routing did not land on the customer admin surface, stopped at ${new URL(page.url()).pathname}`));
+  await settle(page);
+
   const completed=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`);if(completed.status!==200||completed.data?.invitation?.status!=='completed')fail('successful browser onboarding did not persist completed invitation');
   const replay=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`,{method:'POST',body:{}});if(replay.status===200||replay.data?.error!=='ONBOARDING_UNAVAILABLE')fail(`browser onboarding replay must fail closed, got ${replay.status}/${replay.data?.error}`);
   console.log('Accepted paid offer -> browser onboarding -> auto-login -> customer portal: OK');
@@ -213,21 +254,299 @@ async function lockedProductionSurface(){
   const frozenWebhook=await api('/api/payments/stripe/webhook',{method:'POST',body:{}});if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('payment webhook did not remain side-effect-free while production is locked');
 }
 
+// Diese Prüfung sah bisher nur die vier Portaloberflächen und das Testcenter. Genau deshalb
+// blieb unentdeckt, dass Datenschutz, AGB, AVV und Unterauftragsverarbeiter auf einem 390px
+// breiten Bildschirm um bis zu 594px seitlich überliefen - drei davon sind rechtlich
+// verpflichtend und müssen auf einem Telefon lesbar sein. Die Rechtsseiten umgehen die
+// Release-Sperre (LEGAL_PATHS in src/index.ts), sind also in beiden Modi erreichbar und
+// gehören damit in dieselbe Messung wie die Portale.
+const MOBILE_RELEASE_LOCKED=['/produkt','/kunden-admin','/dozentenportal','/angebot','/department-lead'];
+const MOBILE_PATHS=['/','/plattform-admin','/produkt','/kunden-admin','/dozentenportal','/department-lead','/angebot','/testcenter.html','/passwort-vergessen','/impressum','/datenschutz','/agb','/avv','/unterauftragsverarbeiter','/datenportabilitaet','/rechtsverstoss-melden'];
+
 async function mobileSurface(){
   const context=await browser.newContext(mobileContext({userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/138.0.0.0 Mobile Safari/537.36'}));
   const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
   mobile.on('pageerror',e=>errors.push(String(e)));
   mobile.on('requestfailed',r=>{const errorText=r.failure()?.errorText||'failed';if(navigationAbort(r,errorText))return;failed.push(`${r.method()} ${r.url()} :: ${errorText}`);});
-  mobile.on('response',r=>{if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&r.status()===503&&['/produkt','/kunden-admin','/dozentenportal'].includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
+  mobile.on('response',r=>{aborts.serve(r);if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&r.status()===503&&MOBILE_RELEASE_LOCKED.includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
   try{
-    for(const path of ['/plattform-admin','/produkt','/kunden-admin','/dozentenportal','/testcenter.html']){
-      const expected=mode==='locked-production'&&['/produkt','/kunden-admin','/dozentenportal'].includes(path)?[503]:[200];
+    for(const path of MOBILE_PATHS){
+      const expected=mode==='locked-production'&&MOBILE_RELEASE_LOCKED.includes(path)?[503]:[200];
       const response=await navigate(mobile,base+path,{waitUntil:'domcontentloaded',timeout:30000});if(!response||!expected.includes(response.status()))fail(`mobile ${path} returned ${response?.status()??'no response'}, expected ${expected.join('/')}`);
       const text=(await mobile.locator('body').innerText()).slice(0,4000);if(!text.trim()||/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`mobile ${path} rendered an invalid surface`);
       const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);if(overflow>4)fail(`mobile ${path} has ${overflow}px document-level horizontal overflow`);
     }
     if(errors.length)fail(`mobile page errors: ${errors.join(' | ')}`);if(serverErrors.length)fail(`mobile server errors: ${serverErrors.join(' | ')}`);if(failed.length)fail(`mobile failed requests: ${failed.join(' | ')}`);
     console.log(`Commercial mobile viewport smoke (${mode}): OK`);
+  }finally{await context.close();}
+}
+
+// Die Plattformverwaltung ist die Oberflaeche, mit der ein Kunde ueberhaupt erst eingerichtet
+// wird - und der Lauf hat sie bisher nur unangemeldet geoeffnet. Deshalb blieb unentdeckt, dass
+// "Einrichtungslink erzeugen" gar keine Anfrage stellte: der Absendevorgang suchte die
+// Schaltflaeche ueber button[type="submit"], die Schaltflaeche trug aber kein type-Attribut, und
+// der Zugriff auf null warf, bevor irgendetwas passierte. Ein Plattformverwalter konnte damit
+// keinen einzigen Kunden einrichten. Diese Pruefung fuehrt den Weg wirklich aus.
+async function platformAdministrationContract(){
+  const email=String(process.env.E2E_LOCAL_PLATFORM_EMAIL||'').trim();
+  const password=String(process.env.E2E_LOCAL_PLATFORM_PASSWORD||'').trim();
+  if(!email||!password)fail('local platform acceptance account is not configured');
+  const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'de-DE'});
+  const admin=await context.newPage();
+  const pageErrors=[];
+  admin.on('pageerror',error=>pageErrors.push(String(error).slice(0,200)));
+  try{
+    await navigate(admin,`${base}/plattform-admin`,{waitUntil:'domcontentloaded',timeout:30000});
+    await admin.locator('input[name="email"]').fill(email);
+    await admin.locator('input[name="password"]').fill(password);
+    await admin.locator('button[type="submit"]').click();
+    await admin.locator('aside.side button.nav').filter({hasText:/^Kunden-Einrichtung$/}).first().waitFor({timeout:20000});
+    await admin.locator('aside.side button.nav').filter({hasText:/^Kunden-Einrichtung$/}).first().click();
+    await admin.locator('#pa-new').waitFor({timeout:15000});
+
+    const customer=`browser-e2e-setup-${Date.now()}@example.invalid`;
+    const created=admin.waitForResponse(response=>{
+      try{return new URL(response.url()).pathname==='/api/platform/onboarding-invitations'&&response.request().method()==='POST';}catch{return false;}
+    },{timeout:20000});
+    await admin.locator('#pa-new input[name="customer_email"]').fill(customer);
+    // Wie ein Benutzer: die sichtbare Schaltflaeche anklicken, nicht die mit dem richtigen
+    // type-Attribut. Sonst wuerde die Pruefung genau den Fehler umgehen, den sie sucht.
+    await admin.locator('#pa-new button').filter({hasText:'Einrichtungslink erzeugen'}).first().click();
+    const response=await created.catch(()=>null);
+    if(!response)fail('creating a customer setup link sent no request at all - the platform administration cannot set up a customer');
+    if(response.status()!==201)fail(`creating a customer setup link answered ${response.status()}`);
+    const link=await admin.locator('#pa-created #pa-link').inputValue().catch(()=>'');
+    if(!/\/einrichtung\//.test(link))fail(`the created setup link is not an onboarding link: ${link.slice(0,80)}`);
+    // Die Liste laedt nach dem Anlegen selbst nach; darauf warten statt sofort zu messen.
+    await admin.locator('#pa-list').filter({hasText:customer}).first().waitFor({timeout:15000})
+      .catch(()=>fail('the created setup link does not appear in the invitation list'));
+
+    // Die Rueckfrage vor dem Widerruf ist ein zweiter Dialog ueber dem ersten. Beide muessen
+    // ihren eigenen Namen tragen - eine feste Kennung liess die Rueckfrage den Namen des
+    // darunterliegenden Dialogs ansagen, waehrend sie nach einem Widerruf fragte.
+    await admin.locator('#pa-list .pa-revoke').first().click();
+    await admin.waitForTimeout(800);
+    const dialogs=await admin.evaluate(()=>{
+      const duplicates=new Map();
+      for(const el of document.querySelectorAll('[id]'))duplicates.set(el.id,(duplicates.get(el.id)||0)+1);
+      const name=el=>{
+        const ref=el.getAttribute('aria-labelledby');
+        if(ref){const target=document.getElementById(ref);return target?(target.textContent||'').trim():'';}
+        return (el.getAttribute('aria-label')||'').trim();
+      };
+      return{
+        open:[...document.querySelectorAll('[role="dialog"]')].map(el=>({heading:(el.querySelector('h1,h2,h3,h4')?.textContent||'').trim(),name:name(el)})),
+        duplicates:[...duplicates].filter(([,count])=>count>1).map(([id,count])=>`${id} (${count}x)`),
+      };
+    });
+    if(dialogs.open.length<2)fail(`revoking a setup link did not open a confirmation dialog (${dialogs.open.length} dialog(s) open)`);
+    if(dialogs.duplicates.length)fail(`two open dialogs share an element id: ${dialogs.duplicates.join(', ')}`);
+    for(const dialog of dialogs.open){
+      if(!dialog.name)fail(`an open dialog carries no accessible name (heading "${dialog.heading}")`);
+      if(dialog.heading&&dialog.name!==dialog.heading)fail(`a dialog announces "${dialog.name}" while showing "${dialog.heading}"`);
+    }
+    if(pageErrors.length)fail(`platform administration page errors: ${pageErrors.join(' | ')}`);
+    console.log('Platform administration: customer setup link created, listed and confirmed with correctly named dialogs: OK');
+    await setupLinkLeadsToAWorkingPortal(admin);
+  }finally{await context.close();}
+}
+
+// Beide Haelften des kommerziellen Wegs waren geprueft, der Weg selbst nie: dass die
+// Plattformverwaltung einen Einrichtungslink erzeugt, war das eine, dass ein Kunde sich ueber
+// einen Link einrichtet, das andere - der Lauf benutzte dafuer einen gesetzten Token, nie den
+// gerade erzeugten. Diese Pruefung faehrt die Kette an einem Stueck: erzeugen, in einem
+// sitzungsfreien Fenster oeffnen, ausfuellen, absenden, angemeldet im Portal ankommen, und der
+// Link darf danach nicht noch einmal funktionieren.
+async function setupLinkLeadsToAWorkingPortal(admin){
+  // Der vorherige Schritt laesst die Rueckfrage vor dem Widerruf offen. Alle Dialoge schliessen
+  // und die Kunden-Einrichtung frisch oeffnen - das ist unabhaengig davon, wie viele Ebenen
+  // Escape auf einmal abraeumt.
+  for(let attempt=0;attempt<6;attempt++){
+    if(!await admin.locator('[role="dialog"]').count())break;
+    await admin.keyboard.press('Escape');
+    await admin.waitForTimeout(400);
+  }
+  await admin.locator('aside.side button.nav').filter({hasText:/^Kunden-Einrichtung$/}).first().click();
+  await admin.locator('#pa-new').waitFor({timeout:15000});
+  const stamp=Date.now();
+  const customer=`browser-e2e-durchstich-${stamp}@example.invalid`;
+  const created=admin.waitForResponse(response=>{
+    try{return new URL(response.url()).pathname==='/api/platform/onboarding-invitations'&&response.request().method()==='POST';}catch{return false;}
+  },{timeout:20000});
+  await admin.locator('#pa-new input[name="customer_email"]').fill(customer);
+  await admin.locator('#pa-new button').filter({hasText:'Einrichtungslink erzeugen'}).first().click();
+  if(!(await created.catch(()=>null)))fail('the second customer setup link was not created');
+  const link=await admin.locator('#pa-created #pa-link').inputValue().catch(()=>'');
+  if(!/\/einrichtung\//.test(link))fail(`the created setup link is not an onboarding link: ${link.slice(0,80)}`);
+  const target=link.replace(/^https?:\/\/[^/]+/,base);
+
+  const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'de-DE'});
+  const customerPage=await context.newPage();
+  const serverErrors=[],pageErrors=[];
+  customerPage.on('pageerror',error=>pageErrors.push(String(error).slice(0,160)));
+  customerPage.on('response',response=>{if(response.status()>=500){let path='';try{path=new URL(response.url()).pathname;}catch{}serverErrors.push(`${response.status()} ${path}`);}});
+  try{
+    const opened=await navigate(customerPage,target,{waitUntil:'domcontentloaded',timeout:30000});
+    if(!opened||opened.status()!==200)fail(`the setup link answered ${opened?.status()??'nothing'} for a visitor without a session`);
+    await customerPage.locator('#onboarding-form').waitFor({timeout:20000})
+      .catch(()=>fail('the setup link did not render the onboarding form'));
+
+    const password=`Durchstich-${stamp}-2026!`;
+    const set=async(name,value)=>{const field=customerPage.locator(`#onboarding-form [name="${name}"]`).first();if(await field.count())await field.fill(value).catch(()=>undefined);};
+    for(const [name,value] of [['legal_name','Durchstich Bildungswerk GmbH'],['portal_name','Durchstich Portal'],
+      ['street','Teststraße 1'],['postal_code','10115'],['city','Berlin'],['country','Deutschland'],
+      ['contact_name','Durchstich Kontakt'],['desired_course_count','2'],
+      ['admin_name','Durchstich Verwaltung'],['admin_email',customer],
+      ['admin_password',password],['admin_password_confirm',password],
+      ['first_course_name','Durchstich Kurs'],['first_course_code',`DS-${String(stamp).slice(-4)}`]])await set(name,value);
+    const sameAdmin=customerPage.locator('#same-admin');
+    if(await sameAdmin.count()&&await sameAdmin.isChecked())await sameAdmin.uncheck().catch(()=>undefined);
+
+    // Was der Browser danach noch als Pflicht meldet, wird plausibel gefuellt. Das haelt die
+    // Pruefung gegen Formularaenderungen stabil, ohne blind zu werden: gemessen wird das
+    // Ergebnis - 200, angemeldet, Portal erreichbar - nicht das Ausfuellen.
+    for(let round=0;round<3;round++){
+      const pending=await customerPage.evaluate(()=>[...document.querySelectorAll('#onboarding-form input,#onboarding-form select,#onboarding-form textarea')]
+        .filter(el=>!el.disabled&&!el.checkValidity()).map(el=>({name:el.name||el.id||'',type:el.type})));
+      if(!pending.length)break;
+      for(const {name,type} of pending){
+        if(!name)continue;
+        const field=customerPage.locator(`#onboarding-form [name="${name}"]`).first();
+        if(type==='checkbox'){await field.check({timeout:3000}).catch(()=>undefined);continue;}
+        if(type==='email'){await field.fill(`kontakt-${stamp}@example.invalid`).catch(()=>undefined);continue;}
+        if(type==='number'){await field.fill('2').catch(()=>undefined);continue;}
+        await field.fill('Durchstich').catch(()=>undefined);
+      }
+    }
+
+    const submitted=customerPage.waitForResponse(response=>{
+      try{return response.request().method()==='POST'&&new URL(response.url()).pathname.startsWith('/api/onboarding/');}catch{return false;}
+    },{timeout:40000});
+    await customerPage.locator('#submit-setup').click();
+    const response=await submitted.catch(()=>null);
+    if(!response)fail(`submitting the onboarding form sent no request; the form reported: ${(await customerPage.locator('#setup-error').innerText().catch(()=>''))||'nothing'}`);
+    let data=null;try{data=await response.json();}catch{}
+    if(response.status()!==200||data?.ok!==true)fail(`onboarding through a freshly created setup link failed ${response.status()}/${data?.error||'NO_JSON'}`);
+
+    await customerPage.waitForTimeout(2500);
+    const me=await customerPage.evaluate(async()=>{const r=await fetch('/api/auth/me',{credentials:'same-origin'});return{status:r.status,data:await r.json().catch(()=>null)};});
+    if(me.status!==200||!me.data?.user)fail(`the new customer administrator was not signed in after onboarding: ${me.status}`);
+    const portal=await context.request.get(`${base}/kunden-admin`);
+    if(portal.status()!==200)fail(`the new customer administrator cannot open the customer portal: ${portal.status()}`);
+
+    const replay=await context.request.post(target.replace('/einrichtung/','/api/onboarding/'),{data:{}});
+    if(replay.status()===200)fail('a used setup link must not work a second time');
+
+    if(pageErrors.length)fail(`onboarding through the created link raised page errors: ${pageErrors.join(' | ')}`);
+    if(serverErrors.length)fail(`onboarding through the created link hit server errors: ${serverErrors.join(' | ')}`);
+    console.log('Created setup link -> customer onboards -> signed in on the customer portal, link single-use: OK');
+  }finally{await context.close();}
+}
+
+// Der Dialogvertrag wurde bisher an einem eingehaengten, nackten Overlay geprueft. Der
+// Education-OS-Overlay des Autopiloten baut sein eigenes bildschirmfuellendes Fenster mit
+// eigenen Klassennamen und war deshalb als einziger nicht erfasst: gemessen ohne Dialogrolle,
+// ohne Namen, mit bedienbarem Hintergrund, der Tabulator lief nach elf Spruengen heraus, und
+// Escape schloss nichts. Diese Pruefung faehrt den echten Overlay, nicht einen nachgebauten.
+async function educationOsDialogContract(){
+  await route('/kunden-admin');
+  const opener=page.locator('#kp-autopilot-primary');
+  if(!(await opener.count()))fail('the customer administration has no Autopilot entry');
+  if(await page.locator('#kp-autopilot-primary').count()!==1)fail(`the Autopilot entry exists ${await page.locator('#kp-autopilot-primary').count()} times - its id must be unique`);
+  await opener.click();
+  await page.locator('.eo-os-back').waitFor({timeout:20000}).catch(()=>fail('the Autopilot did not open its surface'));
+  await page.waitForTimeout(1200);
+
+  const state=await page.evaluate(()=>{
+    const back=document.querySelector('.eo-os-back');
+    const panel=back.querySelector('.eo-os-shell')||back;
+    const labelled=panel.getAttribute('aria-labelledby');
+    return{
+      role:panel.getAttribute('role'),
+      modal:panel.getAttribute('aria-modal'),
+      name:(panel.getAttribute('aria-label')||(labelled?(document.getElementById(labelled)?.textContent||''):'')).trim(),
+      unshielded:[...document.body.children]
+        .filter(el=>el!==back&&!['SCRIPT','LINK','STYLE','TEMPLATE','NOSCRIPT'].includes(el.tagName)
+          &&!el.matches('[role="status"],[role="alert"],[aria-live]')&&el.inert!==true)
+        .map(el=>`${el.tagName}.${String(el.className).slice(0,30)}`),
+      duplicates:(()=>{const seen=new Map();for(const el of document.querySelectorAll('[id]'))seen.set(el.id,(seen.get(el.id)||0)+1);return[...seen].filter(([,n])=>n>1).map(([id,n])=>`${id} (${n}x)`);})(),
+    };
+  });
+  if(state.role!=='dialog')fail(`the Autopilot surface announces role "${state.role}" instead of dialog`);
+  if(state.modal!=='true')fail('the Autopilot surface is not marked as modal');
+  if(!state.name)fail('the Autopilot surface carries no accessible name');
+  if(state.unshielded.length)fail(`the content behind the Autopilot surface stays reachable: ${state.unshielded.join(', ')}`);
+  if(state.duplicates.length)fail(`the open Autopilot surface leaves duplicate element ids: ${state.duplicates.join(', ')}`);
+
+  // Der Tabulator darf das Fenster nicht verlassen - sonst bedient der Benutzer die verdeckte
+  // Navigation dahinter, ohne sie zu sehen.
+  await page.locator('.eo-os-back button, .eo-os-back input, .eo-os-back textarea').first().focus().catch(()=>undefined);
+  for(let step=0;step<40;step++){
+    await page.keyboard.press('Tab');
+    const outside=await page.evaluate(()=>{const active=document.activeElement;return !active||!active.closest('.eo-os-back');});
+    if(outside)fail(`the keyboard focus left the Autopilot surface after ${step+1} tab presses`);
+  }
+
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(900);
+  if(await page.locator('.eo-os-back').count())fail('Escape did not close the Autopilot surface');
+  console.log('Education OS surface obeys the shared dialog contract: OK');
+}
+
+// Was der Browser aus einer Seite macht, steht nicht im ausgelieferten HTML: die
+// Einstiegsflächen bauen sich per JavaScript auf. Eine Prüfung der Quelltexte hätte deshalb
+// nichts gefunden - im Browser gemessen hatten Anmeldung, Kundenverwaltung und
+// Plattformverwaltung keine einzige Überschrift (der Titel war ein <div class="brand">), das
+// Testcenter zwei Eingabefelder ohne verknüpfte Beschriftung, und /angebot ohne Token hielt
+// das Wort "angebot" selbst für den Token und lief in einen 404. Diese Prüfung misst das am
+// laufenden Portal.
+async function publicDocumentContract(){
+  const context=await browser.newContext({viewport:{width:1280,height:900}});
+  const doc=await context.newPage();
+  const problems=[];
+  try{
+    for(const path of MOBILE_PATHS){
+      if(mode==='locked-production'&&MOBILE_RELEASE_LOCKED.includes(path))continue;
+      const response=await navigate(doc,base+path,{waitUntil:'domcontentloaded',timeout:30000});
+      if(!response||response.status()!==200){problems.push(`${path} antwortete ${response?.status()??'gar nicht'}`);continue;}
+      const found=await doc.evaluate(()=>{
+        const visible=el=>{const style=getComputedStyle(el);return style.display!=='none'&&style.visibility!=='hidden'&&el.getClientRects().length>0;};
+        const named=el=>{
+          const label=el.getAttribute('aria-label');if(label&&label.trim())return true;
+          const ref=el.getAttribute('aria-labelledby');if(ref&&ref.split(/\s+/).some(id=>document.getElementById(id)))return true;
+          if(el.id&&document.querySelector(`label[for="${CSS.escape(el.id)}"]`))return true;
+          if(el.closest('label'))return true;
+          if(el.title&&el.title.trim())return true;
+          return false;
+        };
+        const unnamed=[];
+        for(const el of document.querySelectorAll('input,select,textarea')){
+          if(['hidden','submit','button','reset'].includes(el.type))continue;
+          if(!visible(el))continue;
+          if(!named(el))unnamed.push(`${el.tagName.toLowerCase()}#${el.id||el.name||'?'}`);
+        }
+        return{headings:[...document.querySelectorAll('h1')].filter(visible).length,unnamed,lang:document.documentElement.lang||'',title:document.title.trim()};
+      });
+      if(found.headings!==1)problems.push(`${path} hat ${found.headings} sichtbare h1 statt genau einer`);
+      if(found.unnamed.length)problems.push(`${path} hat Eingabefelder ohne verknüpfte Beschriftung: ${found.unnamed.join(', ')}`);
+      if(!found.lang)problems.push(`${path} nennt keine Sprache`);
+      if(!found.title)problems.push(`${path} hat keinen Titel`);
+    }
+
+    // Ohne Token ist der Angebotslink unvollständig - die Seite darf das sagen, statt einen
+    // Token zu erfinden und dafür einen 404 zu holen.
+    const offerCalls=[];
+    const listener=request=>{if(new URL(request.url()).pathname.startsWith('/api/offers/'))offerCalls.push(new URL(request.url()).pathname);};
+    doc.on('request',listener);
+    await navigate(doc,`${base}/angebot`,{waitUntil:'domcontentloaded',timeout:30000});
+    await doc.waitForTimeout(1200);
+    doc.off('request',listener);
+    if(offerCalls.length)problems.push(`/angebot ohne Token fragte ${offerCalls.join(', ')} ab`);
+    const offerText=await doc.locator('body').innerText();
+    if(!/unvollständig/i.test(offerText))problems.push(`/angebot ohne Token meldet nicht, dass der Link unvollständig ist: ${offerText.replace(/\s+/g,' ').trim().slice(0,120)}`);
+
+    if(problems.length)fail(`public document contract: ${problems.join(' | ')}`);
+    console.log(`Public document contract (${mode}): OK`);
   }finally{await context.close();}
 }
 
@@ -303,10 +622,44 @@ function expectedBrowserHttpError(entry){if(mode!=='candidate'||entry.status!==4
 // las sich dann wie ein Fehler von /plattform-admin. Der Kaltstart bekommt deshalb sein eigenes,
 // benanntes Zeitfenster und meldet, wie lange er wirklich gedauert hat - die eigentlichen
 // Prüfungen danach behalten ihr unverändertes Budget.
+// Bleibt die erste Navigation haengen, sagt "Timeout" allein nicht, woran es lag. Drei Faelle
+// sehen gleich aus und brauchen ganz verschiedene Antworten: die Engine laedt ueberhaupt nichts
+// (kaputte Installation), sie laedt eingebaute Inhalte, erreicht aber den lokalen Server nicht
+// (Netzwerk), oder sie erreicht ihn und diese eine Seite haengt (Produktfehler). WebKit schickte
+// auf dem Runner in 90 Sekunden keine einzige Anfrage - das Worker-Protokoll zeigte nach den
+// Bereitschaftsabfragen nichts mehr. Diese Diagnose trennt die Faelle, statt sie zu raten.
+async function firstNavigationDiagnosis(){
+  const findings=[];
+  const probe=async(label,url,timeout)=>{
+    const started=Date.now();
+    try{await page.goto(url,{waitUntil:'domcontentloaded',timeout});findings.push(`${label}: ok in ${Date.now()-started}ms`);return true;}
+    catch(error){findings.push(`${label}: ${String(error?.message||error).split('\n')[0]}`);return false;}
+  };
+  const blank=await probe('about:blank','about:blank',15000);
+  if(blank)await probe('eingebautes Dokument','data:text/html,<title>x</title><p>x',15000);
+  try{
+    const response=await fetch(`${base}/plattform-admin`,{redirect:'manual'});
+    findings.push(`node erreicht den Server: ${response.status}`);
+  }catch(error){findings.push(`node erreicht den Server nicht: ${String(error?.message||error).split('\n')[0]}`);}
+
+  // Die Engine kann eingebaute Dokumente laden, erreicht den lokalen Server aber offenbar nicht.
+  // Ein Abruf aus der Seite heraus taugt dafuer nicht - about:blank hat einen undurchsichtigen
+  // Ursprung, jeder Abruf scheitert dort an der Ursprungspruefung, nicht am Netz. Zwei kurze
+  // Navigationen messen die Netzschicht wirklich und trennen "der Port ist unerreichbar" von
+  // "die Engine mag diese Adressform nicht".
+  const {port}=new URL(base);
+  for(const [label,url] of [['über IP',`http://127.0.0.1:${port}/plattform-admin`],['über localhost',`http://localhost:${port}/plattform-admin`]])
+    await probe(`Navigation ${label}`,url,12000);
+  return findings.join(' | ');
+}
+
 async function warmUp(){
   const started=Date.now();
   const response=await navigate(page,`${base}/plattform-admin`,{waitUntil:'domcontentloaded',timeout:90000})
-    .catch(error=>fail(`${engineName} could not open /plattform-admin at all: ${String(error?.message||error).split('\n')[0]}`));
+    .catch(async error=>{
+      const diagnosis=await firstNavigationDiagnosis().catch(problem=>`Diagnose selbst gescheitert: ${String(problem?.message||problem).split('\n')[0]}`);
+      fail(`${engineName} could not open /plattform-admin at all: ${String(error?.message||error).split('\n')[0]} -- Diagnose: ${diagnosis}`);
+    });
   if(!response)fail(`${engineName} got no response for the first navigation`);
   console.log(`${engineName} cold start to /plattform-admin: ${response.status()} in ${Date.now()-started}ms`);
 }
@@ -321,6 +674,7 @@ try{
     await mobileOnboardingPreflight();
     await acceptedOfferOnboarding();
     await adminDialogContract('/kunden-admin');
+    await educationOsDialogContract();
     await adminDialogContract('/plattform-admin');
   }else if(mode==='locked-production')await lockedProductionSurface();
   else fail(`Unsupported E2E_TARGET_MODE: ${mode}`);
@@ -369,8 +723,15 @@ try{
   }else console.log('authenticated live browser path not configured; local candidate onboarding/admin path still executed');
 
   await mobileSurface();await page.waitForTimeout(250);
+  await publicDocumentContract();
+  if(mode==='candidate')await platformAdministrationContract();
   const expectedHttp=httpErrors.filter(expectedBrowserHttpError),unexpectedHttp=httpErrors.filter(entry=>!expectedBrowserHttpError(entry)),unexpected401=unexpectedHttp.some(entry=>entry.status===401);
   const relevantConsole=consoleErrors.filter(text=>{if(/favicon|Failed to load resource.*404/i.test(text))return false;if(/^Failed to load resource:.*status of 401\b/i.test(text)&&expectedHttp.length>0&&!unexpected401)return false;return true;});
   if(pageErrors.length)fail(`page errors: ${pageErrors.join(' | ')}`);if(unexpectedHttp.length)fail(`unexpected browser HTTP responses: ${unexpectedHttp.map(x=>`${x.status} ${x.url}`).join(' | ')}`);if(relevantConsole.length)fail(`console errors: ${relevantConsole.join(' | ')}`);if(failedRequests.length)fail(`failed browser requests: ${failedRequests.join(' | ')}`);
+  // Abgebrochene Anfragen sind fuer sich unbedenklich - solange derselbe Pfad im Lauf auch
+  // beantwortet wurde. Ein Pfad, der nur abbricht, hat nie geliefert und ist ein Befund.
+  const unanswered=aborts.unanswered();
+  if(unanswered.length)fail(`abgebrochene Anfragen ohne je eine Antwort: ${unanswered.join(' | ')}`);
+  if(aborts.total())console.log(`${aborts.total()} abgebrochene Anfragen, alle auf Pfaden, die im Lauf auch beantwortet wurden.`);
   console.log(`Commercial real-browser acceptance (${mode}): OK`);
 }finally{await browser.close();}

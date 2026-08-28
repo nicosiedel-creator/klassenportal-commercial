@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes, scryptSync } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
@@ -36,6 +36,21 @@ function query(sql){return rowsFrom(parseJson(runWrangler(['d1','execute','DB','
 function execute(sql){runWrangler(['d1','execute','DB','--local','--config',config,'--command',sql]);}
 function q(value){return `'${String(value).replaceAll("'","''")}'`;}
 function b64Sha256(value){return createHash('sha256').update(value).digest('base64');}
+
+// Die Plattformverwaltung ist die Oberflaeche, mit der ein Kunde ueberhaupt erst eingerichtet
+// wird - und der Browserlauf hat sie bisher nur unangemeldet geoeffnet. Genau deshalb blieb
+// unentdeckt, dass "Einrichtungslink erzeugen" mit einem TypeError abbrach und gar keine
+// Anfrage stellte. Fuer die angemeldete Pruefung bekommt die isolierte Browser-E2E-Datenbank
+// ein eigenes Plattformkonto. Es entsteht ausschliesslich hier: dieses Skript verlangt eine
+// browser-e2e-Konfiguration und schreibt immer mit --local. Produktion sieht es nie.
+const PLATFORM={id:'usr_browser_e2e_platform',email:'browser-platform@example.invalid',name:'Browser E2E Plattformverwaltung',password:'Browser-E2E-Platform-2026!'};
+
+// Dasselbe Format, das src/core/auth.ts schreibt: scrypt$N$r$p$salt$hash, base64.
+function scryptHash(password){
+  const N=32_768,r=8,p=3,salt=randomBytes(16);
+  const key=scryptSync(password,salt,32,{N,r,p,maxmem:Math.max(64*1024*1024,128*N*r+1024*1024)});
+  return `scrypt$${N}$${r}$${p}$${salt.toString('base64')}$${key.toString('base64')}`;
+}
 
 const fixtures=[
   {key:'primary',token:'commercial-browser-e2e-primary-token-20260826-safe',invitation:'obi_e2e_primary',quote:'quo_e2e_primary',quoteNumber:'ANG-E2E-PRIMARY',org:'Browser E2E Bildungswerk GmbH',customer:'browser-buyer-primary@example.invalid',admin:'browser-admin-primary@example.invalid',password:'Browser-E2E-Primary-2026!',courses:7,monthly:12900,setup:4900},
@@ -94,6 +109,14 @@ if(action==='seed'){
       VALUES(${q(`ofe_e2e_${f.key}`)},${q(f.quote)},'accepted','{}',${q(now)});
     `);
   }
+  execute(`
+    DELETE FROM sessions WHERE user_id=${q(PLATFORM.id)};
+    DELETE FROM users WHERE id=${q(PLATFORM.id)};
+    INSERT INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at)
+    VALUES(${q(PLATFORM.id)},${q(PLATFORM.email)},${q(PLATFORM.name)},${q(scryptHash(PLATFORM.password))},0,1,'active',${q(now)},${q(now)});
+  `);
+  assert.equal(Number((query(`SELECT COUNT(*) n FROM users WHERE id=${q(PLATFORM.id)} AND is_platform_admin=1 AND status='active' AND password_hash LIKE 'scrypt$%'`)[0]||{}).n||0),1,'local platform acceptance account was not seeded');
+
   const envFile=process.env.GITHUB_ENV;
   if(!envFile)throw new Error('GITHUB_ENV_REQUIRED_FOR_BROWSER_E2E_SEED');
   appendFileSync(envFile,fixtures.map(f=>[
@@ -101,7 +124,11 @@ if(action==='seed'){
     `E2E_ONBOARDING_${f.key.toUpperCase()}_ADMIN=${f.admin}`,
     `E2E_ONBOARDING_${f.key.toUpperCase()}_PASSWORD=${f.password}`,
   ].join('\n')).join('\n')+'\n','utf8');
-  console.log('Seeded fictional legal readiness and two accepted-offer onboarding fixtures into migrated local Wrangler D1.');
+  appendFileSync(envFile,[
+    `E2E_LOCAL_PLATFORM_EMAIL=${PLATFORM.email}`,
+    `E2E_LOCAL_PLATFORM_PASSWORD=${PLATFORM.password}`,
+  ].join('\n')+'\n','utf8');
+  console.log('Seeded fictional legal readiness, a local platform account and two accepted-offer onboarding fixtures into migrated local Wrangler D1.');
 }else{
   const ids=fixtures.map(f=>q(f.invitation)).join(','),quotes=fixtures.map(f=>q(f.quote)).join(',');
   function count(sql){const row=query(sql)[0]||{};return Number(row.n||0);}

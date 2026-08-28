@@ -1,7 +1,22 @@
 name: Commercial cross-browser E2E
 
-# Firefox und WebKit fahren denselben Ablauf wie der Chromium-Gate. Der Workflow läuft
-# absichtlich nicht bei jedem Pull Request: Er ist neu, seine Befunde sind noch unbekannt,
+# Firefox und WebKit fahren denselben Ablauf wie der Chromium-Gate.
+#
+# Stand der WebKit-Untersuchung: WebKit erreicht auf den GitHub-Runnern den lokalen Server
+# nicht. Die Diagnose im Lauf meldet jedes Mal dasselbe - "about:blank: ok in 7-9ms |
+# eingebautes Dokument: ok in 10-21ms | node erreicht den Server: 200 | Navigation über IP:
+# Timeout | Navigation über localhost: Timeout" - und im Worker-Protokoll kommt keine einzige
+# Anfrage von WebKit an. Ausgeschlossen sind damit: eine kaputte Installation (die Engine
+# rendert in einstelligen Millisekunden), das Runner-Abbild (identisch auf ubuntu-latest und
+# ubuntu-24.04), die Adressform (127.0.0.1 und localhost laufen beide in die
+# Zeitueberschreitung), die Erreichbarkeit des Servers (node bekommt 200, und die
+# Bereitschaftspruefung verlangt vorher fuenf Antworten in Folge) und die Playwright-Fassung
+# (1.55.0 und 1.62.1 verhalten sich gleich). Firefox faehrt denselben Ablauf auf demselben
+# Runner gegen denselben Server vollstaendig durch. Es ist also kein Befund am Portal - es
+# erreicht das Portal nichts. Wer hier weitersucht, faengt bei der Netzschicht dieser
+# WebKit-Fassung unter Linux an, nicht bei den vier oben ausgeschlossenen Ursachen.
+#
+# Der Workflow läuft absichtlich nicht bei jedem Pull Request: Er ist neu, seine Befunde sind noch unbekannt,
 # und browserabhängige Fehler sollen gefunden und behoben werden, ohne einen gesunden
 # Release aufzuhalten. Sobald er stabil grün läuft, kann er auf pull_request erweitert
 # und zum Pflicht-Gate gemacht werden.
@@ -19,7 +34,14 @@ concurrency:
 
 jobs:
   cross-browser:
-    runs-on: ubuntu-latest
+    # ubuntu-latest ist inzwischen ein Abbild, auf dem WebKit zwar rendert - about:blank in 7ms,
+    # ein eingebautes Dokument in 21ms - aber den lokalen Server ueber keine Adressform erreicht:
+    # Navigation ueber 127.0.0.1 und ueber localhost laufen beide in die Zeitueberschreitung,
+    # waehrend node im selben Lauf 200 bekommt und Firefox denselben Ablauf durchlaeuft. Es
+    # kommt keine einzige Anfrage im Worker-Protokoll an. Das ist kein Befund am Portal, sondern
+    # die Netzschicht dieser WebKit-Fassung auf diesem Abbild. Ein festes, aelteres Abbild fuer
+    # beide Engines, damit sie vergleichbar bleiben.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -35,6 +57,25 @@ jobs:
           npm install --no-audit --no-fund
           npm install --no-save --ignore-scripts playwright@1.55.0
           npx playwright install --with-deps ${{ matrix.browser }}
+      # WebKit schickte auf dem Runner in 90 Sekunden keine einzige Anfrage an den lokalen
+      # Server, waehrend Firefox denselben Ablauf durchlief. Ob die Engine ueberhaupt startet
+      # und zu welchem Abbild sie passt, gehoert deshalb ins Protokoll - sonst raet man.
+      - name: Report runner image and engine build
+        shell: bash
+        run: |
+          set -euo pipefail
+          . /etc/os-release && echo "Runner: $PRETTY_NAME"
+          node -e "console.log('playwright',require('playwright/package.json').version)"
+          node --input-type=module -e "
+          import { ${{ matrix.browser }} } from 'playwright';
+          const browser=await ${{ matrix.browser }}.launch({headless:true});
+          console.log('${{ matrix.browser }}', browser.version());
+          const page=await browser.newPage();
+          const started=Date.now();
+          await page.goto('data:text/html,<title>x</title><p>x',{waitUntil:'domcontentloaded',timeout:20000});
+          console.log('eingebautes Dokument geladen in', Date.now()-started, 'ms');
+          await browser.close();
+          "
       - name: Prepare exact local PR candidate and real onboarding fixtures
         shell: bash
         run: |
@@ -50,16 +91,7 @@ jobs:
           node scripts/commercial-onboarding-e2e-state.mjs seed wrangler.browser-e2e.json
           WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --config wrangler.browser-e2e.json --local --ip 127.0.0.1 --port 8787 --local-upstream 127.0.0.1 --upstream-protocol http >/tmp/commercial-wrangler-e2e.log 2>&1 &
           echo $! >/tmp/commercial-wrangler-e2e.pid
-          ready=0
-          for i in $(seq 1 45); do
-            if curl -fsS --max-time 3 http://127.0.0.1:8787/plattform-admin >/dev/null; then ready=1; break; fi
-            sleep 1
-          done
-          if test "$ready" != 1; then
-            echo 'Local PR candidate did not become ready.' >&2
-            cat /tmp/commercial-wrangler-e2e.log >&2 || true
-            exit 1
-          fi
+          node scripts/wait-for-local-candidate.mjs http://127.0.0.1:8787/plattform-admin /tmp/commercial-wrangler-e2e.log
       - name: Click through the candidate in ${{ matrix.browser }}
         shell: bash
         env:

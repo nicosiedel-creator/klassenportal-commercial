@@ -72,7 +72,7 @@ if(CUSTOMER_ADMIN_PATH){
     }
     const primary=side.querySelector(':scope > .kp-customer-nav-primary'),panel=side.querySelector(':scope > .kp-customer-nav-more-panel'),groups=panel?.querySelector('.kp-customer-nav-groups'),more=side.querySelector('#kp-customer-more-toggle');if(!primary||!panel||!groups||!more)return;
     const buttons=[...side.querySelectorAll('.nav')].filter(button=>button.id!=='logout'&&!button.matches('.kp-lazy-group-launcher'));let extraCount=0,extraActive=false;
-    for(const button of buttons){const label=navSourceLabel(button);if(PRIMARY_NAV_LABELS.has(label)){if(button.parentElement!==primary)primary.append(button);continue;}const group=navGroupFor(label),target=ensureNavGroup(groups,group.id,group.title);if(button.parentElement!==target)target.prepend(button);extraCount+=1;if(button.classList.contains('active'))extraActive=true;}
+    for(const button of buttons){const label=navSourceLabel(button);if(button.dataset.customerNavPrimary==='1'||PRIMARY_NAV_LABELS.has(label)){if(button.parentElement!==primary)primary.append(button);continue;}const group=navGroupFor(label),target=ensureNavGroup(groups,group.id,group.title);if(button.parentElement!==target)target.prepend(button);extraCount+=1;if(button.classList.contains('active'))extraActive=true;}
     ensureLazyLaunchers(groups);
     groups.querySelectorAll('.kp-customer-nav-group').forEach(group=>{group.hidden=!group.querySelector('.nav,.kp-lazy-group-launcher');});
     const count=more.querySelector('.kp-customer-more-count');if(count)setText(count,String(extraCount+LAZY_GROUPS.length));more.hidden=false;const open=extraActive||navMemoryGet();panel.hidden=!open;more.setAttribute('aria-expanded',String(open));
