@@ -350,6 +350,56 @@ async function platformAdministrationContract(){
   }finally{await context.close();}
 }
 
+// Der Dialogvertrag wurde bisher an einem eingehaengten, nackten Overlay geprueft. Der
+// Education-OS-Overlay des Autopiloten baut sein eigenes bildschirmfuellendes Fenster mit
+// eigenen Klassennamen und war deshalb als einziger nicht erfasst: gemessen ohne Dialogrolle,
+// ohne Namen, mit bedienbarem Hintergrund, der Tabulator lief nach elf Spruengen heraus, und
+// Escape schloss nichts. Diese Pruefung faehrt den echten Overlay, nicht einen nachgebauten.
+async function educationOsDialogContract(){
+  await route('/kunden-admin');
+  const opener=page.locator('#kp-autopilot-primary');
+  if(!(await opener.count()))fail('the customer administration has no Autopilot entry');
+  if(await page.locator('#kp-autopilot-primary').count()!==1)fail(`the Autopilot entry exists ${await page.locator('#kp-autopilot-primary').count()} times - its id must be unique`);
+  await opener.click();
+  await page.locator('.eo-os-back').waitFor({timeout:20000}).catch(()=>fail('the Autopilot did not open its surface'));
+  await page.waitForTimeout(1200);
+
+  const state=await page.evaluate(()=>{
+    const back=document.querySelector('.eo-os-back');
+    const panel=back.querySelector('.eo-os-shell')||back;
+    const labelled=panel.getAttribute('aria-labelledby');
+    return{
+      role:panel.getAttribute('role'),
+      modal:panel.getAttribute('aria-modal'),
+      name:(panel.getAttribute('aria-label')||(labelled?(document.getElementById(labelled)?.textContent||''):'')).trim(),
+      unshielded:[...document.body.children]
+        .filter(el=>el!==back&&!['SCRIPT','LINK','STYLE','TEMPLATE','NOSCRIPT'].includes(el.tagName)
+          &&!el.matches('[role="status"],[role="alert"],[aria-live]')&&el.inert!==true)
+        .map(el=>`${el.tagName}.${String(el.className).slice(0,30)}`),
+      duplicates:(()=>{const seen=new Map();for(const el of document.querySelectorAll('[id]'))seen.set(el.id,(seen.get(el.id)||0)+1);return[...seen].filter(([,n])=>n>1).map(([id,n])=>`${id} (${n}x)`);})(),
+    };
+  });
+  if(state.role!=='dialog')fail(`the Autopilot surface announces role "${state.role}" instead of dialog`);
+  if(state.modal!=='true')fail('the Autopilot surface is not marked as modal');
+  if(!state.name)fail('the Autopilot surface carries no accessible name');
+  if(state.unshielded.length)fail(`the content behind the Autopilot surface stays reachable: ${state.unshielded.join(', ')}`);
+  if(state.duplicates.length)fail(`the open Autopilot surface leaves duplicate element ids: ${state.duplicates.join(', ')}`);
+
+  // Der Tabulator darf das Fenster nicht verlassen - sonst bedient der Benutzer die verdeckte
+  // Navigation dahinter, ohne sie zu sehen.
+  await page.locator('.eo-os-back button, .eo-os-back input, .eo-os-back textarea').first().focus().catch(()=>undefined);
+  for(let step=0;step<40;step++){
+    await page.keyboard.press('Tab');
+    const outside=await page.evaluate(()=>{const active=document.activeElement;return !active||!active.closest('.eo-os-back');});
+    if(outside)fail(`the keyboard focus left the Autopilot surface after ${step+1} tab presses`);
+  }
+
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(900);
+  if(await page.locator('.eo-os-back').count())fail('Escape did not close the Autopilot surface');
+  console.log('Education OS surface obeys the shared dialog contract: OK');
+}
+
 // Was der Browser aus einer Seite macht, steht nicht im ausgelieferten HTML: die
 // Einstiegsflächen bauen sich per JavaScript auf. Eine Prüfung der Quelltexte hätte deshalb
 // nichts gefunden - im Browser gemessen hatten Anmeldung, Kundenverwaltung und
@@ -531,6 +581,7 @@ try{
     await mobileOnboardingPreflight();
     await acceptedOfferOnboarding();
     await adminDialogContract('/kunden-admin');
+    await educationOsDialogContract();
     await adminDialogContract('/plattform-admin');
   }else if(mode==='locked-production')await lockedProductionSurface();
   else fail(`Unsupported E2E_TARGET_MODE: ${mode}`);
