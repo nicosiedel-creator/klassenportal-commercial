@@ -1,4 +1,12 @@
-import { chromium } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
+
+// Der Gate läuft standardmäßig auf Chromium. Über E2E_BROWSER lässt sich derselbe Ablauf
+// unverändert auf Firefox und WebKit fahren, damit browserabhängige Fehler auffallen,
+// statt unbemerkt zu bleiben.
+const ENGINES={chromium,firefox,webkit};
+const engineName=String(process.env.E2E_BROWSER||'chromium').trim().toLowerCase();
+const engine=ENGINES[engineName];
+if(!engine)throw new Error(`Unsupported E2E_BROWSER: ${engineName}`);
 
 const base=(process.env.COMMERCIAL_BASE_URL||'http://127.0.0.1:8787').replace(/\/$/,'');
 const mode=String(process.env.E2E_TARGET_MODE||'candidate').trim();
@@ -11,7 +19,7 @@ const raceToken=String(process.env.E2E_ONBOARDING_RACE_TOKEN||'').trim();
 const raceAdmin=String(process.env.E2E_ONBOARDING_RACE_ADMIN||'').trim();
 const racePassword=String(process.env.E2E_ONBOARDING_RACE_PASSWORD||'');
 const fail=(msg)=>{throw new Error(msg);};
-const browser=await chromium.launch({headless:true});
+const browser=await engine.launch({headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
 page.on('pageerror',e=>pageErrors.push(String(e)));
@@ -213,6 +221,70 @@ async function mobileSurface(){
   }finally{await context.close();}
 }
 
+// Jede Verwaltungsoberfläche baut ihre Dialoge selbst; ohne einen gemeinsamen Wächter hing die
+// Bedienbarkeit davon ab, welches Modul den Dialog gebaut hat. Diese Prüfung fährt den Wächter
+// direkt: Sie hängt einen nackten Overlay in die echte Seite und verlangt, dass er zu einem
+// bedienbaren Dialog wird - unabhängig davon, welche Module gerade geladen sind.
+async function adminDialogContract(path){
+  await route(path);
+  const opener=page.locator('button,a[href]').first();
+  if(await opener.count())await opener.focus().catch(()=>undefined);
+  const before=await page.evaluate(()=>document.activeElement?.tagName||'BODY');
+  const state=await page.evaluate(async()=>{
+    const wait=()=>new Promise(resolve=>setTimeout(resolve,120));
+    const back=document.createElement('div');
+    back.className='modal-back';
+    back.innerHTML='<div class="modal"><div class="top"><h3>E2E Dialogvertrag</h3>'
+      +'<button type="button" data-close>\u00d7</button></div>'
+      +'<label>Notiz<input name="e2e-note"></label></div>';
+    document.body.append(back);
+    await wait();
+    const panel=back.querySelector('.modal');
+    const close=panel.querySelector('[data-close]');
+    const labelledby=panel.getAttribute('aria-labelledby');
+    return{
+      role:panel.getAttribute('role'),
+      modal:panel.getAttribute('aria-modal'),
+      name:panel.getAttribute('aria-label')||(labelledby?document.getElementById(labelledby)?.textContent?.trim():''),
+      closeName:close?.getAttribute('aria-label')||'',
+      focusInside:back.contains(document.activeElement),
+      inertSupported:'inert' in HTMLElement.prototype,
+      backgroundShielded:[...document.body.children].every(el=>el===back||el.matches('[role="status"],[role="alert"],[aria-live]')||['SCRIPT','LINK','STYLE','TEMPLATE','NOSCRIPT'].includes(el.tagName)||el.inert===true),
+      bodyLocked:document.body.classList.contains('kp-admin-modal-open')
+    };
+  });
+  if(state.role!=='dialog')fail(`${path}: admin overlay is not exposed as a dialog (role=${state.role})`);
+  if(state.modal!=='true')fail(`${path}: admin overlay is not exposed as modal`);
+  if(state.name!=='E2E Dialogvertrag')fail(`${path}: admin overlay has no accessible name, got "${state.name}"`);
+  if(state.closeName!=='Schließen')fail(`${path}: admin overlay close control has no accessible name, got "${state.closeName}"`);
+  if(!state.focusInside)fail(`${path}: focus was not moved into the admin overlay`);
+  if(state.inertSupported&&!state.backgroundShielded)fail(`${path}: content behind the admin overlay stays reachable`);
+  if(!state.bodyLocked)fail(`${path}: background page was not locked while the overlay is open`);
+  // Der Tastaturfokus darf den Dialog nicht verlassen - unabhängig davon, ob die Engine inert kennt.
+  for(let i=0;i<30;i++)await page.keyboard.press('Tab');
+  if(!(await page.evaluate(()=>{const back=document.querySelector('.modal-back');return !!(back&&document.activeElement&&back.contains(document.activeElement));})))
+    fail(`${path}: keyboard focus escaped the open dialog`);
+  // Getippte Eingaben dürfen nicht kommentarlos verloren gehen.
+  await page.locator('.modal-back input[name="e2e-note"]').fill('nicht verlieren');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  if(!(await page.locator('.modal-back').count()))fail(`${path}: Escape discarded typed input without asking`);
+  if(!(await page.locator('.modal-back [data-kp-close-hint]').count()))fail(`${path}: Escape on a dialog with unsaved input gave no warning`);
+  if(await page.locator('.modal-back input[name="e2e-note"]').inputValue()!=='nicht verlieren')fail(`${path}: typed input was altered by the close attempt`);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  if(await page.locator('.modal-back').count())fail(`${path}: a confirmed Escape did not close the admin overlay`);
+  const released=await page.evaluate(()=>({
+    inert:[...document.body.children].some(el=>el.inert===true),
+    locked:document.body.classList.contains('kp-admin-modal-open'),
+    active:document.activeElement?.tagName||'BODY'
+  }));
+  if(released.inert)fail(`${path}: page behind the dialog stayed unreachable after closing`);
+  if(released.locked)fail(`${path}: background page stayed locked after closing`);
+  if(before!=='BODY'&&released.active==='BODY')fail(`${path}: focus was not returned to the page after closing`);
+  console.log(`Admin dialog contract on ${path}: OK`);
+}
+
 const expectedCandidate401Paths=new Set(['/api/auth/me','/api/attendance/teacher/courses']);
 function expectedBrowserHttpError(entry){if(mode!=='candidate'||entry.status!==401)return false;let path='';try{path=new URL(entry.url).pathname;}catch{return false;}return expectedCandidate401Paths.has(path);}
 
@@ -224,13 +296,24 @@ try{
     await concurrentOnboardingClaim();
     await mobileOnboardingPreflight();
     await acceptedOfferOnboarding();
+    await adminDialogContract('/kunden-admin');
+    await adminDialogContract('/plattform-admin');
   }else if(mode==='locked-production')await lockedProductionSurface();
   else fail(`Unsupported E2E_TARGET_MODE: ${mode}`);
 
   if(adminEmail&&adminPassword){
     if(mode!=='locked-production')console.log('authenticated live platform path is intentionally not executed against the local PR candidate');
     else{
-      await route('/plattform-admin');const email=page.locator('input[type="email"],input[name="email"],input[name="login"]').first(),password=page.locator('input[type="password"]').first();if(!(await email.count())||!(await password.count()))fail('platform login controls not found');await email.fill(adminEmail);await password.fill(adminPassword);const submit=page.locator('button[type="submit"]').first();if(!(await submit.count()))fail('platform login submit not found');await submit.click();await page.waitForTimeout(1200);const offers=page.getByRole('button',{name:/Angebote/i}).first();if(!(await offers.count()))fail('Angebote navigation not available after platform login');await offers.click();await page.waitForTimeout(700);if(!(await page.getByText(/Angebote können|Freigabe noch gesperrt/i).count()))fail('offer manager did not open');const managerText=await page.locator('body').innerText();if(!/automatisch versendet|E-Mailversand/i.test(managerText))fail('offer manager does not expose mail delivery readiness');console.log('authenticated platform offer manager browser path: OK');
+      await route('/plattform-admin');const email=page.locator('input[type="email"],input[name="email"],input[name="login"]').first(),password=page.locator('input[type="password"]').first();if(!(await email.count())||!(await password.count()))fail('platform login controls not found');await email.fill(adminEmail);await password.fill(adminPassword);const submit=page.locator('button[type="submit"]').first();if(!(await submit.count()))fail('platform login submit not found');await submit.click();await page.waitForTimeout(1200);const offers=page.getByRole('button',{name:/Angebote/i}).first();if(!(await offers.count()))fail('Angebote navigation not available after platform login');await offers.click();await page.waitForTimeout(700);if(!(await page.getByText(/Angebote können|Freigabe noch gesperrt/i).count()))fail('offer manager did not open');const managerText=await page.locator('body').innerText();if(!/automatisch versendet|E-Mailversand/i.test(managerText))fail('offer manager does not expose mail delivery readiness');
+      // Derselbe Vertrag muss auch für einen echten Produktdialog gelten, nicht nur für den eingehängten.
+      if(await page.locator('.modal-back').count()){
+        const real=await page.evaluate(()=>{const back=document.querySelector('.modal-back'),panel=back.querySelector('.modal')||back,by=panel.getAttribute('aria-labelledby');return{role:panel.getAttribute('role'),modal:panel.getAttribute('aria-modal'),named:!!(panel.getAttribute('aria-label')||(by&&document.getElementById(by))),focusInside:back.contains(document.activeElement)};});
+        if(real.role!=='dialog'||real.modal!=='true'||!real.named)fail(`offer manager dialog is not an accessible dialog: ${JSON.stringify(real)}`);
+        if(!real.focusInside)fail('offer manager dialog did not receive focus');
+        await page.keyboard.press('Escape');await page.waitForTimeout(400);
+        if(await page.locator('.modal-back').count())fail('offer manager dialog cannot be closed with Escape');
+      }
+      console.log('authenticated platform offer manager browser path: OK');
     }
   }else console.log('authenticated live browser path not configured; local candidate onboarding/admin path still executed');
 

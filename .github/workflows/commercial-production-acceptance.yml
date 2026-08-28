@@ -1,0 +1,55 @@
+name: Commercial production acceptance
+
+# Der Live-Smoke prüft die Produktion unangemeldet: Version, Release-Sperre, Zahlungs-Freeze.
+# Was niemand prüft, ist die angemeldete Plattformverwaltung - genau die Oberfläche, mit der ein
+# Kunde eingerichtet wird. Dieser Lauf meldet sich mit einem echten Plattformkonto an und bedient
+# sie im Browser. Er startet erst, wenn der Live-Smoke bestätigt hat, dass der geprüfte Commit
+# wirklich live ist, sonst würde er die Vorgängerversion abnehmen.
+on:
+  workflow_run:
+    workflows: ["Commercial main live smoke"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commercial-production-acceptance
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require the platform acceptance account
+        env:
+          E2E_PLATFORM_EMAIL: ${{ secrets.E2E_PLATFORM_EMAIL }}
+          E2E_PLATFORM_PASSWORD: ${{ secrets.E2E_PLATFORM_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Ein fehlendes Secret muss laut scheitern. Sonst liefe die Abnahme unangemeldet durch
+          # und meldete Erfolg, ohne die Oberfläche je geöffnet zu haben.
+          test -n "$E2E_PLATFORM_EMAIL" || { echo 'Secret E2E_PLATFORM_EMAIL fehlt.' >&2; exit 1; }
+          test -n "$E2E_PLATFORM_PASSWORD" || { echo 'Secret E2E_PLATFORM_PASSWORD fehlt.' >&2; exit 1; }
+          echo 'Plattform-Abnahmekonto ist hinterlegt.'
+      - name: Install project and Chromium
+        run: |
+          npm install --no-audit --no-fund
+          npm install --no-save --ignore-scripts playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Accept the live platform administration
+        env:
+          # Der Worker-Host statt der Kundendomain: die WAF vor klassenportal.app blockt
+          # automatisierte Laeufe, und assertSameOrigin akzeptiert den eigenen Ursprung.
+          COMMERCIAL_BASE_URL: https://klassenportal-commercial.nicosiedel.workers.dev
+          E2E_TARGET_MODE: locked-production
+          E2E_PLATFORM_EMAIL: ${{ secrets.E2E_PLATFORM_EMAIL }}
+          E2E_PLATFORM_PASSWORD: ${{ secrets.E2E_PLATFORM_PASSWORD }}
+        run: node scripts/commercial-browser-e2e.mjs

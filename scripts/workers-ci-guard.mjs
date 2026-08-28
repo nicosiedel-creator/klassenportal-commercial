@@ -45,11 +45,16 @@ if(workersBuild&&branch===productionBranch){
   if((migration.status??1)!==0)process.exit(migration.status??1);
 }else if(workersBuild&&branch){
   console.log(`Skipping remote D1 migrations in Workers Build for non-production branch: ${branch}`);
-}else{
+}else if(process.env.KP_LOCAL_PRODUCTION_DEPLOY==='1'){
   console.log('Applying guarded remote D1 migrations before the local production deployment...');
   const migration=spawnSync(npm,['run','db:migrate'],{stdio:'inherit',env:{...process.env,WORKERS_CI_GUARD_ACTIVE:'1'}});
   if(migration.error){console.error('Remote D1 migration could not start.');console.error(migration.error.message);process.exit(1);}
   if((migration.status??1)!==0)process.exit(migration.status??1);
+}else{
+  // Wrangler runs this build command for `wrangler dev` too. Without an explicit deployment
+  // marker a local development server would migrate the production database, so the remote
+  // step stays closed unless `npm run deploy` asked for it.
+  console.log('Skipping remote D1 migrations: this build is not a production deployment. Use npm run deploy to migrate production.');
 }
 
 const commit=String(process.env.WORKERS_CI_COMMIT_SHA||'').trim();

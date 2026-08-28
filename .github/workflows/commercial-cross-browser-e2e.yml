@@ -1,0 +1,99 @@
+name: Commercial cross-browser E2E
+
+# Firefox und WebKit fahren denselben Ablauf wie der Chromium-Gate. Der Workflow läuft
+# absichtlich nicht bei jedem Pull Request: Er ist neu, seine Befunde sind noch unbekannt,
+# und browserabhängige Fehler sollen gefunden und behoben werden, ohne einen gesunden
+# Release aufzuhalten. Sobald er stabil grün läuft, kann er auf pull_request erweitert
+# und zum Pflicht-Gate gemacht werden.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commercial-cross-browser-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install project and ${{ matrix.browser }}
+        run: |
+          npm install --no-audit --no-fund
+          npm install --no-save --ignore-scripts playwright@1.55.0
+          npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Prepare exact local PR candidate and real onboarding fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const config=JSON.parse(readFileSync('wrangler.jsonc','utf8'));
+          config.vars={...config.vars,APP_ORIGIN:'http://127.0.0.1:8787',PAYMENTS_ENABLED:'false'};
+          delete config.routes;
+          writeFileSync('wrangler.browser-e2e.json',JSON.stringify(config,null,2));
+          NODE
+          npx wrangler d1 migrations apply DB --local --config wrangler.browser-e2e.json
+          node scripts/commercial-onboarding-e2e-state.mjs seed wrangler.browser-e2e.json
+          WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --config wrangler.browser-e2e.json --local --ip 127.0.0.1 --port 8787 --local-upstream 127.0.0.1 --upstream-protocol http >/tmp/commercial-wrangler-e2e.log 2>&1 &
+          echo $! >/tmp/commercial-wrangler-e2e.pid
+          ready=0
+          for i in $(seq 1 45); do
+            if curl -fsS --max-time 3 http://127.0.0.1:8787/plattform-admin >/dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          if test "$ready" != 1; then
+            echo 'Local PR candidate did not become ready.' >&2
+            cat /tmp/commercial-wrangler-e2e.log >&2 || true
+            exit 1
+          fi
+      - name: Click through the candidate in ${{ matrix.browser }}
+        shell: bash
+        env:
+          COMMERCIAL_BASE_URL: http://127.0.0.1:8787
+          E2E_TARGET_MODE: candidate
+          E2E_BROWSER: ${{ matrix.browser }}
+        run: |
+          set +e
+          node scripts/commercial-browser-e2e.mjs 2>&1 | tee /tmp/commercial-browser-e2e.log
+          status=${PIPESTATUS[0]}
+          {
+            echo "### Commercial ${E2E_BROWSER} E2E diagnostic"
+            echo '```text'
+            tail -n 160 /tmp/commercial-browser-e2e.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Verify exact persisted onboarding and payment-freeze state
+        shell: bash
+        run: node scripts/commercial-onboarding-e2e-state.mjs verify wrangler.browser-e2e.json
+      - name: Upload diagnostic
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: commercial-${{ matrix.browser }}-e2e-log
+          path: |
+            /tmp/commercial-browser-e2e.log
+            /tmp/commercial-wrangler-e2e.log
+          if-no-files-found: warn
+      - name: Show local Worker log on failure
+        if: failure()
+        run: cat /tmp/commercial-wrangler-e2e.log || true
+      - name: Stop local PR candidate
+        if: always()
+        run: |
+          if test -f /tmp/commercial-wrangler-e2e.pid; then kill "$(cat /tmp/commercial-wrangler-e2e.pid)" 2>/dev/null || true; fi
+          rm -f wrangler.browser-e2e.json

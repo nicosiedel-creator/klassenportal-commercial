@@ -24,7 +24,7 @@ if(PLATFORM_DIRECT_PATH){
         if(!r.ok){const messages={LOGIN_FAILED:'E-Mail oder Passwort ist nicht korrekt.',LOGIN_RATE_LIMITED:'Zu viele Anmeldeversuche. Bitte später erneut versuchen.'};throw new Error(messages[d.error]||d.error||`HTTP_${r.status}`);}
         if(!d?.user?.isPlatformAdmin){await logout();throw new Error('Dieses Konto hat keinen Plattform-Admin-Zugang.');}
         location.reload();
-      }catch(x){err.textContent=x.message||'Anmeldung fehlgeschlagen.';button.disabled=false;}
+      }catch(x){err.textContent=(window.KP_ERROR_TEXT?window.KP_ERROR_TEXT(x):x.message)||'Anmeldung fehlgeschlagen.';button.disabled=false;}
     };
   }
 

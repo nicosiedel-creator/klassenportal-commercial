@@ -6,6 +6,6 @@ function run(command,args,env=process.env){
   if((result.status??1)!==0)process.exit(result.status??1);
 }
 
-run(process.execPath,['scripts/workers-ci-guard.mjs']);
+run(process.execPath,['scripts/workers-ci-guard.mjs'],{...process.env,KP_LOCAL_PRODUCTION_DEPLOY:'1'});
 const npx=process.platform==='win32'?'npx.cmd':'npx';
 run(npx,['wrangler','deploy'],{...process.env,WORKERS_CI_GUARD_ACTIVE:'1'});

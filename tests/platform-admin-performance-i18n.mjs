@@ -19,7 +19,12 @@ assert.match(core,/kp:app-rendered/,'platform core must follow deterministic app
 assert.match(core,/kp:platform-ui-applied/,'platform core must emit a stable mounting event for lazy modules and localization');
 assert.doesNotMatch(core,/\balert\(|\bconfirm\(|\bprompt\(/,'platform critical core must not use blocking browser dialogs');
 
-for(const group of ['owner','offers','legal','release','security','finance','integrations','operations'])assert.match(lazy,new RegExp(`\\b${group}:\\[`),`platform lazy group missing ${group}`);
+for(const group of ['owner','offers','legal','release','security','finance','operations'])assert.match(lazy,new RegExp(`\\b${group}:\\[`),`platform lazy group missing ${group}`);
+// Ein Launcher, dessen Modulgruppe es nicht gibt, lädt nichts und öffnet nichts.
+const declaredGroups=[...lazy.slice(lazy.indexOf('const GROUPS={'),lazy.indexOf('const CONFIG={')).matchAll(/^\s+(\w+):\[/gm)].map(m=>m[1]);
+const launcherGroups=[...lazy.slice(lazy.indexOf('const CONFIG={'),lazy.indexOf('const loaded=')).matchAll(/^\s+(\w+):\{/gm)].map(m=>m[1]);
+assert.ok(launcherGroups.length>=5,`platform shell must expose its lazy launchers, found ${launcherGroups.length}`);
+for(const group of launcherGroups)assert.ok(declaredGroups.includes(group),`platform launcher ${group} has no module group to load`);
 assert.match(lazy,/Array\.from\(\{length:2\}/,'platform module loading must use bounded concurrency');
 assert.match(lazy,/groupPromises=new Map/,'platform group requests must be deduplicated');
 assert.doesNotMatch(lazy,/MutationObserver/,'platform lazy loader must remain event-driven');

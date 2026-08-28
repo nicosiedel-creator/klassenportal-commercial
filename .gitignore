@@ -5,3 +5,8 @@ dist/
 .wrangler/
 .DS_Store
 public/vendor/
+
+# Beide Browser-Gates erzeugen diese Wrangler-Konfiguration im Checkout und räumen sie danach
+# wieder weg. Sie ist eine abgeleitete Kopie der Produktionskonfiguration ohne Routen und gehört
+# nie ins Repository.
+wrangler.browser-e2e.json
