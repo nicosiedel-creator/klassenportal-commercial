@@ -18,8 +18,11 @@ function featuresValue(input:Record<string,unknown>){if(Array.isArray(input.feat
 export async function listPlanningResourcesManaged(env:Env,auth:CoreAuthContext,tenantId:string){
   requireManage(auth);
   return(await env.DB.prepare(`SELECT r.*,
-    (SELECT COUNT(*) FROM planning_resource_unavailability u WHERE u.tenant_id=r.tenant_id AND u.resource_id=r.id AND u.ends_at>datetime('now')) future_blocks,
-    (SELECT COUNT(*) FROM lesson_resource_reservations rr JOIN lessons l ON l.id=rr.lesson_id AND l.tenant_id=rr.tenant_id WHERE rr.tenant_id=r.tenant_id AND rr.resource_id=r.id AND l.ends_at>datetime('now')) future_reservations
+    -- Die Anwendung schreibt ISO-8601 mit T und Z; datetime('now') liefert dagegen
+    -- "YYYY-MM-DD HH:MM:SS". Am selben Tag sortiert deshalb jeder gespeicherte Zeitpunkt
+    -- danach, und schon beendete Sperren zählten weiter als bevorstehend.
+    (SELECT COUNT(*) FROM planning_resource_unavailability u WHERE u.tenant_id=r.tenant_id AND u.resource_id=r.id AND u.ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')) future_blocks,
+    (SELECT COUNT(*) FROM lesson_resource_reservations rr JOIN lessons l ON l.id=rr.lesson_id AND l.tenant_id=rr.tenant_id WHERE rr.tenant_id=r.tenant_id AND rr.resource_id=r.id AND l.ends_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')) future_reservations
     FROM planning_resources r WHERE r.tenant_id=?
     ORDER BY CASE r.status WHEN 'active' THEN 0 WHEN 'maintenance' THEN 1 ELSE 2 END,
              CASE r.resource_type WHEN 'room' THEN 0 WHEN 'online_room' THEN 1 ELSE 2 END,r.name`).bind(tenantId).all<Record<string,unknown>>()).results??[];
