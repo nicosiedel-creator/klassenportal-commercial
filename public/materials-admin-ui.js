@@ -31,7 +31,7 @@ async function kmOpen(){
     });
   }
   render();back.querySelector('#km-refresh').onclick=reload;
-  back.querySelector('#km-upload').onsubmit=async e=>{e.preventDefault();const status=back.querySelector('#km-status'),button=e.currentTarget.querySelector('button');button.disabled=true;status.textContent='Datei wird hochgeladen …';try{const f=new FormData(e.currentTarget),cid=String(f.get('course_id')||'');const file=f.get('file');if(file?.size>25*1024*1024)throw new Error('Die Datei ist größer als 25 MB.');await kmRequest(`/api/materials?tenant_id=${encodeURIComponent(tenantId)}${cid?`&course_id=${encodeURIComponent(cid)}`:''}`,{method:'POST',body:f});status.textContent='Material wurde gespeichert.';e.currentTarget.reset();await reload();}catch(x){status.textContent=x.message;}finally{button.disabled=false;}};
+  back.querySelector('#km-upload').onsubmit=async e=>{e.preventDefault();const status=back.querySelector('#km-status'),button=e.currentTarget.querySelector('button');button.disabled=true;status.textContent='Datei wird hochgeladen …';try{const f=new FormData(e.currentTarget),cid=String(f.get('course_id')||'');const file=f.get('file');if(file?.size>25*1024*1024)throw new Error('Die Datei ist größer als 25 MB.');await kmRequest(`/api/materials?tenant_id=${encodeURIComponent(tenantId)}${cid?`&course_id=${encodeURIComponent(cid)}`:''}`,{method:'POST',body:f});status.textContent='Material wurde gespeichert.';e.currentTarget.reset();await reload();}catch(x){status.textContent=(window.KP_ERROR_TEXT?window.KP_ERROR_TEXT(x):x.message);}finally{button.disabled=false;}};
 }
 
 function kmApply(){

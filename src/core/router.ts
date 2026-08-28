@@ -41,7 +41,9 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
   // top-level handler and be answered with 500 instead of its own status.
   try{
     assertSameOrigin(request,env.APP_ORIGIN);
-    if(u.pathname==='/api/health')return json({ok:true,service:'klassenportal-commercial'});
+    // Der Health-Endpunkt liest nur. Jede andere Methode ist ein Irrtum des Aufrufers und wird
+    // wie überall sonst im Worker mit 405 beantwortet, statt sie stillschweigend zu bestätigen.
+    if(u.pathname==='/api/health'){if(request.method!=='GET'&&request.method!=='HEAD')return json({ok:false,error:'METHOD_NOT_ALLOWED'},405);return json({ok:true,service:'klassenportal-commercial'});}
     if(u.pathname==='/api/auth/login'&&request.method==='POST')return await login(env,request);
     if(u.pathname==='/api/auth/logout'&&request.method==='POST')return await logout(env,request);
     if(u.pathname==='/api/auth/me'&&request.method==='GET'){
