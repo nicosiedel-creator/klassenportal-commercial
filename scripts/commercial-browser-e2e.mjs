@@ -494,12 +494,19 @@ async function firstNavigationDiagnosis(){
   };
   const blank=await probe('about:blank','about:blank',15000);
   if(blank)await probe('eingebautes Dokument','data:text/html,<title>x</title><p>x',15000);
-  let reachable=null;
   try{
     const response=await fetch(`${base}/plattform-admin`,{redirect:'manual'});
-    reachable=`node erreicht den Server: ${response.status()??response.status}`;
-  }catch(error){reachable=`node erreicht den Server nicht: ${String(error?.message||error).split('\n')[0]}`;}
-  findings.push(reachable);
+    findings.push(`node erreicht den Server: ${response.status}`);
+  }catch(error){findings.push(`node erreicht den Server nicht: ${String(error?.message||error).split('\n')[0]}`);}
+
+  // Die Engine kann eingebaute Dokumente laden, erreicht den lokalen Server aber offenbar nicht.
+  // Ein Abruf aus der Seite heraus taugt dafuer nicht - about:blank hat einen undurchsichtigen
+  // Ursprung, jeder Abruf scheitert dort an der Ursprungspruefung, nicht am Netz. Zwei kurze
+  // Navigationen messen die Netzschicht wirklich und trennen "der Port ist unerreichbar" von
+  // "die Engine mag diese Adressform nicht".
+  const {port}=new URL(base);
+  for(const [label,url] of [['über IP',`http://127.0.0.1:${port}/plattform-admin`],['über localhost',`http://localhost:${port}/plattform-admin`]])
+    await probe(`Navigation ${label}`,url,12000);
   return findings.join(' | ');
 }
 
