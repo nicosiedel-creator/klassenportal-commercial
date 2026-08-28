@@ -74,7 +74,7 @@
     MATERIAL_FILE_REQUIRED:'Bitte wähle eine Datei aus.',
     MATERIAL_FILE_EMPTY:'Die gewählte Datei ist leer.',
     MATERIAL_FILE_TOO_LARGE:'Die Datei ist zu groß. Erlaubt sind bis zu 25 MB.',
-    MATERIAL_FILE_TYPE_INVALID:'Dieser Dateityp ist nicht zugelassen.',
+    MATERIAL_FILE_TYPE_INVALID:'Dieser Dateityp ist nicht zugelassen.',MICROSOFT_CLIENT_ID_REQUIRED:'Die Microsoft-365-Anbindung ist für diesen Bildungsträger noch nicht eingerichtet.',MICROSOFT_CLIENT_SECRET_REQUIRED:'Die Microsoft-365-Anbindung ist noch nicht vollständig eingerichtet.',MICROSOFT_AUTHORIZATION_URL_MISSING:'Die Anmeldung bei Microsoft konnte nicht vorbereitet werden.',MICROSOFT_ACCOUNT_NOT_CONNECTED:'Dein Konto ist noch nicht mit Microsoft 365 verbunden.',MICROSOFT_REAUTH_REQUIRED:'Die Verbindung zu Microsoft 365 muss erneuert werden.',MICROSOFT_GRAPH_PERMISSION_REQUIRED:'Microsoft hat die benötigten Kalenderrechte nicht freigegeben.',MICROSOFT_GRAPH_RATE_LIMITED:'Microsoft begrenzt die Anfragen gerade. Bitte kurz warten und erneut versuchen.',
     MATERIAL_NOT_FOUND:'Die Datei ist nicht mehr vorhanden.',
 
     // Importe: Der Nutzer muss erfahren, was er an seiner Datei ändern soll.

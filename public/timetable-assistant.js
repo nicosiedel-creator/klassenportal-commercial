@@ -30,7 +30,7 @@ function errorText(code){return ({
   PDFJS_LOAD_FAILED:'Die lokale PDF-Erkennung konnte nicht geladen werden.',
   FORBIDDEN_ROLE:'Für den Stundenplan-Import fehlt die erforderliche Berechtigung.',
   FORBIDDEN_COURSE:'Für mindestens eine Klasse fehlt die Berechtigung.'
-})[code]||code;}
+})[code]||(window.KP_ERROR_TEXT?window.KP_ERROR_TEXT(code):code);}
 
 async function loadPdfJs(){
   if(!pdfJsPromise)pdfJsPromise=import('/vendor/pdfjs/pdf.mjs').then(m=>{m.GlobalWorkerOptions.workerSrc='/vendor/pdfjs/pdf.worker.mjs';return m;}).catch(()=>{throw new Error('PDFJS_LOAD_FAILED')});

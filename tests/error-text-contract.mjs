@@ -41,7 +41,11 @@ for(const shell of ['customer-admin.html','platform-admin.html','class-admin.htm
 const raw=[];
 for(const file of (await readdir('public')).filter(f=>f.endsWith('.js'))){
   const src=await readFile(`public/${file}`,'utf8');
-  for(const rx of [/\.textContent=[exc]\.message\b/g,/\bE\([exc]\.message\)/g,/\)\[[exc]\.message\]\|\|[exc]\.message/g])
+  for(const rx of [/\.textContent=[exc]\.message\b/g,/\bE\([exc]\.message\)/g,/\)\[[exc]\.message\]\|\|[exc]\.message/g,
+                   // Eine Übersetzungstabelle, die auf ihren eigenen Schlüssel zurückfällt, zeigt
+                   // genau den technischen Code an, den sie übersetzen sollte. Sieben Oberflächen
+                   // taten das, weil sie eine Tabelle statt e.message benutzen.
+                   /\)\[code\]\s*\|\|\s*code\b/g])
     for(const m of src.matchAll(rx))raw.push(`${file}: ${m[0]}`);
 }
 assert.deepEqual(raw,[],`diese Stellen zeigen einen Fehlercode unübersetzt an:\n${raw.join('\n')}`);

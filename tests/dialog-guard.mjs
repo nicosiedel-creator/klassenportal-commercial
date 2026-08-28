@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 
 const css=await readFile('public/admin-overlay-hardening.css','utf8');
-const js=await readFile('public/admin-overlay-hardening.js','utf8');
+const js=await readFile('public/kp-dialog-guard.js','utf8');
 for(const selector of ['.modal-back','.class-admin-modal-back','.kp-modal-back'])assert.ok(css.includes(selector),`overlay hardening missing ${selector}`);
 assert.match(css,/position:fixed!important/,'backdrops must be viewport-fixed');
 assert.match(css,/inset:0!important/,'backdrops must cover the entire viewport');
@@ -50,14 +50,24 @@ for(const target of configBlock.matchAll(/target:'#([\w-]+)'/g))
   assert.ok(platformLazy.includes(`#${target[1]}`),`platform launcher target #${target[1]} must be addressable`);
 assert.match(platformLazy,/const keyboard=document\.activeElement===b/,'a launcher that replaces itself must not drop keyboard focus');
 
+// Das Layout-Stylesheet gehört den Verwaltungsoberflächen; der Wächter gilt überall dort, wo
+// Module eigene Dialoge bauen. Das Dozentenportal bekommt deshalb den Wächter ohne das Layout,
+// damit sein Erscheinungsbild unverändert bleibt.
 for(const file of ['public/customer-admin.html','public/platform-admin.html']){
   const html=await readFile(file,'utf8');
-  const base=html.lastIndexOf('/styles.css'),hardening=html.indexOf('/admin-overlay-hardening.css?v='),guard=html.indexOf('/admin-overlay-hardening.js?v=');
+  const base=html.lastIndexOf('/styles.css'),hardening=html.indexOf('/admin-overlay-hardening.css?v=');
   assert.ok(hardening>=0,`${file} must load viewport overlay hardening`);
   assert.ok(hardening>base,`${file} must load overlay hardening after its normal stylesheet stack`);
-  assert.ok(guard>=0,`${file} must load the DOM overlay guard`);
 }
+for(const file of ['public/customer-admin.html','public/platform-admin.html','public/dozentenportal.html']){
+  const html=await readFile(file,'utf8');
+  assert.match(html,/\/kp-dialog-guard\.js\?v=[\w.-]+/,`${file} must load the shared dialog guard behind a cache-busting version`);
+}
+const teacher=await readFile('public/dozentenportal.html','utf8');
+assert.doesNotMatch(teacher,/admin-overlay-hardening\.css/,'the teacher portal must not inherit the administration dialog layout');
+// Der Wächter darf kein Aussehen mitbringen, sonst wäre er in keiner fremden Shell sicher.
+assert.doesNotMatch(js,/\.style\.|cssText|document\.createElement\('style'\)/,'the dialog guard must not carry styling of its own');
 const classAdmin=await readFile('public/class-admin.html','utf8');
 assert.match(classAdmin,/class-admin-entry\.js/,'class admin must be a student-portal entry, not an admin workspace');
-assert.doesNotMatch(classAdmin,/admin-overlay-hardening\.js|class-admin-portal\.js/,'class admin entry must not load the old admin workspace stack');
-console.log('Admin overlays cover admin workspaces; class admin remains a student-portal entry: OK');
+assert.doesNotMatch(classAdmin,/kp-dialog-guard\.js|admin-overlay-hardening\.(?:js|css)|class-admin-portal\.js/,'class admin entry must not load the old admin workspace stack');
+console.log('Dialog guard is shared, style-free and loaded by every surface that builds dialogs; class admin remains a student-portal entry: OK');

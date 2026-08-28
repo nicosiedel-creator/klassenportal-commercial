@@ -304,7 +304,34 @@ try{
   if(adminEmail&&adminPassword){
     if(mode!=='locked-production')console.log('authenticated live platform path is intentionally not executed against the local PR candidate');
     else{
-      await route('/plattform-admin');const email=page.locator('input[type="email"],input[name="email"],input[name="login"]').first(),password=page.locator('input[type="password"]').first();if(!(await email.count())||!(await password.count()))fail('platform login controls not found');await email.fill(adminEmail);await password.fill(adminPassword);const submit=page.locator('button[type="submit"]').first();if(!(await submit.count()))fail('platform login submit not found');await submit.click();await page.waitForTimeout(1200);const offers=page.getByRole('button',{name:/Angebote/i}).first();if(!(await offers.count()))fail('Angebote navigation not available after platform login');await offers.click();await page.waitForTimeout(700);if(!(await page.getByText(/Angebote können|Freigabe noch gesperrt/i).count()))fail('offer manager did not open');const managerText=await page.locator('body').innerText();if(!/automatisch versendet|E-Mailversand/i.test(managerText))fail('offer manager does not expose mail delivery readiness');
+      await route('/plattform-admin');
+      const email=page.locator('input[type="email"],input[name="email"],input[name="login"]').first(),password=page.locator('input[type="password"]').first();
+      if(!(await email.count())||!(await password.count()))fail('platform login controls not found');
+      await email.fill(adminEmail);await password.fill(adminPassword);
+      const submit=page.locator('form button[type="submit"],form.login button,button[type="submit"]').first();
+      if(!(await submit.count()))fail('platform login submit not found');
+      await submit.click();
+      // Ein fester Wartewert ist gegen die Produktion eine Wette auf die Latenz. Die Sitzung selbst
+      // sagt, ob die Anmeldung wirklich gelungen ist - und benennt sonst, woran es lag, statt eine
+      // fehlende Navigation zu melden, die nur die Folge wäre. Anmeldedaten bleiben ungenannt.
+      let session={status:0,platform:false,mustChange:false,error:''};
+      for(let attempt=0;attempt<20;attempt++){
+        session=await page.evaluate(async()=>{try{const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});let d={};try{d=await r.json();}catch{}
+          return{status:r.status,platform:!!d?.user?.isPlatformAdmin,mustChange:!!d?.user?.mustChangePassword,error:String(d?.error||'')};}catch(e){return{status:0,platform:false,mustChange:false,error:'FETCH_FAILED'};}});
+        if(session.status===200||session.error)break;
+        await page.waitForTimeout(500);
+      }
+      if(session.status!==200)fail(`platform acceptance account could not sign in: /api/auth/me answered ${session.status}${session.error?` ${session.error}`:''}. Check E2E_PLATFORM_EMAIL/E2E_PLATFORM_PASSWORD.`);
+      if(session.mustChange)fail('platform acceptance account must change its password before it can be used for acceptance');
+      if(!session.platform)fail('the configured acceptance account is signed in but is not a platform administrator');
+      const offers=page.getByRole('button',{name:/Angebote/i}).first();
+      await offers.waitFor({state:'visible',timeout:20000}).catch(()=>undefined);
+      if(!(await offers.count()))fail(`Angebote navigation did not appear for a signed-in platform administrator; shell shows: ${(await page.locator('body').innerText()).replace(/\s+/g,' ').slice(0,200)}`);
+      await offers.click();
+      await page.getByText(/Angebote können|Freigabe noch gesperrt/i).first().waitFor({state:'visible',timeout:20000}).catch(()=>undefined);
+      if(!(await page.getByText(/Angebote können|Freigabe noch gesperrt/i).count()))fail('offer manager did not open');
+      const managerText=await page.locator('body').innerText();
+      if(!/automatisch versendet|E-Mailversand/i.test(managerText))fail('offer manager does not expose mail delivery readiness');
       // Derselbe Vertrag muss auch für einen echten Produktdialog gelten, nicht nur für den eingehängten.
       if(await page.locator('.modal-back').count()){
         const real=await page.evaluate(()=>{const back=document.querySelector('.modal-back'),panel=back.querySelector('.modal')||back,by=panel.getAttribute('aria-labelledby');return{role:panel.getAttribute('role'),modal:panel.getAttribute('aria-modal'),named:!!(panel.getAttribute('aria-label')||(by&&document.getElementById(by))),focusInside:back.contains(document.activeElement)};});
