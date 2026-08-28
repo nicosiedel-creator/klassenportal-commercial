@@ -37,3 +37,10 @@ jobs:
         run: node scripts/release-check.mjs
       - name: Validate all D1 migrations locally
         run: npx wrangler d1 migrations apply DB --local
+      # Dieser Lauf faehrt den echten Worker gegen eine echt migrierte D1 und pruefte damit
+      # bereits Oberflaechen, Anmeldegrenzen, Zahlungs-Freeze und den Angebotsweg - nur hat ihn
+      # nichts gestartet: er stand in package.json, aber in keinem Workflow. Ungelaufen ist er
+      # verfallen (jede .html-Antwort galt als "leer ausgeliefert", weil der Asset-Dienst auf die
+      # kanonische Form weiterleitet). Er laeuft jetzt im Pflichtgate mit.
+      - name: Local Worker and migrated D1 runtime acceptance
+        run: npm run test:commercial-worker-onboarding

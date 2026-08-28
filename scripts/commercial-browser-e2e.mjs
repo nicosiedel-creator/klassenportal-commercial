@@ -273,6 +273,75 @@ async function mobileSurface(){
   }finally{await context.close();}
 }
 
+// Die Plattformverwaltung ist die Oberflaeche, mit der ein Kunde ueberhaupt erst eingerichtet
+// wird - und der Lauf hat sie bisher nur unangemeldet geoeffnet. Deshalb blieb unentdeckt, dass
+// "Einrichtungslink erzeugen" gar keine Anfrage stellte: der Absendevorgang suchte die
+// Schaltflaeche ueber button[type="submit"], die Schaltflaeche trug aber kein type-Attribut, und
+// der Zugriff auf null warf, bevor irgendetwas passierte. Ein Plattformverwalter konnte damit
+// keinen einzigen Kunden einrichten. Diese Pruefung fuehrt den Weg wirklich aus.
+async function platformAdministrationContract(){
+  const email=String(process.env.E2E_LOCAL_PLATFORM_EMAIL||'').trim();
+  const password=String(process.env.E2E_LOCAL_PLATFORM_PASSWORD||'').trim();
+  if(!email||!password)fail('local platform acceptance account is not configured');
+  const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'de-DE'});
+  const admin=await context.newPage();
+  const pageErrors=[];
+  admin.on('pageerror',error=>pageErrors.push(String(error).slice(0,200)));
+  try{
+    await navigate(admin,`${base}/plattform-admin`,{waitUntil:'domcontentloaded',timeout:30000});
+    await admin.locator('input[name="email"]').fill(email);
+    await admin.locator('input[name="password"]').fill(password);
+    await admin.locator('button[type="submit"]').click();
+    await admin.locator('aside.side button.nav').filter({hasText:/^Kunden-Einrichtung$/}).first().waitFor({timeout:20000});
+    await admin.locator('aside.side button.nav').filter({hasText:/^Kunden-Einrichtung$/}).first().click();
+    await admin.locator('#pa-new').waitFor({timeout:15000});
+
+    const customer=`browser-e2e-setup-${Date.now()}@example.invalid`;
+    const created=admin.waitForResponse(response=>{
+      try{return new URL(response.url()).pathname==='/api/platform/onboarding-invitations'&&response.request().method()==='POST';}catch{return false;}
+    },{timeout:20000});
+    await admin.locator('#pa-new input[name="customer_email"]').fill(customer);
+    // Wie ein Benutzer: die sichtbare Schaltflaeche anklicken, nicht die mit dem richtigen
+    // type-Attribut. Sonst wuerde die Pruefung genau den Fehler umgehen, den sie sucht.
+    await admin.locator('#pa-new button').filter({hasText:'Einrichtungslink erzeugen'}).first().click();
+    const response=await created.catch(()=>null);
+    if(!response)fail('creating a customer setup link sent no request at all - the platform administration cannot set up a customer');
+    if(response.status()!==201)fail(`creating a customer setup link answered ${response.status()}`);
+    const link=await admin.locator('#pa-created #pa-link').inputValue().catch(()=>'');
+    if(!/\/einrichtung\//.test(link))fail(`the created setup link is not an onboarding link: ${link.slice(0,80)}`);
+    // Die Liste laedt nach dem Anlegen selbst nach; darauf warten statt sofort zu messen.
+    await admin.locator('#pa-list').filter({hasText:customer}).first().waitFor({timeout:15000})
+      .catch(()=>fail('the created setup link does not appear in the invitation list'));
+
+    // Die Rueckfrage vor dem Widerruf ist ein zweiter Dialog ueber dem ersten. Beide muessen
+    // ihren eigenen Namen tragen - eine feste Kennung liess die Rueckfrage den Namen des
+    // darunterliegenden Dialogs ansagen, waehrend sie nach einem Widerruf fragte.
+    await admin.locator('#pa-list .pa-revoke').first().click();
+    await admin.waitForTimeout(800);
+    const dialogs=await admin.evaluate(()=>{
+      const duplicates=new Map();
+      for(const el of document.querySelectorAll('[id]'))duplicates.set(el.id,(duplicates.get(el.id)||0)+1);
+      const name=el=>{
+        const ref=el.getAttribute('aria-labelledby');
+        if(ref){const target=document.getElementById(ref);return target?(target.textContent||'').trim():'';}
+        return (el.getAttribute('aria-label')||'').trim();
+      };
+      return{
+        open:[...document.querySelectorAll('[role="dialog"]')].map(el=>({heading:(el.querySelector('h1,h2,h3,h4')?.textContent||'').trim(),name:name(el)})),
+        duplicates:[...duplicates].filter(([,count])=>count>1).map(([id,count])=>`${id} (${count}x)`),
+      };
+    });
+    if(dialogs.open.length<2)fail(`revoking a setup link did not open a confirmation dialog (${dialogs.open.length} dialog(s) open)`);
+    if(dialogs.duplicates.length)fail(`two open dialogs share an element id: ${dialogs.duplicates.join(', ')}`);
+    for(const dialog of dialogs.open){
+      if(!dialog.name)fail(`an open dialog carries no accessible name (heading "${dialog.heading}")`);
+      if(dialog.heading&&dialog.name!==dialog.heading)fail(`a dialog announces "${dialog.name}" while showing "${dialog.heading}"`);
+    }
+    if(pageErrors.length)fail(`platform administration page errors: ${pageErrors.join(' | ')}`);
+    console.log('Platform administration: customer setup link created, listed and confirmed with correctly named dialogs: OK');
+  }finally{await context.close();}
+}
+
 // Was der Browser aus einer Seite macht, steht nicht im ausgelieferten HTML: die
 // Einstiegsflächen bauen sich per JavaScript auf. Eine Prüfung der Quelltexte hätte deshalb
 // nichts gefunden - im Browser gemessen hatten Anmeldung, Kundenverwaltung und
@@ -469,6 +538,7 @@ try{
 
   await mobileSurface();await page.waitForTimeout(250);
   await publicDocumentContract();
+  if(mode==='candidate')await platformAdministrationContract();
   const expectedHttp=httpErrors.filter(expectedBrowserHttpError),unexpectedHttp=httpErrors.filter(entry=>!expectedBrowserHttpError(entry)),unexpected401=unexpectedHttp.some(entry=>entry.status===401);
   const relevantConsole=consoleErrors.filter(text=>{if(/favicon|Failed to load resource.*404/i.test(text))return false;if(/^Failed to load resource:.*status of 401\b/i.test(text)&&expectedHttp.length>0&&!unexpected401)return false;return true;});
   if(pageErrors.length)fail(`page errors: ${pageErrors.join(' | ')}`);if(unexpectedHttp.length)fail(`unexpected browser HTTP responses: ${unexpectedHttp.map(x=>`${x.status} ${x.url}`).join(' | ')}`);if(relevantConsole.length)fail(`console errors: ${relevantConsole.join(' | ')}`);if(failedRequests.length)fail(`failed browser requests: ${failedRequests.join(' | ')}`);

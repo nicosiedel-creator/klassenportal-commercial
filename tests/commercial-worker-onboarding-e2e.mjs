@@ -37,6 +37,41 @@ async function api(path,{method='GET',body,headers={}}={}){
 function onboardingBody(email,password,course){
   return{admin_name:'Runtime Acceptance Admin',admin_email:email,admin_password:password,admin_password_confirm:password,commercial_acceptance:'1',commercial_cost_confirmation:'1',first_course_name:course,first_course_code:course==='Parallelkurs'?'PAR-01':'E2E-01',access_mode:'login'};
 }
+// Das Plattformkonto der Browser-Abnahme entsteht nur in dieser isolierten Datenbank. Es muss
+// dort wirklich anmeldefaehig und Plattformverwalter sein - sonst prueft der Browserlauf die
+// Kundeneinrichtung gar nicht, sondern nur eine Anmeldemaske.
+async function platformAccountAudit(fixtureEnv){
+  const email=fixtureEnv.E2E_LOCAL_PLATFORM_EMAIL,password=fixtureEnv.E2E_LOCAL_PLATFORM_PASSWORD;
+  assert.ok(email&&password,'the seed must export the local platform acceptance credentials');
+  assert.match(email,/@example\.invalid$/,'the local platform account must use a reserved, undeliverable domain');
+
+  const wrong=await api('/api/auth/login',{method:'POST',body:{email,password:`${password}-falsch`}});
+  assert.equal(wrong.status,401,'a wrong password must not open a platform session');
+
+  const login=await api('/api/auth/login',{method:'POST',body:{email,password}});
+  assert.equal(login.status,200,`the seeded platform account must be able to sign in, got ${login.status}`);
+  const cookie=String(login.headers.get('set-cookie')||'').split(';')[0];
+  assert.match(cookie,/^kp_session=/,'signing in must issue a session cookie');
+
+  const me=await api('/api/auth/me',{headers:{cookie}});
+  assert.equal(me.status,200);
+  assert.equal(me.data?.user?.isPlatformAdmin,true,'the seeded account must hold platform administration rights');
+
+  // Der eigentliche Weg: ein Einrichtungslink laesst sich anlegen und wieder auflisten.
+  const customer=`runtime-acceptance-${Date.now()}@example.invalid`;
+  const created=await api('/api/platform/onboarding-invitations',{method:'POST',headers:{cookie},body:{customer_email:customer,plan_id:'provider',valid_days:'7'}});
+  assert.equal(created.status,201,`a platform admin must be able to create a customer setup link, got ${created.status}`);
+  assert.match(String(created.data?.url||''),/\/einrichtung\//,'the created setup link must be an onboarding link');
+  const list=await api('/api/platform/onboarding-invitations',{headers:{cookie}});
+  assert.equal(list.status,200);
+  assert.ok((list.data?.invitations||[]).some(row=>row.customer_email===customer),'the created setup link must appear in the invitation list');
+
+  // Ohne Sitzung bleibt derselbe Weg verschlossen.
+  const anonymous=await api('/api/platform/onboarding-invitations',{method:'POST',body:{customer_email:customer,plan_id:'provider',valid_days:'7'}});
+  assert.ok([401,403].includes(anonymous.status),`creating a setup link without a session must be refused, got ${anonymous.status}`);
+  console.log('Local platform acceptance account, its rights and the customer setup path: OK');
+}
+
 async function ready(){
   for(let i=0;i<60;i++){
     if(worker?.exitCode!==null)break;
@@ -46,15 +81,30 @@ async function ready(){
   const tail=readFileSync(logFile,'utf8').slice(-12000);
   throw new Error(`Local Worker did not become ready.\n${tail}`);
 }
+// Der Asset-Dienst fuehrt .html-Pfade auf ihre kanonische Form zurueck (/testcenter.html ->
+// /testcenter). Das ist kein Fehler, aber mit redirect:'manual' bleibt der Rumpf leer, und die
+// Pruefung las das als "leer ausgeliefert". Einmal folgen, dann messen - eine zweite
+// Weiterleitung waere ein echter Befund.
+async function followOnce(path){
+  const first=await api(path);
+  if(![301,302,303,307,308].includes(first.status))return first;
+  const location=first.headers.get('location');
+  assert.ok(location,`${path} redirected without a target`);
+  const second=await api(location);
+  assert.ok(![301,302,303,307,308].includes(second.status),`${path} redirects more than once, via ${location}`);
+  return second;
+}
+
 async function surfaceAndAssetAudit(){
   const surfaces=['/','/produkt','/plattform-admin','/kunden-admin','/klassen-admin','/dozentenportal','/testcenter.html','/impressum','/datenschutz','/agb','/avv','/unterauftragsverarbeiter','/datenportabilitaet','/rechtsverstoss-melden','/passwort-vergessen'];
   const htmlBodies=[];
   for(const path of surfaces){
-    const r=await api(path);assert.notEqual(r.status,404,`${path} must not return 404`);assert.ok(r.status<500,`${path} returned ${r.status}`);assert.ok(r.text.trim().length>20,`${path} rendered empty`);assert.doesNotMatch(r.text,/error\s*1042|worker threw exception|internal server error/i,`${path} rendered a server error`);htmlBodies.push([path,r.text]);
+    const r=await followOnce(path);
+    assert.notEqual(r.status,404,`${path} must not return 404`);assert.ok(r.status<500,`${path} returned ${r.status}`);assert.ok(r.text.trim().length>20,`${path} rendered empty`);assert.doesNotMatch(r.text,/error\s*1042|worker threw exception|internal server error/i,`${path} rendered a server error`);htmlBodies.push([path,r.text]);
   }
   const publicFiles=readdirSync('public');
   for(const name of publicFiles.filter(x=>/\.(?:html|js|css)$/i.test(x))){
-    const r=await api('/'+name);assert.notEqual(r.status,404,`asset /${name} missing`);assert.ok(r.status<500,`asset /${name} returned ${r.status}`);assert.ok(r.text.length>0,`asset /${name} empty`);if(name.endsWith('.html'))htmlBodies.push(['/'+name,r.text]);
+    const r=await followOnce('/'+name);assert.notEqual(r.status,404,`asset /${name} missing`);assert.ok(r.status<500,`asset /${name} returned ${r.status}`);assert.ok(r.text.length>0,`asset /${name} empty`);if(name.endsWith('.html'))htmlBodies.push(['/'+name,r.text]);
   }
   const internal=new Set();
   for(const [,html] of htmlBodies){
@@ -110,6 +160,7 @@ try{
   logFd=openSync(logFile,'a');worker=spawn(npx,['wrangler','dev','--config',config,'--local','--ip','127.0.0.1','--port','8791','--local-upstream','127.0.0.1','--upstream-protocol','http'],{env:{...process.env,WORKERS_CI_GUARD_ACTIVE:'1',PAYMENTS_ENABLED:'false'},stdio:['ignore',logFd,logFd]});
   await ready();
   await Promise.all([surfaceAndAssetAudit(),securityAndFreezeAudit()]);
+  await platformAccountAudit(fixtureEnv);
   await acceptedOfferAudit(fixtureEnv);
   await concurrencyAudit(fixtureEnv);
   run(process.execPath,['scripts/commercial-onboarding-e2e-state.mjs','verify',config],{env:{PAYMENTS_ENABLED:'false'}});
