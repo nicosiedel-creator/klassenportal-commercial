@@ -347,6 +347,99 @@ async function platformAdministrationContract(){
     }
     if(pageErrors.length)fail(`platform administration page errors: ${pageErrors.join(' | ')}`);
     console.log('Platform administration: customer setup link created, listed and confirmed with correctly named dialogs: OK');
+    await setupLinkLeadsToAWorkingPortal(admin);
+  }finally{await context.close();}
+}
+
+// Beide Haelften des kommerziellen Wegs waren geprueft, der Weg selbst nie: dass die
+// Plattformverwaltung einen Einrichtungslink erzeugt, war das eine, dass ein Kunde sich ueber
+// einen Link einrichtet, das andere - der Lauf benutzte dafuer einen gesetzten Token, nie den
+// gerade erzeugten. Diese Pruefung faehrt die Kette an einem Stueck: erzeugen, in einem
+// sitzungsfreien Fenster oeffnen, ausfuellen, absenden, angemeldet im Portal ankommen, und der
+// Link darf danach nicht noch einmal funktionieren.
+async function setupLinkLeadsToAWorkingPortal(admin){
+  // Der vorherige Schritt laesst die Rueckfrage vor dem Widerruf offen. Alle Dialoge schliessen
+  // und die Kunden-Einrichtung frisch oeffnen - das ist unabhaengig davon, wie viele Ebenen
+  // Escape auf einmal abraeumt.
+  for(let attempt=0;attempt<6;attempt++){
+    if(!await admin.locator('[role="dialog"]').count())break;
+    await admin.keyboard.press('Escape');
+    await admin.waitForTimeout(400);
+  }
+  await admin.locator('aside.side button.nav').filter({hasText:/^Kunden-Einrichtung$/}).first().click();
+  await admin.locator('#pa-new').waitFor({timeout:15000});
+  const stamp=Date.now();
+  const customer=`browser-e2e-durchstich-${stamp}@example.invalid`;
+  const created=admin.waitForResponse(response=>{
+    try{return new URL(response.url()).pathname==='/api/platform/onboarding-invitations'&&response.request().method()==='POST';}catch{return false;}
+  },{timeout:20000});
+  await admin.locator('#pa-new input[name="customer_email"]').fill(customer);
+  await admin.locator('#pa-new button').filter({hasText:'Einrichtungslink erzeugen'}).first().click();
+  if(!(await created.catch(()=>null)))fail('the second customer setup link was not created');
+  const link=await admin.locator('#pa-created #pa-link').inputValue().catch(()=>'');
+  if(!/\/einrichtung\//.test(link))fail(`the created setup link is not an onboarding link: ${link.slice(0,80)}`);
+  const target=link.replace(/^https?:\/\/[^/]+/,base);
+
+  const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'de-DE'});
+  const customerPage=await context.newPage();
+  const serverErrors=[],pageErrors=[];
+  customerPage.on('pageerror',error=>pageErrors.push(String(error).slice(0,160)));
+  customerPage.on('response',response=>{if(response.status()>=500){let path='';try{path=new URL(response.url()).pathname;}catch{}serverErrors.push(`${response.status()} ${path}`);}});
+  try{
+    const opened=await navigate(customerPage,target,{waitUntil:'domcontentloaded',timeout:30000});
+    if(!opened||opened.status()!==200)fail(`the setup link answered ${opened?.status()??'nothing'} for a visitor without a session`);
+    await customerPage.locator('#onboarding-form').waitFor({timeout:20000})
+      .catch(()=>fail('the setup link did not render the onboarding form'));
+
+    const password=`Durchstich-${stamp}-2026!`;
+    const set=async(name,value)=>{const field=customerPage.locator(`#onboarding-form [name="${name}"]`).first();if(await field.count())await field.fill(value).catch(()=>undefined);};
+    for(const [name,value] of [['legal_name','Durchstich Bildungswerk GmbH'],['portal_name','Durchstich Portal'],
+      ['street','Teststraße 1'],['postal_code','10115'],['city','Berlin'],['country','Deutschland'],
+      ['contact_name','Durchstich Kontakt'],['desired_course_count','2'],
+      ['admin_name','Durchstich Verwaltung'],['admin_email',customer],
+      ['admin_password',password],['admin_password_confirm',password],
+      ['first_course_name','Durchstich Kurs'],['first_course_code',`DS-${String(stamp).slice(-4)}`]])await set(name,value);
+    const sameAdmin=customerPage.locator('#same-admin');
+    if(await sameAdmin.count()&&await sameAdmin.isChecked())await sameAdmin.uncheck().catch(()=>undefined);
+
+    // Was der Browser danach noch als Pflicht meldet, wird plausibel gefuellt. Das haelt die
+    // Pruefung gegen Formularaenderungen stabil, ohne blind zu werden: gemessen wird das
+    // Ergebnis - 200, angemeldet, Portal erreichbar - nicht das Ausfuellen.
+    for(let round=0;round<3;round++){
+      const pending=await customerPage.evaluate(()=>[...document.querySelectorAll('#onboarding-form input,#onboarding-form select,#onboarding-form textarea')]
+        .filter(el=>!el.disabled&&!el.checkValidity()).map(el=>({name:el.name||el.id||'',type:el.type})));
+      if(!pending.length)break;
+      for(const {name,type} of pending){
+        if(!name)continue;
+        const field=customerPage.locator(`#onboarding-form [name="${name}"]`).first();
+        if(type==='checkbox'){await field.check({timeout:3000}).catch(()=>undefined);continue;}
+        if(type==='email'){await field.fill(`kontakt-${stamp}@example.invalid`).catch(()=>undefined);continue;}
+        if(type==='number'){await field.fill('2').catch(()=>undefined);continue;}
+        await field.fill('Durchstich').catch(()=>undefined);
+      }
+    }
+
+    const submitted=customerPage.waitForResponse(response=>{
+      try{return response.request().method()==='POST'&&new URL(response.url()).pathname.startsWith('/api/onboarding/');}catch{return false;}
+    },{timeout:40000});
+    await customerPage.locator('#submit-setup').click();
+    const response=await submitted.catch(()=>null);
+    if(!response)fail(`submitting the onboarding form sent no request; the form reported: ${(await customerPage.locator('#setup-error').innerText().catch(()=>''))||'nothing'}`);
+    let data=null;try{data=await response.json();}catch{}
+    if(response.status()!==200||data?.ok!==true)fail(`onboarding through a freshly created setup link failed ${response.status()}/${data?.error||'NO_JSON'}`);
+
+    await customerPage.waitForTimeout(2500);
+    const me=await customerPage.evaluate(async()=>{const r=await fetch('/api/auth/me',{credentials:'same-origin'});return{status:r.status,data:await r.json().catch(()=>null)};});
+    if(me.status!==200||!me.data?.user)fail(`the new customer administrator was not signed in after onboarding: ${me.status}`);
+    const portal=await context.request.get(`${base}/kunden-admin`);
+    if(portal.status()!==200)fail(`the new customer administrator cannot open the customer portal: ${portal.status()}`);
+
+    const replay=await context.request.post(target.replace('/einrichtung/','/api/onboarding/'),{data:{}});
+    if(replay.status()===200)fail('a used setup link must not work a second time');
+
+    if(pageErrors.length)fail(`onboarding through the created link raised page errors: ${pageErrors.join(' | ')}`);
+    if(serverErrors.length)fail(`onboarding through the created link hit server errors: ${serverErrors.join(' | ')}`);
+    console.log('Created setup link -> customer onboards -> signed in on the customer portal, link single-use: OK');
   }finally{await context.close();}
 }
 
