@@ -8,7 +8,11 @@ const index=await readFile('src/index.ts','utf8');
 const policy=await readFile('PRODUCTION_ACCEPTANCE_2026-08-25.md','utf8');
 
 assert.match(browser,/width:390,height:844/);
-assert.match(browser,/hasTouch:true/);
+// Die Abnahme misst das Telefonfenster ohne Chromiums isMobile/hasTouch-Emulation: die
+// verbreitert bei Ueberlauf das Layoutfenster (shrink-to-fit) und meldete deshalb null
+// Querlauf, waehrend fuenf oeffentliche Seiten auf einem echten Telefon bis zu 594px
+// seitlich ausliefen. Die vollstaendige Begruendung und Pfadabdeckung: tests/browser-mobile-contract.mjs.
+assert.doesNotMatch(browser,/isMobile\s*:\s*true|hasTouch\s*:\s*true/,'die Live-Abnahme darf den Querlauf nicht per Geraete-Emulation wegmessen');
 assert.match(browser,/document\.documentElement\.scrollWidth-window\.innerWidth/);
 for(const path of ['/plattform-admin','/produkt','/kunden-admin','/dozentenportal'])assert.ok(browser.includes(`'${path}'`));
 assert.match(readiness,/inspectEuStorageMigration/);

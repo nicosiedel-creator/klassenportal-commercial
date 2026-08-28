@@ -19,11 +19,14 @@ const raceToken=String(process.env.E2E_ONBOARDING_RACE_TOKEN||'').trim();
 const raceAdmin=String(process.env.E2E_ONBOARDING_RACE_ADMIN||'').trim();
 const racePassword=String(process.env.E2E_ONBOARDING_RACE_PASSWORD||'');
 const fail=(msg)=>{throw new Error(msg);};
-// Firefox kennt die Geräte-Emulation isMobile/hasTouch nicht und weist den Kontext rundweg ab.
-// Der Zweck der mobilen Prüfung ist aber das schmale Fenster und die mobile Kennung - beides
-// kann Firefox. Also nur die Emulationsschalter weglassen, statt die Prüfung dort auszulassen.
-const supportsDeviceEmulation=engineName!=='firefox';
-const mobileContext=extra=>({viewport:{width:390,height:844},...(supportsDeviceEmulation?{isMobile:true,hasTouch:true}:{}),...extra});
+// Die mobile Prüfung misst ein echtes Telefonfenster: 390px Layoutbreite und eine mobile Kennung.
+// Chromiums isMobile-Emulation verbreitert bei Überlauf das Layoutfenster (shrink-to-fit) statt
+// überzulaufen - damit blieben fünf öffentliche Seiten mit bis zu 594px Querlauf jahrelang
+// unentdeckt, darunter drei rechtlich verpflichtende. Firefox weist die Emulation ohnehin ab und
+// hat den Überlauf gemeldet. Keine der Prüfungen hier bedient etwas per Berührung, also fällt die
+// Emulation weg und alle Engines messen dasselbe: was ein Telefon mit
+// width=device-width,initial-scale=1 tatsächlich anzeigt.
+const mobileContext=extra=>({viewport:{width:390,height:844},...extra});
 const browser=await engine.launch({headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
@@ -213,15 +216,24 @@ async function lockedProductionSurface(){
   const frozenWebhook=await api('/api/payments/stripe/webhook',{method:'POST',body:{}});if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('payment webhook did not remain side-effect-free while production is locked');
 }
 
+// Diese Prüfung sah bisher nur die vier Portaloberflächen und das Testcenter. Genau deshalb
+// blieb unentdeckt, dass Datenschutz, AGB, AVV und Unterauftragsverarbeiter auf einem 390px
+// breiten Bildschirm um bis zu 594px seitlich überliefen - drei davon sind rechtlich
+// verpflichtend und müssen auf einem Telefon lesbar sein. Die Rechtsseiten umgehen die
+// Release-Sperre (LEGAL_PATHS in src/index.ts), sind also in beiden Modi erreichbar und
+// gehören damit in dieselbe Messung wie die Portale.
+const MOBILE_RELEASE_LOCKED=['/produkt','/kunden-admin','/dozentenportal','/angebot','/department-lead'];
+const MOBILE_PATHS=['/','/plattform-admin','/produkt','/kunden-admin','/dozentenportal','/department-lead','/angebot','/testcenter.html','/passwort-vergessen','/impressum','/datenschutz','/agb','/avv','/unterauftragsverarbeiter','/datenportabilitaet','/rechtsverstoss-melden'];
+
 async function mobileSurface(){
   const context=await browser.newContext(mobileContext({userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/138.0.0.0 Mobile Safari/537.36'}));
   const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
   mobile.on('pageerror',e=>errors.push(String(e)));
   mobile.on('requestfailed',r=>{const errorText=r.failure()?.errorText||'failed';if(navigationAbort(r,errorText))return;failed.push(`${r.method()} ${r.url()} :: ${errorText}`);});
-  mobile.on('response',r=>{if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&r.status()===503&&['/produkt','/kunden-admin','/dozentenportal'].includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
+  mobile.on('response',r=>{if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&r.status()===503&&MOBILE_RELEASE_LOCKED.includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
   try{
-    for(const path of ['/plattform-admin','/produkt','/kunden-admin','/dozentenportal','/testcenter.html']){
-      const expected=mode==='locked-production'&&['/produkt','/kunden-admin','/dozentenportal'].includes(path)?[503]:[200];
+    for(const path of MOBILE_PATHS){
+      const expected=mode==='locked-production'&&MOBILE_RELEASE_LOCKED.includes(path)?[503]:[200];
       const response=await navigate(mobile,base+path,{waitUntil:'domcontentloaded',timeout:30000});if(!response||!expected.includes(response.status()))fail(`mobile ${path} returned ${response?.status()??'no response'}, expected ${expected.join('/')}`);
       const text=(await mobile.locator('body').innerText()).slice(0,4000);if(!text.trim()||/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`mobile ${path} rendered an invalid surface`);
       const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);if(overflow>4)fail(`mobile ${path} has ${overflow}px document-level horizontal overflow`);
