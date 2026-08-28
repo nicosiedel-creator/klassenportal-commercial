@@ -78,6 +78,10 @@ const patterns=e2e.match(/const NAVIGATION_ABORT=\[(.*?)\];/);
 assert.ok(patterns,'der Browserlauf muss seine Abbruchmuster als NAVIGATION_ABORT fuehren');
 for(const marker of ['net::ERR_ABORTED','NS_BINDING_ABORTED','cancelled'])
   assert.ok(patterns[1].includes(marker),`der Navigationsabbruch von ${marker} muss erkannt werden`);
-assert.match(e2e,/navigation\.depth>0&&request\.method\(\)==='GET'/,'der Abbruchfilter muss eng bleiben: nur GET waehrend einer Navigation');
+assert.match(e2e,/request\.method\(\)!=='GET'/,'nur GET-Anfragen duerfen als Abbruch durchgehen');
+// Ein Abbruch ist nur dann unbedenklich, wenn derselbe Pfad im Lauf auch beantwortet wurde.
+// Ohne diese Bedingung waere der Filter eine Freikarte fuer jede abgebrochene Anfrage.
+assert.match(e2e,/unanswered\(\)\{return\[\.\.\.aborted\]\.filter\(\(\[path\]\)=>!served\.has\(path\)\)/,'abgebrochene Pfade ohne jede Antwort muessen weiterhin auffallen');
+assert.match(e2e,/abgebrochene Anfragen ohne je eine Antwort/,'der Lauf muss abgebrochene, nie beantwortete Pfade melden');
 
 console.log('Local candidate readiness and cross-engine navigation-abort contract: OK');

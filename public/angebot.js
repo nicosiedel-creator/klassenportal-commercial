@@ -1,6 +1,13 @@
 const root=document.querySelector('#offer-app');
 const params=new URLSearchParams(location.search),adminOffer=params.get('admin_offer')||'';
-const token=adminOffer?'':(params.get('token')||decodeURIComponent(location.pathname.split('/').filter(Boolean).at(-1)||''));
+// Der Angebotslink ist /angebot/<token>. Ohne Token ist das letzte Pfadsegment "angebot"
+// selbst - die Seite fragte damit /api/offers/angebot ab, bekam 404 und meldete "Angebot
+// nicht verfuegbar", obwohl schlicht kein Token im Link steht. Das Segment zaehlt deshalb
+// nur, wenn der Pfad wirklich eines hinter der Route hat; sonst greift die vorhandene,
+// zutreffende Meldung "Der Angebotslink ist unvollstaendig."
+const segments=location.pathname.split('/').filter(Boolean);
+const pathToken=segments.length>1?decodeURIComponent(segments.at(-1)||''):'';
+const token=adminOffer?'':(params.get('token')||pathToken);
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=(c,cur='EUR')=>new Intl.NumberFormat('de-DE',{style:'currency',currency:cur}).format(Number(c||0)/100);
 const date=v=>v?new Date(v).toLocaleDateString('de-DE'):'—';

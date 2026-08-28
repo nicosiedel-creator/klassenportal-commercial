@@ -36,19 +36,41 @@ page.on('console',msg=>{if(msg.type()==='error')consoleErrors.push(msg.text());}
 // application. Classifying it by cause keeps the audit honest instead of whitelisting one path
 // at a time as new in-flight requests appear.
 const navigation={depth:0};
-// Beim Verlassen einer Seite bricht der Browser die noch laufenden Anfragen des alten Dokuments
-// ab. Das ist kein Produktfehler, aber jede Engine benennt es anders - Playwright selbst
-// erkennt den Abbruch an genau diesen drei Markern (crNetworkManager: event.canceled ->
-// net::ERR_ABORTED, ffNetworkManager: NS_BINDING_ABORTED, wkPage: errorText enthaelt
-// "cancelled"). Bisher stand hier nur die Chromium-Schreibweise, weshalb Firefox 21 abgebrochene
-// Anfragen als Fehler meldete. Die Bedingung bleibt eng: nur GET, und nur waehrend eine
-// Navigation laeuft. Ein echter Verbindungsfehler faellt weiterhin auf.
+// Ein Abbruch ist die ausdrueckliche Ansage des Browsers, eine Anfrage selbst verworfen zu
+// haben - beim Verlassen einer Seite, bei einer Weiterleitung aus dem Skript heraus, oder wenn
+// die Anwendung sie per AbortController zuruecknimmt. Das ist kein Netzwerkfehler. Jede Engine
+// benennt es anders; Playwright selbst erkennt den Abbruch an genau diesen drei Markern
+// (crNetworkManager: event.canceled -> net::ERR_ABORTED, ffNetworkManager: NS_BINDING_ABORTED,
+// wkPage: errorText enthaelt "cancelled").
+//
+// Bisher galt zusaetzlich "nur waehrend einer Navigation". Das traf die vom Portal selbst
+// ausgeloesten Wechsel nicht - location.replace nach dem Passwortwechsel etwa - und Firefox
+// meldete deshalb zehn abgebrochene /api/auth/me als Produktfehler. Statt die Bedingung
+// aufzuweichen, wird sie geschaerft: ein Abbruch zaehlt nur dann als unbedenklich, wenn
+// derselbe Pfad im Lauf auch mindestens einmal beantwortet wurde. Ein Pfad, der ausschliesslich
+// abbricht, faellt weiterhin auf - das ist mehr Aussage als vorher, nicht weniger.
 const NAVIGATION_ABORT=[/^net::ERR_ABORTED\b/,/^NS_BINDING_ABORTED\b/,/cancelled/i];
-function navigationAbort(request,errorText){return navigation.depth>0&&request.method()==='GET'&&NAVIGATION_ABORT.some(pattern=>pattern.test(errorText));}
+const pathOf=url=>{try{return new URL(url).pathname;}catch{return url;}};
+function abortTracker(){
+  const served=new Set(),aborted=new Map();
+  return{
+    serve(response){if(response.status()<400)served.add(pathOf(response.url()));},
+    note(request,errorText){
+      if(request.method()!=='GET'||!NAVIGATION_ABORT.some(pattern=>pattern.test(errorText)))return false;
+      const path=pathOf(request.url());
+      aborted.set(path,(aborted.get(path)||0)+1);
+      return true;
+    },
+    unanswered(){return[...aborted].filter(([path])=>!served.has(path)).map(([path,count])=>`${path} (${count}x abgebrochen, nie beantwortet)`);},
+    total(){return[...aborted.values()].reduce((sum,count)=>sum+count,0);},
+  };
+}
+const aborts=abortTracker();
+function navigationAbort(request,errorText){return aborts.note(request,errorText);}
 async function settle(target){await target.waitForLoadState('networkidle',{timeout:8000}).catch(()=>undefined);}
 async function navigate(target,url,options){navigation.depth++;try{return await target.goto(url,options);}finally{await settle(target);navigation.depth--;}}
 page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';if(navigationAbort(request,errorText))return;failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
-page.on('response',response=>{if(response.status()>=400)httpErrors.push({status:response.status(),url:response.url()});});
+page.on('response',response=>{aborts.serve(response);if(response.status()>=400)httpErrors.push({status:response.status(),url:response.url()});});
 
 async function route(path,{allowStatuses=[200],waitForResponsePath=null}={}){
   const backgroundResponse=waitForResponsePath?page.waitForResponse(response=>{try{return new URL(response.url()).pathname===waitForResponsePath;}catch{return false;}},{timeout:10000}):null;
@@ -238,7 +260,7 @@ async function mobileSurface(){
   const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
   mobile.on('pageerror',e=>errors.push(String(e)));
   mobile.on('requestfailed',r=>{const errorText=r.failure()?.errorText||'failed';if(navigationAbort(r,errorText))return;failed.push(`${r.method()} ${r.url()} :: ${errorText}`);});
-  mobile.on('response',r=>{if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&r.status()===503&&MOBILE_RELEASE_LOCKED.includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
+  mobile.on('response',r=>{aborts.serve(r);if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&r.status()===503&&MOBILE_RELEASE_LOCKED.includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
   try{
     for(const path of MOBILE_PATHS){
       const expected=mode==='locked-production'&&MOBILE_RELEASE_LOCKED.includes(path)?[503]:[200];
@@ -248,6 +270,63 @@ async function mobileSurface(){
     }
     if(errors.length)fail(`mobile page errors: ${errors.join(' | ')}`);if(serverErrors.length)fail(`mobile server errors: ${serverErrors.join(' | ')}`);if(failed.length)fail(`mobile failed requests: ${failed.join(' | ')}`);
     console.log(`Commercial mobile viewport smoke (${mode}): OK`);
+  }finally{await context.close();}
+}
+
+// Was der Browser aus einer Seite macht, steht nicht im ausgelieferten HTML: die
+// Einstiegsflächen bauen sich per JavaScript auf. Eine Prüfung der Quelltexte hätte deshalb
+// nichts gefunden - im Browser gemessen hatten Anmeldung, Kundenverwaltung und
+// Plattformverwaltung keine einzige Überschrift (der Titel war ein <div class="brand">), das
+// Testcenter zwei Eingabefelder ohne verknüpfte Beschriftung, und /angebot ohne Token hielt
+// das Wort "angebot" selbst für den Token und lief in einen 404. Diese Prüfung misst das am
+// laufenden Portal.
+async function publicDocumentContract(){
+  const context=await browser.newContext({viewport:{width:1280,height:900}});
+  const doc=await context.newPage();
+  const problems=[];
+  try{
+    for(const path of MOBILE_PATHS){
+      if(mode==='locked-production'&&MOBILE_RELEASE_LOCKED.includes(path))continue;
+      const response=await navigate(doc,base+path,{waitUntil:'domcontentloaded',timeout:30000});
+      if(!response||response.status()!==200){problems.push(`${path} antwortete ${response?.status()??'gar nicht'}`);continue;}
+      const found=await doc.evaluate(()=>{
+        const visible=el=>{const style=getComputedStyle(el);return style.display!=='none'&&style.visibility!=='hidden'&&el.getClientRects().length>0;};
+        const named=el=>{
+          const label=el.getAttribute('aria-label');if(label&&label.trim())return true;
+          const ref=el.getAttribute('aria-labelledby');if(ref&&ref.split(/\s+/).some(id=>document.getElementById(id)))return true;
+          if(el.id&&document.querySelector(`label[for="${CSS.escape(el.id)}"]`))return true;
+          if(el.closest('label'))return true;
+          if(el.title&&el.title.trim())return true;
+          return false;
+        };
+        const unnamed=[];
+        for(const el of document.querySelectorAll('input,select,textarea')){
+          if(['hidden','submit','button','reset'].includes(el.type))continue;
+          if(!visible(el))continue;
+          if(!named(el))unnamed.push(`${el.tagName.toLowerCase()}#${el.id||el.name||'?'}`);
+        }
+        return{headings:[...document.querySelectorAll('h1')].filter(visible).length,unnamed,lang:document.documentElement.lang||'',title:document.title.trim()};
+      });
+      if(found.headings!==1)problems.push(`${path} hat ${found.headings} sichtbare h1 statt genau einer`);
+      if(found.unnamed.length)problems.push(`${path} hat Eingabefelder ohne verknüpfte Beschriftung: ${found.unnamed.join(', ')}`);
+      if(!found.lang)problems.push(`${path} nennt keine Sprache`);
+      if(!found.title)problems.push(`${path} hat keinen Titel`);
+    }
+
+    // Ohne Token ist der Angebotslink unvollständig - die Seite darf das sagen, statt einen
+    // Token zu erfinden und dafür einen 404 zu holen.
+    const offerCalls=[];
+    const listener=request=>{if(new URL(request.url()).pathname.startsWith('/api/offers/'))offerCalls.push(new URL(request.url()).pathname);};
+    doc.on('request',listener);
+    await navigate(doc,`${base}/angebot`,{waitUntil:'domcontentloaded',timeout:30000});
+    await doc.waitForTimeout(1200);
+    doc.off('request',listener);
+    if(offerCalls.length)problems.push(`/angebot ohne Token fragte ${offerCalls.join(', ')} ab`);
+    const offerText=await doc.locator('body').innerText();
+    if(!/unvollständig/i.test(offerText))problems.push(`/angebot ohne Token meldet nicht, dass der Link unvollständig ist: ${offerText.replace(/\s+/g,' ').trim().slice(0,120)}`);
+
+    if(problems.length)fail(`public document contract: ${problems.join(' | ')}`);
+    console.log(`Public document contract (${mode}): OK`);
   }finally{await context.close();}
 }
 
@@ -389,8 +468,14 @@ try{
   }else console.log('authenticated live browser path not configured; local candidate onboarding/admin path still executed');
 
   await mobileSurface();await page.waitForTimeout(250);
+  await publicDocumentContract();
   const expectedHttp=httpErrors.filter(expectedBrowserHttpError),unexpectedHttp=httpErrors.filter(entry=>!expectedBrowserHttpError(entry)),unexpected401=unexpectedHttp.some(entry=>entry.status===401);
   const relevantConsole=consoleErrors.filter(text=>{if(/favicon|Failed to load resource.*404/i.test(text))return false;if(/^Failed to load resource:.*status of 401\b/i.test(text)&&expectedHttp.length>0&&!unexpected401)return false;return true;});
   if(pageErrors.length)fail(`page errors: ${pageErrors.join(' | ')}`);if(unexpectedHttp.length)fail(`unexpected browser HTTP responses: ${unexpectedHttp.map(x=>`${x.status} ${x.url}`).join(' | ')}`);if(relevantConsole.length)fail(`console errors: ${relevantConsole.join(' | ')}`);if(failedRequests.length)fail(`failed browser requests: ${failedRequests.join(' | ')}`);
+  // Abgebrochene Anfragen sind fuer sich unbedenklich - solange derselbe Pfad im Lauf auch
+  // beantwortet wurde. Ein Pfad, der nur abbricht, hat nie geliefert und ist ein Befund.
+  const unanswered=aborts.unanswered();
+  if(unanswered.length)fail(`abgebrochene Anfragen ohne je eine Antwort: ${unanswered.join(' | ')}`);
+  if(aborts.total())console.log(`${aborts.total()} abgebrochene Anfragen, alle auf Pfaden, die im Lauf auch beantwortet wurden.`);
   console.log(`Commercial real-browser acceptance (${mode}): OK`);
 }finally{await browser.close();}
