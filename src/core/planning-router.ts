@@ -2,7 +2,7 @@ import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { requireDelegatedPrivilegeAccess } from './delegated-privilege.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
 import {
   getCourseSchedulingRules,linkPlanEntryResource,listPlanningBlackouts,listTeacherUnavailability,
   planningSuggestions,publishAdvancedTimetablePlan,saveCourseSchedulingRules,savePlanningBlackout,
@@ -14,7 +14,7 @@ import {
 } from './planning-resource-management.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'PLANNING_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')?403:code.includes('NOT_FOUND')?404:code.includes('CONFLICT')||code.includes('LOCKED')||code.includes('EXISTS')?409:code.includes('REQUIRED')||code.includes('INVALID')?400:500;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')?403:code.includes('NOT_FOUND')?404:code.includes('CONFLICT')||code.includes('LOCKED')||code.includes('EXISTS')?409:code.includes('REQUIRED')||code.includes('INVALID')?400:500);return json({ok:false,error:code},status);}
 
 export async function handlePlanningApi(request:Request,env:Env):Promise<Response|null>{
   const url=new URL(request.url),path=url.pathname;

@@ -1,6 +1,6 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
-import { assertSameOrigin, json, safeString } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode, safeString } from './utils.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { requireAutopilotTenantAdmin } from './autopilot-security.js';
 import { buildAdaptiveRecoveryPlan } from './adaptive-recovery.js';
@@ -8,7 +8,7 @@ import { saveTimetablePlan, saveTimetablePlanEntry } from './learning-operations
 import { validateAdvancedTimetablePlan } from './planning-constraints.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'RECOVERY_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')?403:code.includes('NOT_FOUND')?404:code.includes('DIGEST')||code.includes('CONFLICT')?409:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')?403:code.includes('NOT_FOUND')?404:code.includes('DIGEST')||code.includes('CONFLICT')?409:400);return json({ok:false,error:code},status);}
 
 export async function handleAdaptiveRecoveryApi(request:Request,env:Env):Promise<Response|null>{
   const url=new URL(request.url),path=url.pathname;if(!path.startsWith('/api/education-os/recovery/'))return null;

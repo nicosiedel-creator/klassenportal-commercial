@@ -3,10 +3,10 @@ import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { certificateEligibleParticipants } from './certificate-eligible.js';
 import { approveCertificate, createVerificationLink, issueCertificate, listCertificateRecords, listCertificateTemplates, myCertificates, prepareCertificate, revokeCertificate, saveCertificateTemplate, verifyCertificate } from './certificates.js';
-import { assertSameOrigin, json, safeString } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode, safeString } from './utils.js';
 
 async function body(request:Request){try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=String((e as Error)?.message||'CERTIFICATE_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('NOT_APPROVABLE')||code.includes('NOT_ISSUABLE')||code.includes('NOT_REVOCABLE')||code.includes('CRITERIA_NOT_MET')?409:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('NOT_APPROVABLE')||code.includes('NOT_ISSUABLE')||code.includes('NOT_REVOCABLE')||code.includes('CRITERIA_NOT_MET')?409:400);return json({ok:false,error:code},status);}
 export async function handleCertificatesApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;
   const verify=path.match(/^\/api\/certificates\/verify\/([^/]+)$/);if(verify&&request.method==='GET'){try{return json({ok:true,verification:await verifyCertificate(env,decodeURIComponent(verify[1]))});}catch(e){return fail(e);}}

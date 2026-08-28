@@ -3,6 +3,31 @@ export const encoder = new TextEncoder();
 export function nowIso(): string { return new Date().toISOString(); }
 export function id(prefix: string): string { return `${prefix}${crypto.randomUUID()}`; }
 
+// Framework-level outcomes must look the same on every route. Each router keeps its own domain
+// status mapping but consults this first, so an authentication or authorization denial can never
+// surface as a 400 "bad request", and a redacted internal error can never surface as a 400 either.
+const AUTH_STATUS:Record<string,number>={
+  UNAUTHENTICATED:401,LOGIN_REQUIRED:401,
+  PASSWORD_CHANGE_REQUIRED:428,
+  FORBIDDEN:403,FORBIDDEN_ROLE:403,FORBIDDEN_COURSE:403,FORBIDDEN_PERMISSION:403,
+  PLATFORM_ADMIN_REQUIRED:403,TENANT_ADMIN_REQUIRED:403,
+  TENANT_ACCESS_SUSPENDED:403,SUPPORT_READ_ONLY:403,
+  SSO_REQUIRED:401,
+  INTERNAL_ERROR:500,
+  ORIGIN_MISMATCH:403,CSRF_ORIGIN_MISMATCH:403,PLATFORM_ORIGIN_MISMATCH:403,
+};
+// Only stable, documented error codes may leave the Worker. Anything else - a raw D1 message,
+// a runtime TypeError, a third-party error - would expose schema and engine details to the
+// caller, so it is logged for diagnosis and reported as INTERNAL_ERROR.
+export function safeErrorCode(raw:unknown):string{
+  const code=String((raw as Error)?.message??raw??'').trim();
+  if(/^[A-Z][A-Z0-9_]{2,80}$/.test(code))return code;
+  console.error('Unhandled error surfaced to client',{detail:code.slice(0,300)});
+  return 'INTERNAL_ERROR';
+}
+
+export function authStatus(code:string):number|null{return AUTH_STATUS[code]??(code.startsWith('FORBIDDEN')||code.endsWith('_ADMIN_REQUIRED')?403:null);}
+
 export function json(data: unknown, status = 200, headers: HeadersInit = {}): Response {
   return new Response(JSON.stringify(data), {
     status,

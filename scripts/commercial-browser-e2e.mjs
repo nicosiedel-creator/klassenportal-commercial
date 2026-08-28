@@ -16,12 +16,19 @@ const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
 page.on('pageerror',e=>pageErrors.push(String(e)));
 page.on('console',msg=>{if(msg.type()==='error')consoleErrors.push(msg.text());});
-page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';let path='';try{path=new URL(request.url()).pathname;}catch{}const expectedNavigationAbort=request.method()==='GET'&&path==='/pwa-client.js'&&errorText==='net::ERR_ABORTED';if(!expectedNavigationAbort)failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
+// A GET aborted while a navigation is in flight was cancelled by that navigation, not by the
+// application. Classifying it by cause keeps the audit honest instead of whitelisting one path
+// at a time as new in-flight requests appear.
+const navigation={depth:0};
+function navigationAbort(request,errorText){return navigation.depth>0&&request.method()==='GET'&&errorText==='net::ERR_ABORTED';}
+async function settle(target){await target.waitForLoadState('networkidle',{timeout:8000}).catch(()=>undefined);}
+async function navigate(target,url,options){navigation.depth++;try{return await target.goto(url,options);}finally{await settle(target);navigation.depth--;}}
+page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';if(navigationAbort(request,errorText))return;failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
 page.on('response',response=>{if(response.status()>=400)httpErrors.push({status:response.status(),url:response.url()});});
 
 async function route(path,{allowStatuses=[200],waitForResponsePath=null}={}){
   const backgroundResponse=waitForResponsePath?page.waitForResponse(response=>{try{return new URL(response.url()).pathname===waitForResponsePath;}catch{return false;}},{timeout:10000}):null;
-  const response=await page.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});
+  const response=await navigate(page,base+path,{waitUntil:'domcontentloaded',timeout:30000});
   if(!response)fail(`No response for ${path}`);
   if(!allowStatuses.includes(response.status()))fail(`${path} returned unexpected ${response.status()}`);
   if(backgroundResponse){const bootstrap=await backgroundResponse;if(bootstrap.status()>=400)fail(`${waitForResponsePath} bootstrap returned unexpected ${bootstrap.status()}`);console.log(`browser bootstrap ${waitForResponsePath}: ${bootstrap.status()}`);}
@@ -66,7 +73,19 @@ async function candidateSurface(){
   const invitation=await api('/api/platform/onboarding-invitations');if(![401,403].includes(invitation.status))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status}`);
   const frozenCheckout=await api('/api/payments/checkout-status?session_id=cs_test_browser_candidate');if(frozenCheckout.status!==503||frozenCheckout.data?.error!=='PAYMENT_DISABLED')fail('candidate checkout did not remain frozen');
   const frozenWebhook=await api('/api/payments/stripe/webhook',{method:'POST',body:{}});if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('candidate payment webhook did not remain side-effect-free');
-  console.log('PR candidate browser/API/legal/testcenter/payment-freeze surface: OK');
+  // Brute-force protection is keyed per (client, e-mail), so a throwaway address cannot lock out
+  // a real account. It must answer 429 with its own code: a 500 tells the user nothing and hides
+  // the block from the login surface.
+  const bruteEmail=`brute-force-probe-${Date.now()}@example.invalid`;
+  let bruteStatus=0,bruteCode='';
+  for(let attempt=0;attempt<8;attempt++){
+    const response=await api('/api/auth/login',{method:'POST',body:{email:bruteEmail,password:`falsch-${attempt}`}});
+    bruteStatus=response.status;bruteCode=String(response.data?.error||'');
+    if(bruteStatus===429)break;
+    if(bruteStatus!==401)fail(`failed login must answer 401 until the limit is reached, got ${bruteStatus}/${bruteCode}`);
+  }
+  if(bruteStatus!==429||bruteCode!=='LOGIN_RATE_LIMITED')fail(`brute-force protection must answer 429 LOGIN_RATE_LIMITED, got ${bruteStatus}/${bruteCode}`);
+  console.log('PR candidate browser/API/legal/testcenter/payment-freeze/brute-force surface: OK');
 }
 
 async function internalLinkAudit(paths){
@@ -117,7 +136,7 @@ async function mobileOnboardingPreflight(){
   if(!onboardingToken)fail('primary onboarding E2E fixture environment missing');
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   try{
-    const mobile=await context.newPage(),response=await mobile.goto(`${base}/einrichtung/${encodeURIComponent(onboardingToken)}`,{waitUntil:'domcontentloaded',timeout:30000});
+    const mobile=await context.newPage(),response=await navigate(mobile,`${base}/einrichtung/${encodeURIComponent(onboardingToken)}`,{waitUntil:'domcontentloaded',timeout:30000});
     if(!response||response.status()!==200)fail(`mobile onboarding returned ${response?.status()??'no response'}`);
     await mobile.locator('#onboarding-form').waitFor({timeout:10000});
     const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);if(overflow>4)fail(`mobile onboarding has ${overflow}px horizontal overflow`);
@@ -154,11 +173,12 @@ async function acceptedOfferOnboarding(){
   if(auth.status!==200||!auth.data?.user)fail(`new customer admin was not automatically authenticated: ${auth.status}`);
   const open=page.getByRole('link',{name:/Portal öffnen/i}).first();if(!(await open.count()))fail('successful onboarding has no Portal öffnen action');
   const nav=page.waitForNavigation({waitUntil:'domcontentloaded',timeout:15000});await open.click();const navResponse=await nav;if(!navResponse||navResponse.status()!==200)fail(`Portal öffnen click returned ${navResponse?.status()??'no response'}`);
-  // The root entry immediately role-routes an authenticated tenant admin. A second page.goto
-  // can race that client navigation and Playwright then returns a null navigation response even
-  // though the Worker served /kunden-admin with HTTP 200. Verify the shell through the same
-  // authenticated browser context instead of competing with the intended role redirect.
-  const adminSurface=await page.evaluate(async()=>{const r=await fetch('/kunden-admin',{credentials:'same-origin',redirect:'follow'});return{status:r.status,text:await r.text()};});
+  // The root entry immediately role-routes an authenticated tenant admin. Competing with that
+  // client navigation from inside the page - page.goto or page.evaluate - either returns a null
+  // navigation response or tears down the execution context mid-call. Request the shell through
+  // the browser context's own cookie jar instead: same authenticated session, no race.
+  const adminResponse=await page.context().request.get(`${base}/kunden-admin`);
+  const adminSurface={status:adminResponse.status(),text:await adminResponse.text()};
   if(adminSurface.status!==200||!adminSurface.text.trim())fail(`new customer admin cannot open customer-admin surface: ${adminSurface.status}`);
   const completed=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`);if(completed.status!==200||completed.data?.invitation?.status!=='completed')fail('successful browser onboarding did not persist completed invitation');
   const replay=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`,{method:'POST',body:{}});if(replay.status===200||replay.data?.error!=='ONBOARDING_UNAVAILABLE')fail(`browser onboarding replay must fail closed, got ${replay.status}/${replay.data?.error}`);
@@ -179,12 +199,12 @@ async function mobileSurface(){
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/138.0.0.0 Mobile Safari/537.36'});
   const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
   mobile.on('pageerror',e=>errors.push(String(e)));
-  mobile.on('requestfailed',r=>{const errorText=r.failure()?.errorText||'failed';let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedNavigationAbort=r.method()==='GET'&&path==='/pwa-client.js'&&errorText==='net::ERR_ABORTED';if(!expectedNavigationAbort)failed.push(`${r.method()} ${r.url()} :: ${errorText}`);});
+  mobile.on('requestfailed',r=>{const errorText=r.failure()?.errorText||'failed';if(navigationAbort(r,errorText))return;failed.push(`${r.method()} ${r.url()} :: ${errorText}`);});
   mobile.on('response',r=>{if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&r.status()===503&&['/produkt','/kunden-admin','/dozentenportal'].includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
   try{
     for(const path of ['/plattform-admin','/produkt','/kunden-admin','/dozentenportal','/testcenter.html']){
       const expected=mode==='locked-production'&&['/produkt','/kunden-admin','/dozentenportal'].includes(path)?[503]:[200];
-      const response=await mobile.goto(base+path,{waitUntil:'domcontentloaded',timeout:30000});if(!response||!expected.includes(response.status()))fail(`mobile ${path} returned ${response?.status()??'no response'}, expected ${expected.join('/')}`);
+      const response=await navigate(mobile,base+path,{waitUntil:'domcontentloaded',timeout:30000});if(!response||!expected.includes(response.status()))fail(`mobile ${path} returned ${response?.status()??'no response'}, expected ${expected.join('/')}`);
       const text=(await mobile.locator('body').innerText()).slice(0,4000);if(!text.trim()||/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`mobile ${path} rendered an invalid surface`);
       const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);if(overflow>4)fail(`mobile ${path} has ${overflow}px document-level horizontal overflow`);
     }

@@ -1,10 +1,11 @@
 import type { CoreAuthContext, Env } from './types.js';
+import { authStatus, safeErrorCode } from './utils.js';
 import { configuredMailProvider, euStrict } from './data-residency.js';
 import { renderSecureIntakeUploadPage } from './secure-intake-page.js';
 import { addIntakeSubmitter, applyIntakeBatch, completeAutomationTask, createIntakeChannel, createIntakeUploadLink, getIntakeBatch, getIntakeDocument, getIntakeOverview, handleIntakePublicUpload, previewIntakeBatch, revokeIntakeChannel, revokeIntakeSubmitter, updateIntakeSettings } from './intake-center.js';
 
 function json(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
-function fail(e:unknown){const code=String((e as Error)?.message||'INTAKE_ERROR'),status=code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('RATE_LIMITED')?429:code.includes('EXPIRED')||code.includes('INVALID')&&code.includes('LINK')?410:code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413:code.includes('REQUIRED')||code.includes('INVALID')?400:500;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')?403:code.includes('NOT_FOUND')?404:code.includes('RATE_LIMITED')?429:code.includes('EXPIRED')||code.includes('INVALID')&&code.includes('LINK')?410:code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413:code.includes('REQUIRED')||code.includes('INVALID')?400:500);return json({ok:false,error:code},status);}
 async function body(request:Request){try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function inboundReady(env:Env){return configuredMailProvider(env)==='cloudflare_email'&&!!String(env.INBOUND_MAIL_DOMAIN||'').trim();}
 
@@ -25,7 +26,7 @@ export async function handleEnterpriseIntakeRoute(request:Request,env:Env,auth:C
     if(path==='/api/enterprise/intake/submitters'&&request.method==='POST')return json({ok:true,submitter:await addIntakeSubmitter(env,auth,tenantId,await body(request))},201);
     const submitter=path.match(/^\/api\/enterprise\/intake\/submitters\/([^/]+)$/);if(submitter&&request.method==='DELETE'){await revokeIntakeSubmitter(env,auth,tenantId,decodeURIComponent(submitter[1]));return json({ok:true});}
     if(path==='/api/enterprise/intake/upload-links'&&request.method==='POST')return json({ok:true,link:await createIntakeUploadLink(env,auth,tenantId,await body(request),request)},201);
-    const doc=path.match(/^\/api\/enterprise\/intake\/documents\/([^/]+)$/);if(doc&&request.method==='GET')return getIntakeDocument(env,auth,tenantId,decodeURIComponent(doc[1]));
+    const doc=path.match(/^\/api\/enterprise\/intake\/documents\/([^/]+)$/);if(doc&&request.method==='GET')return await getIntakeDocument(env,auth,tenantId,decodeURIComponent(doc[1]));
     const batch=path.match(/^\/api\/enterprise\/intake\/batches\/([^/]+)$/);if(batch&&request.method==='GET')return json({ok:true,...await getIntakeBatch(env,auth,tenantId,decodeURIComponent(batch[1]))});
     const preview=path.match(/^\/api\/enterprise\/intake\/batches\/([^/]+)\/preview$/);if(preview&&request.method==='POST')return json({ok:true,...await previewIntakeBatch(env,auth,tenantId,decodeURIComponent(preview[1]),await body(request))});
     const apply=path.match(/^\/api\/enterprise\/intake\/batches\/([^/]+)\/apply$/);if(apply&&request.method==='POST')return json({ok:true,...await applyIntakeBatch(env,auth,tenantId,decodeURIComponent(apply[1]),await body(request))});

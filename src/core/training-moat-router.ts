@@ -1,6 +1,6 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
-import { assertSameOrigin, json, safeString } from './utils.js';
+import { assertSameOrigin, json, safeErrorCode, safeString } from './utils.js';
 import {
   SUPPORTED_PORTAL_LOCALES,COMPLIANCE_PACK_CATALOG,getPortalLanguagePreference,savePortalLanguagePreference,
   buildPersonalLearnerTwin,capturePersonalLearnerTwin,createLearningCoachPlan,listCompliancePrograms,
@@ -14,7 +14,7 @@ import {
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function fail(error:unknown){
-  const code=String((error as Error)?.message||'TRAINING_MOAT_ERROR');
+  const code=safeErrorCode(error);
   let status=400;
   if(code==='UNAUTHENTICATED')status=401;
   else if(code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED'))status=403;

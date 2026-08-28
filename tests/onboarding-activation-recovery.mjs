@@ -9,7 +9,7 @@ const browserWorkflow=await readFile('.github/workflows/commercial-browser-e2e.y
 const browserE2E=await readFile('scripts/commercial-browser-e2e.mjs','utf8');
 const browserState=await readFile('scripts/commercial-onboarding-e2e-state.mjs','utf8');
 
-assert.match(onboarding,/LEGACY_PARTIAL_COMPLETION/,'legacy partial completions must be detected and compensated');
+assert.doesNotMatch(onboarding,/LEGACY_PARTIAL_COMPLETION/,'completed tenants must not be inferred corrupt from missing legacy form data');
 assert.match(onboarding,/UPDATE onboarding_invitations SET status='open',completed_at=NULL,tenant_id=NULL,form_json=NULL/,'successful compensation must reopen the same onboarding invitation without requiring mutated 0024 columns');
 assert.match(onboarding,/ONBOARDING_RECOVERY_REQUIRED/,'an unproven rollback must fail closed instead of allowing a duplicate activation');
 assert.match(onboarding,/onboarding\.rollback\.completed/,'successful compensation must leave an audit trail');
@@ -120,4 +120,4 @@ assert.match(browserState,/commercial_invoices/,'D1 post-state must verify invoi
 assert.match(browserState,/onboarding_claims/,'D1 post-state must verify claim cleanup');
 assert.match(browserState,/PAYMENTS_ENABLED/,'E2E state guard must keep payment processing disabled');
 
-console.log('Onboarding activation rollback + legacy CHECK compatibility + durable replay tombstone + partial tenant_users runtime-schema compatibility + real Wrangler-D1 browser persistence contract: OK');
+console.log('Onboarding activation rollback + legacy CHECK compatibility + completed-tenant safety + durable replay tombstone + partial tenant_users runtime-schema compatibility + real Wrangler-D1 browser persistence contract: OK');

@@ -1,5 +1,5 @@
 import type { Env } from './types.js';
-import { assertSameOrigin, json } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
 import { changePassword, getSession, login, logout, resolveCoreAuth } from './auth.js';
 import { provisionTenant } from './provision.js';
 import { createContent, createCourse, deleteContent, deletePersonalGrade, getModules, getSettings, listContent, listCourses, listPersonalGrades, listTenants, savePersonalGrade, setExamVisibility, setModule, updateContent, updateCourse, updatePersonalGrade, updateSettings } from './data.js';
@@ -18,17 +18,17 @@ import { listTenantAudit, listUserNotifications, markAllNotificationsRead, markN
 import { closeSurvey, createOrRotateCalendarFeed, createSubstitutionUpdate, createSurvey, deleteSubstitutionUpdate, deleteSurvey, getTeamsIntegration, listCalendarFeeds, listSubstitutionUpdates, listSurveys, saveTeamsIntegration, statisticsSummary, testTeamsIntegration, voteSurvey } from './advanced-modules.js';
 
 function err(e:unknown):Response{
-  const ex=e as Error&{issues?:unknown;targeting?:unknown};const code=ex?.message||'INTERNAL_ERROR';
-  const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
+  const ex=e as Error&{issues?:unknown;targeting?:unknown};const code=safeErrorCode(e);
+  const status=authStatus(code)??(code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
     :code==='PASSWORD_CHANGE_REQUIRED'?428
     :code==='TRIAL_READ_ONLY'?423
     :code==='TRIAL_EXPIRED'||code==='ONBOARDING_EXPIRED'||code==='ONBOARDING_UNAVAILABLE'?410
     :code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='PLATFORM_ADMIN_REQUIRED'||code==='PLATFORM_ADMIN_RESET_FORBIDDEN'||code==='MODULE_NOT_ACTIVE'||code==='SUPPORT_READ_ONLY'?403
     :code.includes('NOT_FOUND')?404
-    :['ONBOARDING_ALREADY_IN_PROGRESS','ONBOARDING_ALREADY_COMPLETED','COURSE_LIMIT_REACHED','PRICING_NOT_CONFIGURED','SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','TIMETABLE_BATCH_CONFIRMATION_REQUIRED','TIMETABLE_INDIVIDUAL_CONFIRMATION_INVALID','CANNOT_REMOVE_OWN_TENANT_ADMIN','SURVEY_ALREADY_VOTED','SURVEY_CLOSED'].includes(code)?409
+    :['ONBOARDING_ALREADY_IN_PROGRESS','ONBOARDING_ALREADY_COMPLETED','ONBOARDING_NOT_OPEN','COURSE_CODE_EXISTS','COURSE_LIMIT_REACHED','PRICING_NOT_CONFIGURED','SELF_SERVICE_DOWNGRADE_NOT_ALLOWED','NO_CHANGE','PAYMENT_ALREADY_PENDING','TIMETABLE_BATCH_CONFIRMATION_REQUIRED','TIMETABLE_INDIVIDUAL_CONFIRMATION_INVALID','CANNOT_REMOVE_OWN_TENANT_ADMIN','SURVEY_ALREADY_VOTED','SURVEY_CLOSED'].includes(code)?409
     :code.includes('TOO_LARGE')||code.includes('TOO_MANY')?413
     :code==='LOGIN_RATE_LIMITED'?429
-    :code==='INTERNAL_ERROR'?500:400;
+    :code==='INTERNAL_ERROR'?500:400);
   return json({ok:false,error:code,issues:ex?.issues,targeting:ex?.targeting},status);
 }
 async function body(request:Request):Promise<Record<string,unknown>>{try{const b=await request.json() as Record<string,unknown>;if(b.course_id==='')b.course_id=null;return b;}catch{return{};}}
@@ -36,17 +36,20 @@ function customerSupportRequest(request:Request):boolean{try{const ref=request.h
 
 export async function handleCoreApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url);if(!u.pathname.startsWith('/api/'))return null;
+  // Every handler below must be awaited inside this try. Returning a promise from a try block
+  // does not route its rejection through the catch, so a thrown domain code would escape to the
+  // top-level handler and be answered with 500 instead of its own status.
   try{
     assertSameOrigin(request,env.APP_ORIGIN);
     if(u.pathname==='/api/health')return json({ok:true,service:'klassenportal-commercial'});
-    if(u.pathname==='/api/auth/login'&&request.method==='POST')return login(env,request);
-    if(u.pathname==='/api/auth/logout'&&request.method==='POST')return logout(env,request);
+    if(u.pathname==='/api/auth/login'&&request.method==='POST')return await login(env,request);
+    if(u.pathname==='/api/auth/logout'&&request.method==='POST')return await logout(env,request);
     if(u.pathname==='/api/auth/me'&&request.method==='GET'){
       const user=await getSession(env,request);
       if(user?.isPlatformAdmin&&customerSupportRequest(request))return json({ok:true,user:{...user,isPlatformAdmin:false,supportPlatformAdmin:true,tenantRoles:[]}});
       return json({ok:true,user});
     }
-    if(u.pathname==='/api/auth/change-password'&&request.method==='POST')return changePassword(env,request);
+    if(u.pathname==='/api/auth/change-password'&&request.method==='POST')return await changePassword(env,request);
 
     const publicQuote=u.pathname.match(/^\/api\/onboarding\/([^/]+)\/quote$/);
     if(publicQuote&&request.method==='GET')return json({ok:true,quote:await getPublicOnboardingQuote(env,decodeURIComponent(publicQuote[1]),{courses:u.searchParams.get('courses')||'1',billingCycle:u.searchParams.get('billing_cycle')||'monthly',setupOptionId:u.searchParams.get('setup')||'self_service',purpose:u.searchParams.get('purpose')||'paid'})});
@@ -121,7 +124,7 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
     if(u.pathname==='/api/materials'&&request.method==='GET')return json({ok:true,materials:await listLearningMaterials(env,a,tenantId,courseId)});
     if(u.pathname==='/api/materials'&&request.method==='POST')return json({ok:true,material:await uploadLearningMaterial(env,a,tenantId,request,courseId)},201);
     const materialDownload=u.pathname.match(/^\/api\/materials\/([^/]+)\/download$/);
-    if(materialDownload&&request.method==='GET')return downloadLearningMaterial(env,a,tenantId,decodeURIComponent(materialDownload[1]));
+    if(materialDownload&&request.method==='GET')return await downloadLearningMaterial(env,a,tenantId,decodeURIComponent(materialDownload[1]));
     const material=u.pathname.match(/^\/api\/materials\/([^/]+)$/);
     if(material&&request.method==='PATCH')return json({ok:true,material:await updateLearningMaterial(env,a,tenantId,decodeURIComponent(material[1]),await body(request))});
     if(material&&request.method==='DELETE'){await deleteLearningMaterial(env,a,tenantId,decodeURIComponent(material[1]));return json({ok:true});}
@@ -141,4 +144,4 @@ export async function handleCoreApi(request:Request,env:Env):Promise<Response|nu
   }catch(e){return err(e);}
 }
 
-export async function handlePublicApi(request:Request,env:Env):Promise<Response|null>{const u=new URL(request.url),m=u.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);if(!m)return null;try{const d=await publicOverview(env,decodeURIComponent(m[1]),decodeURIComponent(m[2]),await getSession(env,request),request.headers.get('X-Klassenportal-Access-Code')||u.searchParams.get('access_code')||undefined);return json({ok:true,...d});}catch(e){const c=(e as Error).message,s=c==='LOGIN_REQUIRED'||c==='ACCESS_CODE_REQUIRED'||c==='LOGIN_OR_CODE_REQUIRED'?401:c==='PORTAL_NOT_FOUND'?404:400;return json({ok:false,error:c},s);}}
+export async function handlePublicApi(request:Request,env:Env):Promise<Response|null>{const u=new URL(request.url),m=u.pathname.match(/^\/public\/([^/]+)\/([^/]+)\/overview$/);if(!m)return null;try{const d=await publicOverview(env,decodeURIComponent(m[1]),decodeURIComponent(m[2]),await getSession(env,request),request.headers.get('X-Klassenportal-Access-Code')||u.searchParams.get('access_code')||undefined);return json({ok:true,...d});}catch(e){const c=safeErrorCode(e),s=authStatus(c)??(c==='ACCESS_CODE_REQUIRED'||c==='LOGIN_OR_CODE_REQUIRED'?401:c==='PORTAL_NOT_FOUND'?404:400);return json({ok:false,error:c},s);}}

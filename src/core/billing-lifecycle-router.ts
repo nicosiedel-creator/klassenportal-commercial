@@ -2,10 +2,10 @@ import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { listModuleCancellations, scheduleModuleCancellation, undoModuleCancellation } from './module-cancellation.js';
 import { paymentsEnabled } from './payment-policy.js';
-import { assertSameOrigin, json, safeString } from './utils.js';
+import { assertSameOrigin, authStatus, json, safeErrorCode, safeString } from './utils.js';
 
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function failure(e:unknown):Response{const code=String((e as Error)?.message||'INTERNAL_ERROR');const status=code==='UNAUTHENTICATED'?401:code==='FORBIDDEN'||code==='CSRF_ORIGIN_MISMATCH'?403:code.includes('NOT_FOUND')?404:['MODULE_CANCELLATION_ALREADY_SCHEDULED','MODULE_CANCELLATION_ALREADY_DUE'].includes(code)?409:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('NOT_ALLOWED')?400:code==='STRIPE_NOT_CONFIGURED'||code==='PAYMENT_DISABLED'?503:500;return json({ok:false,error:code},status);}
+function failure(e:unknown):Response{const code=safeErrorCode(e);const status=authStatus(code)??(code==='UNAUTHENTICATED'?401:code==='FORBIDDEN'||code==='CSRF_ORIGIN_MISMATCH'?403:code.includes('NOT_FOUND')?404:['MODULE_CANCELLATION_ALREADY_SCHEDULED','MODULE_CANCELLATION_ALREADY_DUE'].includes(code)?409:code.includes('REQUIRED')||code.includes('INVALID')||code.includes('NOT_ALLOWED')?400:code==='STRIPE_NOT_CONFIGURED'||code==='PAYMENT_DISABLED'?503:500);return json({ok:false,error:code},status);}
 
 export async function handleBillingLifecycleApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url);if(!u.pathname.startsWith('/api/billing/modules/cancel'))return null;

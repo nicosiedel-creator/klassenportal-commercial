@@ -1,6 +1,6 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
-import { assertSameOrigin, safeString } from './utils.js';
+import { assertSameOrigin, authStatus, safeErrorCode, safeString } from './utils.js';
 import { ensureOfferSchema } from './offer-schema.js';
 import { cancelPlatformOffer, createPlatformOffer, getPlatformOffer, listPlatformOffers, platformOfferMeta, previewPlatformOffer, publicOffer } from './platform-offers.js';
 import { acceptPublicOffer } from './platform-offer-acceptance.js';
@@ -14,14 +14,14 @@ import { mailConfigured } from './mail.js';
 function out(data:unknown,status=200):Response{return Response.json(data,{status,headers:{'cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
 function error(e:unknown):Response{
-  const code=String((e as Error)?.message||'INTERNAL_ERROR');
-  const status=code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
+  const code=safeErrorCode(e);
+  const status=authStatus(code)??(code==='UNAUTHENTICATED'||code==='LOGIN_REQUIRED'?401
     :code==='PLATFORM_ADMIN_REQUIRED'||code==='FORBIDDEN'?403
     :code.includes('NOT_FOUND')?404
     :['OFFER_ALREADY_ACCEPTED','OFFER_NOT_DRAFT','OFFER_NOT_CANCELLABLE','OFFER_LINK_NOT_AVAILABLE','OFFER_NOT_ACCEPTED','OFFER_ONBOARDING_ALREADY_COMPLETED','OFFER_EMAIL_NOT_AVAILABLE'].includes(code)?409
     :code==='OFFER_EXPIRED'?410
     :['SELLER_PROFILE_INCOMPLETE','LEGAL_CONFIGURATION_INCOMPLETE','MAIL_PROVIDER_NOT_CONFIGURED'].includes(code)?428
-    :code==='INTERNAL_ERROR'?500:400;
+    :code==='INTERNAL_ERROR'?500:400);
   return out({ok:false,error:code},status);
 }
 function deliveryError(e:unknown){return{sent:false,mailId:null,error:String((e as Error)?.message||'MAIL_SEND_FAILED')};}

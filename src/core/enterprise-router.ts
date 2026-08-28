@@ -1,6 +1,6 @@
 import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
-import { assertSameOrigin } from './utils.js';
+import { assertSameOrigin, authStatus, safeErrorCode } from './utils.js';
 import { apiOpenApi, createApiToken, handlePublicApiV1, listApiTokens, revokeApiToken } from './enterprise-api.js';
 import { applyOrgImport, createOrgGrant, createOrgUnit, linkCourseOrgUnits, listCourseOrgLinks, listOrgGrants, listOrgUnits, listOrgUnitTypes, previewOrgImport, revokeOrgGrant, saveOrgUnitType, updateOrgUnit } from './enterprise-organization.js';
 import { previewOrgImportFile } from './enterprise-import-file.js';
@@ -15,16 +15,16 @@ import { handleEnterpriseIntakeRoute } from './intake-router.js';
 
 function json(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 async function body(request:Request):Promise<Record<string,unknown>>{try{return await request.json() as Record<string,unknown>;}catch{return{};}}
-function fail(e:unknown){const code=(e as Error).message||'ENTERPRISE_ERROR',status=code==='UNAUTHENTICATED'||code==='SSO_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='SELF_ELEVATION_FORBIDDEN'||code==='PRIMARY_RESPONSIBILITY_TENANT_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code.includes('EXISTS')||code.includes('CYCLE')||code.includes('ALREADY')||code.includes('CHANGED')?409:code.includes('EXPIRED')?410:code.includes('RATE_LIMITED')?429:code.includes('TOO_LARGE')?413:code.includes('NOT_READY')||code.includes('REQUIRED')&&code.includes('KEY')?428:400;return json({ok:false,error:code},status);}
+function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(code==='UNAUTHENTICATED'||code==='SSO_REQUIRED'?401:code.startsWith('FORBIDDEN')||code.includes('ADMIN_REQUIRED')||code==='SELF_ELEVATION_FORBIDDEN'||code==='PRIMARY_RESPONSIBILITY_TENANT_ADMIN_REQUIRED'?403:code.includes('NOT_FOUND')?404:code.includes('EXISTS')||code.includes('CYCLE')||code.includes('ALREADY')||code.includes('CHANGED')?409:code.includes('EXPIRED')?410:code.includes('RATE_LIMITED')?429:code.includes('TOO_LARGE')?413:code.includes('NOT_READY')||code.includes('REQUIRED')&&code.includes('KEY')?428:400);return json({ok:false,error:code},status);}
 
 export async function handleEnterpriseRouter(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url),path=u.pathname;
   try{
-    const ssoStart=path.match(/^\/sso\/([^/]+)$/);if(ssoStart&&request.method==='GET')return startTenantSso(env,decodeURIComponent(ssoStart[1]),request);
-    if(path==='/sso/callback'&&request.method==='GET')return finishTenantSso(env,request);
-    const scim=path.match(/^\/scim\/v2\/([^/]+)(\/.*)?$/);if(scim)return handleScimRequestV2(env,request,decodeURIComponent(scim[1]),scim[2]||'/');
+    const ssoStart=path.match(/^\/sso\/([^/]+)$/);if(ssoStart&&request.method==='GET')return await startTenantSso(env,decodeURIComponent(ssoStart[1]),request);
+    if(path==='/sso/callback'&&request.method==='GET')return await finishTenantSso(env,request);
+    const scim=path.match(/^\/scim\/v2\/([^/]+)(\/.*)?$/);if(scim)return await handleScimRequestV2(env,request,decodeURIComponent(scim[1]),scim[2]||'/');
     if(path==='/api/v1/openapi.json'&&request.method==='GET')return json(apiOpenApi(env.APP_ORIGIN||u.origin));
-    if(path.startsWith('/api/v1/'))return handlePublicApiV1(env,request);
+    if(path.startsWith('/api/v1/'))return await handlePublicApiV1(env,request);
     if(!path.startsWith('/api/enterprise/'))return null;
     assertSameOrigin(request,env.APP_ORIGIN);const tenantId=u.searchParams.get('tenant_id')||'';if(!tenantId)throw new Error('TENANT_ID_REQUIRED');const auth=await resolveCoreAuth(env,request,tenantId,u.searchParams.get('course_id')||undefined);
     if(path.startsWith('/api/enterprise/intake')){const intake=await handleEnterpriseIntakeRoute(request,env,auth,tenantId);if(intake)return intake;}
