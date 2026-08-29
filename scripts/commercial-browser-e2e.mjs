@@ -17,6 +17,11 @@ const base=(process.env.COMMERCIAL_BASE_URL||'http://127.0.0.1:8787').replace(/\
 // domain haengt sie an der Freigabe der Worker-Version und waere damit eine schwaechere Aussage.
 const platformBase=(process.env.COMMERCIAL_PLATFORM_URL||base).replace(/\/$/,'');
 const mode=String(process.env.E2E_TARGET_MODE||'candidate').trim();
+// Ob die Produktion freigegeben ist, entscheidet nicht der Aufrufer, sondern die Produktion selbst.
+// Sonst muesste jemand daran denken, den Modus umzustellen, sobald freigegeben wird - und die
+// Abnahme waere ab diesem Moment rot, obwohl alles richtig ist. Der Wert wird einmal gemessen,
+// bevor irgendetwas darauf aufbaut, und im Protokoll benannt.
+let productionReleased=false;
 const adminEmail=String(process.env.E2E_PLATFORM_EMAIL||'').trim();
 const adminPassword=String(process.env.E2E_PLATFORM_PASSWORD||'');
 const onboardingToken=String(process.env.E2E_ONBOARDING_PRIMARY_TOKEN||'').trim();
@@ -276,6 +281,36 @@ async function acceptedOfferOnboarding(){
   console.log('Accepted paid offer -> browser onboarding -> auto-login -> customer portal: OK');
 }
 
+// Nach der Freigabe antworten dieselben Seiten mit 200 statt 503 - die Sperrpruefung waere dann
+// rot, obwohl alles richtig ist. Die Abnahme muss deshalb beide Zustaende kennen. Sie raet dabei
+// nicht: sie fragt den Zustand ab und prueft anschliessend genau das, was in ihm gilt. Was in
+// beiden Zustaenden gelten muss - der Zahlungs-Freeze, der Schutz der Plattformrouten - wird in
+// beiden geprueft.
+async function productionIsReleased(){
+  const state=await api('/api/public/product');
+  if(state.status===503)return false;
+  if(state.status===200)return true;
+  fail(`/api/public/product antwortete ${state.status}; weder gesperrt (503) noch freigegeben (200)`);
+}
+
+// Diese Zusicherungen gelten unabhaengig von der Freigabe. Der Zahlungs-Freeze gehoert dazu: er
+// darf sich durch das Livegehen unter keinen Umstaenden loesen.
+async function sharedProductionGuards(){
+  const invitation=await api('/api/platform/onboarding-invitations');if(![401,403].includes(invitation.status))fail(`unauthenticated onboarding invitations must be protected, got ${invitation.status}`);
+  const frozenWebhook=await api('/api/payments/stripe/webhook',{method:'POST',body:{}});if(frozenWebhook.status!==200||frozenWebhook.data?.ignored!==true||frozenWebhook.data?.paymentProcessing!=='disabled')fail('payment webhook did not remain frozen after release');
+}
+
+async function releasedProductionSurface(){
+  await route('/plattform-admin');
+  for(const path of ['/produkt','/kunden-admin','/dozentenportal']){
+    const text=await route(path);
+    if(/noch nicht für den Produktivbetrieb freigegeben/i.test(text))fail(`${path} zeigt die Sperrseite, obwohl die Produktion freigegeben ist`);
+    if(text.replace(/\s+/g,' ').trim().length<200)fail(`${path} lieferte kaum Inhalt: ${text.replace(/\s+/g,' ').trim().slice(0,120)}`);
+  }
+  const health=await api('/api/public/product');if(health.status!==200)fail(`/api/public/product muss nach der Freigabe antworten, war ${health.status}`);
+  await sharedProductionGuards();
+  console.log('Freigegebene Produktion: Kundenseiten erreichbar, Plattformrouten geschützt, Zahlung weiterhin stillgelegt: OK');
+}
 async function lockedProductionSurface(){
   await route('/plattform-admin');
   for(const path of ['/produkt','/kunden-admin','/dozentenportal']){const text=await route(path,{allowStatuses:[503]});if(!/noch nicht für den Produktivbetrieb freigegeben/i.test(text))fail(`${path} did not render the fail-closed version gate`);}
@@ -300,10 +335,10 @@ async function mobileSurface(){
   const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
   mobile.on('pageerror',e=>errors.push(String(e)));
   mobile.on('requestfailed',r=>{const errorText=r.failure()?.errorText||'failed';if(navigationAbort(r,errorText))return;failed.push(`${r.method()} ${r.url()} :: ${errorText}`);});
-  mobile.on('response',r=>{aborts.serve(r);if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&r.status()===503&&MOBILE_RELEASE_LOCKED.includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
+  mobile.on('response',r=>{aborts.serve(r);if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&!productionReleased&&r.status()===503&&MOBILE_RELEASE_LOCKED.includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
   try{
     for(const path of MOBILE_PATHS){
-      const expected=mode==='locked-production'&&MOBILE_RELEASE_LOCKED.includes(path)?[503]:[200];
+      const expected=mode==='locked-production'&&!productionReleased&&MOBILE_RELEASE_LOCKED.includes(path)?[503]:[200];
       const response=await navigate(mobile,base+path,{waitUntil:'domcontentloaded',timeout:30000});if(!response||!expected.includes(response.status()))fail(`mobile ${path} returned ${response?.status()??'no response'}, expected ${expected.join('/')}`);
       const text=(await mobile.locator('body').innerText()).slice(0,4000);if(!text.trim()||/error\s*1042|worker threw exception|internal server error/i.test(text))fail(`mobile ${path} rendered an invalid surface`);
       const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);if(overflow>4)fail(`mobile ${path} has ${overflow}px document-level horizontal overflow`);
@@ -538,7 +573,7 @@ async function publicDocumentContract(){
   const problems=[];
   try{
     for(const path of MOBILE_PATHS){
-      if(mode==='locked-production'&&MOBILE_RELEASE_LOCKED.includes(path))continue;
+      if(mode==='locked-production'&&!productionReleased&&MOBILE_RELEASE_LOCKED.includes(path))continue;
       const response=await navigate(doc,base+path,{waitUntil:'domcontentloaded',timeout:30000});
       if(!response||response.status()!==200){problems.push(`${path} antwortete ${response?.status()??'gar nicht'}`);continue;}
       const found=await doc.evaluate(()=>{
@@ -580,7 +615,7 @@ async function publicDocumentContract(){
     // Meldung der Angebotsseite, obwohl dort die Sperrseite steht. Beide Modi pruefen jetzt das,
     // was in ihnen richtig ist; die Zusicherung, dass ohne Token kein Angebot abgefragt wird, gilt
     // in beiden.
-    if(mode==='locked-production'){
+    if(mode==='locked-production'&&!productionReleased){
       if(!/nicht verfügbar|nicht für den Produktivbetrieb freigegeben/i.test(offerText))
         problems.push(`/angebot zeigt in der gesperrten Produktion weder Sperrhinweis noch Freigabehinweis: ${offerText.slice(0,120)}`);
     }else if(!/unvollständig/i.test(offerText)){
@@ -718,7 +753,11 @@ try{
     await adminDialogContract('/kunden-admin');
     await educationOsDialogContract();
     await adminDialogContract('/plattform-admin');
-  }else if(mode==='locked-production')await lockedProductionSurface();
+  }else if(mode==='locked-production'){
+    productionReleased=await productionIsReleased();
+    console.log(`Produktionszustand: ${productionReleased?'freigegeben':'gesperrt (noch nicht live freigegeben)'}`);
+    if(productionReleased)await releasedProductionSurface();else await lockedProductionSurface();
+  }
   else fail(`Unsupported E2E_TARGET_MODE: ${mode}`);
 
   if(adminEmail&&adminPassword){
@@ -801,15 +840,22 @@ try{
   const externalCsp=/Content Security Policy directive: "script-src 'self'"/i;
   const cloudflareBeacon=/static\.cloudflareinsights\.com/i;
   const allowedLockStatuses=new Set(expectedHttp.map(entry=>entry.status));
+  const externalNoise=[];
   const relevantConsole=consoleErrors.filter(text=>{
     if(/favicon|Failed to load resource.*404/i.test(text))return false;
     if(/^Failed to load resource:.*status of 401\b/i.test(text)&&expectedHttp.length>0&&!unexpected401)return false;
     const lockStatus=text.match(/^Failed to load resource:.*status of (\d{3})\b/i);
     if(lockStatus&&allowedLockStatuses.has(Number(lockStatus[1]))&&!unexpectedHttp.length)return false;
-    if(cloudflareBeacon.test(text))return false;
-    if(externalCsp.test(text)&&/Refused to execute inline script/i.test(text))return false;
+    if(cloudflareBeacon.test(text)){externalNoise.push(text);return false;}
+    if(externalCsp.test(text)&&/Refused to execute inline script/i.test(text)){externalNoise.push(text);return false;}
     return true;
   });
+  // Was gefiltert wurde, muss sichtbar bleiben. Sonst beweist ein gruener Lauf nichts darueber, ob
+  // die externe Einblendung noch stattfindet - sie waere nur nicht mehr zu sehen. Der Lauf nennt
+  // deshalb, was er verworfen hat, und meldet ausdruecklich, wenn nichts zu verwerfen war.
+  console.log(externalNoise.length
+    ?`${externalNoise.length} externe Meldung(en) ignoriert (nicht aus dem Portal): ${externalNoise.map(t=>t.replace(/\s+/g,' ').slice(0,90)).join(' | ')}`
+    :'keine externen Konsolenmeldungen - die Seite laedt nichts Fremdes mehr');
   if(pageErrors.length)fail(`page errors: ${pageErrors.join(' | ')}`);if(unexpectedHttp.length)fail(`unexpected browser HTTP responses: ${unexpectedHttp.map(x=>`${x.status} ${x.url}`).join(' | ')}`);if(relevantConsole.length)fail(`console errors: ${relevantConsole.join(' | ')}`);if(failedRequests.length)fail(`failed browser requests: ${failedRequests.join(' | ')}`);
   // Abgebrochene Anfragen sind fuer sich unbedenklich - solange derselbe Pfad im Lauf auch
   // beantwortet wurde. Ein Pfad, der nur abbricht, hat nie geliefert und ist ein Befund.
