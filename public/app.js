@@ -3,7 +3,16 @@ const CUSTOMER_PATH=location.pathname.replace(/\/$/,'')==='/kunden-admin';
 const S={me:window.__KP_BOOT_USER??null,tenants:[],tenantId:null,courses:[],view:'overview'};delete window.__KP_BOOT_USER;
 const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const FRIENDLY={UNAUTHENTICATED:'Die Sitzung ist abgelaufen. Bitte erneut anmelden.',FORBIDDEN:'Für diese Aktion fehlt die erforderliche Berechtigung.',FORBIDDEN_TENANT:'Dieser Kundenbereich ist für das Konto nicht freigegeben.',TENANT_ID_REQUIRED:'Bitte zuerst einen Bildungsträger auswählen.',COURSE_ID_REQUIRED:'Bitte zuerst eine Klasse oder einen Kurs auswählen.',TRIAL_READ_ONLY:'Der Kundenbereich ist derzeit schreibgeschützt.',TRIAL_EXPIRED:'Die Testphase ist beendet.',SUPPORT_READ_ONLY:'Die Plattform-Supportansicht ist bewusst nur lesend.'};
-function friendly(code,status=0){const key=String(code||'');if(FRIENDLY[key])return FRIENDLY[key];if(status===401)return FRIENDLY.UNAUTHENTICATED;if(status===403)return'Diese Aktion ist in deinem aktuellen Arbeitsbereich nicht freigegeben.';if(status===404)return'Die angeforderte Information wurde nicht gefunden.';if(status>=500)return'Der Dienst ist gerade nicht verfügbar. Bitte später erneut versuchen.';return'Die Aktion konnte nicht ausgeführt werden. Bitte Eingaben prüfen.';}
+// Es gibt zwei Woerterbuecher: dieses hier und das gemeinsame in kp-error-text.js. Dieses kannte
+// die Anmeldefehler nicht - und weil der Rueckfall jede 401 als abgelaufene Sitzung deutet, sagte
+// die Anmeldemaske bei einem falschen Passwort woertlich "Die Sitzung ist abgelaufen. Bitte
+// erneut anmelden.". Auf der ersten Seite des Produkts, zu jemandem, der sich gerade erst
+// anmelden will. Eine Sperre nach fuenf Fehlversuchen wurde zu "Bitte Eingaben pruefen".
+//
+// Das gemeinsame Woerterbuch kennt beide Faelle laengst. Es wird deshalb gefragt, bevor der
+// Rueckfall ueber den Statuscode greift - eigene Uebersetzungen behalten Vorrang, so wie
+// kp-error-text.js es selbst beschreibt.
+function friendly(code,status=0){const key=String(code||'');if(FRIENDLY[key])return FRIENDLY[key];const shared=(typeof window!=='undefined'&&window.KP_ERROR_TEXTS)||null;if(shared&&shared[key])return shared[key];if(status===401)return FRIENDLY.UNAUTHENTICATED;if(status===403)return'Diese Aktion ist in deinem aktuellen Arbeitsbereich nicht freigegeben.';if(status===404)return'Die angeforderte Information wurde nicht gefunden.';if(status>=500)return'Der Dienst ist gerade nicht verfügbar. Bitte später erneut versuchen.';return'Die Aktion konnte nicht ausgeführt werden. Bitte Eingaben prüfen.';}
 class ApiError extends Error{constructor(code,status){super(friendly(code,status));this.code=String(code||'');this.status=status;}}
 async function api(url,opt={}){const method=String(opt.method||'GET').toUpperCase();if(S.me?.supportPlatformAdmin&&!['GET','HEAD'].includes(method)&&!String(url).startsWith('/api/auth/logout'))throw new ApiError('SUPPORT_READ_ONLY',403);const headers=opt.body instanceof FormData?{...(opt.headers||{})}:{...(opt.body?{'content-type':'application/json'}:{}),...(opt.headers||{})};const r=await fetch(url,{credentials:'same-origin',cache:method==='GET'?'no-store':undefined,...opt,headers}),d=await r.json().catch(()=>({}));if(!r.ok)throw new ApiError(d.error||`HTTP_${r.status}`,r.status);return d;}
 const q=s=>document.querySelector(s),qa=s=>[...document.querySelectorAll(s)];
