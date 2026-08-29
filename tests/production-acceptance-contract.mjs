@@ -33,6 +33,16 @@ const sessionShape=(types.match(/export interface SessionUser \{([\s\S]*?)\n\}/)
 assert.ok(sessionShape,'die Sitzungsform muss als SessionUser auffindbar bleiben');
 const sessionFields=new Set([...sessionShape.matchAll(/^\s*([A-Za-z_][A-Za-z0-9_]*)\??\s*:/gm)].map(m=>m[1]));
 assert.ok(sessionFields.has('userId')&&sessionFields.has('isPlatformAdmin'),'die Sitzungsform wurde nicht richtig gelesen');
+// /api/auth/me antwortet auch ohne Anmeldung mit 200 und user:null - nachgemessen am lokalen
+// Kandidaten. Die Abnahme wartete auf den Status statt auf einen Benutzer, brach deshalb schon im
+// ersten Durchlauf ab und meldete anschliessend "kein Plattformadmin", obwohl gar keine Sitzung
+// bestand. Die Bedingung muss die Sitzung selbst sein, nicht ihr Statuscode.
+assert.match(browser,/signedIn:!!d\?\.user\b/,'die Abnahme muss eine echte Sitzung als Anmeldung werten');
+assert.match(browser,/if\(session\.signedIn\|\|session\.error\)break;/,'die Wartesschleife muss auf die Sitzung warten, nicht auf den Statuscode');
+assert.doesNotMatch(browser,/if\(session\.status===200\|\|session\.error\)break;/,'der Statuscode allein beweist keine Anmeldung');
+assert.match(browser,/if\(!session\.signedIn\)\{/,'eine fehlende Anmeldung braucht einen eigenen Befund, nicht den zu fehlenden Rechten');
+assert.match(browser,/\(Adresse entfernt\)/,'der Seitentext im Befund darf keine E-Mail-Adresse enthalten');
+
 const read=[...browser.matchAll(/d\?\.user\?\.([A-Za-z0-9_]+)/g)].map(m=>m[1]);
 assert.ok(read.length,'die Abnahme muss die Sitzung ueberhaupt auswerten');
 const unknown=[...new Set(read)].filter(field=>!sessionFields.has(field));

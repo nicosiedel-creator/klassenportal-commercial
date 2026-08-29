@@ -692,14 +692,25 @@ try{
       // Ein fester Wartewert ist gegen die Produktion eine Wette auf die Latenz. Die Sitzung selbst
       // sagt, ob die Anmeldung wirklich gelungen ist - und benennt sonst, woran es lag, statt eine
       // fehlende Navigation zu melden, die nur die Folge wäre. Anmeldedaten bleiben ungenannt.
-      let session={status:0,platform:false,mustChange:false,error:''};
+      let session={status:0,signedIn:false,platform:false,mustChange:false,id:'',error:''};
       for(let attempt=0;attempt<20;attempt++){
         session=await page.evaluate(async()=>{try{const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});let d={};try{d=await r.json();}catch{}
-          return{status:r.status,platform:!!d?.user?.isPlatformAdmin,mustChange:!!d?.user?.mustChangePassword,id:String(d?.user?.userId||''),error:String(d?.error||'')};}catch(e){return{status:0,platform:false,mustChange:false,id:'',error:'FETCH_FAILED'};}});
-        if(session.status===200||session.error)break;
+          return{status:r.status,signedIn:!!d?.user,platform:!!d?.user?.isPlatformAdmin,mustChange:!!d?.user?.mustChangePassword,id:String(d?.user?.userId||''),error:String(d?.error||'')};}catch(e){return{status:0,signedIn:false,platform:false,mustChange:false,id:'',error:'FETCH_FAILED'};}});
+        // /api/auth/me antwortet auch ohne Anmeldung mit 200 und user:null. Auf den Status zu
+        // warten hiess deshalb: gar nicht warten - die Schleife brach sofort im ersten Durchlauf
+        // ab, und der anschliessende Befund machte aus "nicht angemeldet" ein "keine
+        // Plattformrechte". Erst eine Sitzung mit Benutzer ist eine Anmeldung.
+        if(session.signedIn||session.error)break;
         await page.waitForTimeout(500);
       }
-      if(session.status!==200)fail(`platform acceptance account could not sign in: /api/auth/me answered ${session.status}${session.error?` ${session.error}`:''}. Check E2E_PLATFORM_EMAIL/E2E_PLATFORM_PASSWORD.`);
+      if(!session.signedIn){
+        // Was die Seite anzeigt, benennt die Ursache - falsche Zugangsdaten, gesperrtes Konto,
+        // Pflicht zur Neuanmeldung. E-Mail-Adressen werden dabei entfernt: die Adresse steht in
+        // einem Secret und gehoert nicht ins Protokoll.
+        const shown=String(await page.locator('body').innerText().catch(()=>'')).replace(/\s+/g,' ')
+          .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g,'(Adresse entfernt)').trim().slice(0,240);
+        fail(`platform acceptance account is not signed in after submitting the login form: /api/auth/me answered ${session.status} without a user${session.error?` (${session.error})`:''}. The page shows: ${shown||'(nothing)'}. Check E2E_PLATFORM_EMAIL/E2E_PLATFORM_PASSWORD.`);
+      }
       if(session.mustChange)fail('platform acceptance account must change its password before it can be used for acceptance');
       // Ohne die Kennung des Kontos ist dieser Befund nicht behebbar: die Adresse steht in einem
       // Secret und laesst sich nicht nachschlagen, und die Sitzung, die sie verraten wuerde,
