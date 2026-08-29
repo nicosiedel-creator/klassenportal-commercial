@@ -63,6 +63,22 @@ await writeFile(logPath,'Ready on http://127.0.0.1:8787\n');
   broken.close();
 }
 
+// Der eigene Wrangler ist gar nicht gestartet, weil ein fremder Prozess den Port belegt: dann
+// antwortet die Adresse stabil mit 200 - aus einem anderen, womoeglich veralteten Server. Genau
+// so wurde hier einmal gegen einen drei Stunden alten Stand geklickt, waehrend die Bereitschaft
+// "stabil erreichbar" meldete. Ein Protokoll, das den Fehlstart benennt, macht das Ergebnis
+// ungueltig - unabhaengig davon, wie sauber die Adresse antwortet.
+for(const [line,expected] of [
+  ['*** Fatal uncaught kj::Exception: kj/async-io-unix.c++:945: failed: ::bind(sockfd, &addr.generic, addrlen): Address already in use; toString() = 127.0.0.1:8787',/Port ist bereits belegt/],
+  ['The Workers runtime failed to start. There is likely additional logging output above.',/Laufzeit konnte nicht starten/]
+]){
+  await writeFile(logPath,`Ready\n${line}\n`);
+  const {code,out}=await wait(url,logPath);
+  assert.equal(code,1,`ein stabil antwortender fremder Server darf nicht als eigener Kandidat gelten:\n${out}`);
+  assert.match(out,expected);
+  assert.doesNotMatch(out,/stabil erreichbar/,'ein Fehlstart darf niemals als Bereitschaft durchgehen');
+}
+
 // Gar kein Server: die Wartezeit endet, statt unbegrenzt zu haengen.
 {
   await writeFile(logPath,'Ready\n');

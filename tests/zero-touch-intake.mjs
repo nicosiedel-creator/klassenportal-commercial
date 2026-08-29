@@ -39,7 +39,12 @@ assert.match(intake,/MAX_DOCUMENT_BYTES=15\*1024\*1024/);assert.match(intake,/MA
 assert.match(intake,/sha256Text\(raw\)/,'public upload bearer tokens must be looked up by hash');
 assert.match(intake,/x-robots-tag.*noindex, nofollow/s,'submit-only pages must not be indexed');
 assert.match(intake,/niemals das Lesen vorhandener Teilnehmerdaten/,'submit-only UX must explain that the link grants no read access');
-assert.match(intake,/vendor\/pdfjs\/pdf\.mjs/,'browser upload must locally extract text PDFs before sending the safe preview text');
+// Die oeffentliche Upload-Seite fuehrt ihr Skript nicht mehr im Worker-HTML mit, sondern laedt
+// public/intake-public-upload.js. Die lokale PDF-Extraktion wird deshalb dort geprueft - im
+// Seiten-HTML haette diese Zusicherung nichts mehr ueber das Verhalten des Kunden ausgesagt.
+const publicUpload=await readFile('public/intake-public-upload.js','utf8');
+assert.match(publicUpload,/vendor\/pdfjs\/pdf\.mjs/,'browser upload must locally extract text PDFs before sending the safe preview text');
+assert.match(intake,/src="\/intake-public-upload\.js"/,'the public upload page must load exactly that audited script');
 assert.match(intake,/client_text_/,'public PDF upload must attach only locally extracted text as an automation aid');
 
 for(const ext of ["endsWith('.csv')","endsWith('.xlsx')","endsWith('.json')","endsWith('.docx')","endsWith('.odt')","endsWith('.rtf')","endsWith('.html')","endsWith('.pdf')"])assert.ok(extract.includes(ext),`common document extractor missing ${ext}`);

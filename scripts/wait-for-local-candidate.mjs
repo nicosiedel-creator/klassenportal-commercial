@@ -10,6 +10,12 @@
 // Die Bedingung ist deshalb: mehrere aufeinanderfolgende erfolgreiche Anfragen, und seit
 // Beginn dieser Serie kein neuer Neustart im Wrangler-Protokoll. Jede Stoerung setzt die
 // Serie zurueck. Das ist keine erhoehte Wartezeit, sondern die richtige Bedingung.
+//
+// Erreichbarkeit allein ist aber noch kein Beweis. Belegt ein anderer Prozess den Port, stirbt
+// der eigene Wrangler mit "Address already in use" - und die Adresse antwortet trotzdem stabil
+// mit 200, nur eben aus einem fremden, womoeglich veralteten Server. Genau so wurde hier einmal
+// gegen einen drei Stunden alten Stand geklickt. Meldet das Protokoll, dass die Laufzeit nicht
+// starten konnte, ist das Ergebnis deshalb ungueltig: fail closed statt gruen aus Versehen.
 import { readFileSync } from 'node:fs';
 
 const url=process.argv[2];
@@ -17,6 +23,11 @@ const logPath=process.argv[3]||'';
 const deadlineMs=Number(process.env.CANDIDATE_READY_TIMEOUT_MS||120000);
 const required=Number(process.env.CANDIDATE_READY_STREAK||5);
 const RESTART='restarting build|Starting local server';
+const FATAL=[
+  ['Address already in use','Der Port ist bereits belegt - die Antworten kaemen aus einem fremden Server.'],
+  ['The Workers runtime failed to start','Die Workers-Laufzeit konnte nicht starten.'],
+  ['Fatal uncaught kj::Exception','Die Workers-Laufzeit ist mit einem fatalen Fehler abgebrochen.']
+];
 
 if(!url){console.error('Aufruf: node scripts/wait-for-local-candidate.mjs <url> [wrangler-log]');process.exit(2);}
 
@@ -24,6 +35,14 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const restartCount=()=>{
   if(!logPath)return 0;
   try{return (readFileSync(logPath,'utf8').match(new RegExp(RESTART,'g'))||[]).length;}catch{return 0;}
+};
+
+const fatal=()=>{
+  if(!logPath)return null;
+  let log='';
+  try{log=readFileSync(logPath,'utf8');}catch{return null;}
+  for(const [needle,reason] of FATAL)if(log.includes(needle))return reason;
+  return null;
 };
 
 const started=Date.now();
@@ -39,6 +58,13 @@ while(Date.now()-started<deadlineMs){
     if(!ok)lastProblem=`Status ${response.status}`;
     await response.arrayBuffer().catch(()=>undefined);
   }catch(error){lastProblem=String(error?.message||error).split('\n')[0];}
+
+  const dead=fatal();
+  if(dead){
+    console.error(`Lokaler Kandidat ist nicht der eigene Prozess: ${dead}`);
+    try{console.error(readFileSync(logPath,'utf8').split('\n').slice(-40).join('\n'));}catch{}
+    process.exit(1);
+  }
 
   const restarts=restartCount();
   if(restarts!==seenRestarts){seenRestarts=restarts;streak=0;lastProblem='Wrangler hat waehrend der Messung neu gestartet';}
