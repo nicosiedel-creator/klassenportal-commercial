@@ -695,13 +695,17 @@ try{
       let session={status:0,platform:false,mustChange:false,error:''};
       for(let attempt=0;attempt<20;attempt++){
         session=await page.evaluate(async()=>{try{const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});let d={};try{d=await r.json();}catch{}
-          return{status:r.status,platform:!!d?.user?.isPlatformAdmin,mustChange:!!d?.user?.mustChangePassword,error:String(d?.error||'')};}catch(e){return{status:0,platform:false,mustChange:false,error:'FETCH_FAILED'};}});
+          return{status:r.status,platform:!!d?.user?.isPlatformAdmin,mustChange:!!d?.user?.mustChangePassword,id:String(d?.user?.id||''),error:String(d?.error||'')};}catch(e){return{status:0,platform:false,mustChange:false,id:'',error:'FETCH_FAILED'};}});
         if(session.status===200||session.error)break;
         await page.waitForTimeout(500);
       }
       if(session.status!==200)fail(`platform acceptance account could not sign in: /api/auth/me answered ${session.status}${session.error?` ${session.error}`:''}. Check E2E_PLATFORM_EMAIL/E2E_PLATFORM_PASSWORD.`);
       if(session.mustChange)fail('platform acceptance account must change its password before it can be used for acceptance');
-      if(!session.platform)fail('the configured acceptance account is signed in but is not a platform administrator');
+      // Ohne die Kennung des Kontos ist dieser Befund nicht behebbar: die Adresse steht in einem
+      // Secret und laesst sich nicht nachschlagen, und die Sitzung, die sie verraten wuerde,
+      // laeuft ab. Die Kennung ist kein Geheimnis - sie benennt genau die Zeile, der die Rechte
+      // fehlen. Die Anmeldedaten selbst bleiben weiterhin ungenannt.
+      if(!session.platform)fail(`the configured acceptance account is signed in but is not a platform administrator. It is user id ${session.id||'(unknown)'} - grant it platform administration, or point E2E_PLATFORM_EMAIL/E2E_PLATFORM_PASSWORD at an account that already has it.`);
       const offers=page.getByRole('button',{name:/Angebote/i}).first();
       await offers.waitFor({state:'visible',timeout:20000}).catch(()=>undefined);
       if(!(await offers.count()))fail(`Angebote navigation did not appear for a signed-in platform administrator; shell shows: ${(await page.locator('body').innerText()).replace(/\s+/g,' ').slice(0,200)}`);
