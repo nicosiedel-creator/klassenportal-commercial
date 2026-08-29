@@ -177,4 +177,32 @@ assert.match(browser,/allowStatuses:\[503\]\}\);if\(!\/noch nicht für den Produ
 assert.match(browser,/routeAllowedErrors\.add\(`\$\{response\.status\(\)\} \$\{response\.url\(\)\}`\)/,
   'die Erwartung muss Status und Adresse zusammen festhalten');
 
+// Die Abnahme ignoriert in Produktion zwei Konsolenmeldungen: die CSP-Verweigerung eines
+// Inline-Skripts und den blockierten Cloudflare-Beacon. Das ist nur zulaessig, solange das Portal
+// selbst kein Inline-Skript ausliefert - sonst wuerde die Ausnahme einen echten Befund verdecken.
+// Dieser Beweis wird hier gefuehrt, nicht angenommen.
+const inlineScript=/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
+const workerFiles=[];
+async function collectTs(dir){
+  for(const entry of await readdir(dir,{withFileTypes:true})){
+    const full=`${dir}/${entry.name}`;
+    if(entry.isDirectory())await collectTs(full); else if(entry.name.endsWith('.ts'))workerFiles.push(full);
+  }
+}
+await collectTs('src');
+const inlineOffenders=[];
+for(const file of workerFiles)
+  for(const match of (await readFile(file,'utf8')).matchAll(inlineScript))
+    if(match[1].trim())inlineOffenders.push(`${file} (${match[1].trim().length} Zeichen)`);
+for(const page of await readdir('public'))
+  if(page.endsWith('.html'))
+    for(const match of (await readFile(`public/${page}`,'utf8')).matchAll(inlineScript))
+      if(match[1].trim())inlineOffenders.push(`public/${page} (${match[1].trim().length} Zeichen)`);
+assert.deepEqual(inlineOffenders,[],
+  `hier wird ein Inline-Skript ausgeliefert - damit verdeckt die Ausnahme fuer externe CSP-Meldungen einen echten Befund: ${inlineOffenders.join(', ')}`);
+assert.match(browser,/Refused to execute inline script/,'die Ausnahme muss benannt sein, damit sie pruefbar bleibt');
+assert.match(browser,/static\\\.cloudflareinsights\\\.com/,'der blockierte Beacon muss namentlich ausgenommen sein, nicht pauschal jede CSP-Meldung');
+assert.doesNotMatch(browser,/if\(\/Content Security Policy\/i\.test\(text\)\)return false;/,
+  'CSP-Meldungen duerfen nicht pauschal ignoriert werden');
+
 console.log('Commercial production acceptance contract: OK');
