@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 
 const browser=await readFile('scripts/commercial-browser-e2e.mjs','utf8');
 const readiness=await readFile('src/core/launch-readiness.ts','utf8');
@@ -33,15 +33,32 @@ const sessionShape=(types.match(/export interface SessionUser \{([\s\S]*?)\n\}/)
 assert.ok(sessionShape,'die Sitzungsform muss als SessionUser auffindbar bleiben');
 const sessionFields=new Set([...sessionShape.matchAll(/^\s*([A-Za-z_][A-Za-z0-9_]*)\??\s*:/gm)].map(m=>m[1]));
 assert.ok(sessionFields.has('userId')&&sessionFields.has('isPlatformAdmin'),'die Sitzungsform wurde nicht richtig gelesen');
+// Der Worker haengt an jede Antwort die Sicherheitsheader (harden): CSP, X-Frame-Options: DENY,
+// nosniff, Referrer-Policy, Permissions-Policy, HSTS. Eine Seite, die er nie sieht, bekommt
+// keinen einzigen davon. Gemessen am lokalen Kandidaten: /kunden-admin 6/6, /customer-admin 0/6 -
+// dieselbe Anwendung, dasselbe Sitzungscookie, nur ohne Klickjacking-Schutz. Jede ausgelieferte
+// Seite muss deshalb durch den Worker laufen, nicht nur die mit deutschem Routennamen.
+//
+// Ausgenommen sind allein die VFA13-Seiten: ihre Routen (/lernabend-vfa13, /quiz/vfa13/*) laufen
+// bereits durch den Worker, und an der VFA13-Zuordnung wird hier nichts geaendert.
+const workerFirst=JSON.parse(await readFile('wrangler.jsonc','utf8')).assets?.run_worker_first??[];
+assert.ok(workerFirst.length,'die Asset-Konfiguration muss run_worker_first fuehren');
+const coveredByWorker=path=>workerFirst.some(pattern=>
+  new RegExp('^'+pattern.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*/g,'.*')+'$').test(path));
+const VFA13_PAGES=['vfa-study-entry.html','vfa-study-presenter.html','vfa-study-quiz.html'];
+const shippedPages=(await readdir('public')).filter(name=>name.endsWith('.html')&&!VFA13_PAGES.includes(name));
+assert.ok(shippedPages.length>=10,`zu wenige ausgelieferte Seiten gefunden: ${shippedPages.length}`);
+const unhardened=shippedPages
+  .map(name=>'/'+name.replace(/\.html$/,''))
+  .filter(route=>route!=='/index'&&!coveredByWorker(route));
+assert.deepEqual(unhardened,[],
+  `diese Seiten werden ohne die Sicherheitsheader des Workers ausgeliefert: ${unhardened.join(', ')}`);
+
 // Eine Seite, die run_worker_first nicht auffuehrt, wird direkt aus dem Asset-Speicher
 // ausgeliefert - der Worker sieht die Anfrage nie, und die Release-Sperre greift dort nicht.
 // Genau so war /department-lead in Produktion mit 200 erreichbar, waehrend /produkt,
 // /kunden-admin und /dozentenportal gesperrt waren. Jede Route, deren Sperrung die Abnahme
 // verlangt, muss deshalb durch den Worker laufen und darf die Sperre nicht umgehen.
-const workerFirst=JSON.parse(await readFile('wrangler.jsonc','utf8')).assets?.run_worker_first??[];
-assert.ok(workerFirst.length,'die Asset-Konfiguration muss run_worker_first fuehren');
-const coveredByWorker=path=>workerFirst.some(pattern=>
-  new RegExp('^'+pattern.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*/g,'.*')+'$').test(path));
 const lockedBlock=(browser.match(/const MOBILE_RELEASE_LOCKED=\[([^\]]*)\]/)||[])[1];
 assert.ok(lockedBlock,'die Abnahme muss die zu sperrenden Seiten benennen');
 const lockedPaths=[...lockedBlock.matchAll(/'([^']+)'/g)].map(m=>m[1]);
