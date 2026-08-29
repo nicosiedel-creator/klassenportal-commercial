@@ -153,9 +153,9 @@ assert.ok(read.includes('userId'),'die Abnahme muss die Kennung des Kontos nenne
 // der Angebotsseite, obwohl dort die Sperrseite steht. Beide Modi muessen unterschieden werden.
 const documentContract=(browser.match(/async function publicDocumentContract\(\)\{[\s\S]*?\n\}/)||[''])[0];
 assert.ok(documentContract,'der Dokumentenvertrag muss auffindbar bleiben');
-assert.match(documentContract,/mode==='locked-production'&&MOBILE_RELEASE_LOCKED\.includes\(path\)/,
-  'die Seitenschleife muss gesperrte Seiten in Produktion ueberspringen');
-assert.match(documentContract,/if\(mode==='locked-production'\)\{[\s\S]*?nicht für den Produktivbetrieb freigegeben/,
+assert.match(documentContract,/mode==='locked-production'&&!productionReleased&&MOBILE_RELEASE_LOCKED\.includes\(path\)/,
+  'die Seitenschleife muss gesperrte Seiten ueberspringen, solange die Produktion gesperrt ist');
+assert.match(documentContract,/if\(mode==='locked-production'&&!productionReleased\)\{[\s\S]*?nicht für den Produktivbetrieb freigegeben/,
   '/angebot muss in der gesperrten Produktion gegen die Sperrseite geprueft werden');
 assert.match(documentContract,/\}else if\(!\/unvollständig\/i\.test\(offerText\)\)/,
   'im Kandidatenmodus muss die Meldung der Angebotsseite weiterhin verlangt werden');
@@ -212,5 +212,30 @@ assert.match(browser,/if\(\/csp\/i\.test\(errorText\)&&CSP_BLOCKED_EXTERNAL\.tes
   'nur eine von der CSP verweigerte Anfrage an genau diesen Host darf entfallen');
 assert.doesNotMatch(browser,/if\(\/csp\/i\.test\(errorText\)\)return;/,
   'nicht jede von der CSP verweigerte Anfrage darf entfallen - nur die des benannten Hosts');
+
+// Sobald die Produktion freigegeben ist, antworten die Kundenseiten mit 200 statt 503. Waere die
+// Abnahme fest auf "gesperrt" eingestellt, wuerde sie genau im Moment des Livegehens rot - und
+// jemand muesste daran denken, sie umzustellen. Sie fragt den Zustand deshalb bei der Produktion
+// selbst ab, nennt ihn im Protokoll und prueft danach, was in diesem Zustand gilt.
+assert.match(browser,/let productionReleased=false;/,'die Abnahme muss den Freigabezustand fuehren');
+assert.match(browser,/productionReleased=await productionIsReleased\(\);/,'sie muss ihn messen statt annehmen');
+assert.match(browser,/if\(productionReleased\)await releasedProductionSurface\(\);else await lockedProductionSurface\(\);/,
+  'beide Zustaende brauchen ihre eigene Pruefung');
+assert.match(browser,/Produktionszustand: \$\{productionReleased\?'freigegeben':'gesperrt/,'der gemessene Zustand muss im Protokoll stehen');
+// Und die Freigabe darf den Zahlungs-Freeze unter keinen Umstaenden loesen.
+const shared=(browser.match(/async function sharedProductionGuards\(\)\{[\s\S]*?\n\}/)||[''])[0];
+assert.match(shared,/paymentProcessing!=='disabled'/,'der Zahlungs-Freeze muss auch nach der Freigabe geprueft werden');
+assert.match(shared,/onboarding-invitations/,'die Plattformrouten muessen auch nach der Freigabe geschuetzt sein');
+assert.match(browser,/async function releasedProductionSurface\(\)\{[\s\S]*?await sharedProductionGuards\(\);/,
+  'die freigegebene Produktion muss dieselben unabhaengigen Zusicherungen durchlaufen');
+// Der Zustand muss feststehen, bevor irgendetwas darauf aufbaut.
+const branchAt=browser.indexOf('productionReleased=await productionIsReleased();');
+const mobileAt=browser.indexOf('await mobileSurface();');
+assert.ok(branchAt>0&&mobileAt>branchAt,'der Freigabezustand muss vor den mobilen Pruefungen feststehen');
+
+// Was die Abnahme herausfiltert, muss sie auch benennen - sonst beweist ein gruener Lauf nichts
+// darueber, ob die externe Einblendung noch stattfindet.
+assert.match(browser,/externe Meldung\(en\) ignoriert/,'gefilterte Fremdmeldungen muessen benannt werden');
+assert.match(browser,/keine externen Konsolenmeldungen/,'der Lauf muss auch melden, wenn nichts zu filtern war');
 
 console.log('Commercial production acceptance contract: OK');

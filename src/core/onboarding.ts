@@ -30,9 +30,28 @@ function publicErrorCode(error:unknown):string{
   const code=error instanceof Error?error.message:String(error||'');
   return /^[A-Z][A-Z0-9_]{2,80}$/.test(code)?code:'ONBOARDING_ACTIVATION_FAILED';
 }
-function stageError(error:unknown,fallback:string):Error{
+// Eine echte Kundeneinrichtung scheiterte in Produktion mit ONBOARDING_PROVISIONING_FAILED, und es
+// gab keinen Weg herauszufinden, warum: publicErrorCode ersetzt jede Meldung, die kein
+// Grossbuchstaben-Code ist, durch einen Sammelcode - ein SQL-Fehler aus D1 etwa -, und dieser
+// Sammelcode wurde hier noch einmal ersetzt. Die Ursache wurde weder protokolliert noch
+// gespeichert. Der wichtigste Pfad des Portals konnte also fehlschlagen und hinterliess nichts.
+//
+// Dem Kunden gegenueber bleibt es beim Sammelcode - dort haben SQL und Stacktraces nichts
+// verloren. Fuer den Betrieb wird die Ursache jetzt protokolliert: die Stufe, in der es scheiterte,
+// und die tatsaechliche Meldung. Der Einrichtungs-Token wird dabei nie mitgeschrieben; die
+// Meldung wird begrenzt, damit auch ein ausufernder Fehler das Protokoll nicht flutet.
+function stageError(error:unknown,fallback:string,stage:string):Error{
   const code=publicErrorCode(error);
-  return new Error(code==='ONBOARDING_ACTIVATION_FAILED'?fallback:code);
+  if(code==='ONBOARDING_ACTIVATION_FAILED'){
+    const detail=(error instanceof Error?error.message:String(error??'')).slice(0,400);
+    console.error('Onboarding stage failed',{stage,reported:fallback,cause:detail||'(keine Meldung)'});
+    // Ein Konsolen-Log hilft nur, wer im richtigen Moment zusieht. Die Ursache wird deshalb an den
+    // Fehler geheftet, damit der aeussere Ablauf sie dauerhaft festhalten kann.
+    const masked=new Error(fallback) as Error&{stageDetail?:{stage:string;cause:string}};
+    masked.stageDetail={stage,cause:detail||'(keine Meldung)'};
+    return masked;
+  }
+  return new Error(code);
 }
 
 export async function createOnboardingInvitation(env:Env,auth:CoreAuthContext,request:Request):Promise<Record<string,unknown>>{
@@ -166,7 +185,7 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
         name:legalName,portal_name:portalName,admin_name:adminName,admin_email:adminEmail,admin_password:password,
         course_name:firstCourse||undefined,course_code:firstCourseCode||undefined,access_mode:accessMode,plan_id:invitation.plan_id,
       });
-    }catch(e){throw stageError(e,'ONBOARDING_PROVISIONING_FAILED');}
+    }catch(e){throw stageError(e,'ONBOARDING_PROVISIONING_FAILED','provisioning');}
 
     let commercial:Record<string,unknown>;
     try{
@@ -179,7 +198,7 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
       }else{
         commercial=await createPaidBooking(env,{tenantId:provisioned.tenantId,invitationId:invitation.id,planId:invitation.plan_id,courseCount:requestedCourses,billingCycle,setupOptionId,accepted:acceptedOffer&&acceptedCosts,request,actorId:`onboarding:${invitation.id}`});
       }
-    }catch(e){throw stageError(e,'ONBOARDING_COMMERCE_FAILED');}
+    }catch(e){throw stageError(e,'ONBOARDING_COMMERCE_FAILED','commerce');}
 
     const profile={legal_name:legalName,portal_name:portalName,contact_name:contactName,contact_email:contactEmail,phone:safeString(raw.phone,80),website:safeString(raw.website,250),street,postal_code:postal,city,country,billing_email:normalizeEmail(raw.billing_email||contactEmail),vat_id:safeString(raw.vat_id,80)||null,admin_name:adminName,admin_email:adminEmail,desired_course_count:requestedCourses,first_course_name:firstCourse||null,first_course_code:firstCourseCode||null,commercial_action:commercialAction,billing_cycle:billingCycle,managed_setup_option_id:setupOptionId,double_cost_confirmation:commercialAction==='book'&&(acceptedOffer&&acceptedCosts),quote_id:invitation.quote_id||null};
     const ts=nowIso(),actorId=`onboarding:${invitation.id}`,auditDetails={customerEmail:invitation.customer_email,requestedCourses,commercialAction,billingCycle,setupOptionId,quoteId:invitation.quote_id||null};
@@ -194,10 +213,19 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
       ]);
       const completed=await env.DB.prepare("SELECT id FROM onboarding_invitations WHERE id=? AND status='completed' AND tenant_id=? AND form_json IS NOT NULL").bind(invitation.id,provisioned.tenantId).first();
       if(!completed)throw new Error('ONBOARDING_FINALIZATION_FAILED');
-    }catch(e){throw stageError(e,'ONBOARDING_FINALIZATION_FAILED');}
+    }catch(e){throw stageError(e,'ONBOARDING_FINALIZATION_FAILED','finalization');}
     return{ok:true,tenant_id:provisioned.tenantId,login_email:adminEmail,commercial_action:commercialAction,commercial};
   }catch(e){
     const code=publicErrorCode(e);
+    // Bis hierher hinterliess eine gescheiterte Einrichtung nichts: keine Zeile im Protokoll, kein
+    // Eintrag in der Datenbank. Der wichtigste Pfad des Portals war damit nach dem Fehlschlag nicht
+    // mehr untersuchbar. Jetzt bleibt ein Eintrag stehen - mit der Stufe und der echten Ursache,
+    // aber ohne Token und ohne Passwort. Er darf den eigentlichen Fehler nie verdecken, deshalb
+    // wird sein eigenes Scheitern verschluckt.
+    const stageDetail=(e as {stageDetail?:{stage:string;cause:string}})?.stageDetail;
+    await env.DB.prepare("INSERT INTO provisioning_log(id,tenant_id,action,status,detail_json,created_at) VALUES(?,?,'onboarding_failed','failed',?,?)")
+      .bind(id('prv_'),provisioned?.tenantId??null,JSON.stringify({invitationId:invitation.id,code,stage:stageDetail?.stage??null,cause:stageDetail?.cause??null}),nowIso())
+      .run().catch(()=>undefined);
     if(!provisioned){
       await env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce).run().catch(()=>undefined);
     }else{

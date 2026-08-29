@@ -79,6 +79,61 @@ for(const value of [new Error(''),{},null,'GANZ_NEUER_CODE']){
 }
 assert.equal(upload(new Error('Netzwerk unterbrochen')),'Netzwerk unterbrochen','lesbare Meldungen bleiben auch dort erhalten');
 
+// Die Einrichtungsseite ist die erste Seite, die ein neuer Kunde ueberhaupt bedient - und die
+// einzige, auf der er nichts anderes tun kann, wenn sie scheitert. Sie kannte fuenf Codes nicht,
+// die der Server tatsaechlich wirft (ONBOARDING_ALREADY_COMPLETED, _NOT_OPEN, _RECOVERY_REQUIRED,
+// _SCHEMA_INCOMPATIBLE, _FINALIZATION_FAILED). Alle fuenf landeten beim Kunden als "Bitte pruefe
+// die Angaben" - obwohl an den Angaben nichts falsch war. Deshalb wird hier nicht eine Liste
+// gepflegt, sondern verglichen: jeder Code, den der Einrichtungspfad werfen kann, muss auf der
+// Einrichtungsseite einen eigenen Satz bekommen.
+const onboardingSource=await readFile('public/onboarding.js','utf8');
+const onboardingBody=onboardingSource.slice(onboardingSource.indexOf('function errorText(code)'),onboardingSource.indexOf('function renderForm'));
+const setupText=new Function('window',`${onboardingBody}\nreturn errorText;`)({KP_ERROR_TEXT:t});
+const setupGeneric=setupText('EIN_CODE_DEN_ES_NICHT_GIBT');
+const serverCodes=new Set();
+// Zwei Dateien zu lesen reichte nicht: ONBOARDING_PROVISIONING_FAILED steht nicht als
+// throw new Error(...) da, sondern als Rueckfall in stageError - und genau dieser Code traf einen
+// echten Kunden. Gesucht wird deshalb nach beidem, in allen Onboarding-Dateien.
+for(const file of ['onboarding.ts','onboarding-schema.ts','onboarding-recovery.ts'])
+  await readFile(`src/core/${file}`,'utf8').then(source=>{
+    for(const match of source.matchAll(/throw new Error\('([A-Z][A-Z0-9_]{4,})'\)/g))serverCodes.add(match[1]);
+    for(const match of source.matchAll(/stageError\([^,]+,'([A-Z][A-Z0-9_]{4,})'/g))serverCodes.add(match[1]);
+  }).catch(()=>undefined);
+assert.ok(serverCodes.size>=10,`zu wenige Einrichtungs-Fehlercodes gefunden: ${serverCodes.size}`);
+const unexplained=[...serverCodes].filter(code=>setupText(code)===setupGeneric).sort();
+assert.deepEqual(unexplained,[],
+  `diese Fehler der Einrichtung sagen dem Kunden nur "Bitte pruefe die Angaben": ${unexplained.join(', ')}`);
+
+// Der Kunde bekommt bei einem Stufenfehler zu Recht nur einen Sammelcode - SQL und Stacktraces
+// haben in einer Kundenmeldung nichts verloren. Genau deshalb muss die echte Ursache aber im
+// Betrieb ankommen: eine Kundeneinrichtung scheiterte in Produktion mit
+// ONBOARDING_PROVISIONING_FAILED, und weil nichts protokolliert und nichts gespeichert wurde, war
+// nicht herauszufinden, warum. Der wichtigste Pfad des Portals darf nicht spurlos scheitern.
+const onboardingServer=await readFile('src/core/onboarding.ts','utf8');
+const stageErrorFn=(onboardingServer.match(/function stageError\([\s\S]*?\n\}/)||[''])[0];
+assert.ok(stageErrorFn,'die Stufenfehler-Behandlung muss auffindbar bleiben');
+assert.match(stageErrorFn,/console\.error\(/,'ein maskierter Stufenfehler muss die echte Ursache protokollieren');
+assert.match(stageErrorFn,/stage/,'das Protokoll muss benennen, welche Stufe scheiterte');
+assert.match(stageErrorFn,/cause:/,'das Protokoll muss die tatsaechliche Meldung enthalten');
+assert.doesNotMatch(stageErrorFn,/token|raw|password/i,'der Einrichtungs-Token und Passwörter duerfen nie ins Protokoll');
+// Ein Konsolen-Log hilft nur, wer im richtigen Moment zusieht. Eine gescheiterte Einrichtung muss
+// deshalb einen dauerhaften Eintrag hinterlassen - sonst ist sie danach wieder nicht untersuchbar,
+// und genau daran scheiterte die Ursachensuche beim ersten echten Kunden.
+assert.match(onboardingServer,/action,status,detail_json,created_at\) VALUES\(\?,\?,'onboarding_failed','failed'/,
+  'eine gescheiterte Einrichtung muss dauerhaft festgehalten werden, nicht nur protokolliert');
+assert.match(onboardingServer,/cause:stageDetail\?\.cause/,'der Eintrag muss die tatsaechliche Ursache enthalten');
+assert.match(onboardingServer,/stage:stageDetail\?\.stage/,'der Eintrag muss die Stufe benennen');
+const failureRecord=(onboardingServer.match(/JSON\.stringify\(\{invitationId:[^}]*\}\)/)||[''])[0];
+assert.ok(failureRecord,'der Inhalt des Eintrags muss auffindbar bleiben');
+assert.doesNotMatch(failureRecord,/token|password|passwort/i,'in den Eintrag duerfen weder Token noch Passwort');
+// Der Eintrag darf den eigentlichen Fehler niemals verdecken.
+assert.match(onboardingServer,/'onboarding_failed','failed'[\s\S]{0,400}?\.run\(\)\.catch\(\(\)=>undefined\)/,
+  'schlaegt das Festhalten selbst fehl, darf es den urspruenglichen Fehler nicht ersetzen');
+
+// Und der Kunde bekommt weiterhin nur den Sammelcode, nicht die Ursache.
+assert.match(stageErrorFn,/new Error\(fallback\)/,'der Kunde darf nur den Sammelcode bekommen');
+assert.doesNotMatch(stageErrorFn,/new Error\(detail/,'die tatsaechliche Ursache darf nie in die Kundenmeldung wandern');
+
 // Jede Kundenoberfläche muss das Wörterbuch laden, sonst greift der Rückfall dort nicht.
 for(const shell of ['customer-admin.html','platform-admin.html','class-admin.html','dozentenportal.html',
                     'class-portal.html','onboarding.html','angebot.html','index.html','department-lead.html']){

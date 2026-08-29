@@ -11,7 +11,21 @@ async function api(url,opt={}){
 function money(cents,currency='EUR'){try{return new Intl.NumberFormat('de-DE',{style:'currency',currency}).format(Number(cents||0)/100)}catch{return `${(Number(cents||0)/100).toFixed(2)} ${currency}`}}
 function errorText(code){return ({
   ONBOARDING_NOT_FOUND:'Dieser Einrichtungslink ist ungültig.',ONBOARDING_EXPIRED:'Dieser Einrichtungslink ist abgelaufen. Bitte fordere einen neuen Link an.',ONBOARDING_UNAVAILABLE:'Dieser Einrichtungslink kann nicht mehr verwendet werden.',ONBOARDING_ALREADY_IN_PROGRESS:'Die Einrichtung wird bereits verarbeitet. Bitte einen Moment warten.',ONBOARDING_REQUIRED_FIELDS:'Bitte fülle alle mit * gekennzeichneten Felder aus.',CUSTOMER_EMAIL_INVALID:'Bitte eine gültige E-Mail-Adresse eingeben.',PASSWORD_LENGTH:'Das Passwort muss mindestens 10 Zeichen lang sein.',PASSWORD_CONFIRMATION_MISMATCH:'Die beiden Passwörter stimmen nicht überein.',PLAN_NOT_FOUND:'Das gewählte Paket ist nicht mehr verfügbar.',COURSE_COUNT_INVALID:'Bitte gib eine gültige Anzahl von Klassen/Kursen ein.',PLAN_COURSE_LIMIT_EXCEEDED:'Für diese Anzahl ist ein größeres Paket erforderlich.',DOUBLE_COST_CONFIRMATION_REQUIRED:'Bitte bestätige Buchung und Kosten jeweils separat.',SETUP_OPTION_COURSE_LIMIT:'Die gewählte Kompletteinrichtung passt nicht zur angegebenen Anzahl von Klassen/Kursen.',SETUP_OPTION_NOT_FOUND:'Die gewählte Einrichtungsoption ist nicht mehr verfügbar.',PAYMENT_ALREADY_PENDING:'Für diesen Kunden läuft bereits eine Zahlungsbuchung.',PAYMENT_DISABLED:'Die Zahlungsabwicklung im Portal ist derzeit deaktiviert.',OFFER_NOT_ACCEPTED:'Das zugehörige Angebot ist nicht mehr gültig.'
-})[code]||'Die Einrichtung konnte nicht abgeschlossen werden. Bitte prüfe die Angaben und versuche es erneut.';}
+,
+  // Diese fuenf Codes wirft der Server tatsaechlich, die Seite kannte sie aber nicht - jeder davon
+  // landete beim Kunden als "Bitte pruefe die Angaben", obwohl an den Angaben nichts falsch war.
+  ONBOARDING_ALREADY_COMPLETED:'Dieser Einrichtungslink wurde bereits verwendet. Das Portal ist eingerichtet - bitte melde dich stattdessen an.',
+  ONBOARDING_NOT_OPEN:'Dieser Einrichtungslink ist nicht mehr offen. Möglicherweise wird er gerade an anderer Stelle verwendet oder er wurde zurückgezogen.',
+  ONBOARDING_RECOVERY_REQUIRED:'Eine frühere Einrichtung über diesen Link wurde nicht zu Ende geführt. Bitte wende dich an die Betreuung, damit sie fortgesetzt werden kann.',
+  ONBOARDING_SCHEMA_INCOMPATIBLE:'Die Einrichtung ist auf diesem Stand noch nicht möglich. Bitte wende dich an die Betreuung.',
+  ONBOARDING_PROVISIONING_FAILED:'Das Portal konnte nicht angelegt werden. Es wurde nichts halb eingerichtet und dieser Link bleibt gültig - bitte versuche es erneut oder wende dich an die Betreuung.',
+  ONBOARDING_COMMERCE_FAILED:'Die kaufmännische Zuordnung schlug fehl, deshalb wurde die Einrichtung vollständig zurückgenommen. Dieser Link bleibt gültig - bitte versuche es erneut oder wende dich an die Betreuung.',
+  ONBOARDING_FINALIZATION_FAILED:'Die Einrichtung konnte im letzten Schritt nicht abgeschlossen werden. Es wurde nichts halb angelegt - bitte versuche es erneut oder wende dich an die Betreuung.',
+})[code]
+  // Bevor der Allgemeinplatz greift, das gemeinsame Woerterbuch fragen: es kennt inzwischen die
+  // Codes, die auf jedem Weg auftreten koennen, und uebersetzt sie in denselben Ton.
+  ||(window.KP_ERROR_TEXT&&window.KP_ERROR_TEXT(code)!==code&&!/^[A-Z][A-Z0-9_]*$/.test(String(window.KP_ERROR_TEXT(code)))?window.KP_ERROR_TEXT(code):'')
+  ||'Die Einrichtung konnte nicht abgeschlossen werden. Bitte prüfe die Angaben und versuche es erneut.';}
 
 function renderForm(inv){
   const locked=inv.locked_offer||null,lockedOffer=locked?.offer||null,lockedPilot=lockedOffer?.offerKind==='pilot',lockedPaid=!!locked&&!lockedPilot;
