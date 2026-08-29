@@ -147,4 +147,70 @@ const unknown=[...new Set(read)].filter(field=>!sessionFields.has(field));
 assert.deepEqual(unknown,[],`die Abnahme liest Felder, die /api/auth/me nicht liefert: ${unknown.join(', ')}`);
 assert.ok(read.includes('userId'),'die Abnahme muss die Kennung des Kontos nennen koennen');
 
+// Jede Seite, die eine gesperrte Produktion sperrt, darf dort nicht mit dem Verhalten der
+// entsperrten geprueft werden. Die Seitenschleife des Dokumentenvertrags ueberspringt solche
+// Seiten bereits; der Block zu /angebot tat es nicht und verlangte auch in Produktion die Meldung
+// der Angebotsseite, obwohl dort die Sperrseite steht. Beide Modi muessen unterschieden werden.
+const documentContract=(browser.match(/async function publicDocumentContract\(\)\{[\s\S]*?\n\}/)||[''])[0];
+assert.ok(documentContract,'der Dokumentenvertrag muss auffindbar bleiben');
+assert.match(documentContract,/mode==='locked-production'&&MOBILE_RELEASE_LOCKED\.includes\(path\)/,
+  'die Seitenschleife muss gesperrte Seiten in Produktion ueberspringen');
+assert.match(documentContract,/if\(mode==='locked-production'\)\{[\s\S]*?nicht für den Produktivbetrieb freigegeben/,
+  '/angebot muss in der gesperrten Produktion gegen die Sperrseite geprueft werden');
+assert.match(documentContract,/\}else if\(!\/unvollständig\/i\.test\(offerText\)\)/,
+  'im Kandidatenmodus muss die Meldung der Angebotsseite weiterhin verlangt werden');
+assert.match(documentContract,/offerCalls\.length\)problems\.push/,
+  'ohne Token darf in keinem Modus ein Angebot abgefragt werden');
+
+// Die Release-Sperre antwortet auf den gesperrten Seiten mit 503 - genau das verlangt
+// lockedProductionSurface dort mit allowStatuses:[503] und prueft zusaetzlich den Text der
+// Sperrseite. Die Sammelpruefung am Ende meldete dieselben Antworten trotzdem als unerwartet.
+// Die Erwartung gehoert an die Navigation, die sie deklariert, nicht in eine zweite Liste.
+assert.match(browser,/allowStatuses\.includes\(response\.status\(\)\)\)routeAllowedErrors\.add\(/,
+  'eine ausdruecklich zugelassene Fehlerantwort muss an der Navigation vermerkt werden');
+assert.match(browser,/function expectedBrowserHttpError\(entry\)\{if\(routeAllowedErrors\.has\(/,
+  'die Sammelpruefung muss diese Antworten als erwartet erkennen');
+assert.match(browser,/allowStatuses:\[503\]\}\);if\(!\/noch nicht für den Produktivbetrieb freigegeben/,
+  'die gesperrten Seiten muessen weiterhin einzeln auf die Sperrseite geprueft werden');
+// Und nichts darf pauschal durchgehen: die Erwartung gilt nur fuer den genauen Status derselben
+// Antwort, nicht fuer die Adresse allein.
+assert.match(browser,/routeAllowedErrors\.add\(`\$\{response\.status\(\)\} \$\{response\.url\(\)\}`\)/,
+  'die Erwartung muss Status und Adresse zusammen festhalten');
+
+// Die Abnahme ignoriert in Produktion zwei Konsolenmeldungen: die CSP-Verweigerung eines
+// Inline-Skripts und den blockierten Cloudflare-Beacon. Das ist nur zulaessig, solange das Portal
+// selbst kein Inline-Skript ausliefert - sonst wuerde die Ausnahme einen echten Befund verdecken.
+// Dieser Beweis wird hier gefuehrt, nicht angenommen.
+const inlineScript=/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
+const workerFiles=[];
+async function collectTs(dir){
+  for(const entry of await readdir(dir,{withFileTypes:true})){
+    const full=`${dir}/${entry.name}`;
+    if(entry.isDirectory())await collectTs(full); else if(entry.name.endsWith('.ts'))workerFiles.push(full);
+  }
+}
+await collectTs('src');
+const inlineOffenders=[];
+for(const file of workerFiles)
+  for(const match of (await readFile(file,'utf8')).matchAll(inlineScript))
+    if(match[1].trim())inlineOffenders.push(`${file} (${match[1].trim().length} Zeichen)`);
+for(const page of await readdir('public'))
+  if(page.endsWith('.html'))
+    for(const match of (await readFile(`public/${page}`,'utf8')).matchAll(inlineScript))
+      if(match[1].trim())inlineOffenders.push(`public/${page} (${match[1].trim().length} Zeichen)`);
+assert.deepEqual(inlineOffenders,[],
+  `hier wird ein Inline-Skript ausgeliefert - damit verdeckt die Ausnahme fuer externe CSP-Meldungen einen echten Befund: ${inlineOffenders.join(', ')}`);
+assert.match(browser,/Refused to execute inline script/,'die Ausnahme muss benannt sein, damit sie pruefbar bleibt');
+assert.match(browser,/static\\\.cloudflareinsights\\\.com/,'der blockierte Beacon muss namentlich ausgenommen sein, nicht pauschal jede CSP-Meldung');
+assert.doesNotMatch(browser,/if\(\/Content Security Policy\/i\.test\(text\)\)return false;/,
+  'CSP-Meldungen duerfen nicht pauschal ignoriert werden');
+// Der Beacon taucht in zwei Listen auf: als Konsolenmeldung und als fehlgeschlagene Anfrage.
+// Beide Male darf nur genau dieser Host wegfallen, und nur wenn die CSP der Grund war.
+assert.match(browser,/const CSP_BLOCKED_EXTERNAL=\/\^https:\\\/\\\/static\\\.cloudflareinsights\\\.com\\\//,
+  'der geblockte Beacon-Host muss namentlich benannt sein');
+assert.match(browser,/if\(\/csp\/i\.test\(errorText\)&&CSP_BLOCKED_EXTERNAL\.test\(request\.url\(\)\)\)return;/,
+  'nur eine von der CSP verweigerte Anfrage an genau diesen Host darf entfallen');
+assert.doesNotMatch(browser,/if\(\/csp\/i\.test\(errorText\)\)return;/,
+  'nicht jede von der CSP verweigerte Anfrage darf entfallen - nur die des benannten Hosts');
+
 console.log('Commercial production acceptance contract: OK');
