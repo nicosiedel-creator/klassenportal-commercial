@@ -91,13 +91,33 @@ const onboardingBody=onboardingSource.slice(onboardingSource.indexOf('function e
 const setupText=new Function('window',`${onboardingBody}\nreturn errorText;`)({KP_ERROR_TEXT:t});
 const setupGeneric=setupText('EIN_CODE_DEN_ES_NICHT_GIBT');
 const serverCodes=new Set();
-for(const file of ['onboarding.ts','onboarding-schema.ts'])
-  for(const match of (await readFile(`src/core/${file}`,'utf8')).matchAll(/throw new Error\('([A-Z][A-Z0-9_]{4,})'\)/g))
-    serverCodes.add(match[1]);
+// Zwei Dateien zu lesen reichte nicht: ONBOARDING_PROVISIONING_FAILED steht nicht als
+// throw new Error(...) da, sondern als Rueckfall in stageError - und genau dieser Code traf einen
+// echten Kunden. Gesucht wird deshalb nach beidem, in allen Onboarding-Dateien.
+for(const file of ['onboarding.ts','onboarding-schema.ts','onboarding-recovery.ts'])
+  await readFile(`src/core/${file}`,'utf8').then(source=>{
+    for(const match of source.matchAll(/throw new Error\('([A-Z][A-Z0-9_]{4,})'\)/g))serverCodes.add(match[1]);
+    for(const match of source.matchAll(/stageError\([^,]+,'([A-Z][A-Z0-9_]{4,})'/g))serverCodes.add(match[1]);
+  }).catch(()=>undefined);
 assert.ok(serverCodes.size>=10,`zu wenige Einrichtungs-Fehlercodes gefunden: ${serverCodes.size}`);
 const unexplained=[...serverCodes].filter(code=>setupText(code)===setupGeneric).sort();
 assert.deepEqual(unexplained,[],
   `diese Fehler der Einrichtung sagen dem Kunden nur "Bitte pruefe die Angaben": ${unexplained.join(', ')}`);
+
+// Der Kunde bekommt bei einem Stufenfehler zu Recht nur einen Sammelcode - SQL und Stacktraces
+// haben in einer Kundenmeldung nichts verloren. Genau deshalb muss die echte Ursache aber im
+// Betrieb ankommen: eine Kundeneinrichtung scheiterte in Produktion mit
+// ONBOARDING_PROVISIONING_FAILED, und weil nichts protokolliert und nichts gespeichert wurde, war
+// nicht herauszufinden, warum. Der wichtigste Pfad des Portals darf nicht spurlos scheitern.
+const onboardingServer=await readFile('src/core/onboarding.ts','utf8');
+const stageErrorFn=(onboardingServer.match(/function stageError\([\s\S]*?\n\}/)||[''])[0];
+assert.ok(stageErrorFn,'die Stufenfehler-Behandlung muss auffindbar bleiben');
+assert.match(stageErrorFn,/console\.error\(/,'ein maskierter Stufenfehler muss die echte Ursache protokollieren');
+assert.match(stageErrorFn,/stage/,'das Protokoll muss benennen, welche Stufe scheiterte');
+assert.match(stageErrorFn,/cause:/,'das Protokoll muss die tatsaechliche Meldung enthalten');
+assert.doesNotMatch(stageErrorFn,/token|raw|password/i,'der Einrichtungs-Token und Passwörter duerfen nie ins Protokoll');
+// Und der Kunde bekommt weiterhin nur den Sammelcode, nicht die Ursache.
+assert.match(stageErrorFn,/return new Error\(fallback\);/,'die Ursache darf die Kundenmeldung nicht erreichen');
 
 // Jede Kundenoberfläche muss das Wörterbuch laden, sonst greift der Rückfall dort nicht.
 for(const shell of ['customer-admin.html','platform-admin.html','class-admin.html','dozentenportal.html',

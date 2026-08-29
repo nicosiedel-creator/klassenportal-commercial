@@ -18,6 +18,8 @@ function errorText(code){return ({
   ONBOARDING_NOT_OPEN:'Dieser Einrichtungslink ist nicht mehr offen. Möglicherweise wird er gerade an anderer Stelle verwendet oder er wurde zurückgezogen.',
   ONBOARDING_RECOVERY_REQUIRED:'Eine frühere Einrichtung über diesen Link wurde nicht zu Ende geführt. Bitte wende dich an die Betreuung, damit sie fortgesetzt werden kann.',
   ONBOARDING_SCHEMA_INCOMPATIBLE:'Die Einrichtung ist auf diesem Stand noch nicht möglich. Bitte wende dich an die Betreuung.',
+  ONBOARDING_PROVISIONING_FAILED:'Das Portal konnte nicht angelegt werden. Es wurde nichts halb eingerichtet und dieser Link bleibt gültig - bitte versuche es erneut oder wende dich an die Betreuung.',
+  ONBOARDING_COMMERCE_FAILED:'Die kaufmännische Zuordnung schlug fehl, deshalb wurde die Einrichtung vollständig zurückgenommen. Dieser Link bleibt gültig - bitte versuche es erneut oder wende dich an die Betreuung.',
   ONBOARDING_FINALIZATION_FAILED:'Die Einrichtung konnte im letzten Schritt nicht abgeschlossen werden. Es wurde nichts halb angelegt - bitte versuche es erneut oder wende dich an die Betreuung.',
 })[code]
   // Bevor der Allgemeinplatz greift, das gemeinsame Woerterbuch fragen: es kennt inzwischen die
