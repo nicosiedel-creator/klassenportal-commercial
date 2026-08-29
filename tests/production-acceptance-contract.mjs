@@ -147,4 +147,19 @@ const unknown=[...new Set(read)].filter(field=>!sessionFields.has(field));
 assert.deepEqual(unknown,[],`die Abnahme liest Felder, die /api/auth/me nicht liefert: ${unknown.join(', ')}`);
 assert.ok(read.includes('userId'),'die Abnahme muss die Kennung des Kontos nennen koennen');
 
+// Jede Seite, die eine gesperrte Produktion sperrt, darf dort nicht mit dem Verhalten der
+// entsperrten geprueft werden. Die Seitenschleife des Dokumentenvertrags ueberspringt solche
+// Seiten bereits; der Block zu /angebot tat es nicht und verlangte auch in Produktion die Meldung
+// der Angebotsseite, obwohl dort die Sperrseite steht. Beide Modi muessen unterschieden werden.
+const documentContract=(browser.match(/async function publicDocumentContract\(\)\{[\s\S]*?\n\}/)||[''])[0];
+assert.ok(documentContract,'der Dokumentenvertrag muss auffindbar bleiben');
+assert.match(documentContract,/mode==='locked-production'&&MOBILE_RELEASE_LOCKED\.includes\(path\)/,
+  'die Seitenschleife muss gesperrte Seiten in Produktion ueberspringen');
+assert.match(documentContract,/if\(mode==='locked-production'\)\{[\s\S]*?nicht für den Produktivbetrieb freigegeben/,
+  '/angebot muss in der gesperrten Produktion gegen die Sperrseite geprueft werden');
+assert.match(documentContract,/\}else if\(!\/unvollständig\/i\.test\(offerText\)\)/,
+  'im Kandidatenmodus muss die Meldung der Angebotsseite weiterhin verlangt werden');
+assert.match(documentContract,/offerCalls\.length\)problems\.push/,
+  'ohne Token darf in keinem Modus ein Angebot abgefragt werden');
+
 console.log('Commercial production acceptance contract: OK');

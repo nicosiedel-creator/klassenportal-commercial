@@ -560,8 +560,18 @@ async function publicDocumentContract(){
     await doc.waitForTimeout(1200);
     doc.off('request',listener);
     if(offerCalls.length)problems.push(`/angebot ohne Token fragte ${offerCalls.join(', ')} ab`);
-    const offerText=await doc.locator('body').innerText();
-    if(!/unvollständig/i.test(offerText))problems.push(`/angebot ohne Token meldet nicht, dass der Link unvollständig ist: ${offerText.replace(/\s+/g,' ').trim().slice(0,120)}`);
+    const offerText=(await doc.locator('body').innerText()).replace(/\s+/g,' ').trim();
+    // /angebot gehoert zu den Seiten, die eine gesperrte Produktion sperrt - die Schleife oben
+    // ueberspringt sie dort bereits. Dieser Block tat es nicht und verlangte auch in Produktion die
+    // Meldung der Angebotsseite, obwohl dort die Sperrseite steht. Beide Modi pruefen jetzt das,
+    // was in ihnen richtig ist; die Zusicherung, dass ohne Token kein Angebot abgefragt wird, gilt
+    // in beiden.
+    if(mode==='locked-production'){
+      if(!/nicht verfügbar|nicht für den Produktivbetrieb freigegeben/i.test(offerText))
+        problems.push(`/angebot zeigt in der gesperrten Produktion weder Sperrhinweis noch Freigabehinweis: ${offerText.slice(0,120)}`);
+    }else if(!/unvollständig/i.test(offerText)){
+      problems.push(`/angebot ohne Token meldet nicht, dass der Link unvollständig ist: ${offerText.slice(0,120)}`);
+    }
 
     if(problems.length)fail(`public document contract: ${problems.join(' | ')}`);
     console.log(`Public document contract (${mode}): OK`);
