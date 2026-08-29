@@ -30,6 +30,27 @@ for(const unknown of ['EIN_VOELLIG_NEUER_CODE','TWIN_SCOPE_INVALID_XYZ','ABC_DEF
 assert.equal(t('Laden fehlgeschlagen'),'Laden fehlgeschlagen','lesbare Meldungen dürfen nicht überschrieben werden');
 assert.ok(t('').length>15,'ein leerer Fehler braucht trotzdem eine Aussage');
 
+// Ein Fehler ohne Meldung ist kein Text. Geprüft wurde bisher nur der leere String - ein
+// Error ohne Meldung fiel dagegen auf das Objekt selbst zurück und zeigte dem Kunden "Error",
+// ein beliebiges Objekt sogar "[object Object]".
+for(const value of [new Error(''),new Error(),{},[],0,null,undefined,new Error('   ')]){
+  const text=t(value);
+  assert.ok(text.length>15,`${String(value)} braucht einen Satz, nicht "${text}"`);
+  assert.doesNotMatch(text,/^Error$|object Object/,`${String(value)} zeigt einen Entwicklertext: "${text}"`);
+}
+// Eine echte Meldung im Error bleibt selbstverständlich erhalten.
+assert.equal(t(new Error('Laden fehlgeschlagen')),'Laden fehlgeschlagen');
+
+// Dieselbe Regel gilt für die öffentliche Eingangsseite, die das Wörterbuch nicht laden kann.
+const intake=await readFile('public/intake-public-upload.js','utf8');
+const upload=new Function(intake.slice(0,intake.indexOf('\n}',intake.indexOf('function uploadFehler'))+2)+'\nreturn uploadFehler;')();
+for(const value of [new Error(''),{},null,'GANZ_NEUER_CODE']){
+  const text=upload(value);
+  assert.ok(text.length>15,`Eingangsseite: ${String(value)} braucht einen Satz, nicht "${text}"`);
+  assert.doesNotMatch(text,/^Error$|object Object|^[A-Z][A-Z0-9_]*$/,`Eingangsseite zeigt einen Entwicklertext: "${text}"`);
+}
+assert.equal(upload(new Error('Netzwerk unterbrochen')),'Netzwerk unterbrochen','lesbare Meldungen bleiben auch dort erhalten');
+
 // Jede Kundenoberfläche muss das Wörterbuch laden, sonst greift der Rückfall dort nicht.
 for(const shell of ['customer-admin.html','platform-admin.html','class-admin.html','dozentenportal.html',
                     'class-portal.html','onboarding.html','angebot.html','index.html','department-lead.html']){

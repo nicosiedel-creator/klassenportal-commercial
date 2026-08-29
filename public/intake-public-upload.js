@@ -12,7 +12,10 @@ const INTAKE_FEHLER={
   FILES_REQUIRED:'Bitte zuerst eine Datei auswählen.',
 };
 function uploadFehler(x){
-  const code=String((x&&x.message)||x||'').trim();
+  // Wie im gemeinsamen Woerterbuch: nur eine echte Zeichenkette zaehlt als Meldung, sonst
+  // stuende hier "Error" oder "[object Object]" vor dem Benutzer.
+  const raw=x&&typeof x.message==='string'?x.message:(typeof x==='string'?x:'');
+  const code=String(raw).trim();
   if(INTAKE_FEHLER[code])return INTAKE_FEHLER[code];
   if(!code||/^[A-Z][A-Z0-9_]{2,}$/.test(code))return INTAKE_FEHLER.UPLOAD_FAILED;
   return code;
