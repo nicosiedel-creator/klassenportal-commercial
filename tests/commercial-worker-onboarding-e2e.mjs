@@ -26,6 +26,14 @@ function parseEnvFile(){
   return vars;
 }
 async function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
+async function stopWorker(){
+  const running=worker;worker=null;
+  if(!running)return;
+  const exited=new Promise(resolve=>{running.once('exit',resolve);running.once('error',resolve);});
+  try{running.kill('SIGTERM');}catch{}
+  await Promise.race([exited,sleep(15000)]);
+  await sleep(250);
+}
 async function api(path,{method='GET',body,headers={}}={}){
   const requestHeaders={...headers};
   if(body!==undefined)requestHeaders['content-type']='application/json';
@@ -163,6 +171,9 @@ try{
   await platformAccountAudit(fixtureEnv);
   await acceptedOfferAudit(fixtureEnv);
   await concurrencyAudit(fixtureEnv);
+  // Der persistierte Zustand wird als SQLite-Datei gelesen. Solange der Worker sie offen haelt,
+  // kann SQLite den lesenden Prozess mit SQLITE_BUSY abweisen. Deshalb erst anhalten, dann lesen.
+  await stopWorker();
   run(process.execPath,['scripts/commercial-onboarding-e2e-state.mjs','verify',config],{env:{PAYMENTS_ENABLED:'false'}});
   console.log('Commercial local Worker + migrated D1 runtime acceptance: OK');
 }catch(error){

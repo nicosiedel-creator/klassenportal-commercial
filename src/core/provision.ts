@@ -122,12 +122,13 @@ async function provisionInternal(env:Env,actorUserId:string,input:ProvisionInput
   statements.push(env.DB.prepare("INSERT INTO provisioning_log(id,tenant_id,action,status,detail_json,created_at) VALUES(?,?,'tenant_created','completed',?,?)").bind(id('prv_'),tenantId,JSON.stringify({adminEmail:email,courseId,planId,actorUserId,tenantUsersLinked:tenantUsers.available,tenantUsersColumns:tenantUsers.available?[...tenantUsers.columns].sort():[]}),ts));
   await env.DB.batch(statements);
 
-  // Nach dem Anlegen, einzeln und nachsichtig: gelingt der Platzhalter, ist alles wie bisher;
-  // weist ihn eine Berechtigungsregel ab, bleibt die Zeile weg - und das bedeutet fuer jeden
-  // Leser dasselbe wie enabled=0. Das Portal existiert in beiden Faellen.
-  for(const f of optionalFeatures)if(guardedFeatures.has(f))
-    await env.DB.prepare("INSERT OR IGNORE INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at) VALUES(?,?,0,'plan',?)")
-      .bind(tenantId,f,ts).run().catch(()=>undefined);
+  // Nach dem Anlegen, in einem eigenen und nachsichtigen Nachtrag: gelingt er, ist alles wie
+  // bisher; weist eine Berechtigungsregel ihn ab, bleiben die Zeilen weg - und das bedeutet fuer
+  // jeden Leser dasselbe wie enabled=0. Das Portal existiert in beiden Faellen. Bewusst ein
+  // einziger Einsatz statt sieben Einzelrunden: das ist eine Fahrt statt sieben.
+  await env.DB.batch(optionalFeatures.filter(f=>guardedFeatures.has(f)).map(f=>
+    env.DB.prepare("INSERT OR IGNORE INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at) VALUES(?,?,0,'plan',?)")
+      .bind(tenantId,f,ts))).catch(()=>undefined);
 
   if(needsActivation){
     const pseudoAuth:CoreAuthContext={userId:actorUserId,role:'platform_admin',tenantIds:[tenantId],courseIds:[],isPlatformAdmin:true,session:{userId:actorUserId,email:'',displayName:'',isPlatformAdmin:true,mustChangePassword:false,tenantRoles:[]}};

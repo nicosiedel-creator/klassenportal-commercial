@@ -10,11 +10,27 @@ if(!/browser-e2e/i.test(config))throw new Error('E2E_STATE_GUARD_REQUIRES_BROWSE
 if(String(process.env.PAYMENTS_ENABLED||'false').toLowerCase()==='true')throw new Error('E2E_STATE_GUARD_REFUSES_ENABLED_PAYMENTS');
 
 const npx=process.platform==='win32'?'npx.cmd':'npx';
+// Der lokale D1-Zustand liegt als SQLite-Datei vor. Liest ein zweiter Wrangler-Prozess sie,
+// waehrend der Entwicklungs-Worker noch auf sie schreibt, weist SQLite den Zugriff mit
+// SQLITE_BUSY ab. Das ist die Dateisperre der Testumgebung und keine Aussage ueber das Produkt:
+// in Produktion teilen sich keine zwei Prozesse eine D1-Datei. Deshalb wenige kurze
+// Wiederholungen genau fuer diesen Fall - jeder andere Fehler bleibt sofort ein Fehler.
+const LOCK_CONTENTION=/SQLITE_BUSY|database is locked/i;
+function sleepSync(ms){Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,ms);}
 function runWrangler(args,{capture=false}={}){
-  const result=spawnSync(npx,['wrangler',...args],{encoding:'utf8',stdio:capture?['ignore','pipe','pipe']:'inherit',env:{...process.env,PAYMENTS_ENABLED:'false'}});
-  if(result.error)throw result.error;
-  if((result.status??1)!==0)throw new Error(`WRANGLER_E2E_FAILED:${result.stderr||result.stdout||result.status}`);
-  return result.stdout||'';
+  let failure='';
+  for(let attempt=0;attempt<6;attempt++){
+    const result=spawnSync(npx,['wrangler',...args],{encoding:'utf8',stdio:['ignore','pipe','pipe'],env:{...process.env,PAYMENTS_ENABLED:'false'}});
+    if(result.error)throw result.error;
+    if((result.status??1)===0){
+      if(!capture){process.stdout.write(result.stdout||'');process.stderr.write(result.stderr||'');}
+      return result.stdout||'';
+    }
+    failure=`${result.stderr||''}${result.stdout||''}`.trim()||String(result.status);
+    if(!LOCK_CONTENTION.test(failure))break;
+    sleepSync(250*(attempt+1));
+  }
+  throw new Error(`WRANGLER_E2E_FAILED:${failure}`);
 }
 function parseJson(text){
   const clean=String(text||'').replace(/\u001b\[[0-9;]*m/g,'').trim();
