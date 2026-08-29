@@ -50,8 +50,31 @@ const coveredByWorker=path=>workerFirst.some(pattern=>
 // laufen wie jede andere Seite.
 assert.ok(coveredByWorker('/'),'die Anmeldeseite unter / muss durch den Worker laufen');
 
-const VFA13_PAGES=['vfa-study-entry.html','vfa-study-presenter.html','vfa-study-quiz.html'];
-const shippedPages=(await readdir('public')).filter(name=>name.endsWith('.html')&&!VFA13_PAGES.includes(name));
+// Ohne Ausnahme: auch die VFA13-Zweitadressen (/vfa-study-entry, -presenter, -quiz) laufen jetzt
+// durch den Worker. Erreichbar bleiben sie dabei genau wie zuvor, weil sie neben ihren kanonischen
+// Routen /lernabend-vfa13 und /quiz/vfa13/* von der Release-Sperre ausgenommen sind.
+const bypassSourceLine=index.split('\n').find(line=>line.includes('function releaseGateBypass'))||'';
+assert.ok(bypassSourceLine,'die Umgehungsliste der Release-Sperre muss auffindbar bleiben');
+const shippedPages=(await readdir('public')).filter(name=>name.endsWith('.html'));
+// /testcenter.html und /testcenter sind dieselbe Seite - der Asset-Speicher leitet die eine auf die
+// andere um. Solange die Release-Sperre nur die endungslose Schreibweise als ausgenommen kannte,
+// sperrte sie die .html-Form: /testcenter.html antwortete in Produktion mit 503, obwohl
+// /testcenter erreichbar blieb. Dasselbe gilt fuer /index gegenueber /.
+assert.match(bypassSourceLine,/replace\(\/\\\.html\$\/,''\)/,
+  'die Release-Sperre muss die .html-Schreibweise auf dieselbe Seite zurueckfuehren');
+assert.match(bypassSourceLine,/trimmed==='\/index'\?'\/':/,
+  '/index ist nur eine zweite Schreibweise fuer die Anmeldeseite und muss ebenso behandelt werden');
+
+// Gelesen ist nicht geprueft: die Regel wird ausgefuehrt. Eine oeffentliche Seite muss in beiden
+// Schreibweisen erreichbar bleiben, eine geschuetzte in beiden gesperrt.
+const bypass=new Function('LEGAL_PATHS',
+  `${bypassSourceLine.replace(/:string/g,'').replace(/:boolean/g,'').replace(/ as any/g,'')}; return releaseGateBypass;`)(
+  ['/impressum','/datenschutz','/agb','/avv']);
+for(const path of ['/testcenter','/testcenter.html','/certificate-verify','/certificate-verify.html','/','/index','/index.html'])
+  assert.equal(bypass(path),true,`${path} muss von der Release-Sperre ausgenommen bleiben`);
+for(const path of ['/customer-admin','/customer-admin.html','/kunden-admin','/department-lead','/partner'])
+  assert.equal(bypass(path),false,`${path} darf die Release-Sperre nicht umgehen`);
+
 assert.ok(shippedPages.length>=10,`zu wenige ausgelieferte Seiten gefunden: ${shippedPages.length}`);
 const unhardened=shippedPages
   .map(name=>'/'+name.replace(/\.html$/,''))

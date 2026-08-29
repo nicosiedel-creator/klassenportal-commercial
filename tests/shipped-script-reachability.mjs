@@ -49,26 +49,11 @@ for(;;){
   for(const script of found)dead.add(script);
 }
 
-// Diese 14 Dateien werden heute ausgeliefert, ohne dass irgendetwas sie laedt. Mehrere sind von
-// anderen Pruefungen ausdruecklich stillgelegt ("must not silently return to runtime"), wurden aber
-// nie entfernt. Sie stehen hier namentlich, damit der Bestand eingefroren ist: die Liste darf
-// schrumpfen, niemals wachsen. Ein neues verwaistes Skript laesst diese Pruefung sofort scheitern.
-const KNOWN=[
-  'attendance-classbook-ui.js',   // von scripts/portal-ux-check.mjs in jeder Oberflaeche verboten
-  'class-admin-scope-guard.js',   // class-admin.html laedt allein class-admin-entry.js
-  'class-admin-ui.js',
-  'class-admin-workspace.js',
-  'class-enterprise-scope-ui.js',
-  'commerce-ui.js',               // Vorgaenger von commerce-safe-ui.js, mit Checkout-Aufrufen
-  'customer-admin-nav-labels.js', // von tests/customer-admin-navigation.mjs stillgelegt
-  'customer-pretest-polish.js',   // von tests/runtime-asset-contracts.mjs stillgelegt
-  'platform-offer-email-ui.js',   // abgeloest: platform-offers-ui.js versendet ueber /publish mit
-  'portal-learning-compass-ui.js',
-  'portal-performance.js',        // von tests/student-portal-performance-layout.mjs stillgelegt
-  'student-dashboard-ui.js',      // abgeloest durch student-dashboard-v2.js
-  'timetable-bulk-v2.js',         // abgeloest durch timetable-bulk-v3.js
-  'timetable-bulk.js'
-];
+// Es gibt keine Ausnahmen mehr. Die vierzehn Altlasten, die hier namentlich standen - darunter
+// eine vollstaendige Kasse mit Checkout-Aufrufen, obwohl die Zahlungsabwicklung stillgelegt ist,
+// und fuenf Dateien, die andere Pruefungen ausdruecklich verboten - sind entfernt. Ein Skript, das
+// ausgeliefert, aber von nichts geladen wird, laesst diese Pruefung ab sofort sofort scheitern.
+const KNOWN=[];
 const known=new Set(KNOWN);
 
 const zombies=[...dead].filter(script=>!known.has(script));
