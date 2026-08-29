@@ -32,10 +32,22 @@ await writeFile(logPath,'Ready on http://127.0.0.1:8787\n');
 }
 
 // Ein Neustart waehrend der Messung setzt die Serie zurueck und darf nicht als bereit gelten.
+//
+// Die Stoerung muss dabei bei jedem Schreiben streng wachsen. Eine zufaellige Anzahl Zeilen
+// reicht nicht: der Waechter vergleicht Zaehlerstaende, und zwei aufeinanderfolgende Messungen
+// koennen zufaellig denselben Stand sehen - dann bemerkt er den Neustart nicht und die Serie
+// laeuft durch. Genau so ist dieser Test auf einem schnellen Runner grundlos gescheitert,
+// waehrend er lokal durchlief. Ein hochzaehlender Stand und ein Takt deutlich unter dem
+// Abfrageabstand des Waechters (700ms) machen daraus eine Gewissheit statt einer Wette.
 {
-  const ticker=setInterval(()=>{void writeFile(logPath,'Ready\nThe file src changed, restarting build...\n'.repeat(Math.ceil(Math.random()*3)+1)).catch(()=>{});},900);
+  let restarts=0;
+  const ticker=setInterval(()=>{
+    restarts++;
+    void writeFile(logPath,`Ready\n${'The file src changed, restarting build...\n'.repeat(restarts)}`).catch(()=>{});
+  },200);
   const {code,out}=await wait(url,logPath);
   clearInterval(ticker);
+  assert.ok(restarts>=3,`die Stoerung muss waehrend der Messung mehrfach zugeschlagen haben, war ${restarts}`);
   assert.equal(code,1,`ein Server, der waehrend der Messung neu startet, darf nicht als bereit gelten:\n${out}`);
   assert.match(out,/neu gestartet/);
 }
