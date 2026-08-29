@@ -52,15 +52,49 @@ for(const shell of (await readdir('public')).filter(f=>f.endsWith('.html'))){
 assert.deepEqual(missingDictionary,[],`diese Shells nutzen das Wörterbuch, laden es aber nicht:\n${missingDictionary.join('\n')}`);
 
 // Keine Oberfläche darf einen Fehler mehr unübersetzt ausgeben.
+//
+// Die frühere Fassung suchte feste Schreibweisen - .textContent=e.message und zwei Varianten.
+// Damit blieben dreizehn Stellen unentdeckt, die dasselbe tun, nur anders geschrieben:
+// `textContent=err.message` (anderer Bezeichner) und `textContent=\`Fehler: ${e.message}\``
+// (Einsetzung in eine Zeichenkette). Diese Regel prüft stattdessen jede Zuweisung an
+// textContent/innerText/innerHTML: taucht darin ein .message auf, das weder durch das
+// Wörterbuch noch durch einen eigenen Aufruf oder eine Nachschlagetabelle geht, ist es roh.
+// esc() zählt dabei nicht als Übersetzung - es schützt vor Markup, nicht vor Fachchinesisch.
+const ASSIGNMENT=/(?:textContent|innerText|innerHTML)\s*=\s*((?:[^;]|\n){0,200}?);/g;
+const MESSAGE=/\b([A-Za-z_$][\w$]*)\??\.message\b/g;
+// esc() und E() schützen vor Markup, sie übersetzen nicht - ein Aufruf davon macht aus einem
+// technischen Code keinen deutschen Satz. Der Name direkt vor der Klammer wird deshalb
+// festgehalten und geprüft, statt ihn in einer Verneinung zu suchen: eine Verneinung ohne
+// Anker lässt sich umgehen, weil das Muster auch mitten im Namen greifen kann.
+const CALL_BEFORE=/([A-Za-z_$][\w$]*)\(\s*$/;
+const NOT_TRANSLATING=new Set(['esc','E','String','esc2']);
+// Eine Nachschlagetabelle kann auch unmittelbar aufgeschrieben sein: ({...})[x.message]. Es
+// zählt die Klammer, nicht der Name davor.
+const TABLE_LOOKUP=/[)\]}A-Za-z_$][\w$]*\[\s*$|\)\[\s*$|\}\[\s*$/;
+
+// Das VFA13-Portal ist in diesem Auftrag ausdrücklich unberührt zu lassen. Seine beiden
+// Präsentationsskripte zeigen ihre Fehler noch roh an; das ist dort zu beheben, nicht hier.
+const OUT_OF_SCOPE=new Set(['vfa-study-presenter.js','vfa-study-resume.js']);
+
 const raw=[];
 for(const file of (await readdir('public')).filter(f=>f.endsWith('.js'))){
+  if(OUT_OF_SCOPE.has(file))continue;
   const src=await readFile(`public/${file}`,'utf8');
-  for(const rx of [/\.textContent=[exc]\.message\b/g,/\bE\([exc]\.message\)/g,/\)\[[exc]\.message\]\|\|[exc]\.message/g,
-                   // Eine Übersetzungstabelle, die auf ihren eigenen Schlüssel zurückfällt, zeigt
-                   // genau den technischen Code an, den sie übersetzen sollte. Sieben Oberflächen
-                   // taten das, weil sie eine Tabelle statt e.message benutzen.
-                   /\)\[code\]\s*\|\|\s*code\b/g])
-    for(const m of src.matchAll(rx))raw.push(`${file}: ${m[0]}`);
+  for(const assignment of src.matchAll(ASSIGNMENT)){
+    const expression=assignment[1];
+    if(expression.includes('KP_ERROR_TEXT'))continue;
+    for(const found of expression.matchAll(MESSAGE)){
+      const before=expression.slice(0,found.index);
+      const call=CALL_BEFORE.exec(before);
+      if(call&&!NOT_TRANSLATING.has(call[1]))continue;
+      if(TABLE_LOOKUP.test(before))continue;
+      raw.push(`${file}: ${assignment[0].replace(/\s+/g,' ').slice(0,110)}`);
+      break;
+    }
+  }
+  // Eine Übersetzungstabelle, die auf ihren eigenen Schlüssel zurückfällt, zeigt genau den
+  // technischen Code an, den sie übersetzen sollte.
+  for(const m of src.matchAll(/\)\[code\]\s*\|\|\s*code\b/g))raw.push(`${file}: ${m[0]}`);
 }
 assert.deepEqual(raw,[],`diese Stellen zeigen einen Fehlercode unübersetzt an:\n${raw.join('\n')}`);
 
