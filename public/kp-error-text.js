@@ -145,7 +145,7 @@
     PLATFORM_ADMIN_RESET_FORBIDDEN:'Das Passwort einer Plattformverwaltung lässt sich hier nicht zurücksetzen.',
     PRIMARY_RESPONSIBILITY_TENANT_ADMIN_REQUIRED:'Die Hauptverantwortung darf nur die Organisationsverwaltung vergeben.',
     STRONG_AUTH_REQUIRED:'Diese Aktion setzt eine Anmeldung mit Passwort oder Unternehmenszugang voraus.',
-    PLATFORM_ORIGIN_MISMATCH:'Die Anfrage kam nicht von der Plattformverwaltung. Bitte die Seite neu laden.',
+    PLATFORM_ORIGIN_MISMATCH:'Die Plattformverwaltung lässt sich nur über die offizielle Adresse des Portals anmelden.',
 
     // Nicht gefunden - benannt statt allgemein, damit klar ist, wonach gesucht wurde
     TENANT_NOT_FOUND:'Diese Organisation wurde nicht gefunden.',

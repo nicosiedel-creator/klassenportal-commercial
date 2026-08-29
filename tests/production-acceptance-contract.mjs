@@ -33,6 +33,25 @@ const sessionShape=(types.match(/export interface SessionUser \{([\s\S]*?)\n\}/)
 assert.ok(sessionShape,'die Sitzungsform muss als SessionUser auffindbar bleiben');
 const sessionFields=new Set([...sessionShape.matchAll(/^\s*([A-Za-z_][A-Za-z0-9_]*)\??\s*:/gm)].map(m=>m[1]));
 assert.ok(sessionFields.has('userId')&&sessionFields.has('isPlatformAdmin'),'die Sitzungsform wurde nicht richtig gelesen');
+// Eine Plattformsitzung wird nur an APP_ORIGIN ausgestellt - issueSession wirft sonst
+// PLATFORM_ORIGIN_MISMATCH (nachgemessen am lokalen Kandidaten: HTTP 403). Die Abnahme lief gegen
+// die workers.dev-Adresse und konnte deshalb nie hineinkommen; der Befund lautete jahrelang
+// "kein Plattformadmin", obwohl es an der Adresse lag. Die Anmeldung muss an genau dem Ursprung
+// stattfinden, den die Worker-Konfiguration als Produktionsursprung fuehrt.
+const workflow=await readFile('.github/workflows/commercial-production-acceptance.yml','utf8');
+const wrangler=JSON.parse(await readFile('wrangler.jsonc','utf8'));
+const appOrigin=String(wrangler.vars?.APP_ORIGIN||'');
+assert.match(appOrigin,/^https:\/\//,'APP_ORIGIN muss eine HTTPS-Produktionsdomain sein');
+const platformUrl=(workflow.match(/COMMERCIAL_PLATFORM_URL:\s*(\S+)/)||[])[1];
+assert.equal(platformUrl,appOrigin,'die Abnahme muss sich an APP_ORIGIN anmelden, sonst verweigert der Worker die Plattformsitzung');
+assert.match(browser,/const platformBase=\(process\.env\.COMMERCIAL_PLATFORM_URL\|\|base\)/,'die Abnahme braucht einen eigenen Ursprung fuer die Plattformanmeldung');
+assert.match(browser,/navigate\(page,`\$\{platformBase\}\/plattform-admin`/,'die Anmeldeseite muss ueber diesen Ursprung geoeffnet werden');
+// Die Sperrpruefung bleibt bewusst auf der workers.dev-Adresse: dort gilt die Sperre
+// bedingungslos, auf der Produktionsdomain haengt sie an der Freigabe der Worker-Version.
+const baseUrl=(workflow.match(/COMMERCIAL_BASE_URL:\s*(\S+)/)||[])[1];
+assert.notEqual(baseUrl,appOrigin,'die Sperrpruefung darf nicht auf die Produktionsdomain wandern, sonst prueft sie eine schwaechere Aussage');
+assert.match(String(baseUrl),/workers\.dev$/,'die Sperrpruefung muss den Worker direkt ansprechen');
+
 // /api/auth/me antwortet auch ohne Anmeldung mit 200 und user:null - nachgemessen am lokalen
 // Kandidaten. Die Abnahme wartete auf den Status statt auf einen Benutzer, brach deshalb schon im
 // ersten Durchlauf ab und meldete anschliessend "kein Plattformadmin", obwohl gar keine Sitzung

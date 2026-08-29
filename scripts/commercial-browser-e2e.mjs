@@ -9,6 +9,13 @@ const engine=ENGINES[engineName];
 if(!engine)throw new Error(`Unsupported E2E_BROWSER: ${engineName}`);
 
 const base=(process.env.COMMERCIAL_BASE_URL||'http://127.0.0.1:8787').replace(/\/$/,'');
+// Die Plattform-Anmeldung braucht einen eigenen Ursprung, und zwar aus einem Sicherheitsgrund:
+// issueSession wirft PLATFORM_ORIGIN_MISMATCH, sobald eine Plattformsitzung nicht an APP_ORIGIN
+// ausgestellt wird. Die Abnahme lief gegen die workers.dev-Adresse und konnte deshalb nie
+// hineinkommen - nachgemessen: HTTP 403, {"error":"PLATFORM_ORIGIN_MISMATCH"}. Die Sperrprüfung
+// bleibt trotzdem auf workers.dev, denn dort ist die Sperre bedingungslos; auf der Produktions-
+// domain haengt sie an der Freigabe der Worker-Version und waere damit eine schwaechere Aussage.
+const platformBase=(process.env.COMMERCIAL_PLATFORM_URL||base).replace(/\/$/,'');
 const mode=String(process.env.E2E_TARGET_MODE||'candidate').trim();
 const adminEmail=String(process.env.E2E_PLATFORM_EMAIL||'').trim();
 const adminPassword=String(process.env.E2E_PLATFORM_PASSWORD||'');
@@ -682,7 +689,10 @@ try{
   if(adminEmail&&adminPassword){
     if(mode!=='locked-production')console.log('authenticated live platform path is intentionally not executed against the local PR candidate');
     else{
-      await route('/plattform-admin');
+      const platformResponse=await navigate(page,`${platformBase}/plattform-admin`,{waitUntil:'domcontentloaded',timeout:30000});
+      if(!platformResponse)fail(`no response from ${new URL(platformBase).origin}/plattform-admin`);
+      if(platformResponse.status()!==200)fail(`platform administration is not reachable at ${new URL(platformBase).origin}: HTTP ${platformResponse.status()}`);
+      console.log(`platform sign-in runs against ${new URL(platformBase).origin}`);
       const email=page.locator('input[type="email"],input[name="email"],input[name="login"]').first(),password=page.locator('input[type="password"]').first();
       if(!(await email.count())||!(await password.count()))fail('platform login controls not found');
       await email.fill(adminEmail);await password.fill(adminPassword);
