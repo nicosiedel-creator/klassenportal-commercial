@@ -120,6 +120,14 @@ assert.ok(autoBody.indexOf('applyOrganizationImport')<autoBody.indexOf('applyPar
   'die Struktur muss vor den Personen angelegt werden');
 assert.ok(autoBody.indexOf('applyOrganizationImport')<autoBody.indexOf('buildParticipantPreview'),
   'der Teilnehmerentwurf muss nach dem Anlegen der Kurse neu gebaut werden');
+// Was die Automatik nicht uebernehmen konnte, darf nicht als "automatisch verarbeitet"
+// untergehen. Ein erreichtes Kurskontingent ist keine Unklarheit, sondern eine Entscheidung des
+// Kunden - und er erfaehrt sie nur, wenn sie ihm jemand sagt.
+assert.match(autoBody,/if\(skipped\)await createTask\(/,
+  'uebersprungene Eintraege muessen einen Vorgang ausloesen, statt still zu verschwinden');
+assert.match(autoBody,/reasons:\[\.\.\.skippedReasons\]/,
+  'der Vorgang muss die Gruende nennen, nicht nur eine Zahl');
+
 // Ausgefuehrt statt gelesen: die Regel, die entscheidet, was ohne Rueckfrage entstehen darf.
 const org=(over={})=>({type:'course',display_name:'Pflege 2026 A',email:null,course_id:null,course_name:'Pflege 2026 A',course_code:'PF26A',course_ref:'pf26a',subject_name:null,subject_short_name:null,confidence:100,warnings:[],source_row:0,...over});
 assert.equal(safeAutoOrganizationCandidate(org()),true,'ein eindeutiger Kurs muss ohne Rueckfrage entstehen');

@@ -96,6 +96,12 @@ if(action==='seed'){
   `);
   assert.equal(Number((query("SELECT COUNT(*) n FROM legal_configuration l JOIN seller_billing_profile s ON l.id=1 AND s.id=1 WHERE l.documents_enabled=1 AND l.provider_name IS NOT NULL AND l.legal_form IS NOT NULL AND l.representative IS NOT NULL AND l.support_email IS NOT NULL AND l.document_version IS NOT NULL AND s.legal_name IS NOT NULL AND s.street IS NOT NULL AND s.postal_code IS NOT NULL AND s.city IS NOT NULL AND s.country IS NOT NULL AND s.email IS NOT NULL;")[0]||{}).n||0),1,'local acceptance legal profile was not published');
 
+  // Die Abnahme des Ordner-Eingangs legt bei jedem Lauf Kurse an. Ohne Aufraeumen fuellt sich in
+  // einer wiederverwendeten lokalen Datenbank das Kurskontingent des Mandanten, und ein spaeterer
+  // Lauf scheitert mit COURSE_LIMIT_REACHED an seinem eigenen Vorlauf statt an einem Befund.
+  // Betroffen sind ausschliesslich die Kurse dieser Abnahme: ihr Code beginnt mit 'abn-'.
+  execute(`DELETE FROM courses WHERE code LIKE 'abn-a-%' OR code LIKE 'abn-b-%';`);
+
   for(const f of fixtures){
     const snap=snapshot(f),hash=b64Sha256(f.token);
     execute(`
@@ -158,7 +164,14 @@ if(action==='seed'){
   assert.equal(count(`SELECT COUNT(*) n FROM subscriptions s JOIN onboarding_invitations i ON i.tenant_id=s.tenant_id WHERE i.id IN (${ids}) AND s.status='active'`),2,'both completed tenants need active manual subscriptions');
   assert.equal(count(`SELECT COUNT(*) n FROM tenant_users tu JOIN onboarding_invitations i ON i.tenant_id=tu.tenant_id WHERE i.id IN (${ids}) AND tu.status='active'`),2,'both admins need active tenant-user lifecycle links');
   assert.equal(count(`SELECT COUNT(*) n FROM memberships m JOIN onboarding_invitations i ON i.tenant_id=m.tenant_id WHERE i.id IN (${ids}) AND m.role='tenant_admin'`),2,'both admins need tenant-admin memberships');
-  assert.equal(count(`SELECT COUNT(*) n FROM courses c JOIN onboarding_invitations i ON i.tenant_id=c.tenant_id WHERE i.id IN (${ids})`),2,'both onboarding paths must persist their optional first course once');
+  // Bewusst auf die beiden Kurse der Einrichtung eingegrenzt statt auf alle Kurse des Mandanten:
+  // gemeint war immer, dass JEDER Einrichtungsweg seinen ersten Kurs genau einmal anlegt. Ein
+  // Mandant darf danach weitere Kurse bekommen - der Ordner-Eingang legt in derselben Abnahme
+  // welche an. Zaehlte diese Zusicherung weiter alles, schluege sie bei jeder kuenftigen
+  // Funktion an, die einen Kurs anlegt, und saegte damit an einer Aussage, die sie gar nicht
+  // trifft.
+  assert.equal(count(`SELECT COUNT(*) n FROM courses c JOIN onboarding_invitations i ON i.tenant_id=c.tenant_id WHERE i.id IN (${ids}) AND c.code IN ('e2e-01','par-01')`),2,'both onboarding paths must persist their optional first course exactly once');
+  assert.equal(count(`SELECT COUNT(DISTINCT c.tenant_id) n FROM courses c JOIN onboarding_invitations i ON i.tenant_id=c.tenant_id WHERE i.id IN (${ids}) AND c.code IN ('e2e-01','par-01')`),2,'each onboarding tenant must own exactly one of those first courses');
   assert.equal(count("SELECT COUNT(*) n FROM legal_configuration l JOIN seller_billing_profile s ON l.id=1 AND s.id=1 WHERE l.documents_enabled=1 AND l.document_version='browser-e2e-2026-08-26'"),1,'isolated legal acceptance fixture must remain published');
   console.log('Verified completed onboarding, duplicate protection, tenant access, orders, draft invoices, active subscriptions, legal readiness and payment freeze in real local D1.');
 }

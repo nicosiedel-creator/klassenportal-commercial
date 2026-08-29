@@ -116,24 +116,30 @@ async function maybeAutoApply(env:Env,tenantId:string,batchId:string,built:Built
   if(!org&&!(participants!.candidates.length&&participants!.candidates.every(safeAutoCandidate)))return false;
   const auth=systemAuth(tenantId,batchId),orgAuth=systemAuth(tenantId,batchId,'organization');
   await env.DB.prepare("UPDATE intake_batches SET status='processing',updated_at=? WHERE id=?").bind(nowIso(),batchId).run();
-  let accepted=0,skipped=0;
-  if(org){const r=await applyOrganizationImport(env,orgAuth,tenantId,{batch_id:org.batch_id,digest:org.digest});accepted+=r.results.filter((x:any)=>x.action!=='skipped').length;skipped+=r.results.filter((x:any)=>x.action==='skipped').length;}
+  let accepted=0,skipped=0;const skippedReasons=new Set<string>();
+  const tally=(results:any[])=>{for(const x of results){if(x.action==='skipped'){skipped++;if(x.reason)skippedReasons.add(String(x.reason).slice(0,120));}else accepted++;}};
+  if(org){const r=await applyOrganizationImport(env,orgAuth,tenantId,{batch_id:org.batch_id,digest:org.digest});tally(r.results);}
   // Erst jetzt den Teilnehmerentwurf bauen: die eben angelegten Kurse sind ab hier auffindbar.
   const rebuilt=org&&built.routed?await buildParticipantPreview(env,tenantId,batchId,auth,built.routed,built.source_subject,built.default_course_id):participants;
   if(rebuilt){
     if(!rebuilt.candidates.length||!rebuilt.candidates.every(safeAutoCandidate)){
       const ts=nowIso();await env.DB.prepare("UPDATE intake_batches SET status='review',accepted_count=?,skipped_count=?,updated_at=? WHERE id=?").bind(accepted,skipped,ts,batchId).run();
-      await createTask(env,tenantId,batchId,'Teilnehmerangaben pruefen','important',{accepted,reason:'PARTICIPANTS_NEED_REVIEW'});
+      await createTask(env,tenantId,batchId,'Teilnehmerangaben prüfen','important',{accepted,skipped,reason:'PARTICIPANTS_NEED_REVIEW',reasons:[...skippedReasons].sort()});
       await event(env,tenantId,'intake.partially_auto_applied',batchId,{accepted,skipped});
       return true;
     }
     const r=await applyParticipantImport(env,auth,tenantId,{batch_id:rebuilt.batch_id,digest:rebuilt.digest});
-    accepted+=r.results.filter((x:any)=>x.action!=='skipped').length;skipped+=r.results.filter((x:any)=>x.action==='skipped').length;
+    tally(r.results);
   }
   const status=skipped?'partial':'completed',ts=nowIso();
   await env.DB.prepare('UPDATE intake_batches SET status=?,accepted_count=?,skipped_count=?,completed_at=?,updated_at=? WHERE id=?').bind(status,accepted,skipped,ts,ts,batchId).run();
+  // Was die Automatik nicht uebernehmen konnte, darf nicht als "automatisch verarbeitet"
+  // untergehen. Ein erreichtes Kurskontingent etwa ist keine Unklarheit, sondern eine
+  // Entscheidung, die der Kunde treffen muss - und er erfaehrt sie nur, wenn sie ihm jemand
+  // sagt. Ohne diesen Vorgang meldete der Eingang Erfolg, waehrend nichts entstanden ist.
+  if(skipped)await createTask(env,tenantId,batchId,`Teile des Eingangs wurden nicht übernommen (${skipped})`,'important',{accepted,skipped,reasons:[...skippedReasons].sort()});
   await purgeBatchDocuments(env,batchId);
-  await event(env,tenantId,'intake.auto_applied',batchId,{accepted,skipped});
+  await event(env,tenantId,'intake.auto_applied',batchId,{accepted,skipped,reasons:[...skippedReasons].sort()});
   return true;
 }
 
