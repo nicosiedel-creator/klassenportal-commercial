@@ -105,7 +105,11 @@
 
   // Nimmt einen Fehler, einen Code oder einen Text und liefert immer einen lesbaren Satz.
   window.KP_ERROR_TEXT=function(value){
-    const code=String((value&&value.message)||value||'').trim();
+    // Ein Fehler ohne Meldung ist kein Text: (value&&value.message)||value fiel dann auf das
+    // Objekt selbst zurueck, und der Nutzer bekam "Error" zu sehen - bei einem beliebigen
+    // Objekt sogar "[object Object]". Nur eine echte Zeichenkette zaehlt als Meldung.
+    const raw=value&&typeof value.message==='string'?value.message:(typeof value==='string'?value:'');
+    const code=String(raw).trim();
     if(TEXTS[code])return TEXTS[code];
     if(!code)return GENERIC;
     // Suffixe wie FIELD_REQUIRED:name auf den Grundcode zurückführen.

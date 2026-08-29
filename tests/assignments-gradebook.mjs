@@ -9,7 +9,7 @@ const personalState=await readFile('src/core/assignment-participant-state.ts','u
 const router=await readFile('src/core/assignments-router.ts','utf8');
 const attendanceRouter=await readFile('src/core/attendance-router.ts','utf8');
 const participantUi=await readFile('public/portal-assignments-ui.js','utf8');
-const dashboard=await readFile('public/student-dashboard-ui.js','utf8');
+const dashboard=await readFile('public/student-dashboard-v2.js','utf8');
 const adminUi=await readFile('public/assignment-gradebook-ui.js','utf8');
 const portal=await readFile('public/class-portal.html','utf8');
 const portalLazy=await readFile('public/portal-lazy-runtime.js','utf8');
@@ -59,7 +59,11 @@ assert.ok(participantUi.includes('Nur für dich sichtbar'),'note privacy must be
 assert.ok(participantUi.includes('Gespeicherter Text oder ein Upload zählt als'),'draft uploads must not be presented as completed');
 assert.ok(participantUi.includes('data-toggle-done'),'info tasks need direct done/reopen control');
 assert.ok(participantUi.includes('Offen (${openCount})'),'task workspace needs open filter/count');
-assert.ok(dashboard.includes('function taskDone(x)'),'dashboard must derive personal task completion');
+// Diese drei Zusicherungen lasen jahrelang student-dashboard-ui.js - eine stillgelegte Datei, die
+// das Klassenportal ausdruecklich nicht mehr laedt. Sie sagten damit nichts ueber das Dashboard aus,
+// das der Teilnehmer wirklich sieht. Jetzt lesen sie student-dashboard-v2.js.
+assert.match(dashboard,/function done\(x\)\{[^}]*my_submission/,'dashboard must derive personal task completion from the participant\'s own submission');
+assert.match(dashboard,/my_state\?\.progress==='completed'/,'a reading task counts as done through the participant\'s own progress state');
 assert.ok(dashboard.includes('_personalAssignments'),'dashboard must use participant-specific assignment state');
 assert.ok(dashboard.includes('Überfällig'),'open overdue tasks must stay visible in the dashboard');
 

@@ -32,10 +32,22 @@ await writeFile(logPath,'Ready on http://127.0.0.1:8787\n');
 }
 
 // Ein Neustart waehrend der Messung setzt die Serie zurueck und darf nicht als bereit gelten.
+//
+// Die Stoerung muss dabei bei jedem Schreiben streng wachsen. Eine zufaellige Anzahl Zeilen
+// reicht nicht: der Waechter vergleicht Zaehlerstaende, und zwei aufeinanderfolgende Messungen
+// koennen zufaellig denselben Stand sehen - dann bemerkt er den Neustart nicht und die Serie
+// laeuft durch. Genau so ist dieser Test auf einem schnellen Runner grundlos gescheitert,
+// waehrend er lokal durchlief. Ein hochzaehlender Stand und ein Takt deutlich unter dem
+// Abfrageabstand des Waechters (700ms) machen daraus eine Gewissheit statt einer Wette.
 {
-  const ticker=setInterval(()=>{void writeFile(logPath,'Ready\nThe file src changed, restarting build...\n'.repeat(Math.ceil(Math.random()*3)+1)).catch(()=>{});},900);
+  let restarts=0;
+  const ticker=setInterval(()=>{
+    restarts++;
+    void writeFile(logPath,`Ready\n${'The file src changed, restarting build...\n'.repeat(restarts)}`).catch(()=>{});
+  },200);
   const {code,out}=await wait(url,logPath);
   clearInterval(ticker);
+  assert.ok(restarts>=3,`die Stoerung muss waehrend der Messung mehrfach zugeschlagen haben, war ${restarts}`);
   assert.equal(code,1,`ein Server, der waehrend der Messung neu startet, darf nicht als bereit gelten:\n${out}`);
   assert.match(out,/neu gestartet/);
 }
@@ -49,6 +61,22 @@ await writeFile(logPath,'Ready on http://127.0.0.1:8787\n');
   assert.equal(code,1,'ein antwortender, aber fehlerhafter Server darf nicht als bereit gelten');
   assert.match(out,/Status 503/);
   broken.close();
+}
+
+// Der eigene Wrangler ist gar nicht gestartet, weil ein fremder Prozess den Port belegt: dann
+// antwortet die Adresse stabil mit 200 - aus einem anderen, womoeglich veralteten Server. Genau
+// so wurde hier einmal gegen einen drei Stunden alten Stand geklickt, waehrend die Bereitschaft
+// "stabil erreichbar" meldete. Ein Protokoll, das den Fehlstart benennt, macht das Ergebnis
+// ungueltig - unabhaengig davon, wie sauber die Adresse antwortet.
+for(const [line,expected] of [
+  ['*** Fatal uncaught kj::Exception: kj/async-io-unix.c++:945: failed: ::bind(sockfd, &addr.generic, addrlen): Address already in use; toString() = 127.0.0.1:8787',/Port ist bereits belegt/],
+  ['The Workers runtime failed to start. There is likely additional logging output above.',/Laufzeit konnte nicht starten/]
+]){
+  await writeFile(logPath,`Ready\n${line}\n`);
+  const {code,out}=await wait(url,logPath);
+  assert.equal(code,1,`ein stabil antwortender fremder Server darf nicht als eigener Kandidat gelten:\n${out}`);
+  assert.match(out,expected);
+  assert.doesNotMatch(out,/stabil erreichbar/,'ein Fehlstart darf niemals als Bereitschaft durchgehen');
 }
 
 // Gar kein Server: die Wartezeit endet, statt unbegrenzt zu haengen.
