@@ -45,12 +45,17 @@ const workerFirst=JSON.parse(await readFile('wrangler.jsonc','utf8')).assets?.ru
 assert.ok(workerFirst.length,'die Asset-Konfiguration muss run_worker_first fuehren');
 const coveredByWorker=path=>workerFirst.some(pattern=>
   new RegExp('^'+pattern.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*/g,'.*')+'$').test(path));
+// Der Wurzelpfad ist die Anmeldeseite und stand ueberhaupt nicht in run_worker_first - gemessen
+// 0/6 Headern, also ohne Klickjacking-Schutz auf dem Anmeldeformular. Er muss durch den Worker
+// laufen wie jede andere Seite.
+assert.ok(coveredByWorker('/'),'die Anmeldeseite unter / muss durch den Worker laufen');
+
 const VFA13_PAGES=['vfa-study-entry.html','vfa-study-presenter.html','vfa-study-quiz.html'];
 const shippedPages=(await readdir('public')).filter(name=>name.endsWith('.html')&&!VFA13_PAGES.includes(name));
 assert.ok(shippedPages.length>=10,`zu wenige ausgelieferte Seiten gefunden: ${shippedPages.length}`);
 const unhardened=shippedPages
   .map(name=>'/'+name.replace(/\.html$/,''))
-  .filter(route=>route!=='/index'&&!coveredByWorker(route));
+  .filter(route=>!coveredByWorker(route));
 assert.deepEqual(unhardened,[],
   `diese Seiten werden ohne die Sicherheitsheader des Workers ausgeliefert: ${unhardened.join(', ')}`);
 
