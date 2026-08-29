@@ -57,6 +57,16 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+      # Der persistierte Zustand wird als SQLite-Datei gelesen. Solange der Worker sie offen haelt,
+      # kann SQLite den lesenden Prozess mit SQLITE_BUSY abweisen. Deshalb erst anhalten, dann lesen.
+      - name: Stop local PR candidate before reading D1
+        shell: bash
+        run: |
+          if test -f /tmp/commercial-wrangler-e2e.pid; then
+            pid="$(cat /tmp/commercial-wrangler-e2e.pid)"
+            kill "$pid" 2>/dev/null || true
+            for _ in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+          fi
       - name: Verify exact persisted onboarding and payment-freeze state
         shell: bash
         run: node scripts/commercial-onboarding-e2e-state.mjs verify wrangler.browser-e2e.json
