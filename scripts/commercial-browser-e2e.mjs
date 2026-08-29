@@ -777,13 +777,27 @@ try{
       // sagt, ob die Anmeldung wirklich gelungen ist - und benennt sonst, woran es lag, statt eine
       // fehlende Navigation zu melden, die nur die Folge wäre. Anmeldedaten bleiben ungenannt.
       let session={status:0,signedIn:false,platform:false,mustChange:false,id:'',error:''};
+      // Genau in dieser Schleife leitet die Anmeldeseite weiter. Trifft die Abfrage den Moment
+      // der Weiterleitung, zerstoert der Browser den Ausfuehrungskontext und Playwright wirft -
+      // die Abnahme scheiterte dann an ihrem eigenen Wettlauf, nicht an einem Befund des Portals.
+      // Eine zerstoerte Ausfuehrung bedeutet: es wurde navigiert. Das ist genau das, worauf hier
+      // gewartet wird, also wird erneut gefragt statt abzubrechen. Jeder andere Fehler bricht
+      // weiterhin sofort ab, und die Schleife bleibt begrenzt: ohne angemeldete Sitzung faellt
+      // die Abnahme unveraendert durch.
+      // /api/auth/me antwortet auch ohne Anmeldung mit 200 und user:null. Auf den Status zu
+      // warten hiesse deshalb: gar nicht warten - die Schleife braeche sofort im ersten Durchlauf
+      // ab, und der anschliessende Befund machte aus "nicht angemeldet" ein "keine
+      // Plattformrechte". Erst eine Sitzung mit Benutzer ist eine Anmeldung.
+      const navigationRace=e=>/Execution context was destroyed|Target closed|Target page, context or browser has been closed|frame was detached|navigating/i.test(String(e?.message||e));
       for(let attempt=0;attempt<20;attempt++){
+        try{
         session=await page.evaluate(async()=>{try{const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});let d={};try{d=await r.json();}catch{}
           return{status:r.status,signedIn:!!d?.user,platform:!!d?.user?.isPlatformAdmin,mustChange:!!d?.user?.mustChangePassword,id:String(d?.user?.userId||''),error:String(d?.error||'')};}catch(e){return{status:0,signedIn:false,platform:false,mustChange:false,id:'',error:'FETCH_FAILED'};}});
-        // /api/auth/me antwortet auch ohne Anmeldung mit 200 und user:null. Auf den Status zu
-        // warten hiess deshalb: gar nicht warten - die Schleife brach sofort im ersten Durchlauf
-        // ab, und der anschliessende Befund machte aus "nicht angemeldet" ein "keine
-        // Plattformrechte". Erst eine Sitzung mit Benutzer ist eine Anmeldung.
+        }catch(e){
+          if(!navigationRace(e))throw e;
+          await page.waitForTimeout(500);
+          continue;
+        }
         if(session.signedIn||session.error)break;
         await page.waitForTimeout(500);
       }

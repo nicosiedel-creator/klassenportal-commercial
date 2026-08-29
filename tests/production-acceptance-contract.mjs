@@ -238,4 +238,18 @@ assert.ok(branchAt>0&&mobileAt>branchAt,'der Freigabezustand muss vor den mobile
 assert.match(browser,/externe Meldung\(en\) ignoriert/,'gefilterte Fremdmeldungen muessen benannt werden');
 assert.match(browser,/keine externen Konsolenmeldungen/,'der Lauf muss auch melden, wenn nichts zu filtern war');
 
+
+// Die Abnahme scheiterte in Produktion an ihrem eigenen Wettlauf: die Sitzungsabfrage lief
+// waehrend der Weiterleitung der Anmeldeseite, und der Browser zerstoerte den
+// Ausfuehrungskontext. Das darf sie nicht als Befund des Portals melden - und sie darf
+// deswegen auch nicht pauschal jeden Fehler verschlucken.
+assert.match(browser,/Execution context was destroyed/,
+  'die Abnahme muss den Wettlauf mit der Weiterleitung erkennen, statt daran zu scheitern');
+assert.match(browser,/if\(!navigationRace\(e\)\)throw e;/,
+  'jeder andere Fehler muss weiterhin sofort abbrechen - pauschales Verschlucken waere eine blinde Abnahme');
+assert.match(browser,/for\(let attempt=0;attempt<20;attempt\+\+\)/,
+  'die Wiederholung muss begrenzt bleiben');
+assert.match(browser,/if\(!session\.signedIn\)\{/,
+  'ohne angemeldete Sitzung muss die Abnahme unveraendert durchfallen');
+
 console.log('Commercial production acceptance contract: OK');
