@@ -33,6 +33,16 @@ const sessionShape=(types.match(/export interface SessionUser \{([\s\S]*?)\n\}/)
 assert.ok(sessionShape,'die Sitzungsform muss als SessionUser auffindbar bleiben');
 const sessionFields=new Set([...sessionShape.matchAll(/^\s*([A-Za-z_][A-Za-z0-9_]*)\??\s*:/gm)].map(m=>m[1]));
 assert.ok(sessionFields.has('userId')&&sessionFields.has('isPlatformAdmin'),'die Sitzungsform wurde nicht richtig gelesen');
+// Die Produktionsdomain beantwortet Anfragen mit Automatisierungskennung mit 403 - der Live-Smoke
+// oeffnet sie deshalb seit jeher mit einer gewoehnlichen Browserkennung. Die Abnahme lief mit der
+// Standardkennung und bekam auf /plattform-admin dieselbe 403. Beide muessen die Seite so oeffnen,
+// wie ein Kunde sie oeffnet, sonst prueft die Abnahme eine Tuer, die fuer sie nie aufgeht.
+const smoke=await readFile('.github/workflows/commercial-main-live-smoke.yml','utf8');
+assert.match(smoke,/AppleWebKit\/537\.36/,'der Live-Smoke muss die Produktionsdomain mit einer gewoehnlichen Browserkennung oeffnen');
+assert.match(browser,/const DESKTOP_UA='Mozilla\/5\.0[^']*AppleWebKit\/537\.36[^']*'/,'die Abnahme braucht dieselbe gewoehnliche Browserkennung');
+assert.match(browser,/newPage\(\{viewport:\{width:1440,height:1000\},locale:'de-DE',userAgent:DESKTOP_UA\}\)/,'die Hauptseite der Abnahme muss diese Kennung auch benutzen');
+assert.doesNotMatch(browser,/engine\.launch\(\{headless:true\}\)/,'Chromium muss ohne Automatisierungsmerkmal starten, sonst blockt der Bot-Schutz die eigene Domain');
+
 // Eine Plattformsitzung wird nur an APP_ORIGIN ausgestellt - issueSession wirft sonst
 // PLATFORM_ORIGIN_MISMATCH (nachgemessen am lokalen Kandidaten: HTTP 403). Die Abnahme lief gegen
 // die workers.dev-Adresse und konnte deshalb nie hineinkommen; der Befund lautete jahrelang

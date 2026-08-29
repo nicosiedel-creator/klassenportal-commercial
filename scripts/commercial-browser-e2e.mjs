@@ -34,8 +34,14 @@ const fail=(msg)=>{throw new Error(msg);};
 // Emulation weg und alle Engines messen dasselbe: was ein Telefon mit
 // width=device-width,initial-scale=1 tatsächlich anzeigt.
 const mobileContext=extra=>({viewport:{width:390,height:844},...extra});
-const browser=await engine.launch({headless:true});
-const page=await browser.newPage({viewport:{width:1440,height:1000}});
+// Die Produktionsdomain steht hinter einem Bot-Schutz: sie beantwortet eine Anfrage mit
+// Automatisierungskennung mit 403. Der Live-Smoke oeffnet klassenportal.app deshalb seit jeher
+// mit einer gewoehnlichen Browserkennung - die Abnahme tat es nicht und lief in dieselbe 403,
+// diesmal auf /plattform-admin. Es geht dabei nicht darum, eine Schranke zu umgehen, sondern
+// darum, die eigene Seite so zu bedienen, wie ein Kunde sie bedient: mit einem normalen Browser.
+const DESKTOP_UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36';
+const browser=await engine.launch({headless:true,...(engineName==='chromium'?{args:['--disable-blink-features=AutomationControlled']}:{})});
+const page=await browser.newPage({viewport:{width:1440,height:1000},locale:'de-DE',userAgent:DESKTOP_UA});
 const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
 page.on('pageerror',e=>pageErrors.push(String(e)));
 page.on('console',msg=>{if(msg.type()==='error')consoleErrors.push(msg.text());});
