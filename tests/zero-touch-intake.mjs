@@ -77,7 +77,10 @@ assert.match(customerHtml,/intake-center-ui\.js/,'customer admin must load intak
 assert.match(customerHtml,/intake-quick-upload-ui\.js/,'customer admin must load one-click internal intake upload');
 for(const marker of ['Heute braucht Deine Aufmerksamkeit','Einfach per E-Mail einreichen','Verkäufer / Sekretariat freigeben','Sicherer Upload-Link','Sichere Automatik'])assert.ok(ui.includes(marker),`intake cockpit missing ${marker}`);
 assert.match(ui,/vendor\/pdfjs\/pdf\.mjs/,'reviewer must be able to extract email PDFs locally in the browser');
-assert.match(ui,/Markierte übernehmen & automatisch einladen/);
+assert.match(ui,/Markierte übernehmen & automatisch einladen/,
+  'wo Personen uebernommen werden, muss der Knopf selbst sagen, dass dabei Konten eingeladen werden');
+assert.match(ui,/Markierte Struktur übernehmen/,
+  'ein Stapel aus reiner Struktur laedt niemanden ein und darf das auch nicht behaupten');
 assert.match(quickUi,/Unterlagen jetzt einwerfen/,'customer admin must expose a direct intake action');
 assert.match(quickUi,/valid_days:1,max_uploads:1/,'internal quick upload must use a short-lived one-use submit token');
 assert.match(quickUi,/api\/intake\/upload/,'internal quick upload must reuse the hardened submit-only intake route');

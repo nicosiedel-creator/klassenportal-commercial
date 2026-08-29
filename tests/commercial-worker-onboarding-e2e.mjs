@@ -3,6 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { buildZip } from './helpers/zip.mjs';
 
 const npx=process.platform==='win32'?'npx.cmd':'npx';
 const config='wrangler.browser-e2e-runtime.json';
@@ -159,6 +160,81 @@ async function concurrencyAudit(env){
   console.log('Concurrent double-click / duplicate-tenant protection: OK.');
 }
 
+// Gefordert ist, dass ein Mandant einen ganzen Ordner einwirft und das System sich alles selbst
+// heraussucht und anlegt. Bis hierher las der Eingang jede Unterlage als Teilnehmerliste - eine
+// Kursliste im Ordner wurde damit zu Teilnehmerzeilen ohne Namen und ohne E-Mail, und der ganze
+// Stapel landete in der Handpruefung.
+//
+// Dieser Lauf wirft einen echten gezippten Ordner in den echten Worker und prueft in der echten
+// D1, dass die Kurse danach da sind - ohne einen einzigen Handgriff.
+async function autonomousFolderIntakeAudit(fixtureEnv){
+  const email=fixtureEnv.E2E_ONBOARDING_PRIMARY_ADMIN,password=fixtureEnv.E2E_ONBOARDING_PRIMARY_PASSWORD;
+  const login=await api('/api/auth/login',{method:'POST',body:{email,password}});
+  assert.equal(login.status,200,`tenant admin login for folder intake failed: ${login.text}`);
+  const cookie=String(login.headers.get('set-cookie')||'').split(';')[0];
+  const me=await api('/api/auth/me',{headers:{cookie}});
+  const tenantId=String(me.data?.user?.tenantRoles?.[0]?.tenantId||'');
+  assert.ok(tenantId,'the onboarded tenant admin must carry a tenant');
+
+  const before=await api(`/api/courses?tenant_id=${encodeURIComponent(tenantId)}`,{headers:{cookie}});
+  assert.equal(before.status,200,`course listing failed: ${before.text}`);
+  const namesBefore=new Set((before.data?.courses||[]).map(c=>String(c.name)));
+
+  const created=await api(`/api/enterprise/intake/upload-links?tenant_id=${encodeURIComponent(tenantId)}`,{method:'POST',headers:{cookie},body:{label:'Ordner-Abnahme',valid_days:1,max_uploads:1}});
+  assert.equal(created.status,201,`upload link creation failed: ${created.text}`);
+  const token=decodeURIComponent(new URL(created.data.link.url).pathname.split('/').filter(Boolean).at(-1));
+  assert.ok(token,'the upload link must carry a token');
+
+  // Ein Ordner, wie ihn ein Bildungstraeger wirklich abgibt: Kurse, Faecher, Dozenten - gemischt,
+  // unsortiert, mit Systemdateien dazwischen.
+  // Der Eingang weist dieselbe Datei ein zweites Mal als Duplikat ab - das ist richtig so. Damit
+  // dieser Lauf wiederholbar bleibt, traegt der Ordner eine eigene Kennung je Durchlauf.
+  const run=`${Date.now().toString(36)}`;
+  const kursA=`Abnahme Pflege A ${run}`,kursB=`Abnahme Pflege B ${run}`;
+  const zip=await buildZip([
+    ['Traeger/kurse.csv',`course_name,course_code\n${kursA},ABN-A-${run}\n${kursB},ABN-B-${run}\n`],
+    ['Traeger/faecher.csv',`fach,fachkuerzel\nAbnahme Anatomie ${run},AN${run.slice(-4)}\n`],
+    ['Traeger/teilnehmer.csv',`name,email,kurscode\nAbnahme Lernende ${run},abnahme.${run}@example.invalid,ABN-A-${run}\n`],
+    ['Traeger/.DS_Store','x'],
+  ],{deflate:true});
+  const form=new FormData();
+  form.append('files',new Blob([zip],{type:'application/zip'}),'traeger-ordner.zip');
+  const response=await fetch(`${base}/api/intake/upload/${encodeURIComponent(token)}`,{method:'POST',headers:{origin:base},body:form});
+  const payload=await response.json();
+  assert.equal(response.status,201,`folder upload failed: ${JSON.stringify(payload)}`);
+  assert.equal(payload.status,'automatisch verarbeitet',`a folder with only unambiguous structure must not need review, got: ${payload.status}`);
+
+  const after=await api(`/api/courses?tenant_id=${encodeURIComponent(tenantId)}`,{headers:{cookie}});
+  assert.equal(after.status,200);
+  const namesAfter=(after.data?.courses||[]).map(c=>String(c.name));
+  for(const expected of [kursA,kursB]){
+    assert.ok(namesAfter.includes(expected),`${expected} must have been created from the uploaded folder without any manual step`);
+    assert.ok(!namesBefore.has(expected),`${expected} must be new - otherwise this run proves nothing`);
+  }
+  // Der eigentliche Beweis fuer die Reihenfolge: der Teilnehmer im selben Ordner nennt einen
+  // Kurs, den es beim Hochladen noch gar nicht gab. Wuerde der Teilnehmerentwurf vor dem Anlegen
+  // der Struktur ausgewertet, stuende hier COURSE_NOT_FOUND und kein Kurs - und der Stapel waere
+  // trotz voelliger Eindeutigkeit in der Handpruefung gelandet.
+  const view=await api(`/api/enterprise/intake/batches/${encodeURIComponent(payload.batch_id)}?tenant_id=${encodeURIComponent(tenantId)}`,{headers:{cookie}});
+  assert.equal(view.status,200,`intake batch view failed: ${view.text}`);
+  const candidates=view.data?.preview?.candidates||[];
+  assert.equal(candidates.length,1,'the folder carried exactly one participant');
+  const resolvedCourse=(after.data?.courses||[]).find(c=>String(c.name)===kursA);
+  assert.ok(resolvedCourse,'the referenced course must exist after the run');
+  assert.equal(candidates[0].course_id,resolvedCourse.id,
+    'the participant must be resolved against the course the same folder created');
+  assert.ok(!(candidates[0].warnings||[]).includes('COURSE_NOT_FOUND'),
+    'a course created by the same folder must not be reported as missing');
+
+  // Die Struktur muss auch in der Rueckverfolgung stehen, nicht nur ihre Wirkung.
+  assert.ok(view.data?.organization?.batch_id,'the batch must remember its organization import');
+  const orgTypes=(view.data.organization.candidates||[]).map(c=>c.type).sort();
+  assert.ok(orgTypes.includes('course')&&orgTypes.includes('subject'),
+    `courses and subjects must be recognised as structure, got ${orgTypes.join(',')}`);
+
+  console.log('Ganzer Ordner eingeworfen -> Kurse, Faecher und der Teilnehmer des neuen Kurses ohne Handgriff verarbeitet: OK.');
+}
+
 try{
   const configJson=JSON.parse(readFileSync('wrangler.jsonc','utf8'));configJson.vars={...configJson.vars,APP_ORIGIN:base,PAYMENTS_ENABLED:'false'};delete configJson.routes;writeFileSync(config,JSON.stringify(configJson,null,2));
   run(npx,['wrangler','d1','migrations','apply','DB','--local','--config',config]);
@@ -171,6 +247,7 @@ try{
   await platformAccountAudit(fixtureEnv);
   await acceptedOfferAudit(fixtureEnv);
   await concurrencyAudit(fixtureEnv);
+  await autonomousFolderIntakeAudit(fixtureEnv);
   // Der persistierte Zustand wird als SQLite-Datei gelesen. Solange der Worker sie offen haelt,
   // kann SQLite den lesenden Prozess mit SQLITE_BUSY abweisen. Deshalb erst anhalten, dann lesen.
   await stopWorker();
