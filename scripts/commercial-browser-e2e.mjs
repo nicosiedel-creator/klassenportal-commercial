@@ -695,7 +695,7 @@ try{
       let session={status:0,platform:false,mustChange:false,error:''};
       for(let attempt=0;attempt<20;attempt++){
         session=await page.evaluate(async()=>{try{const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});let d={};try{d=await r.json();}catch{}
-          return{status:r.status,platform:!!d?.user?.isPlatformAdmin,mustChange:!!d?.user?.mustChangePassword,id:String(d?.user?.id||''),error:String(d?.error||'')};}catch(e){return{status:0,platform:false,mustChange:false,id:'',error:'FETCH_FAILED'};}});
+          return{status:r.status,platform:!!d?.user?.isPlatformAdmin,mustChange:!!d?.user?.mustChangePassword,id:String(d?.user?.userId||''),error:String(d?.error||'')};}catch(e){return{status:0,platform:false,mustChange:false,id:'',error:'FETCH_FAILED'};}});
         if(session.status===200||session.error)break;
         await page.waitForTimeout(500);
       }

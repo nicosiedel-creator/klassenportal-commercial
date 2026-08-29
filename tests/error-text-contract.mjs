@@ -20,6 +20,34 @@ for(const code of ['UNAUTHENTICATED','LOGIN_RATE_LIMITED','FORBIDDEN','TENANT_AC
   assert.doesNotMatch(text,/[A-Z]{3,}_[A-Z]/,`${code} enthält noch einen technischen Code: "${text}"`);
 }
 
+// Codes, die eine Oberfläche dem Nutzer wirklich zeigt und die er selbst auflösen kann. Sie
+// fielen alle auf denselben Allgemeinplatz zurueck ("Die Aktion konnte nicht ausgefuehrt
+// werden"), obwohl der Worker genau benennt, was fehlt: eine Umfrage ist geschlossen, ein Modul
+// ist nicht gebucht, ein Teilnahmelink ist abgelaufen. Ein Satz, der nicht sagt, was zu tun ist,
+// ist fuer den Nutzer so wenig wert wie der rohe Code.
+const GENERIC=t('EIN_CODE_DEN_ES_NICHT_GIBT');
+for(const code of ['OFFER_NOT_FOUND','OFFER_ALREADY_ACCEPTED','OFFER_NOT_CANCELLABLE',
+                   'OFFER_LINK_NOT_AVAILABLE','OFFER_ONBOARDING_ALREADY_COMPLETED',
+                   'MAIL_PROVIDER_NOT_CONFIGURED','SELLER_PROFILE_INCOMPLETE',
+                   'LEGAL_CONFIGURATION_INCOMPLETE','PRICING_NOT_CONFIGURED',
+                   'MODULE_ALREADY_ACTIVE','MODULE_NOT_ACTIVE','MODULE_PAYMENT_PENDING',
+                   'MODULE_SELF_SERVICE_DISABLED','SELF_SERVICE_DOWNGRADE_NOT_ALLOWED',
+                   'SURVEY_CLOSED','SURVEY_ALREADY_VOTED','LIVE_STUDY_CAPACITY_REACHED',
+                   'PARTICIPANT_TOKEN_INVALID','PRESENTER_TOKEN_INVALID',
+                   'TIMETABLE_FILE_UNSUPPORTED','TIMETABLE_BATCH_CONFIRMATION_REQUIRED',
+                   'FORBIDDEN_COURSE_SCOPE','SELF_ELEVATION_FORBIDDEN','STRONG_AUTH_REQUIRED',
+                   'PLATFORM_ADMIN_RESET_FORBIDDEN','PRIMARY_RESPONSIBILITY_TENANT_ADMIN_REQUIRED',
+                   'TENANT_NOT_FOUND','USER_NOT_FOUND','PARTICIPANT_NOT_FOUND','TEACHER_NOT_FOUND',
+                   'LESSON_NOT_FOUND','EXAM_NOT_FOUND','ORG_UNIT_NOT_FOUND','PLAN_NOT_FOUND',
+                   'ATTENDANCE_SESSION_NOT_FOUND','RESOURCE_NOT_FOUND',
+                   'DATE_INVALID','ENUM_VALUE_INVALID','USER_FIELDS_REQUIRED','PARTICIPANT_REQUIRED',
+                   'TENANT_REQUIRED','DOMAIN_INVALID','LEGAL_REPORT_RATE_LIMITED','API_RATE_LIMITED']){
+  const text=t(code);
+  assert.notEqual(text,GENERIC,`${code} sagt dem Nutzer nur den Allgemeinplatz, obwohl der Worker die Ursache kennt`);
+  assert.ok(/[a-zäöüß]/.test(text)&&text.length>15,`${code} braucht einen verständlichen Satz, nicht "${text}"`);
+  assert.doesNotMatch(text,/[A-Z]{3,}_[A-Z]/,`${code} enthält noch einen technischen Code: "${text}"`);
+}
+
 // Ein unbekannter Code darf niemals durchgereicht werden.
 for(const unknown of ['EIN_VOELLIG_NEUER_CODE','TWIN_SCOPE_INVALID_XYZ','ABC_DEF']){
   const text=t(unknown);

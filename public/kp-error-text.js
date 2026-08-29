@@ -99,6 +99,77 @@
     NOT_FOUND:'Der gewünschte Eintrag wurde nicht gefunden.',
     CSRF_ORIGIN_MISMATCH:'Die Anfrage kam nicht von dieser Seite. Bitte die Seite neu laden.',
     ORIGIN_MISMATCH:'Die Anfrage kam nicht von dieser Seite. Bitte die Seite neu laden.',
+
+    // Angebote in der Plattformverwaltung
+    OFFER_NOT_FOUND:'Das Angebot wurde nicht gefunden.',
+    OFFER_ALREADY_ACCEPTED:'Das Angebot wurde bereits angenommen.',
+    OFFER_NOT_DRAFT:'Das Angebot ist kein Entwurf mehr und lässt sich so nicht mehr ändern.',
+    OFFER_NOT_CANCELLABLE:'Nur Entwürfe und versendete Angebote lassen sich stornieren.',
+    OFFER_LINK_NOT_AVAILABLE:'Ein Angebotslink lässt sich nur für Entwürfe und versendete Angebote erzeugen.',
+    OFFER_EMAIL_NOT_AVAILABLE:'Ein Angebot lässt sich nur als Entwurf oder nach dem Versand per E-Mail schicken.',
+    OFFER_ONBOARDING_ALREADY_COMPLETED:'Die Einrichtung zu diesem Angebot ist bereits abgeschlossen.',
+
+    // Einrichtung, die vor einer Aktion vollständig sein muss
+    MAIL_PROVIDER_NOT_CONFIGURED:'Der Versanddienst für E-Mails ist noch nicht eingerichtet.',
+    STRIPE_NOT_CONFIGURED:'Die Zahlungsabwicklung ist nicht eingerichtet.',
+    SELLER_PROFILE_INCOMPLETE:'Die Anbieter- und Rechnungsdaten sind noch unvollständig.',
+    LEGAL_CONFIGURATION_INCOMPLETE:'Impressum, Datenschutz, AGB und Auftragsverarbeitung müssen zuerst vollständig freigegeben sein.',
+    PRICING_NOT_CONFIGURED:'Für diesen Tarif fehlt eine freigegebene Preisregel oder ein manueller Preis.',
+
+    // Module in der Kundenverwaltung
+    MODULE_ALREADY_ACTIVE:'Dieses Modul ist bereits aktiv.',
+    MODULE_NOT_ACTIVE:'Dieses Modul ist für diese Organisation nicht aktiv.',
+    MODULE_ALREADY_ON_SUBSCRIPTION:'Dieses Modul gehört bereits zum laufenden Abonnement.',
+    MODULE_PAYMENT_PENDING:'Für dieses Modul steht noch eine Zahlung aus.',
+    MODULE_SELF_SERVICE_DISABLED:'Dieses Modul lässt sich nicht selbst buchen. Bitte wende dich an die Betreuung.',
+    MODULE_CANCELLATION_ALREADY_SCHEDULED:'Für dieses Modul ist bereits eine Kündigung vorgemerkt.',
+    MODULE_CANCELLATION_ALREADY_DUE:'Die Kündigung für dieses Modul ist bereits fällig.',
+    SELF_SERVICE_DOWNGRADE_NOT_ALLOWED:'Ein Wechsel in einen kleineren Tarif ist in der Selbstverwaltung nicht möglich. Bitte wende dich an die Betreuung.',
+    ACTIVE_BILLING_MUST_END_FIRST:'Dazu muss die laufende Abrechnung zuerst beendet werden.',
+
+    // Umfragen und Live-Einheiten, die Teilnehmende selbst bedienen
+    SURVEY_CLOSED:'Diese Umfrage ist bereits geschlossen.',
+    SURVEY_ALREADY_VOTED:'Du hast an dieser Umfrage bereits teilgenommen.',
+    LIVE_STUDY_NOT_FOUND:'Diese Live-Einheit wurde nicht gefunden.',
+    LIVE_STUDY_CAPACITY_REACHED:'Diese Live-Einheit ist voll besetzt.',
+    PARTICIPANT_TOKEN_INVALID:'Dieser Teilnahmelink ist ungültig oder abgelaufen.',
+    PRESENTER_TOKEN_INVALID:'Dieser Moderationslink ist ungültig oder abgelaufen.',
+
+    // Stundenplan
+    TIMETABLE_FILE_UNSUPPORTED:'Dieses Dateiformat wird für den Stundenplan nicht unterstützt.',
+    TIMETABLE_BATCH_CONFIRMATION_REQUIRED:'Die Übernahme für alle Klassen muss ausdrücklich bestätigt werden.',
+
+    // Rechte, die eine Aktion ausschließen
+    FORBIDDEN_COURSE_SCOPE:'Für diese Klasse bzw. diesen Kurs fehlt die Berechtigung.',
+    SELF_ELEVATION_FORBIDDEN:'Eigene Rechte lassen sich nicht selbst erweitern.',
+    PLATFORM_ADMIN_RESET_FORBIDDEN:'Das Passwort einer Plattformverwaltung lässt sich hier nicht zurücksetzen.',
+    PRIMARY_RESPONSIBILITY_TENANT_ADMIN_REQUIRED:'Die Hauptverantwortung darf nur die Organisationsverwaltung vergeben.',
+    STRONG_AUTH_REQUIRED:'Diese Aktion setzt eine Anmeldung mit Passwort oder Unternehmenszugang voraus.',
+    PLATFORM_ORIGIN_MISMATCH:'Die Anfrage kam nicht von der Plattformverwaltung. Bitte die Seite neu laden.',
+
+    // Nicht gefunden - benannt statt allgemein, damit klar ist, wonach gesucht wurde
+    TENANT_NOT_FOUND:'Diese Organisation wurde nicht gefunden.',
+    USER_NOT_FOUND:'Diese Person wurde nicht gefunden.',
+    PARTICIPANT_NOT_FOUND:'Diese teilnehmende Person wurde nicht gefunden.',
+    TEACHER_NOT_FOUND:'Diese Lehrkraft wurde nicht gefunden.',
+    LESSON_NOT_FOUND:'Diese Unterrichtseinheit wurde nicht gefunden.',
+    EXAM_NOT_FOUND:'Diese Prüfung wurde nicht gefunden.',
+    ORG_UNIT_NOT_FOUND:'Dieser Organisationsbereich wurde nicht gefunden.',
+    PLAN_NOT_FOUND:'Dieser Tarif wurde nicht gefunden.',
+    ATTENDANCE_SESSION_NOT_FOUND:'Diese Anwesenheitserfassung wurde nicht gefunden.',
+    RESOURCE_NOT_FOUND:'Diese Ressource wurde nicht gefunden.',
+
+    // Eingaben, die der Nutzer selbst korrigieren kann
+    DATE_INVALID:'Bitte ein gültiges Datum angeben.',
+    ENUM_VALUE_INVALID:'Bitte einen der angebotenen Werte auswählen.',
+    USER_FIELDS_REQUIRED:'Bitte alle Pflichtfelder zur Person ausfüllen.',
+    PARTICIPANT_REQUIRED:'Bitte mindestens eine teilnehmende Person auswählen.',
+    TENANT_REQUIRED:'Bitte zuerst eine Organisation auswählen.',
+    DOMAIN_INVALID:'Bitte eine gültige Domain angeben, etwa beispiel.de.',
+
+    // Zu viele Versuche
+    LEGAL_REPORT_RATE_LIMITED:'Es wurden zu viele Meldungen in kurzer Zeit abgeschickt. Bitte später erneut versuchen.',
+    API_RATE_LIMITED:'Zu viele Anfragen in kurzer Zeit. Bitte einen Moment warten und es dann erneut versuchen.',
   };
   const GENERIC='Die Aktion konnte nicht ausgeführt werden. Bitte die Eingaben prüfen oder es später erneut versuchen.';
   const TECHNICAL=/^[A-Z][A-Z0-9_]{2,}$/;
