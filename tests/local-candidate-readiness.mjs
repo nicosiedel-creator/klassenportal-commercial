@@ -112,4 +112,24 @@ assert.match(e2e,/request\.method\(\)!=='GET'/,'nur GET-Anfragen duerfen als Abb
 assert.match(e2e,/unanswered\(\)\{return\[\.\.\.aborted\]\.filter\(\(\[path\]\)=>!served\.has\(path\)\)/,'abgebrochene Pfade ohne jede Antwort muessen weiterhin auffallen');
 assert.match(e2e,/abgebrochene Anfragen ohne je eine Antwort/,'der Lauf muss abgebrochene, nie beantwortete Pfade melden');
 
+// Beantwortet ist nicht dasselbe wie erfolgreich. /api/attendance/teacher/courses antwortet
+// unangemeldet mit 401 - der einzigen Antwort, die es dort je gibt. Solange der Zaehler nur
+// Antworten unter 400 als Antwort zaehlte, konnte dieser Pfad die Bedingung nie erfuellen, und
+// der erste Abbruch meldete einen Produktfehler, den es nicht gab. Der Zaehler darf deshalb
+// keine Statusschranke kennen; ob eine 401 an dieser Stelle richtig ist, prueft der HTTP-Vertrag.
+assert.match(e2e,/serve\(response\)\{served\.add\(pathOf\(response\.url\(\)\)\);\}/,
+  'eine Antwort zaehlt als Antwort, unabhaengig vom Status');
+assert.doesNotMatch(e2e,/serve\(response\)\{if\(response\.status\(\)<\d+\)/,
+  'eine Statusschranke im Antwortzaehler macht jeden nur-401-Pfad zum falschen Befund');
+
+// Und die Regel selbst muss ausgefuehrt halten, was sie verspricht.
+const tracker=new Function(`${(e2e.match(/const NAVIGATION_ABORT=[\s\S]*?\nfunction abortTracker\(\)\{[\s\S]*?\n\}/)||[''])[0]}\nreturn abortTracker;`)();
+const probe=tracker();
+probe.serve({status:()=>401,url:()=>'http://x/api/attendance/teacher/courses'});
+probe.note({method:()=>'GET',url:()=>'http://x/api/attendance/teacher/courses'},'net::ERR_ABORTED');
+assert.deepEqual(probe.unanswered(),[],'ein Pfad, der mit 401 geantwortet hat, gilt als beantwortet');
+probe.note({method:()=>'GET',url:()=>'http://x/api/nie-beantwortet'},'net::ERR_ABORTED');
+assert.deepEqual(probe.unanswered(),['/api/nie-beantwortet (1x abgebrochen, nie beantwortet)'],
+  'ein Pfad, der ausschliesslich abbricht, muss weiterhin auffallen');
+
 console.log('Local candidate readiness and cross-engine navigation-abort contract: OK');

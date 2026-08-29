@@ -67,7 +67,12 @@ const pathOf=url=>{try{return new URL(url).pathname;}catch{return url;}};
 function abortTracker(){
   const served=new Set(),aborted=new Map();
   return{
-    serve(response){if(response.status()<400)served.add(pathOf(response.url()));},
+    // Beantwortet heisst beantwortet, nicht erfolgreich. /api/attendance/teacher/courses
+    // antwortet unangemeldet mit 401 - der einzigen Antwort, die es dort je gibt. Mit einer
+    // Statusschranke bei 400 konnte dieser Pfad die Bedingung nie erfuellen, und der erste
+    // Abbruch meldete einen Produktfehler, den es nicht gab. Ob eine 401 an dieser Stelle
+    // richtig ist, prueft der HTTP-Vertrag weiter unten, nicht dieser Zaehler.
+    serve(response){served.add(pathOf(response.url()));},
     note(request,errorText){
       if(request.method()!=='GET'||!NAVIGATION_ABORT.some(pattern=>pattern.test(errorText)))return false;
       const path=pathOf(request.url());
