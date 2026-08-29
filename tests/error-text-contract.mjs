@@ -79,6 +79,26 @@ for(const value of [new Error(''),{},null,'GANZ_NEUER_CODE']){
 }
 assert.equal(upload(new Error('Netzwerk unterbrochen')),'Netzwerk unterbrochen','lesbare Meldungen bleiben auch dort erhalten');
 
+// Die Einrichtungsseite ist die erste Seite, die ein neuer Kunde ueberhaupt bedient - und die
+// einzige, auf der er nichts anderes tun kann, wenn sie scheitert. Sie kannte fuenf Codes nicht,
+// die der Server tatsaechlich wirft (ONBOARDING_ALREADY_COMPLETED, _NOT_OPEN, _RECOVERY_REQUIRED,
+// _SCHEMA_INCOMPATIBLE, _FINALIZATION_FAILED). Alle fuenf landeten beim Kunden als "Bitte pruefe
+// die Angaben" - obwohl an den Angaben nichts falsch war. Deshalb wird hier nicht eine Liste
+// gepflegt, sondern verglichen: jeder Code, den der Einrichtungspfad werfen kann, muss auf der
+// Einrichtungsseite einen eigenen Satz bekommen.
+const onboardingSource=await readFile('public/onboarding.js','utf8');
+const onboardingBody=onboardingSource.slice(onboardingSource.indexOf('function errorText(code)'),onboardingSource.indexOf('function renderForm'));
+const setupText=new Function('window',`${onboardingBody}\nreturn errorText;`)({KP_ERROR_TEXT:t});
+const setupGeneric=setupText('EIN_CODE_DEN_ES_NICHT_GIBT');
+const serverCodes=new Set();
+for(const file of ['onboarding.ts','onboarding-schema.ts'])
+  for(const match of (await readFile(`src/core/${file}`,'utf8')).matchAll(/throw new Error\('([A-Z][A-Z0-9_]{4,})'\)/g))
+    serverCodes.add(match[1]);
+assert.ok(serverCodes.size>=10,`zu wenige Einrichtungs-Fehlercodes gefunden: ${serverCodes.size}`);
+const unexplained=[...serverCodes].filter(code=>setupText(code)===setupGeneric).sort();
+assert.deepEqual(unexplained,[],
+  `diese Fehler der Einrichtung sagen dem Kunden nur "Bitte pruefe die Angaben": ${unexplained.join(', ')}`);
+
 // Jede Kundenoberfläche muss das Wörterbuch laden, sonst greift der Rückfall dort nicht.
 for(const shell of ['customer-admin.html','platform-admin.html','class-admin.html','dozentenportal.html',
                     'class-portal.html','onboarding.html','angebot.html','index.html','department-lead.html']){
