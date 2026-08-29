@@ -9,6 +9,13 @@ const engine=ENGINES[engineName];
 if(!engine)throw new Error(`Unsupported E2E_BROWSER: ${engineName}`);
 
 const base=(process.env.COMMERCIAL_BASE_URL||'http://127.0.0.1:8787').replace(/\/$/,'');
+// Die Plattform-Anmeldung braucht einen eigenen Ursprung, und zwar aus einem Sicherheitsgrund:
+// issueSession wirft PLATFORM_ORIGIN_MISMATCH, sobald eine Plattformsitzung nicht an APP_ORIGIN
+// ausgestellt wird. Die Abnahme lief gegen die workers.dev-Adresse und konnte deshalb nie
+// hineinkommen - nachgemessen: HTTP 403, {"error":"PLATFORM_ORIGIN_MISMATCH"}. Die Sperrprüfung
+// bleibt trotzdem auf workers.dev, denn dort ist die Sperre bedingungslos; auf der Produktions-
+// domain haengt sie an der Freigabe der Worker-Version und waere damit eine schwaechere Aussage.
+const platformBase=(process.env.COMMERCIAL_PLATFORM_URL||base).replace(/\/$/,'');
 const mode=String(process.env.E2E_TARGET_MODE||'candidate').trim();
 const adminEmail=String(process.env.E2E_PLATFORM_EMAIL||'').trim();
 const adminPassword=String(process.env.E2E_PLATFORM_PASSWORD||'');
@@ -27,8 +34,14 @@ const fail=(msg)=>{throw new Error(msg);};
 // Emulation weg und alle Engines messen dasselbe: was ein Telefon mit
 // width=device-width,initial-scale=1 tatsächlich anzeigt.
 const mobileContext=extra=>({viewport:{width:390,height:844},...extra});
-const browser=await engine.launch({headless:true});
-const page=await browser.newPage({viewport:{width:1440,height:1000}});
+// Die Produktionsdomain steht hinter einem Bot-Schutz: sie beantwortet eine Anfrage mit
+// Automatisierungskennung mit 403. Der Live-Smoke oeffnet klassenportal.app deshalb seit jeher
+// mit einer gewoehnlichen Browserkennung - die Abnahme tat es nicht und lief in dieselbe 403,
+// diesmal auf /plattform-admin. Es geht dabei nicht darum, eine Schranke zu umgehen, sondern
+// darum, die eigene Seite so zu bedienen, wie ein Kunde sie bedient: mit einem normalen Browser.
+const DESKTOP_UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36';
+const browser=await engine.launch({headless:true,...(engineName==='chromium'?{args:['--disable-blink-features=AutomationControlled']}:{})});
+const page=await browser.newPage({viewport:{width:1440,height:1000},locale:'de-DE',userAgent:DESKTOP_UA});
 const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
 page.on('pageerror',e=>pageErrors.push(String(e)));
 page.on('console',msg=>{if(msg.type()==='error')consoleErrors.push(msg.text());});
@@ -54,7 +67,12 @@ const pathOf=url=>{try{return new URL(url).pathname;}catch{return url;}};
 function abortTracker(){
   const served=new Set(),aborted=new Map();
   return{
-    serve(response){if(response.status()<400)served.add(pathOf(response.url()));},
+    // Beantwortet heisst beantwortet, nicht erfolgreich. /api/attendance/teacher/courses
+    // antwortet unangemeldet mit 401 - der einzigen Antwort, die es dort je gibt. Mit einer
+    // Statusschranke bei 400 konnte dieser Pfad die Bedingung nie erfuellen, und der erste
+    // Abbruch meldete einen Produktfehler, den es nicht gab. Ob eine 401 an dieser Stelle
+    // richtig ist, prueft der HTTP-Vertrag weiter unten, nicht dieser Zaehler.
+    serve(response){served.add(pathOf(response.url()));},
     note(request,errorText){
       if(request.method()!=='GET'||!NAVIGATION_ABORT.some(pattern=>pattern.test(errorText)))return false;
       const path=pathOf(request.url());
@@ -682,7 +700,10 @@ try{
   if(adminEmail&&adminPassword){
     if(mode!=='locked-production')console.log('authenticated live platform path is intentionally not executed against the local PR candidate');
     else{
-      await route('/plattform-admin');
+      const platformResponse=await navigate(page,`${platformBase}/plattform-admin`,{waitUntil:'domcontentloaded',timeout:30000});
+      if(!platformResponse)fail(`no response from ${new URL(platformBase).origin}/plattform-admin`);
+      if(platformResponse.status()!==200)fail(`platform administration is not reachable at ${new URL(platformBase).origin}: HTTP ${platformResponse.status()}`);
+      console.log(`platform sign-in runs against ${new URL(platformBase).origin}`);
       const email=page.locator('input[type="email"],input[name="email"],input[name="login"]').first(),password=page.locator('input[type="password"]').first();
       if(!(await email.count())||!(await password.count()))fail('platform login controls not found');
       await email.fill(adminEmail);await password.fill(adminPassword);
@@ -692,14 +713,25 @@ try{
       // Ein fester Wartewert ist gegen die Produktion eine Wette auf die Latenz. Die Sitzung selbst
       // sagt, ob die Anmeldung wirklich gelungen ist - und benennt sonst, woran es lag, statt eine
       // fehlende Navigation zu melden, die nur die Folge wäre. Anmeldedaten bleiben ungenannt.
-      let session={status:0,platform:false,mustChange:false,error:''};
+      let session={status:0,signedIn:false,platform:false,mustChange:false,id:'',error:''};
       for(let attempt=0;attempt<20;attempt++){
         session=await page.evaluate(async()=>{try{const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});let d={};try{d=await r.json();}catch{}
-          return{status:r.status,platform:!!d?.user?.isPlatformAdmin,mustChange:!!d?.user?.mustChangePassword,id:String(d?.user?.id||''),error:String(d?.error||'')};}catch(e){return{status:0,platform:false,mustChange:false,id:'',error:'FETCH_FAILED'};}});
-        if(session.status===200||session.error)break;
+          return{status:r.status,signedIn:!!d?.user,platform:!!d?.user?.isPlatformAdmin,mustChange:!!d?.user?.mustChangePassword,id:String(d?.user?.userId||''),error:String(d?.error||'')};}catch(e){return{status:0,signedIn:false,platform:false,mustChange:false,id:'',error:'FETCH_FAILED'};}});
+        // /api/auth/me antwortet auch ohne Anmeldung mit 200 und user:null. Auf den Status zu
+        // warten hiess deshalb: gar nicht warten - die Schleife brach sofort im ersten Durchlauf
+        // ab, und der anschliessende Befund machte aus "nicht angemeldet" ein "keine
+        // Plattformrechte". Erst eine Sitzung mit Benutzer ist eine Anmeldung.
+        if(session.signedIn||session.error)break;
         await page.waitForTimeout(500);
       }
-      if(session.status!==200)fail(`platform acceptance account could not sign in: /api/auth/me answered ${session.status}${session.error?` ${session.error}`:''}. Check E2E_PLATFORM_EMAIL/E2E_PLATFORM_PASSWORD.`);
+      if(!session.signedIn){
+        // Was die Seite anzeigt, benennt die Ursache - falsche Zugangsdaten, gesperrtes Konto,
+        // Pflicht zur Neuanmeldung. E-Mail-Adressen werden dabei entfernt: die Adresse steht in
+        // einem Secret und gehoert nicht ins Protokoll.
+        const shown=String(await page.locator('body').innerText().catch(()=>'')).replace(/\s+/g,' ')
+          .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g,'(Adresse entfernt)').trim().slice(0,240);
+        fail(`platform acceptance account is not signed in after submitting the login form: /api/auth/me answered ${session.status} without a user${session.error?` (${session.error})`:''}. The page shows: ${shown||'(nothing)'}. Check E2E_PLATFORM_EMAIL/E2E_PLATFORM_PASSWORD.`);
+      }
       if(session.mustChange)fail('platform acceptance account must change its password before it can be used for acceptance');
       // Ohne die Kennung des Kontos ist dieser Befund nicht behebbar: die Adresse steht in einem
       // Secret und laesst sich nicht nachschlagen, und die Sitzung, die sie verraten wuerde,

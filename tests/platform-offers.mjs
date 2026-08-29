@@ -78,7 +78,13 @@ assert.match(publicUi,/Interne schreibgeschützte Admin-Ansicht/,'admin preview 
 assert.match(publicUi,/keine automatische Umwandlung in ein kostenpflichtiges Abonnement/,'public pilot offer must clearly exclude auto conversion');
 assert.match(publicUi,/confirm_terms/,'public acceptance must affirmatively incorporate AGB');
 assert.match(publicUi,/confirm_dpa/,'public acceptance must affirmatively incorporate AVV');
-assert.ok(wrangler.includes('"/angebot/*"')&&index.includes("/^\\/angebot\\/[^/]+\\/?$/"),'clean public offer URLs must be routed through the Worker');
+// Geprüft wird die Absicht, nicht die Schreibweise: irgendein Muster in run_worker_first muss die
+// öffentliche Angebots-URL abdecken. "/angebot*" tut das ebenso wie "/angebot/*" und deckt
+// zusätzlich die nackte Route ab, die sonst am Worker vorbei aus dem Asset-Speicher käme.
+const offerPatterns=JSON.parse(wrangler).assets?.run_worker_first??[];
+const offerRouted=offerPatterns.some(pattern=>
+  new RegExp('^'+pattern.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*/g,'.*')+'$').test('/angebot/tok123'));
+assert.ok(offerRouted&&index.includes("/^\\/angebot\\/[^/]+\\/?$/"),'clean public offer URLs must be routed through the Worker');
 for(const col of ['monthly_override_cents','recurring_discount_cents','public_token_hash','accepted_terms','accepted_dpa'])assert.ok(migration.includes(col),`offer migration missing ${col}`);
 
 console.log('Platform offer, automatic link delivery, custom pricing, safe-pilot and lazy preview checks: OK');

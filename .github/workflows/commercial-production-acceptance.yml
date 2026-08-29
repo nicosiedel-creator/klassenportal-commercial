@@ -49,6 +49,10 @@ jobs:
           # Der Worker-Host statt der Kundendomain: die WAF vor klassenportal.app blockt
           # automatisierte Laeufe, und assertSameOrigin akzeptiert den eigenen Ursprung.
           COMMERCIAL_BASE_URL: https://klassenportal-commercial.nicosiedel.workers.dev
+          # Die Plattformsitzung wird nur an APP_ORIGIN ausgestellt; über die workers.dev-Adresse
+          # antwortet die Anmeldung mit 403 PLATFORM_ORIGIN_MISMATCH. Die Sperrprüfung bleibt oben
+          # bewusst auf workers.dev, weil die Sperre dort bedingungslos gilt.
+          COMMERCIAL_PLATFORM_URL: https://klassenportal.app
           E2E_TARGET_MODE: locked-production
           E2E_PLATFORM_EMAIL: ${{ secrets.E2E_PLATFORM_EMAIL }}
           E2E_PLATFORM_PASSWORD: ${{ secrets.E2E_PLATFORM_PASSWORD }}
