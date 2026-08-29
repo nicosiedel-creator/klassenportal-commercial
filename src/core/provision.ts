@@ -98,7 +98,18 @@ async function provisionInternal(env:Env,actorUserId:string,input:ProvisionInput
   statements.push(env.DB.prepare("INSERT INTO memberships(id,tenant_id,course_id,user_id,role,created_at) VALUES(?,?,?,?, 'tenant_admin',?)").bind(id('mem_'),tenantId,null,effectiveUserId,ts));
   statements.push(env.DB.prepare("INSERT INTO subscriptions(tenant_id,plan_id,status,starts_at) VALUES(?,?,'trial',?)").bind(tenantId,planId,ts));
   for(const f of defaultFeatures)statements.push(env.DB.prepare("INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at) VALUES(?,?,1,'plan',?)").bind(tenantId,f,ts));
-  for(const f of optionalFeatures)statements.push(env.DB.prepare("INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at) VALUES(?,?,0,'plan',?)").bind(tenantId,f,ts));
+  // Diese Platzhalter stehen auf enabled=0 und tragen damit keine Information: jeder Lesepfad wertet
+  // eine fehlende Zeile genauso (row?.enabled||0), und setModule lehnt genau diese Schluessel
+  // ohnehin immer ab - MODULE_MANAGED_BY_BILLING bzw. MODULE_MANAGED_BY_PACKAGE. Sie werden also
+  // nie umgeschaltet, sondern ausschliesslich ueber die Modulabrechnung freigegeben.
+  //
+  // In Produktion liegt ein historischer FEATURE_NOT_ENTITLED-Trigger, der Schreibzugriffe auf
+  // genau diese Schluessel abweist (siehe migrations/0082). Weil der Einsatz atomar ist, riss ein
+  // einziger abgelehnter Platzhalter die gesamte Portalanlage mit: eine echte Kundeneinrichtung
+  // scheiterte deshalb mit D1_ERROR FEATURE_NOT_ENTITLED, und ohne diese Zeilen war ueberhaupt
+  // kein neuer Kunde einzurichten. Ein Platzhalter ohne Aussage darf das nicht koennen.
+  const guardedFeatures=new Set(['microsoft_365','microsoft_teams','statistics','surveys','substitution_updates','custom_domain','white_label']);
+  for(const f of optionalFeatures)if(!guardedFeatures.has(f))statements.push(env.DB.prepare("INSERT INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at) VALUES(?,?,0,'plan',?)").bind(tenantId,f,ts));
 
   let courseId:string|undefined;
   if(input.course_name){
@@ -110,6 +121,13 @@ async function provisionInternal(env:Env,actorUserId:string,input:ProvisionInput
   }
   statements.push(env.DB.prepare("INSERT INTO provisioning_log(id,tenant_id,action,status,detail_json,created_at) VALUES(?,?,'tenant_created','completed',?,?)").bind(id('prv_'),tenantId,JSON.stringify({adminEmail:email,courseId,planId,actorUserId,tenantUsersLinked:tenantUsers.available,tenantUsersColumns:tenantUsers.available?[...tenantUsers.columns].sort():[]}),ts));
   await env.DB.batch(statements);
+
+  // Nach dem Anlegen, einzeln und nachsichtig: gelingt der Platzhalter, ist alles wie bisher;
+  // weist ihn eine Berechtigungsregel ab, bleibt die Zeile weg - und das bedeutet fuer jeden
+  // Leser dasselbe wie enabled=0. Das Portal existiert in beiden Faellen.
+  for(const f of optionalFeatures)if(guardedFeatures.has(f))
+    await env.DB.prepare("INSERT OR IGNORE INTO feature_flags(tenant_id,feature_key,enabled,source,updated_at) VALUES(?,?,0,'plan',?)")
+      .bind(tenantId,f,ts).run().catch(()=>undefined);
 
   if(needsActivation){
     const pseudoAuth:CoreAuthContext={userId:actorUserId,role:'platform_admin',tenantIds:[tenantId],courseIds:[],isPlatformAdmin:true,session:{userId:actorUserId,email:'',displayName:'',isPlatformAdmin:true,mustChangePassword:false,tenantRoles:[]}};
