@@ -33,6 +33,30 @@ const sessionShape=(types.match(/export interface SessionUser \{([\s\S]*?)\n\}/)
 assert.ok(sessionShape,'die Sitzungsform muss als SessionUser auffindbar bleiben');
 const sessionFields=new Set([...sessionShape.matchAll(/^\s*([A-Za-z_][A-Za-z0-9_]*)\??\s*:/gm)].map(m=>m[1]));
 assert.ok(sessionFields.has('userId')&&sessionFields.has('isPlatformAdmin'),'die Sitzungsform wurde nicht richtig gelesen');
+// Eine Seite, die run_worker_first nicht auffuehrt, wird direkt aus dem Asset-Speicher
+// ausgeliefert - der Worker sieht die Anfrage nie, und die Release-Sperre greift dort nicht.
+// Genau so war /department-lead in Produktion mit 200 erreichbar, waehrend /produkt,
+// /kunden-admin und /dozentenportal gesperrt waren. Jede Route, deren Sperrung die Abnahme
+// verlangt, muss deshalb durch den Worker laufen und darf die Sperre nicht umgehen.
+const workerFirst=JSON.parse(await readFile('wrangler.jsonc','utf8')).assets?.run_worker_first??[];
+assert.ok(workerFirst.length,'die Asset-Konfiguration muss run_worker_first fuehren');
+const coveredByWorker=path=>workerFirst.some(pattern=>
+  new RegExp('^'+pattern.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*/g,'.*')+'$').test(path));
+const lockedBlock=(browser.match(/const MOBILE_RELEASE_LOCKED=\[([^\]]*)\]/)||[])[1];
+assert.ok(lockedBlock,'die Abnahme muss die zu sperrenden Seiten benennen');
+const lockedPaths=[...lockedBlock.matchAll(/'([^']+)'/g)].map(m=>m[1]);
+assert.ok(lockedPaths.length>=4,`zu wenige gesperrte Seiten gefunden: ${lockedPaths.length}`);
+const bypassing=lockedPaths.filter(path=>!coveredByWorker(path));
+assert.deepEqual(bypassing,[],
+  `diese Seiten laufen am Worker vorbei und koennen deshalb nicht gesperrt werden: ${bypassing.join(', ')}`);
+// Und sie duerfen die Sperre auch nicht ausdruecklich umgehen.
+// releaseGateBypass steht auf einer einzigen Zeile; ein mehrzeiliges Muster liest sonst die
+// folgenden Routen-Handler mit und meldet Umgehungen, die es nicht gibt.
+const bypassSource=index.split('\n').find(line=>line.includes('function releaseGateBypass'))||'';
+assert.ok(bypassSource,'die Umgehungsliste der Release-Sperre muss auffindbar bleiben');
+const exempt=lockedPaths.filter(path=>bypassSource.includes(`'${path}'`));
+assert.deepEqual(exempt,[],`diese Seiten umgehen die Release-Sperre ausdruecklich: ${exempt.join(', ')}`);
+
 // Die Produktionsdomain beantwortet Anfragen mit Automatisierungskennung mit 403 - der Live-Smoke
 // oeffnet sie deshalb seit jeher mit einer gewoehnlichen Browserkennung. Die Abnahme lief mit der
 // Standardkennung und bekam auf /plattform-admin dieselbe 403. Beide muessen die Seite so oeffnen,
