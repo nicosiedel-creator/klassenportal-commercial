@@ -48,7 +48,14 @@ const DESKTOP_UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (
 const browser=await engine.launch({headless:true,...(engineName==='chromium'?{args:['--disable-blink-features=AutomationControlled']}:{})});
 const page=await browser.newPage({viewport:{width:1440,height:1000},locale:'de-DE',userAgent:DESKTOP_UA});
 const pageErrors=[],consoleErrors=[],failedRequests=[],httpErrors=[];
-page.on('pageerror',e=>pageErrors.push(String(e)));
+// Ein Seitenfehler ohne Herkunft ist nicht behebbar: "Cannot set properties of undefined" sagt
+// nicht, welche Seite und welche Datei. Deshalb immer Meldung, erste Aufrufstellen und Adresse.
+function pageErrorDetail(page,error){
+  const stack=String(error?.stack||'').split('\n').slice(1,4).map(x=>x.trim()).filter(Boolean).join(' <- ');
+  let url='';try{url=page.url();}catch{}
+  return `${String(error)}${stack?` [${stack}]`:''}${url?` @ ${url}`:''}`;
+}
+page.on('pageerror',e=>pageErrors.push(pageErrorDetail(page,e)));
 page.on('console',msg=>{if(msg.type()==='error')consoleErrors.push(msg.text());});
 // A GET aborted while a navigation is in flight was cancelled by that navigation, not by the
 // application. Classifying it by cause keeps the audit honest instead of whitelisting one path
@@ -333,7 +340,7 @@ const MOBILE_PATHS=['/','/plattform-admin','/produkt','/kunden-admin','/dozenten
 async function mobileSurface(){
   const context=await browser.newContext(mobileContext({userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/138.0.0.0 Mobile Safari/537.36'}));
   const mobile=await context.newPage(),errors=[],failed=[],serverErrors=[];
-  mobile.on('pageerror',e=>errors.push(String(e)));
+  mobile.on('pageerror',e=>errors.push(pageErrorDetail(mobile,e)));
   mobile.on('requestfailed',r=>{const errorText=r.failure()?.errorText||'failed';if(navigationAbort(r,errorText))return;failed.push(`${r.method()} ${r.url()} :: ${errorText}`);});
   mobile.on('response',r=>{aborts.serve(r);if(r.status()<500)return;let path='';try{path=new URL(r.url()).pathname;}catch{}const expectedLocked=mode==='locked-production'&&!productionReleased&&r.status()===503&&MOBILE_RELEASE_LOCKED.includes(path);if(!expectedLocked)serverErrors.push(`${r.status()} ${r.url()}`);});
   try{
@@ -361,7 +368,7 @@ async function platformAdministrationContract(){
   const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'de-DE'});
   const admin=await context.newPage();
   const pageErrors=[];
-  admin.on('pageerror',error=>pageErrors.push(String(error).slice(0,200)));
+  admin.on('pageerror',error=>pageErrors.push(pageErrorDetail(admin,error).slice(0,400)));
   try{
     await navigate(admin,`${base}/plattform-admin`,{waitUntil:'domcontentloaded',timeout:30000});
     await admin.locator('input[name="email"]').fill(email);
@@ -450,7 +457,7 @@ async function setupLinkLeadsToAWorkingPortal(admin){
   const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'de-DE'});
   const customerPage=await context.newPage();
   const serverErrors=[],pageErrors=[];
-  customerPage.on('pageerror',error=>pageErrors.push(String(error).slice(0,160)));
+  customerPage.on('pageerror',error=>pageErrors.push(pageErrorDetail(customerPage,error).slice(0,400)));
   customerPage.on('response',response=>{if(response.status()>=500){let path='';try{path=new URL(response.url()).pathname;}catch{}serverErrors.push(`${response.status()} ${path}`);}});
   try{
     const opened=await navigate(customerPage,target,{waitUntil:'domcontentloaded',timeout:30000});

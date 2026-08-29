@@ -252,4 +252,15 @@ assert.match(browser,/for\(let attempt=0;attempt<20;attempt\+\+\)/,
 assert.match(browser,/if\(!session\.signedIn\)\{/,
   'ohne angemeldete Sitzung muss die Abnahme unveraendert durchfallen');
 
+
+// Ein Seitenfehler ohne Herkunft ist nicht behebbar. "Cannot set properties of undefined"
+// allein nennt weder Datei noch Seite - genau daran waere die Suche haengengeblieben.
+assert.match(browser,/function pageErrorDetail\(page,error\)/,
+  'jeder Seitenfehler muss seine Herkunft nennen koennen');
+assert.match(browser,/error\?\.stack/,'die Aufrufstelle gehoert zur Meldung');
+assert.match(browser,/page\.url\(\)/,'die Adresse der Seite gehoert zur Meldung');
+for(const collector of ['page.on','mobile.on','admin.on','customerPage.on'])
+  assert.ok(new RegExp(`${collector.replace('.','\\.')}\\('pageerror',[^)]*pageErrorDetail`).test(browser),
+    `${collector}('pageerror') muss die Herkunft mitnehmen - sonst bleibt genau dieser Lauf unbehebbar`);
+
 console.log('Commercial production acceptance contract: OK');
