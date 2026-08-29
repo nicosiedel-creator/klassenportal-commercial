@@ -204,5 +204,13 @@ assert.match(browser,/Refused to execute inline script/,'die Ausnahme muss benan
 assert.match(browser,/static\\\.cloudflareinsights\\\.com/,'der blockierte Beacon muss namentlich ausgenommen sein, nicht pauschal jede CSP-Meldung');
 assert.doesNotMatch(browser,/if\(\/Content Security Policy\/i\.test\(text\)\)return false;/,
   'CSP-Meldungen duerfen nicht pauschal ignoriert werden');
+// Der Beacon taucht in zwei Listen auf: als Konsolenmeldung und als fehlgeschlagene Anfrage.
+// Beide Male darf nur genau dieser Host wegfallen, und nur wenn die CSP der Grund war.
+assert.match(browser,/const CSP_BLOCKED_EXTERNAL=\/\^https:\\\/\\\/static\\\.cloudflareinsights\\\.com\\\//,
+  'der geblockte Beacon-Host muss namentlich benannt sein');
+assert.match(browser,/if\(\/csp\/i\.test\(errorText\)&&CSP_BLOCKED_EXTERNAL\.test\(request\.url\(\)\)\)return;/,
+  'nur eine von der CSP verweigerte Anfrage an genau diesen Host darf entfallen');
+assert.doesNotMatch(browser,/if\(\/csp\/i\.test\(errorText\)\)return;/,
+  'nicht jede von der CSP verweigerte Anfrage darf entfallen - nur die des benannten Hosts');
 
 console.log('Commercial production acceptance contract: OK');

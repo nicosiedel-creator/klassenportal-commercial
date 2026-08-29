@@ -87,7 +87,12 @@ const aborts=abortTracker();
 function navigationAbort(request,errorText){return aborts.note(request,errorText);}
 async function settle(target){await target.waitForLoadState('networkidle',{timeout:8000}).catch(()=>undefined);}
 async function navigate(target,url,options){navigation.depth++;try{return await target.goto(url,options);}finally{await settle(target);navigation.depth--;}}
-page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';if(navigationAbort(request,errorText))return;failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
+// Eine Anfrage, die der Browser wegen unserer eigenen CSP verweigert, ist kein Fehlschlag des
+// Portals - sie ist die CSP bei der Arbeit. Cloudflare injiziert seinen Web-Analytics-Beacon in
+// die Seite; script-src 'self' laesst ihn nicht laufen. Der Host steht namentlich hier, damit
+// keine andere blockierte Anfrage stillschweigend mitverschwindet.
+const CSP_BLOCKED_EXTERNAL=/^https:\/\/static\.cloudflareinsights\.com\//;
+page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';if(navigationAbort(request,errorText))return;if(/csp/i.test(errorText)&&CSP_BLOCKED_EXTERNAL.test(request.url()))return;failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
 // Eine Antwort, die eine Navigation ausdruecklich zulaesst, ist keine unerwartete Antwort. Die
 // Release-Sperre antwortet auf /produkt, /kunden-admin und /dozentenportal mit 503 - genau das
 // verlangt lockedProductionSurface dort mit allowStatuses:[503] und prueft zusaetzlich den Text
