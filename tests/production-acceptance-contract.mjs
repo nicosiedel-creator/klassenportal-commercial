@@ -238,4 +238,29 @@ assert.ok(branchAt>0&&mobileAt>branchAt,'der Freigabezustand muss vor den mobile
 assert.match(browser,/externe Meldung\(en\) ignoriert/,'gefilterte Fremdmeldungen muessen benannt werden');
 assert.match(browser,/keine externen Konsolenmeldungen/,'der Lauf muss auch melden, wenn nichts zu filtern war');
 
+
+// Die Abnahme scheiterte in Produktion an ihrem eigenen Wettlauf: die Sitzungsabfrage lief
+// waehrend der Weiterleitung der Anmeldeseite, und der Browser zerstoerte den
+// Ausfuehrungskontext. Das darf sie nicht als Befund des Portals melden - und sie darf
+// deswegen auch nicht pauschal jeden Fehler verschlucken.
+assert.match(browser,/Execution context was destroyed/,
+  'die Abnahme muss den Wettlauf mit der Weiterleitung erkennen, statt daran zu scheitern');
+assert.match(browser,/if\(!navigationRace\(e\)\)throw e;/,
+  'jeder andere Fehler muss weiterhin sofort abbrechen - pauschales Verschlucken waere eine blinde Abnahme');
+assert.match(browser,/for\(let attempt=0;attempt<20;attempt\+\+\)/,
+  'die Wiederholung muss begrenzt bleiben');
+assert.match(browser,/if\(!session\.signedIn\)\{/,
+  'ohne angemeldete Sitzung muss die Abnahme unveraendert durchfallen');
+
+
+// Ein Seitenfehler ohne Herkunft ist nicht behebbar. "Cannot set properties of undefined"
+// allein nennt weder Datei noch Seite - genau daran waere die Suche haengengeblieben.
+assert.match(browser,/function pageErrorDetail\(page,error\)/,
+  'jeder Seitenfehler muss seine Herkunft nennen koennen');
+assert.match(browser,/error\?\.stack/,'die Aufrufstelle gehoert zur Meldung');
+assert.match(browser,/page\.url\(\)/,'die Adresse der Seite gehoert zur Meldung');
+for(const collector of ['page.on','mobile.on','admin.on','customerPage.on'])
+  assert.ok(new RegExp(`${collector.replace('.','\\.')}\\('pageerror',[^)]*pageErrorDetail`).test(browser),
+    `${collector}('pageerror') muss die Herkunft mitnehmen - sonst bleibt genau dieser Lauf unbehebbar`);
+
 console.log('Commercial production acceptance contract: OK');
