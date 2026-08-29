@@ -4,6 +4,9 @@ import { buildZip } from './helpers/zip.mjs';
 import { extractIntakeDocument } from '../dist/core/intake-document-extract.js';
 import { emptyRouted, routeExtracted, routeRows, routeText, archiveNeedsClientText } from '../dist/core/intake-classifier.js';
 import { safeAutoOrganizationCandidate } from '../dist/core/intake-center.js';
+import { ensureIntakeRoutingSchema, intakeTracksOrganizationImport } from '../dist/core/intake-routing-schema.js';
+import { d1 } from './helpers/d1.mjs';
+import { DatabaseSync } from 'node:sqlite';
 
 // Gefordert ist: ein Mandant wirft einen ganzen Ordner ein, das System sucht sich alles selbst
 // heraus und legt es an; nur bei Unklarheiten wird zurueckgefragt.
@@ -192,4 +195,89 @@ const publicUi=await readFile('public/intake-public-upload.js','utf8');
 assert.match(publicUi,/webkitdirectory|#folder/,'auch die oeffentliche Einreichseite muss einen Ordner annehmen');
 assert.match(intake,/webkitdirectory/,'die oeffentliche Seite muss das Ordnerfeld ausliefern');
 
-console.log('Autonomer Ordner-Eingang: gezippte Ordner werden ausgepackt, Kurs-, Fach-, Dozenten-, Teilnehmer- und Vertragsunterlagen selbst sortiert, Struktur vor Personen angelegt: OK');
+
+// ---------------------------------------------------------------------------------------------
+// 8. Der Ernstfall der Auslieferung: Migrationen laufen in dieser Anwendung NICHT automatisch in
+//    die Produktionsdatenbank - jedes "migrations apply" in der CI benutzt --local. Der neue Code
+//    trifft also zwangslaeufig zuerst auf ein altes Schema. Ohne die Spalte bricht das
+//    Uebernehmen mit einem SQL-Fehler ab, ohne die Dienstkennung weist der Fremdschluessel jeden
+//    automatischen Entwurf zurueck: ein eingeworfener Ordner bliebe liegen.
+//
+//    Deshalb ausgefuehrt gegen eine Datenbank im Zustand VOR der Migration.
+// ---------------------------------------------------------------------------------------------
+const inboundSchema=await readFile('src/core/cloudflare-inbound.ts','utf8');
+const legacy=new DatabaseSync(':memory:');
+legacy.exec(`
+  CREATE TABLE users(id TEXT PRIMARY KEY,email TEXT NOT NULL,display_name TEXT NOT NULL,password_hash TEXT NOT NULL,force_password_change INTEGER NOT NULL DEFAULT 0,is_platform_admin INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+  CREATE TABLE tenants(id TEXT PRIMARY KEY);
+  CREATE TABLE intake_batches(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,status TEXT NOT NULL,participant_import_batch_id TEXT);
+  CREATE TABLE participant_import_batches(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE);
+  CREATE TABLE organization_import_batches(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE);
+  CREATE TRIGGER trg_participant_import_intake_actor BEFORE INSERT ON participant_import_batches
+  WHEN NEW.created_by LIKE 'system:intake:%'
+  BEGIN
+    INSERT OR IGNORE INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at)
+    VALUES(NEW.created_by,replace(NEW.created_by,':','-') || '@localhost.invalid','Automatischer Eingang','!disabled-system-account!',0,0,'disabled',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+  END;
+  CREATE TRIGGER trg_participant_import_intake_actor_cleanup AFTER DELETE ON participant_import_batches
+  WHEN OLD.created_by LIKE 'system:intake:%'
+  BEGIN
+    DELETE FROM users WHERE id=OLD.created_by AND status='disabled' AND email LIKE 'system-intake-%@localhost.invalid';
+  END;
+  INSERT INTO tenants(id) VALUES('ten_x');
+`);
+legacy.exec('PRAGMA foreign_keys = ON;');
+const legacyEnv={DB:d1(legacy)};
+
+assert.equal(await intakeTracksOrganizationImport(legacyEnv),false,'die Ausgangslage muss die Spalte wirklich noch nicht haben - sonst prueft dieser Abschnitt nichts');
+await ensureIntakeRoutingSchema(legacyEnv);
+assert.equal(await intakeTracksOrganizationImport(legacyEnv),true,'die fehlende Spalte muss zur Laufzeit entstehen');
+const legacyTriggers=legacy.prepare("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name").all().map(r=>r.name);
+assert.ok(legacyTriggers.includes('trg_organization_import_intake_actor'),'die Dienstkennung des Organisationsimports muss zur Laufzeit entstehen');
+assert.ok(legacyTriggers.includes('trg_participant_import_intake_actor'),'die bestehende Regel aus 0052 darf dabei nicht verschwinden');
+
+// Ausgefuehrt: ein automatischer Organisationsentwurf muss jetzt anlegbar sein. Ohne die
+// Dienstkennung scheitert genau das am Fremdschluessel - das war der Befund im ersten Lauf.
+legacy.prepare("INSERT INTO organization_import_batches(id,tenant_id,created_by) VALUES(?,?,?)").run('oib_1','ten_x','system:intake:org:inb_1');
+const legacyActor=legacy.prepare('SELECT status FROM users WHERE id=?').get('system:intake:org:inb_1');
+assert.ok(legacyActor,'die Dienstkennung muss beim Anlegen entstehen');
+assert.equal(legacyActor.status,'disabled','die Dienstkennung darf nie anmeldefaehig sein');
+
+// Und die Trennung: der Teilnehmerimport raeumt seine eigene Kennung ab, nicht die des
+// Organisationsimports. Sonst risse dessen ON DELETE CASCADE den fremden Import still mit weg.
+legacy.prepare("INSERT INTO participant_import_batches(id,tenant_id,created_by) VALUES(?,?,?)").run('pib_1','ten_x','system:intake:inb_1');
+legacy.prepare('DELETE FROM participant_import_batches WHERE id=?').run('pib_1');
+assert.equal(legacy.prepare('SELECT COUNT(*) n FROM users WHERE id=?').get('system:intake:inb_1').n,0,'der Teilnehmerimport muss seine eigene Kennung abraeumen');
+assert.equal(legacy.prepare('SELECT COUNT(*) n FROM users WHERE id=?').get('system:intake:org:inb_1').n,1,'die Kennung des Organisationsimports darf dabei nicht mitgeloescht werden');
+assert.equal(legacy.prepare('SELECT COUNT(*) n FROM organization_import_batches').get().n,1,'und der Organisationsimport darf nicht per Fremdschluessel mitgerissen werden');
+
+// Und die Gegenrichtung, die genauso schiefgehen kann: raeumt der Organisationsimport die
+// Kennung des Teilnehmerimports mit ab, reisst dessen Stapel per ON DELETE CASCADE still mit weg.
+// Getragen wird die Trennung vom eigenen Praefix der Kennung - deshalb wird hier auch geprueft,
+// dass die beiden Kennungen wirklich verschieden heissen, nicht nur, dass es gutgeht.
+legacy.prepare("INSERT INTO participant_import_batches(id,tenant_id,created_by) VALUES(?,?,?)").run('pib_2','ten_x','system:intake:inb_2');
+legacy.prepare("INSERT INTO organization_import_batches(id,tenant_id,created_by) VALUES(?,?,?)").run('oib_2','ten_x','system:intake:org:inb_2');
+legacy.prepare('DELETE FROM organization_import_batches WHERE id=?').run('oib_2');
+assert.equal(legacy.prepare('SELECT COUNT(*) n FROM users WHERE id=?').get('system:intake:org:inb_2').n,0,'der Organisationsimport muss seine eigene Kennung abraeumen');
+assert.equal(legacy.prepare('SELECT COUNT(*) n FROM users WHERE id=?').get('system:intake:inb_2').n,1,'die Kennung des Teilnehmerimports darf dabei nicht mitgeloescht werden');
+assert.equal(legacy.prepare('SELECT COUNT(*) n FROM participant_import_batches WHERE id=?').get('pib_2').n,1,'und der Teilnehmerstapel darf nicht per Fremdschluessel mitgerissen werden');
+
+// Das ist die Eigenschaft, die die Trennung wirklich traegt: zwei verschiedene Kennungen.
+// Waeren sie gleich, raeumte die Aufraeumregel des einen dem anderen die Zeile weg, und das
+// ON DELETE CASCADE seines Fremdschluessels loeschte den fremden Import gleich mit.
+assert.match(intake,/kind==='organization'\?`system:intake:org:\$\{batchId\}`:`system:intake:\$\{batchId\}`/,
+  'Teilnehmer- und Organisationsimport muessen getrennte Dienstkennungen benutzen');
+assert.match(inboundSchema,/kind==='organization'\?`system:intake:org:\$\{batchId\}`:`system:intake:\$\{batchId\}`/,
+  'auch der E-Mail-Eingang muss getrennte Dienstkennungen benutzen');
+
+// Wiederholtes Herstellen darf nichts kaputtmachen.
+await ensureIntakeRoutingSchema(legacyEnv);
+assert.equal(await intakeTracksOrganizationImport(legacyEnv),true,'das Herstellen muss wiederholbar sein');
+
+// Und der Weg zum Uebernehmen darf die Spalte nicht blind benennen.
+assert.match(intake,/tracksOrganization\?'organization_import_batch_id':'NULL AS organization_import_batch_id'/,
+  'ohne die Spalte darf keine Abfrage sie benennen - sonst braeche das Uebernehmen an einer Spalte, ohne die es genauso arbeiten kann');
+assert.match(intake,/await ensureIntakeRoutingSchema\(env\)/,'der Eingang muss sein Schema herstellen, bevor er es benutzt');
+assert.match(inboundSchema,/await ensureIntakeRoutingSchema\(env\)/,'auch der E-Mail-Eingang muss sein Schema herstellen');
+
+console.log('Autonomer Ordner-Eingang: gezippte Ordner ausgepackt, Unterlagen selbst sortiert, Struktur vor Personen, und gegen eine noch nicht migrierte Datenbank ausgefuehrt: OK');

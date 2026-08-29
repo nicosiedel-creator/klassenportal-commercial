@@ -4,6 +4,7 @@ import { applyParticipantImport, previewParticipantImport, type ParticipantCandi
 import { extractIntakeDocument } from './intake-document-extract.js';
 import { mapParticipantRows } from './participant-import-file.js';
 import { emptyRouted, routeExtracted } from './intake-classifier.js';
+import { ensureIntakeRoutingSchema } from './intake-routing-schema.js';
 import { applyOrganizationImport, previewOrganizationImport, ORGANIZATION_BLOCKING_WARNINGS, type OrganizationCandidate } from './organization-import.js';
 import { mailConfigured, sendMail } from './mail.js';
 import { b64, id, normalizeEmail, nowIso, safeString, sha256Text } from './utils.js';
@@ -37,6 +38,7 @@ async function processMail(env:Env,parsed:ParsedMail,envelope:EmailMessageLike):
   // ein hochgeladener Ordner - sonst wuerde eine Kursliste zu unbrauchbaren Teilnehmerzeilen.
   const routed=emptyRouted(),pending:string[]=[];let total=0,stored=0,issues=0;for(const a of (parsed.attachments||[]).slice(0,MAX_BATCH_FILES)){const b=arrayBuffer(a.content);total+=b.byteLength;if(total>MAX_BATCH_BYTES){issues++;break;}try{const x=await store(env,channel.tenant_id,batchId,a,b,expires);if(x.stored){stored++;if(x.kind==='client_pdf'||x.kind==='ocr_required')pending.push(String(a.filename||'PDF'));else routeExtracted(routed,String(a.filename||'Anhang'),x.extracted as any);}else issues++;}catch{issues++;}}
   const body=String(parsed.text||parsed.html||'').trim();if(!stored&&body)routeExtracted(routed,'E-Mail-Text',{kind:'texts',texts:[body]});await env.DB.prepare('UPDATE intake_batches SET document_count=?,updated_at=? WHERE id=?').bind(stored,nowIso(),batchId).run();
+  await ensureIntakeRoutingSchema(env);
   const auth=systemAuth(channel.tenant_id,batchId),orgAuth=systemAuth(channel.tenant_id,batchId,'organization');
   let organization:{batch_id:string;digest:string;candidates:OrganizationCandidate[]}|null=null;
   if(routed.organizationRows.length||routed.organizationTexts.length){try{organization=await previewOrganizationImport(env,orgAuth,channel.tenant_id,{rows:routed.organizationRows,documents:routed.organizationTexts,source_name:subject,source_kind:'api'}) as any;await env.DB.prepare("UPDATE intake_batches SET organization_import_batch_id=?,status='review',updated_at=? WHERE id=?").bind(organization!.batch_id,nowIso(),batchId).run().catch(()=>undefined);}catch{issues++;}}
