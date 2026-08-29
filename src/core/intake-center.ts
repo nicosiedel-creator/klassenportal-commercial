@@ -5,6 +5,7 @@ import { applyParticipantImport, previewParticipantImport, type ParticipantCandi
 import { mapParticipantRows } from './participant-import-file.js';
 import { extractIntakeDocument } from './intake-document-extract.js';
 import { archiveNeedsClientText, emptyRouted, routeExtracted, type RoutedIntake } from './intake-classifier.js';
+import { ensureIntakeRoutingSchema, intakeTracksOrganizationImport } from './intake-routing-schema.js';
 import { applyOrganizationImport, previewOrganizationImport, ORGANIZATION_BLOCKING_WARNINGS, type OrganizationCandidate } from './organization-import.js';
 import { b64, id, normalizeEmail, nowIso, randomBytes, safeString, sha256Text } from './utils.js';
 
@@ -71,8 +72,9 @@ async function readRouted(env:Env,tenantId:string,batchId:string,clientTexts:Rec
   return{routed,pending};
 }
 async function rememberOrganizationBatch(env:Env,tenantId:string,batchId:string,organizationBatchId:string|null){
-  // Faellt diese Spalte in einer Datenbank aus, darf das den Eingang nicht anhalten: der Import
-  // selbst ist damit bereits gebaut, nur die Rueckverfolgung fehlt.
+  // Faellt diese Spalte in einer noch nicht migrierten Datenbank aus, darf das den Eingang nicht
+  // anhalten: der Import selbst ist damit bereits gebaut, nur die Rueckverfolgung fehlt.
+  // ensureIntakeRoutingSchema legt sie an; das hier ist die zweite Sicherung darunter.
   await env.DB.prepare('UPDATE intake_batches SET organization_import_batch_id=? WHERE id=? AND tenant_id=?').bind(organizationBatchId,batchId,tenantId).run().catch(()=>undefined);
 }
 async function buildParticipantPreview(env:Env,tenantId:string,batchId:string,auth:CoreAuthContext,routed:RoutedIntake,sourceSubject:string|null,defaultCourseId:string|null){
@@ -82,6 +84,7 @@ async function buildParticipantPreview(env:Env,tenantId:string,batchId:string,au
   return preview;
 }
 async function createPreviewFromStored(env:Env,tenantId:string,batchId:string,auth:CoreAuthContext,clientTexts:Record<string,string>={}):Promise<BuiltIntake>{
+  await ensureIntakeRoutingSchema(env);
   const batch=await env.DB.prepare('SELECT default_course_id,source_subject FROM intake_batches WHERE tenant_id=? AND id=?').bind(tenantId,batchId).first<{default_course_id:string|null;source_subject:string|null}>();if(!batch)throw new Error('INTAKE_BATCH_NOT_FOUND');
   const{routed,pending}=await readRouted(env,tenantId,batchId,clientTexts);
   if(pending.length)return{pending_document_ids:pending,preview:null,organization:null,routed:null,unsupported:routed.unsupported,source_subject:batch.source_subject,default_course_id:batch.default_course_id};
@@ -164,7 +167,12 @@ export async function previewIntakeBatch(env:Env,auth:CoreAuthContext,tenantId:s
 // angelegten Kurse gefunden werden - sonst muesste der Pruefende zweimal durchlaufen.
 export async function applyIntakeBatch(env:Env,auth:CoreAuthContext,tenantId:string,batchId:string,input:Record<string,unknown>){
   requireReviewer(auth);
-  const b=await env.DB.prepare('SELECT participant_import_batch_id,organization_import_batch_id,source_subject,default_course_id FROM intake_batches WHERE tenant_id=? AND id=?').bind(tenantId,batchId).first<{participant_import_batch_id:string|null;organization_import_batch_id:string|null;source_subject:string|null;default_course_id:string|null}>();
+  await ensureIntakeRoutingSchema(env);
+  // Die Rueckverfolgungsspalte dient nur der Nachvollziehbarkeit. Fehlt sie in einer Datenbank,
+  // die noch nicht migriert ist, darf keine Abfrage sie benennen - sonst braeche das Uebernehmen
+  // an einer Spalte, ohne die es genauso arbeiten kann.
+  const tracksOrganization=await intakeTracksOrganizationImport(env);
+  const b=await env.DB.prepare(`SELECT participant_import_batch_id,${tracksOrganization?'organization_import_batch_id':'NULL AS organization_import_batch_id'},source_subject,default_course_id FROM intake_batches WHERE tenant_id=? AND id=?`).bind(tenantId,batchId).first<{participant_import_batch_id:string|null;organization_import_batch_id:string|null;source_subject:string|null;default_course_id:string|null}>();
   if(!b?.participant_import_batch_id&&!b?.organization_import_batch_id)throw new Error('INTAKE_PREVIEW_REQUIRED');
   await env.DB.prepare("UPDATE intake_batches SET status='processing',updated_at=? WHERE tenant_id=? AND id=?").bind(nowIso(),tenantId,batchId).run();
   const results:unknown[]=[];let accepted=0,skipped=0,organizationApplied=false;
