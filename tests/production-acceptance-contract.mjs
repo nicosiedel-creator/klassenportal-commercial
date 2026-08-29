@@ -162,4 +162,19 @@ assert.match(documentContract,/\}else if\(!\/unvollständig\/i\.test\(offerText\
 assert.match(documentContract,/offerCalls\.length\)problems\.push/,
   'ohne Token darf in keinem Modus ein Angebot abgefragt werden');
 
+// Die Release-Sperre antwortet auf den gesperrten Seiten mit 503 - genau das verlangt
+// lockedProductionSurface dort mit allowStatuses:[503] und prueft zusaetzlich den Text der
+// Sperrseite. Die Sammelpruefung am Ende meldete dieselben Antworten trotzdem als unerwartet.
+// Die Erwartung gehoert an die Navigation, die sie deklariert, nicht in eine zweite Liste.
+assert.match(browser,/allowStatuses\.includes\(response\.status\(\)\)\)routeAllowedErrors\.add\(/,
+  'eine ausdruecklich zugelassene Fehlerantwort muss an der Navigation vermerkt werden');
+assert.match(browser,/function expectedBrowserHttpError\(entry\)\{if\(routeAllowedErrors\.has\(/,
+  'die Sammelpruefung muss diese Antworten als erwartet erkennen');
+assert.match(browser,/allowStatuses:\[503\]\}\);if\(!\/noch nicht für den Produktivbetrieb freigegeben/,
+  'die gesperrten Seiten muessen weiterhin einzeln auf die Sperrseite geprueft werden');
+// Und nichts darf pauschal durchgehen: die Erwartung gilt nur fuer den genauen Status derselben
+// Antwort, nicht fuer die Adresse allein.
+assert.match(browser,/routeAllowedErrors\.add\(`\$\{response\.status\(\)\} \$\{response\.url\(\)\}`\)/,
+  'die Erwartung muss Status und Adresse zusammen festhalten');
+
 console.log('Commercial production acceptance contract: OK');

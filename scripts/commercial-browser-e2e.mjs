@@ -88,12 +88,21 @@ function navigationAbort(request,errorText){return aborts.note(request,errorText
 async function settle(target){await target.waitForLoadState('networkidle',{timeout:8000}).catch(()=>undefined);}
 async function navigate(target,url,options){navigation.depth++;try{return await target.goto(url,options);}finally{await settle(target);navigation.depth--;}}
 page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';if(navigationAbort(request,errorText))return;failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
+// Eine Antwort, die eine Navigation ausdruecklich zulaesst, ist keine unerwartete Antwort. Die
+// Release-Sperre antwortet auf /produkt, /kunden-admin und /dozentenportal mit 503 - genau das
+// verlangt lockedProductionSurface dort mit allowStatuses:[503] und prueft zusaetzlich den Text
+// der Sperrseite. Die Sammelprüfung am Ende meldete dieselben drei Antworten trotzdem als
+// unerwartet: ein Widerspruch in derselben Datei. Die Erwartung wird deshalb dort vermerkt, wo
+// sie deklariert wird - an der Navigation selbst -, statt in einer zweiten Liste, die abdriften
+// kann. Jede andere Antwort ab 400 faellt unveraendert auf.
+const routeAllowedErrors=new Set();
 page.on('response',response=>{aborts.serve(response);if(response.status()>=400)httpErrors.push({status:response.status(),url:response.url()});});
 
 async function route(path,{allowStatuses=[200],waitForResponsePath=null}={}){
   const backgroundResponse=waitForResponsePath?page.waitForResponse(response=>{try{return new URL(response.url()).pathname===waitForResponsePath;}catch{return false;}},{timeout:10000}):null;
   const response=await navigate(page,base+path,{waitUntil:'domcontentloaded',timeout:30000});
   if(!response)fail(`No response for ${path}`);
+  if(response.status()>=400&&allowStatuses.includes(response.status()))routeAllowedErrors.add(`${response.status()} ${response.url()}`);
   // Ein 304 ist die richtige Antwort auf eine bedingte Anfrage: die zwischengespeicherte Seite
   // ist noch gültig. Firefox und WebKit revalidieren beim zweiten Besuch, Chromium liefert dort
   // aus dem Speicher heraus 200 - eine Erwartung von genau 200 prüft also den Browser, nicht das
@@ -643,7 +652,7 @@ async function adminDialogContract(path){
 }
 
 const expectedCandidate401Paths=new Set(['/api/auth/me','/api/attendance/teacher/courses']);
-function expectedBrowserHttpError(entry){if(mode!=='candidate'||entry.status!==401)return false;let path='';try{path=new URL(entry.url).pathname;}catch{return false;}return expectedCandidate401Paths.has(path);}
+function expectedBrowserHttpError(entry){if(routeAllowedErrors.has(`${entry.status} ${entry.url}`))return true;if(mode!=='candidate'||entry.status!==401)return false;let path='';try{path=new URL(entry.url).pathname;}catch{return false;}return expectedCandidate401Paths.has(path);}
 
 // Die erste Navigation trägt den Kaltstart der Engine mit. WebKit brauchte dafür auf dem Runner
 // mehr als die 30 Sekunden, die für eine einzelne Route gedacht sind, und die Zeitüberschreitung
