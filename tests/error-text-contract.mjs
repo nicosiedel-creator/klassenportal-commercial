@@ -116,8 +116,23 @@ assert.match(stageErrorFn,/console\.error\(/,'ein maskierter Stufenfehler muss d
 assert.match(stageErrorFn,/stage/,'das Protokoll muss benennen, welche Stufe scheiterte');
 assert.match(stageErrorFn,/cause:/,'das Protokoll muss die tatsaechliche Meldung enthalten');
 assert.doesNotMatch(stageErrorFn,/token|raw|password/i,'der Einrichtungs-Token und Passwörter duerfen nie ins Protokoll');
+// Ein Konsolen-Log hilft nur, wer im richtigen Moment zusieht. Eine gescheiterte Einrichtung muss
+// deshalb einen dauerhaften Eintrag hinterlassen - sonst ist sie danach wieder nicht untersuchbar,
+// und genau daran scheiterte die Ursachensuche beim ersten echten Kunden.
+assert.match(onboardingServer,/action,status,detail_json,created_at\) VALUES\(\?,\?,'onboarding_failed','failed'/,
+  'eine gescheiterte Einrichtung muss dauerhaft festgehalten werden, nicht nur protokolliert');
+assert.match(onboardingServer,/cause:stageDetail\?\.cause/,'der Eintrag muss die tatsaechliche Ursache enthalten');
+assert.match(onboardingServer,/stage:stageDetail\?\.stage/,'der Eintrag muss die Stufe benennen');
+const failureRecord=(onboardingServer.match(/JSON\.stringify\(\{invitationId:[^}]*\}\)/)||[''])[0];
+assert.ok(failureRecord,'der Inhalt des Eintrags muss auffindbar bleiben');
+assert.doesNotMatch(failureRecord,/token|password|passwort/i,'in den Eintrag duerfen weder Token noch Passwort');
+// Der Eintrag darf den eigentlichen Fehler niemals verdecken.
+assert.match(onboardingServer,/'onboarding_failed','failed'[\s\S]{0,400}?\.run\(\)\.catch\(\(\)=>undefined\)/,
+  'schlaegt das Festhalten selbst fehl, darf es den urspruenglichen Fehler nicht ersetzen');
+
 // Und der Kunde bekommt weiterhin nur den Sammelcode, nicht die Ursache.
-assert.match(stageErrorFn,/return new Error\(fallback\);/,'die Ursache darf die Kundenmeldung nicht erreichen');
+assert.match(stageErrorFn,/new Error\(fallback\)/,'der Kunde darf nur den Sammelcode bekommen');
+assert.doesNotMatch(stageErrorFn,/new Error\(detail/,'die tatsaechliche Ursache darf nie in die Kundenmeldung wandern');
 
 // Jede Kundenoberfläche muss das Wörterbuch laden, sonst greift der Rückfall dort nicht.
 for(const shell of ['customer-admin.html','platform-admin.html','class-admin.html','dozentenportal.html',

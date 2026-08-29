@@ -45,7 +45,11 @@ function stageError(error:unknown,fallback:string,stage:string):Error{
   if(code==='ONBOARDING_ACTIVATION_FAILED'){
     const detail=(error instanceof Error?error.message:String(error??'')).slice(0,400);
     console.error('Onboarding stage failed',{stage,reported:fallback,cause:detail||'(keine Meldung)'});
-    return new Error(fallback);
+    // Ein Konsolen-Log hilft nur, wer im richtigen Moment zusieht. Die Ursache wird deshalb an den
+    // Fehler geheftet, damit der aeussere Ablauf sie dauerhaft festhalten kann.
+    const masked=new Error(fallback) as Error&{stageDetail?:{stage:string;cause:string}};
+    masked.stageDetail={stage,cause:detail||'(keine Meldung)'};
+    return masked;
   }
   return new Error(code);
 }
@@ -213,6 +217,15 @@ export async function submitPublicOnboarding(env:Env,token:string,request:Reques
     return{ok:true,tenant_id:provisioned.tenantId,login_email:adminEmail,commercial_action:commercialAction,commercial};
   }catch(e){
     const code=publicErrorCode(e);
+    // Bis hierher hinterliess eine gescheiterte Einrichtung nichts: keine Zeile im Protokoll, kein
+    // Eintrag in der Datenbank. Der wichtigste Pfad des Portals war damit nach dem Fehlschlag nicht
+    // mehr untersuchbar. Jetzt bleibt ein Eintrag stehen - mit der Stufe und der echten Ursache,
+    // aber ohne Token und ohne Passwort. Er darf den eigentlichen Fehler nie verdecken, deshalb
+    // wird sein eigenes Scheitern verschluckt.
+    const stageDetail=(e as {stageDetail?:{stage:string;cause:string}})?.stageDetail;
+    await env.DB.prepare("INSERT INTO provisioning_log(id,tenant_id,action,status,detail_json,created_at) VALUES(?,?,'onboarding_failed','failed',?,?)")
+      .bind(id('prv_'),provisioned?.tenantId??null,JSON.stringify({invitationId:invitation.id,code,stage:stageDetail?.stage??null,cause:stageDetail?.cause??null}),nowIso())
+      .run().catch(()=>undefined);
     if(!provisioned){
       await env.DB.prepare('DELETE FROM onboarding_claims WHERE invitation_id=? AND nonce=?').bind(invitation.id,nonce).run().catch(()=>undefined);
     }else{
