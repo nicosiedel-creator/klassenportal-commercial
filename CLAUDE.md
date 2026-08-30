@@ -6,6 +6,10 @@ Weiterbildung). Produktiv unter `klassenportal.app`.
 Verbindlicher Produktstand: `PROJECT_STATE.md`. Bei Widerspruch gewinnt `PROJECT_STATE.md`
 gegenüber dieser Datei.
 
+Zielbild (Soll): `docs/PRODUCT_SPEC.md`. Rangfolge bei Widerspruch: Code + grüne Gates →
+`PROJECT_STATE.md` → `docs/PRODUCT_SPEC.md`. Eine Abweichung ist eine Lücke, kein
+Auftrag, den Code an den älteren Text anzupassen.
+
 ## Stack & Aufbau
 
 - Cloudflare Workers + Static Assets, D1 (SQL), R2 (Dateien/Backups) – EU-Bindings
