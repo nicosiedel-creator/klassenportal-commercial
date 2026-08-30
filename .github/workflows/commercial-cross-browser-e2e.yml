@@ -135,8 +135,16 @@ jobs:
           NODE
           npx wrangler d1 migrations apply DB --local --config wrangler.browser-e2e.json
           node scripts/commercial-onboarding-e2e-state.mjs seed wrangler.browser-e2e.json
-          WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --config wrangler.browser-e2e.json --local --ip 127.0.0.1 --port 8787 --local-upstream 127.0.0.1 --upstream-protocol http >/tmp/commercial-wrangler-e2e.log 2>&1 &
+          # Der Kandidat laeuft auf 8788, davor der Vorschalt-Server auf 8787. Der Browser spricht
+          # damit dieselbe Adresse an wie bisher, und APP_ORIGIN bleibt unveraendert - nur die
+          # Gleichzeitigkeit nimmt ihm der Vorschalt-Server ab. Siehe seinen Kopf: WebKit blieb
+          # genau an den sechs gleichzeitig geladenen Dateien haengen.
+          WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --config wrangler.browser-e2e.json --local --ip 127.0.0.1 --port 8788 --local-upstream 127.0.0.1 --upstream-protocol http >/tmp/commercial-wrangler-e2e.log 2>&1 &
           echo $! >/tmp/commercial-wrangler-e2e.pid
+          node scripts/local-candidate-proxy.mjs 8787 8788 127.0.0.1 >/tmp/commercial-proxy.log 2>&1 &
+          echo $! >/tmp/commercial-proxy.pid
+          # Die Bereitschaftspruefung laeuft ueber den Vorschalt-Server: damit ist der ganze Weg
+          # geprueft, den der Browser danach geht, und nicht nur ein Teil davon.
           node scripts/wait-for-local-candidate.mjs http://127.0.0.1:8787/plattform-admin /tmp/commercial-wrangler-e2e.log
       # Die entscheidende Trennung. Bis hierher ist belegt: die Engine erreicht einen lokalen
       # node-Server in Millisekunden, mit und ohne Benutzernamensraum-Sperre, schlicht und mit
@@ -191,8 +199,12 @@ jobs:
           cat /tmp/netzprobe.log || true
           echo '--- Browser-E2E: letzte Zeilen ---'
           tail -n 40 /tmp/commercial-browser-e2e.log || true
+      - name: Show the proxy log on failure
+        if: failure()
+        run: tail -n 20 /tmp/commercial-proxy.log || true
       - name: Stop local PR candidate
         if: always()
         run: |
+          if test -f /tmp/commercial-proxy.pid; then kill "$(cat /tmp/commercial-proxy.pid)" 2>/dev/null || true; fi
           if test -f /tmp/commercial-wrangler-e2e.pid; then kill "$(cat /tmp/commercial-wrangler-e2e.pid)" 2>/dev/null || true; fi
           rm -f wrangler.browser-e2e.json
