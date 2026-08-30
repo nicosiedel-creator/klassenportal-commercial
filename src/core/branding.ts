@@ -4,7 +4,11 @@ import { requireRole } from './permissions.js';
 import { nowIso } from './utils.js';
 
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
-const ALLOWED = new Set(['image/png','image/jpeg','image/webp','image/svg+xml']);
+// Kein image/svg+xml: eine SVG ist ein Dokument, das Skript ausfuehren darf, und das Logo wird
+// unter /brand/logo/<tenant> ohne Anmeldung im eigenen Origin ausgeliefert. materials.ts sperrt
+// den Typ aus demselben Grund. nosniff hilft hier nicht - es verhindert nur das Erraten eines
+// anderen Typs, nicht die Ausfuehrung eines korrekt deklarierten SVG.
+const ALLOWED = new Set(['image/png','image/jpeg','image/webp']);
 
 function fileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]+/g,'_').slice(0,180) || 'logo';
@@ -47,9 +51,15 @@ export async function serveTenantLogo(env: Env, tenantId: string): Promise<Respo
   if (!tenant) return new Response('Nicht gefunden',{status:404});
   const obj = await env.FILES.get(`tenants/${tenantId}/branding/logo`);
   if (!obj) return new Response('Nicht gefunden',{status:404});
+  // Der gespeicherte Typ stammt aus einem frueheren Upload und kann aelter als die Allowlist
+  // sein - eine vor dieser Aenderung abgelegte SVG liegt weiterhin im Bucket. Deshalb wird der
+  // ausgelieferte Typ hier erneut gegen ALLOWED geklemmt, statt ihm zu vertrauen.
+  const stored = String(obj.httpMetadata?.contentType || '').toLowerCase();
+  const safe = ALLOWED.has(stored);
   return new Response(obj.body, {
     headers: {
-      'content-type': obj.httpMetadata?.contentType || 'application/octet-stream',
+      'content-type': safe ? stored : 'application/octet-stream',
+      'content-disposition': safe ? 'inline' : 'attachment; filename="logo"',
       'cache-control': 'public, max-age=31536000, immutable',
       'etag': obj.etag,
       'x-content-type-options': 'nosniff',
