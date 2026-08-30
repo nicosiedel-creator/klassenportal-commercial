@@ -23,6 +23,7 @@ const externalIndex=process.argv.indexOf('--url');
 const externalUrl=externalIndex>=0?process.argv[externalIndex+1]:'';
 const timeout=Number(process.env.PROBE_TIMEOUT_MS||15000);
 const line=(...parts)=>console.log(`[Netzprobe ${engineName}]`,...parts);
+const short=v=>String(v).replace(/^https?:\/\/[^/]+/,'').slice(0,80);
 
 const seen=[];
 const server=createServer((request,response)=>{seen.push(`${request.method} ${request.url}`);response.writeHead(200,{'content-type':'text/html; charset=utf-8'});response.end('<!doctype html><title>Netzprobe</title><p id="ok">erreichbar</p>');});
@@ -46,7 +47,13 @@ const VARIANTS=[
   ['wie die Abnahme',{viewport:{width:1440,height:1000},locale:'de-DE',userAgent:DESKTOP_UA}],
   // Derselbe Browser, dieselbe Sekunde - nur ein anderer Server. Laeuft alles oben durch und
   // hier nichts, liegt es an diesem Server und nicht an der Engine.
-  ...(externalUrl?[['gegen den laufenden Kandidaten',{viewport:{width:1440,height:1000},locale:'de-DE',userAgent:DESKTOP_UA,__url:externalUrl}]]:[]),
+  // Zweimal gegen den Kandidaten: einmal nur bis zum Eintreffen des Dokuments, einmal bis die
+  // Seite fertig geladen ist. Kommt das Dokument an und haengt nur der Rest, liegt es an den
+  // Unterressourcen - nicht an der Verbindung.
+  ...(externalUrl?[
+    ['Kandidat, nur das Dokument',{viewport:{width:1440,height:1000},locale:'de-DE',userAgent:DESKTOP_UA,__url:externalUrl,__until:'commit'}],
+    ['gegen den laufenden Kandidaten',{viewport:{width:1440,height:1000},locale:'de-DE',userAgent:DESKTOP_UA,__url:externalUrl}],
+  ]:[]),
 ];
 let failures=0;
 try{
@@ -57,15 +64,15 @@ try{
   line('Engine gestartet:',browser.version());
   for(const [label,options] of VARIANTS){
     const before=seen.length,target=options.__url||`http://127.0.0.1:${port}/probe?v=${encodeURIComponent(label)}`;
-    const pageOptions={...options};delete pageOptions.__url;
+    const pageOptions={...options};delete pageOptions.__url;delete pageOptions.__until;
     let page=null,detail='';
     try{page=await browser.newPage(pageOptions);}catch(error){line(`${label}: Seite liess sich nicht oeffnen -`,String(error?.message||error).split('\n')[0]);failures++;continue;}
     const failed=[],issued=[],answered=[];
     page.on('request',request=>issued.push(request.url()));
-    page.on('response',response=>answered.push(`${response.status()} ${response.url()}`));
+    page.on('response',response=>answered.push({status:response.status(),url:response.url()}));
     page.on('requestfailed',request=>failed.push(`${request.url()} :: ${request.failure()?.errorText||'unbekannt'}`));
     const started=Date.now();
-    const response=await page.goto(target,{waitUntil:'domcontentloaded',timeout}).catch(error=>({error}));
+    const response=await page.goto(target,{waitUntil:options.__until||'domcontentloaded',timeout}).catch(error=>({error}));
     const elapsed=Date.now()-started;
     if(response?.error){failures++;detail=String(response.error?.message||response.error).split('\n')[0];
       line(`${label}: GESCHEITERT nach ${elapsed} ms - ${detail}`);}
@@ -73,6 +80,13 @@ try{
     // Die entscheidende Trennung: hat die Engine die Anfrage ueberhaupt abgeschickt, hat der
     // Server sie gesehen, und kam eine Antwort zurueck?
     line(`${label}: Engine schickte ${issued.length}, Antworten ${answered.length}${options.__url?'':`, eigener Server sah ${seen.length-before}`}; fehlgeschlagen: ${failed.length?failed.join(', '):'keine'}`);
+    // Bleiben Anfragen offen, muss dastehen WELCHE. Eine Zahl sagt, dass etwas haengt; die Liste
+    // sagt, woran.
+    if(issued.length>answered.length){
+      const open=issued.filter(url=>!answered.some(a=>a.url===url));
+      line(`${label}: ohne Antwort geblieben: ${open.map(short).join(' | ')||'(nicht zuzuordnen)'}`);
+      line(`${label}: beantwortet wurde: ${answered.map(a=>`${a.status} ${short(a.url)}`).join(' | ')||'nichts'}`);
+    }
     await page.close().catch(()=>undefined);
   }
   await browser.close();
