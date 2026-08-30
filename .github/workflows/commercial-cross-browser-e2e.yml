@@ -92,9 +92,11 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          echo "apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 'nicht vorhanden')"
-          if unshare --user --map-root-user true 2>/dev/null; then echo "unprivilegierte Benutzernamensraeume: nutzbar"; else echo "unprivilegierte Benutzernamensraeume: BLOCKIERT"; fi
-          node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} || true
+          echo '--- wie vorgefunden ---' | tee /tmp/netzprobe.log
+          . /etc/os-release && echo "Runner: $PRETTY_NAME" | tee -a /tmp/netzprobe.log
+          echo "apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 'nicht vorhanden')" | tee -a /tmp/netzprobe.log
+          if unshare --user --map-root-user true 2>/dev/null; then echo "unprivilegierte Benutzernamensraeume: nutzbar" | tee -a /tmp/netzprobe.log; else echo "unprivilegierte Benutzernamensraeume: BLOCKIERT" | tee -a /tmp/netzprobe.log; fi
+          node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} 2>&1 | tee -a /tmp/netzprobe.log || true
       - name: Release the user-namespace restriction on this runner
         shell: bash
         run: |
@@ -107,7 +109,16 @@ jobs:
           fi
       - name: Measure local reachability for ${{ matrix.browser }} again
         shell: bash
-        run: node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} || true
+        run: |
+          set -uo pipefail
+          echo '--- nach dem Loesen der Sperre ---' | tee -a /tmp/netzprobe.log
+          node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} 2>&1 | tee -a /tmp/netzprobe.log || true
+          {
+            echo "### Netzprobe ${{ matrix.browser }}"
+            echo '```text'
+            cat /tmp/netzprobe.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Prepare exact local PR candidate and real onboarding fixtures
         shell: bash
         run: |
@@ -162,6 +173,8 @@ jobs:
       - name: Repeat the failure at the end of the log
         if: failure()
         run: |
+          echo '--- Netzprobe (Messung vor dem eigentlichen Lauf) ---'
+          cat /tmp/netzprobe.log || true
           echo '--- Browser-E2E: letzte Zeilen ---'
           tail -n 40 /tmp/commercial-browser-e2e.log || true
       - name: Stop local PR candidate
