@@ -153,7 +153,30 @@ async function existingCourses(env:Env,tenantId:string){const r=await env.DB.pre
 // Zwei Einheiten koennen gleich heissen ("IT" an zwei Standorten). Unterschieden werden sie an
 // ihrer externen Kennung; nur ohne Kennung bleibt der Name das einzige Merkmal.
 function candidateSignature(c:OrganizationCandidate){if(c.type==='resource')return`${c.type}|${key(c.resource_kind||'')}|${key(c.display_name)}`;if(c.type==='subject')return`${c.type}|${key(c.subject_name||c.display_name)}`;if(c.type==='org_unit')return`${c.type}|${key(c.external_id||c.display_name)}`;return`${c.type}|${key(c.email||c.display_name)}|${c.course_id||c.course_ref||''}`;}
-function synthesize(candidates:OrganizationCandidate[],courses:ExistingCourse[]){const out:OrganizationCandidate[]=[],courseSeen=new Set<string>(),subjectSeen=new Set<string>();for(const c of candidates){if(c.type!=='course'&&!c.course_id&&(c.course_name||c.course_code)&&!c.warnings.includes('COURSE_AMBIGUOUS')&&!c.warnings.includes('COURSE_NOT_FOUND')){const k=key(c.course_code||c.course_name);if(k&&!courseSeen.has(k)){courseSeen.add(k);out.push({synthesized:true,type:'course',display_name:c.course_name||c.course_code,email:null,course_id:null,course_name:c.course_name||c.course_code,course_code:c.course_code||null,course_ref:k,subject_name:null,subject_short_name:null,confidence:100,warnings:[],source_row:c.source_row});}}}for(const c of candidates){if(c.type!=='subject'&&c.subject_name){const k=key(c.subject_name);if(k&&!subjectSeen.has(k)){subjectSeen.add(k);out.push({synthesized:true,type:'subject',display_name:c.subject_name,email:null,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:c.subject_name,subject_short_name:c.subject_short_name,confidence:100,warnings:[],source_row:c.source_row});}}}const existingCourseKeys=new Set(courses.flatMap(c=>[key(c.id),key(c.code),key(c.name)]));const combined=[...out.filter(c=>c.type!=='course'||!existingCourseKeys.has(key(c.course_code||c.course_name))),...candidates];return combined.filter((c,i,a)=>{const sig=candidateSignature(c);return a.findIndex(x=>candidateSignature(x)===sig)===i;});}
+function synthesize(candidates:OrganizationCandidate[],courses:ExistingCourse[]){const out:OrganizationCandidate[]=[],courseSeen=new Set<string>(),subjectSeen=new Set<string>();for(const c of candidates){if(c.type!=='course'&&!c.course_id&&(c.course_name||c.course_code)&&!c.warnings.includes('COURSE_AMBIGUOUS')&&!c.warnings.includes('COURSE_NOT_FOUND')){const k=key(c.course_code||c.course_name);if(k&&!courseSeen.has(k)){courseSeen.add(k);out.push({synthesized:true,type:'course',display_name:c.course_name||c.course_code,email:null,course_id:null,course_name:c.course_name||c.course_code,course_code:c.course_code||null,course_ref:k,subject_name:null,subject_short_name:null,confidence:100,warnings:[],source_row:c.source_row});}}}for(const c of candidates){if(c.type!=='subject'&&c.subject_name){const k=key(c.subject_name);if(k&&!subjectSeen.has(k)){subjectSeen.add(k);out.push({synthesized:true,type:'subject',display_name:c.subject_name,email:null,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:c.subject_name,subject_short_name:c.subject_short_name,confidence:100,warnings:[],source_row:c.source_row});}}}const existingCourseKeys=new Set(courses.flatMap(c=>[key(c.id),key(c.code),key(c.name)]));const combined=[...out.filter(c=>c.type!=='course'||!existingCourseKeys.has(key(c.course_code||c.course_name))),...candidates];return mergeDuplicates(combined);}
+// Zwei Zeilen koennen denselben Fund beschreiben: die Kursliste nennt den Kurs mitsamt seinem
+// Bereich, und die Teilnehmerliste nennt denselben Kurs noch einmal - woraus zusaetzlich ein
+// Platzhalter entsteht, damit der Kurs auf jeden Fall angelegt wird.
+//
+// Vorher gewann davon schlicht der erste Treffer, und das war der Platzhalter. Der wusste vom
+// Bereich nichts. Ergebnis in einem echten Kundenpaket: die Spalte org_unit_external_id der
+// Kursliste war wirkungslos, sobald irgendein Teilnehmer denselben Kurs nannte - der Kurs
+// entstand ohne seinen Bereich.
+//
+// Jetzt tritt der Platzhalter hinter die echte Zeile zurueck, und was nur eine der beiden weiss,
+// geht nicht verloren.
+function mergeDuplicates(candidates:OrganizationCandidate[]){
+  const bySignature=new Map<string,OrganizationCandidate>();
+  for(const candidate of candidates){
+    const signature=candidateSignature(candidate),existing=bySignature.get(signature);
+    if(!existing){bySignature.set(signature,candidate);continue;}
+    const keep=existing.synthesized&&!candidate.synthesized?candidate:existing,other=keep===existing?candidate:existing;
+    for(const field of ['org_unit_ref','external_id','parent_external_id','course_code','course_name','course_id','subject_short_name','email'] as const)
+      if(!keep[field]&&other[field])(keep as Record<string,unknown>)[field]=other[field];
+    bySignature.set(signature,keep);
+  }
+  return[...bySignature.values()];
+}
 function summary(candidates:OrganizationCandidate[]){const counts:Record<string,number>={};for(const c of candidates)counts[c.type]=(counts[c.type]||0)+1;const needs_review=candidates.filter(c=>c.warnings.some(w=>!['COURSE_WILL_BE_CREATED','ORG_UNIT_PARENT_NOT_FOUND'].includes(w))).length;return{counts,needs_review,total:candidates.length};}
 function canonical(candidates:OrganizationCandidate[]){return candidates.map(c=>({...c,warnings:[...new Set(c.warnings)].sort()}));}
 // Ein Organigramm beginnt fast immer beim Bildungstraeger selbst - und genau diese Zeile liegt
