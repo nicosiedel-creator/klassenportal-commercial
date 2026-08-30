@@ -10,6 +10,21 @@
 (function(){
   const TEXTS={
     // Datei-Import: Organisation, Kurse, Faecher, Rollen
+    // Standorte, Organisationseinheiten und Ressourcen
+    ORG_UNIT_NAME_REQUIRED:'Diese Zeile hat keinen Namen für die Einheit. Ohne Namen lässt sich kein Standort und kein Bereich anlegen.',
+    ORG_UNIT_PARENT_INVALID:'Eine Einheit kann nicht ihr eigener übergeordneter Knoten sein.',
+    ORG_UNIT_PARENT_UNRESOLVED:'Der übergeordnete Knoten dieser Einheit konnte nicht aufgelöst werden. Bitte die Spalte parent_external_id prüfen.',
+    ORG_UNIT_TYPE_INACTIVE:'Dieser Einheitentyp ist in eurem Portal abgeschaltet. Bitte ihn unter Organisation & Struktur wieder aktivieren oder in der Datei einen anderen Typ angeben.',
+    ORG_UNIT_TYPE_MISSING:'Der Typ dieser Einheit konnte nicht angelegt werden. Bitte unter Organisation & Struktur einen Typ anlegen und den Import wiederholen.',
+    ORG_TYPE_NOT_FOUND:'Dieser Einheitentyp ist in eurem Portal nicht vorhanden.',
+    ORG_TYPE_INVALID:'Dieser Einheitentyp ist nicht zulässig. Erlaubt sind Kleinbuchstaben, Ziffern, Bindestrich und Unterstrich.',
+    ORG_EXTERNAL_ID_EXISTS:'Eine Einheit mit dieser externen Kennung gibt es bereits.',
+    ORG_UNIT_FIELDS_REQUIRED:'Für eine Einheit werden Name und Typ benötigt.',
+    ORG_UNIT_NOT_FOUND:'Diese Organisationseinheit wurde nicht gefunden.',
+    ORG_HIERARCHY_CYCLE:'Diese Zuordnung würde einen Ringschluss in der Organisationsstruktur erzeugen.',
+    FORBIDDEN_ORG_SCOPE:'Für diese Organisationseinheit fehlt dir die Berechtigung.',
+    RESOURCE_NAME_REQUIRED:'Diese Zeile hat keinen Namen für den Raum bzw. die Ressource.',
+    FORBIDDEN_PLANNING_MANAGE:'Räume und Ressourcen darf nur die Kundenadministration oder eine Person mit Kursverwaltungsrecht pflegen.',
     UNSUPPORTED_ORGANIZATION_IMPORT_FILE:'Dieses Dateiformat wird nicht unterstützt. Möglich sind CSV, XLSX, JSON, TXT und textbasierte PDF.',
     IMPORT_JSON_ROWS_REQUIRED:'Diese JSON-Datei enthält keine Datensätze. Erwartet wird eine Liste oder ein Feld "rows".',
     ORGANIZATION_IMPORT_DATA_REQUIRED:'Aus dieser Datei ließ sich keine verwertbare Zeile lesen. Bitte prüfe, ob die erste Zeile die Spaltenüberschriften enthält.',

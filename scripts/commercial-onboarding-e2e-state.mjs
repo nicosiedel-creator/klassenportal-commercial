@@ -101,6 +101,12 @@ if(action==='seed'){
   // Lauf scheitert mit COURSE_LIMIT_REACHED an seinem eigenen Vorlauf statt an einem Befund.
   // Betroffen sind ausschliesslich die Kurse dieser Abnahme: ihr Code beginnt mit 'abn-'.
   execute(`DELETE FROM courses WHERE code LIKE 'abn-a-%' OR code LIKE 'abn-b-%';`);
+  // Dasselbe gilt fuer die Struktur, die derselbe Ordner anlegt: Standorte, Bereiche und Raeume.
+  // Kinder zuerst - der Elternverweis einer Organisationseinheit ist auf RESTRICT gesetzt.
+  execute(`DELETE FROM course_org_units WHERE org_unit_id IN (SELECT id FROM org_units WHERE external_id LIKE 'ABN-%');`);
+  execute(`DELETE FROM org_units WHERE external_id LIKE 'ABN-%' AND parent_id IS NOT NULL;`);
+  execute(`DELETE FROM org_units WHERE external_id LIKE 'ABN-%';`);
+  execute(`DELETE FROM planning_resources WHERE code LIKE 'ABN-ROOM-%';`);
 
   for(const f of fixtures){
     const snap=snapshot(f),hash=b64Sha256(f.token);

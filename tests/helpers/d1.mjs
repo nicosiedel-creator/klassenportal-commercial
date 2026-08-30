@@ -9,6 +9,7 @@ export function d1(db){
         async all(){return{results:db.prepare(sql).all(...params),success:true};},
         async run(){db.prepare(sql).run(...params);return{success:true};},
         async first(){return db.prepare(sql).get(...params)??null;},
+        async raw(){return db.prepare(sql).all(...params).map(row=>Object.values(row));},
       };
       return api;
     },
