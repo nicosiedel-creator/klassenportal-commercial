@@ -82,12 +82,15 @@ jobs:
       # Server die Anfrage ueberhaupt, wie nennt die Engine den Netzfehler, und haelt sie sich
       # ueberhaupt fuer verbunden.
       #
-      # Zusaetzlich der naechstliegende Verdacht, ausgesprochen und gemessen statt vermutet:
-      # Ubuntu 24.04 sperrt unprivilegierte Benutzernamensraeume per AppArmor
-      # (kernel.apparmor_restrict_unprivileged_userns=1). WebKit trennt Darstellung und Netz in
-      # zwei Prozesse - das passt zum Befund, dass gerendert wird und nur das Netz ausfaellt.
-      # Die Messung laeuft deshalb zweimal: einmal wie vorgefunden, einmal nach dem Loesen der
-      # Sperre. Erst der Vergleich beider Zeilen im Protokoll sagt, ob der Verdacht stimmt.
+      # Ergebnis der ersten Messung (Lauf 33319723183, Ubuntu 24.04.4, WebKit 26.0): die Engine
+      # erreicht einen lokalen node-Server in 37 ms mit Status 200 - vor UND nach dem Loesen der
+      # Benutzernamensraum-Sperre gleichermassen, obwohl die Sperre gesetzt war. Damit ist der
+      # naechstliegende Verdacht widerlegt und die Netzschicht von WebKit unter Linux als Ursache
+      # ausgeschlossen. Der Schritt zum Loesen der Sperre bleibt nur als Vergleichspunkt stehen.
+      #
+      # Was bleibt: die Abnahme oeffnet ihre Seite anders als diese Messung - mit Fenstergroesse,
+      # Sprache und eigener Browserkennung. Die Messung faehrt dieselbe Navigation jetzt einmal
+      # je Einstellung. Welche Zeile in die Zeitueberschreitung laeuft, benennt die Ursache.
       - name: Measure local reachability for ${{ matrix.browser }} as found
         shell: bash
         run: |
