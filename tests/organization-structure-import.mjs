@@ -209,6 +209,55 @@ assert.ok(corrected.candidates.find(c=>c.type==='participant').warnings.includes
 console.log('Standorte, Organisationseinheiten, Raeume und ihre Zuordnungen werden aus echten Kundendateien angelegt: OK');
 
 // ---------------------------------------------------------------------------------------------
+// 4b. Die Reihenfolge des Anlegens haengt an der Art des Fundes, nicht an der Zeilennummer.
+//     Steht der Teilnehmer in der Datei VOR seinem Kurs und der Kurs vor seinem Bereich, muss
+//     trotzdem erst der Bereich, dann der Kurs und zuletzt der Teilnehmer entstehen. Sonst
+//     scheiterte jede solche Datei an sich selbst: COURSE_NOT_RESOLVED fuer einen Kurs, den
+//     dieselbe Datei anlegt.
+// ---------------------------------------------------------------------------------------------
+const DURCHEINANDER=`role,name,email,course_name,course_code,org_unit_external_id,external_id,parent_external_id,node_type,type
+Teilnehmer,Jonas Weber,jonas.weber@example.invalid,Pflege 2026 A,PF26A,,,,,
+Dozent,Alma Reiter,alma.reiter@example.invalid,Pflege 2026 A,PF26A,,,,,
+Kurs,,,Pflege 2026 A,PF26A,OU-PFLEGE,,,,
+,,,,,,OU-PFLEGE,,org_unit,Fachbereich
+`;
+const mixed=rowsOf(DURCHEINANDER);
+mixed[3].name='Pflege & Gesundheit';
+// Die Kurszeile steht in der Datei zweimal: einmal ohne Bereichsangabe und einmal mit. Aus beiden
+// darf ein Fund werden, und die Bereichsangabe darf dabei nicht verloren gehen.
+mixed.splice(2,0,{role:'Kurs',course_name:'Pflege 2026 A',course_code:'PF26A'});
+assert.deepEqual(mixed.map(importRole),['participant','teacher','course','course','org_unit'],
+  'die Datei nennt Teilnehmer zuerst und die Einheit zuletzt - genau umgekehrt zur noetigen Reihenfolge');
+
+// Neue Personen bekommen eine Einladung. Ohne Mailweg lehnt der Import sie zu Recht ab - das ist
+// eine eigene Regel und darf diese Messung der Reihenfolge nicht verdecken. Der Versand selbst
+// wird hier nur entgegengenommen und gezaehlt: aus einem Testlauf darf keine echte Mail hinausgehen.
+const sent=[];
+const mailEnv={...env,MAIL_FROM:'kein-versand@example.invalid',APP_ORIGIN:'https://portal.example.invalid',EMAIL:{send:async message=>{sent.push(message);return{messageId:`test-${sent.length}`};}}};
+const mixedPreview=await previewOrganizationImport(mailEnv,auth,T,{source_name:'durcheinander.csv',rows:mixed});
+// Denselben Kurs nennen hier drei Zeilen. Daraus darf genau ein Fund werden - und zwar die echte
+// Kurszeile, nicht der Platzhalter, der aus der Teilnehmerzeile entsteht: nur die echte Zeile
+// laesst sich in der Vorschau im Typ richtigstellen, und nur sie kennt ihren Bereich.
+const kursFunde=mixedPreview.candidates.filter(c=>c.type==='course');
+assert.equal(kursFunde.length,1,'derselbe Kurs darf nicht mehrfach vorgeschlagen werden');
+assert.ok(!kursFunde[0].synthesized,'der Fund muss die echte Kurszeile sein, nicht der Platzhalter');
+assert.ok(kursFunde[0].source_row===2||kursFunde[0].source_row===3,'sonst zeigt die Typkorrektur auf die falsche Zeile der Datei');
+assert.equal(kursFunde[0].org_unit_ref,'OU-PFLEGE','der Bereich der Kurszeile darf nicht verloren gehen');
+const mixedResult=await applyOrganizationImport(mailEnv,auth,T,{batch_id:mixedPreview.batch_id,digest:mixedPreview.digest});
+const step=type=>mixedResult.results.findIndex(r=>r.type===type);
+assert.ok(step('org_unit')<step('course'),'die Einheit muss vor dem Kurs entstehen');
+assert.ok(step('course')<step('participant'),'der Kurs muss vor seinem Teilnehmer entstehen');
+assert.ok(step('participant')<step('teacher'),'der Dozent wird zuletzt zugeordnet');
+for(const r of mixedResult.results)
+  assert.notEqual(r.action,'skipped',`nichts darf an der Reihenfolge scheitern: ${JSON.stringify(r)}`);
+const neuerKurs=db.prepare('SELECT id FROM courses WHERE tenant_id=? AND code=?').get(T,'pf26a');
+assert.ok(neuerKurs,'der Kurs aus derselben Datei muss entstanden sein');
+assert.equal(db.prepare('SELECT COUNT(*) n FROM memberships WHERE tenant_id=? AND course_id=?').get(T,neuerKurs.id).n>0,true,
+  'der Teilnehmer muss in dem Kurs stehen, den dieselbe Datei angelegt hat');
+assert.ok(db.prepare('SELECT org_unit_id FROM course_org_units WHERE tenant_id=? AND course_id=?').get(T,neuerKurs.id),
+  'der Kurs muss an dem Bereich haengen, den dieselbe Datei angelegt hat');
+
+// ---------------------------------------------------------------------------------------------
 // 5. Die Oberflaeche. Was der Server sperrt, muss die Oberflaeche genauso sperren - und der Weg
 //    dorthin muss auffindbar sein.
 // ---------------------------------------------------------------------------------------------
@@ -243,13 +292,33 @@ assert.equal((i18n.match(/provider_import:'/g)||[]).length,13,
   'ohne Uebersetzung in jeder Sprache faellt der Eintrag in anderen Sprachen auf den Schluesselnamen zurueck');
 assert.match(i18n,/participant_import:'Nur Teilnehmer importieren'/,'der reine Teilnehmerimport bleibt als eigener Eintrag erhalten');
 
-// Ein ganzer Ordner muss sich ins Fenster ziehen lassen.
+// Ein ganzer Ordner muss sich ins Fenster ziehen lassen - und die Ablegeflaeche muss sichtbar
+// sein, nicht nur zufaellig auftauchen, waehrend man etwas darueber zieht.
 const quick=await readFile('public/intake-quick-upload-ui.js','utf8');
-assert.match(quick,/webkitGetAsEntry/,'ein abgelegter Ordner muss als Verzeichnis gelesen werden');
-assert.match(quick,/createReader\(\)/,'ein abgelegter Ordner muss durchlaufen werden');
-assert.match(quick,/if\(!batch\.length\)break;/,'readEntries liefert hoechstens 100 Eintraege - es muss bis zur leeren Antwort weitergelesen werden');
-assert.match(quick,/addEventListener\('drop'/,'das Fenster muss einen Wurf annehmen');
-assert.match(quick,/e\.defaultPrevented/,'ein vorhandener Ablegebereich darf nicht doppelt bedient werden');
-assert.match(quick,/webkitdirectory/,'der Ordner muss sich auch ueber den Dateidialog waehlen lassen');
+const shared=await readFile('public/kp-folder-drop.js','utf8');
+const shell=await readFile('public/customer-admin.html','utf8');
+assert.match(shared,/webkitGetAsEntry/,'ein abgelegter Ordner muss als Verzeichnis gelesen werden');
+assert.match(shared,/createReader\(\)/,'ein abgelegter Ordner muss durchlaufen werden');
+assert.match(shared,/if\(!batch\.length\)break;/,'readEntries liefert hoechstens 100 Eintraege - es muss bis zur leeren Antwort weitergelesen werden');
+assert.match(shared,/webkitdirectory/,'der Ordner muss sich auch ueber den Dateidialog waehlen lassen');
+assert.match(shared,/function dropCard\(/,'die sichtbare Ablegeflaeche muss es als gemeinsames Bauteil geben');
+assert.match(shared,/e\.stopPropagation\(\)/,'ein Wurf auf die sichtbare Flaeche darf nicht zusaetzlich fensterweit ankommen');
+assert.match(shell,/kp-folder-drop\.js/,'ohne Einbindung steht das gemeinsame Bauteil keiner der beiden Seiten zur Verfuegung');
+
+// Dass die Flaeche in jedem Fall wieder verschwindet, wird ausgefuehrt statt gelesen:
+// tests/intake-drop-overlay.mjs fuehrt sie gegen eine Nachbildung des Fensters. Hier steht nur,
+// dass es keine zweite, abweichende Kopie davon gibt.
+assert.match(quick,/KPFolderDrop\?\.windowDropOverlay\(/,'der Sofort-Eingang muss die gemeinsame Ablegeflaeche benutzen');
+assert.ok(!/depth\+\+|depth=Math\.max/.test(quick),'eine Zaehlung von dragenter gegen dragleave darf es nicht mehr geben - genau sie blieb haengen');
+assert.ok(!/#intake-drop-overlay/.test(quick),'es darf nur eine Ablegeflaeche geben, nicht zwei, die auseinanderlaufen');
+
+// Beide Einstiege muessen sich gleich verhalten.
+assert.match(quick,/window\.KPIntakeUpload=/,'der Bildungstraeger-Import muss denselben Weg benutzen koennen');
+assert.match(quick,/f\.onclick=openDropDialog/,'"Ganzen Ordner einlesen" muss die sichtbare Flaeche oeffnen, nicht sofort den Dateidialog');
+assert.match(orgUi,/<div data-org-drop><\/div>/,'auch "Bildungsträger importieren" braucht die sichtbare Ablegeflaeche im Dialog');
+assert.match(orgUi,/window\.KPFolderDrop\.dropCard\(/,'und zwar dieselbe wie der Ordner-Einstieg');
+assert.match(orgUi,/KPFolderDrop\.routeDropped\(result\)==='preview'/,'eine einzelne Liste geht direkt in die Vorschau mit der Typkorrektur');
+assert.match(orgUi,/window\.KPIntakeUpload\.accept\(result\)/,'ein ganzer Ordner geht ueber den Eingang');
+assert.match(quick,/Unklare Fälle jetzt prüfen/,'nach dem Einlesen muss der Weg zur Pruefung dastehen, nicht nur ihr Name');
 
 console.log('Oberflaeche: gleiche Sperren wie der Server, benannter Einstieg und Ordner per Drag & Drop: OK');

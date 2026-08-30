@@ -76,6 +76,38 @@ jobs:
           console.log('eingebautes Dokument geladen in', Date.now()-started, 'ms');
           await browser.close();
           "
+      # Bis hierher endete die Untersuchung bei "es kommt nichts an". Diese Messung trennt zum
+      # ersten Mal Engine von Portal: ein winziger HTTP-Server aus node, ein zufaelliger Port auf
+      # 127.0.0.1, kein Wrangler, kein Portal - und drei Antworten, die bisher fehlten: sieht der
+      # Server die Anfrage ueberhaupt, wie nennt die Engine den Netzfehler, und haelt sie sich
+      # ueberhaupt fuer verbunden.
+      #
+      # Zusaetzlich der naechstliegende Verdacht, ausgesprochen und gemessen statt vermutet:
+      # Ubuntu 24.04 sperrt unprivilegierte Benutzernamensraeume per AppArmor
+      # (kernel.apparmor_restrict_unprivileged_userns=1). WebKit trennt Darstellung und Netz in
+      # zwei Prozesse - das passt zum Befund, dass gerendert wird und nur das Netz ausfaellt.
+      # Die Messung laeuft deshalb zweimal: einmal wie vorgefunden, einmal nach dem Loesen der
+      # Sperre. Erst der Vergleich beider Zeilen im Protokoll sagt, ob der Verdacht stimmt.
+      - name: Measure local reachability for ${{ matrix.browser }} as found
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo "apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 'nicht vorhanden')"
+          if unshare --user --map-root-user true 2>/dev/null; then echo "unprivilegierte Benutzernamensraeume: nutzbar"; else echo "unprivilegierte Benutzernamensraeume: BLOCKIERT"; fi
+          node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} || true
+      - name: Release the user-namespace restriction on this runner
+        shell: bash
+        run: |
+          set -uo pipefail
+          current=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)
+          if [ "$current" = "1" ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || echo "Sperre liess sich nicht loesen"
+          else
+            echo "Keine Sperre gesetzt - nichts zu loesen."
+          fi
+      - name: Measure local reachability for ${{ matrix.browser }} again
+        shell: bash
+        run: node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} || true
       - name: Prepare exact local PR candidate and real onboarding fixtures
         shell: bash
         run: |

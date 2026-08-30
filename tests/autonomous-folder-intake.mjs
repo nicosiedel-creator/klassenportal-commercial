@@ -189,7 +189,12 @@ assert.ok(processBody.indexOf('applyOrganizationImport')<processBody.lastIndexOf
 // 7. Die Oberflaeche muss einen ganzen Ordner annehmen koennen.
 // ---------------------------------------------------------------------------------------------
 const quickUi=await readFile('public/intake-quick-upload-ui.js','utf8');
-assert.match(quickUi,/webkitdirectory/,'die Kundenverwaltung muss einen ganzen Ordner annehmen');
+// Ordnerauswahl und Ablegeflaeche liegen im gemeinsamen Bauteil, das beide Einstiege benutzen -
+// der Sofort-Eingang und der Bildungstraeger-Import. Ausgefuehrt wird es in
+// tests/intake-drop-overlay.mjs.
+const folderDropUi=await readFile('public/kp-folder-drop.js','utf8');
+assert.match(folderDropUi,/webkitdirectory/,'die Kundenverwaltung muss einen ganzen Ordner annehmen');
+assert.match(quickUi,/KPFolderDrop/,'der Eingang muss dieses Bauteil benutzen statt einer eigenen Kopie');
 // Die Kundenverwaltung sortiert jeden Navigationseintrag, der nicht ausdruecklich als sichtbar
 // markiert ist, hinter "Weitere Bereiche". Der Weg, auf dem ein Bildungstraeger seine Daten
 // ueberhaupt ins Portal bekommt, darf nicht in einem Klappmenue verschwinden.
@@ -199,7 +204,7 @@ assert.match(folderNav.slice(0,600),/dataset\.customerNavPrimary='1'/,
 const customerUi=await readFile('public/customer-admin-ui.js','utf8');
 assert.match(customerUi,/customerNavPrimary==='1'/,
   'die Kundenverwaltung muss diese Markierung weiterhin auswerten - sonst ist sie wirkungslos');
-assert.match(quickUi,/\.zip/,'ein gezippter Ordner muss annehmbar sein');
+assert.match(folderDropUi,/\.zip/,'ein gezippter Ordner muss annehmbar sein');
 const publicUi=await readFile('public/intake-public-upload.js','utf8');
 assert.match(publicUi,/webkitdirectory|#folder/,'auch die oeffentliche Einreichseite muss einen Ordner annehmen');
 assert.match(intake,/webkitdirectory/,'die oeffentliche Seite muss das Ordnerfeld ausliefern');
