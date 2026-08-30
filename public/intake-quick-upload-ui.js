@@ -26,6 +26,12 @@ if(INTAKE_QUICK_PATH){
   function enhance(){const side=document.querySelector('.side');if(!side||side.querySelector('#intake-quick-upload-nav'))return;const anchor=side.querySelector('#intake-center-nav');
     const b=document.createElement('button');b.id='intake-quick-upload-nav';b.className='nav';b.type='button';b.textContent='Unterlagen jetzt einwerfen';
     const f=document.createElement('button');f.id='intake-folder-upload-nav';f.className='nav';f.type='button';f.textContent='Ganzen Ordner einlesen';
+    // Ohne diese Markierung sortiert die Kundenverwaltung den Knopf hinter "Weitere Bereiche" -
+    // die Liste der dauerhaft sichtbaren Eintraege ist fest, und neue stehen nicht darin. Der
+    // Weg, auf dem ein Bildungstraeger seine Daten ueberhaupt ins Portal bekommt, darf nicht
+    // der vierzehnte Eintrag in einem Klappmenue sein.
+    f.dataset.customerNavPrimary='1';
+    f.dataset.customerNavSourceLabel='Ganzen Ordner einlesen';
     if(anchor?.nextSibling)side.insertBefore(b,anchor.nextSibling);else side.append(b);
     b.insertAdjacentElement('afterend',f);
     b.onclick=()=>choose(false);f.onclick=()=>choose(true);}
