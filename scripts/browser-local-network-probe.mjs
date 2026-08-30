@@ -17,6 +17,10 @@ import { createServer } from 'node:http';
 
 const engineName=process.argv[2]||'chromium';
 const strict=process.argv.includes('--strict');
+// Zusaetzlich gegen einen schon laufenden Server messen - den Kandidaten der Abnahme. Nur so
+// laesst sich "die Engine kann nicht" von "diesen einen Server erreicht sie nicht" trennen.
+const externalIndex=process.argv.indexOf('--url');
+const externalUrl=externalIndex>=0?process.argv[externalIndex+1]:'';
 const timeout=Number(process.env.PROBE_TIMEOUT_MS||15000);
 const line=(...parts)=>console.log(`[Netzprobe ${engineName}]`,...parts);
 
@@ -40,6 +44,9 @@ const VARIANTS=[
   ['nur Sprache',{locale:'de-DE'}],
   ['nur Browserkennung',{userAgent:DESKTOP_UA}],
   ['wie die Abnahme',{viewport:{width:1440,height:1000},locale:'de-DE',userAgent:DESKTOP_UA}],
+  // Derselbe Browser, dieselbe Sekunde - nur ein anderer Server. Laeuft alles oben durch und
+  // hier nichts, liegt es an diesem Server und nicht an der Engine.
+  ...(externalUrl?[['gegen den laufenden Kandidaten',{viewport:{width:1440,height:1000},locale:'de-DE',userAgent:DESKTOP_UA,__url:externalUrl}]]:[]),
 ];
 let failures=0;
 try{
@@ -49,18 +56,23 @@ try{
   const browser=await engine.launch({headless:true});
   line('Engine gestartet:',browser.version());
   for(const [label,options] of VARIANTS){
-    const before=seen.length;
+    const before=seen.length,target=options.__url||`http://127.0.0.1:${port}/probe?v=${encodeURIComponent(label)}`;
+    const pageOptions={...options};delete pageOptions.__url;
     let page=null,detail='';
-    try{page=await browser.newPage(options);}catch(error){line(`${label}: Seite liess sich nicht oeffnen -`,String(error?.message||error).split('\n')[0]);failures++;continue;}
-    const failed=[];
+    try{page=await browser.newPage(pageOptions);}catch(error){line(`${label}: Seite liess sich nicht oeffnen -`,String(error?.message||error).split('\n')[0]);failures++;continue;}
+    const failed=[],issued=[],answered=[];
+    page.on('request',request=>issued.push(request.url()));
+    page.on('response',response=>answered.push(`${response.status()} ${response.url()}`));
     page.on('requestfailed',request=>failed.push(`${request.url()} :: ${request.failure()?.errorText||'unbekannt'}`));
     const started=Date.now();
-    const response=await page.goto(`http://127.0.0.1:${port}/probe?v=${encodeURIComponent(label)}`,{waitUntil:'domcontentloaded',timeout}).catch(error=>({error}));
+    const response=await page.goto(target,{waitUntil:'domcontentloaded',timeout}).catch(error=>({error}));
     const elapsed=Date.now()-started;
     if(response?.error){failures++;detail=String(response.error?.message||response.error).split('\n')[0];
       line(`${label}: GESCHEITERT nach ${elapsed} ms - ${detail}`);}
     else line(`${label}: ok nach ${elapsed} ms, Status ${response.status()}`);
-    line(`${label}: Server sah ${seen.length-before} Anfrage(n); Engine meldet ${failed.length?failed.join(', '):'keine fehlgeschlagene Anfrage'}`);
+    // Die entscheidende Trennung: hat die Engine die Anfrage ueberhaupt abgeschickt, hat der
+    // Server sie gesehen, und kam eine Antwort zurueck?
+    line(`${label}: Engine schickte ${issued.length}, Antworten ${answered.length}${options.__url?'':`, eigener Server sah ${seen.length-before}`}; fehlgeschlagen: ${failed.length?failed.join(', '):'keine'}`);
     await page.close().catch(()=>undefined);
   }
   await browser.close();

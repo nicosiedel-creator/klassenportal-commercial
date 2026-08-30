@@ -138,6 +138,17 @@ jobs:
           WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --config wrangler.browser-e2e.json --local --ip 127.0.0.1 --port 8787 --local-upstream 127.0.0.1 --upstream-protocol http >/tmp/commercial-wrangler-e2e.log 2>&1 &
           echo $! >/tmp/commercial-wrangler-e2e.pid
           node scripts/wait-for-local-candidate.mjs http://127.0.0.1:8787/plattform-admin /tmp/commercial-wrangler-e2e.log
+      # Die entscheidende Trennung. Bis hierher ist belegt: die Engine erreicht einen lokalen
+      # node-Server in Millisekunden, mit und ohne Benutzernamensraum-Sperre, schlicht und mit
+      # genau den Einstellungen der Abnahme. Sie erreicht nur diesen einen Server nicht.
+      # Diese Messung faehrt deshalb beides in derselben Sekunde: den eigenen node-Server und den
+      # laufenden Kandidaten. Und sie zaehlt mit, ob die Engine die Anfrage ueberhaupt abschickt.
+      - name: Measure the running candidate against a plain server
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo '--- gegen den laufenden Kandidaten ---' | tee -a /tmp/netzprobe.log
+          node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} --url http://127.0.0.1:8787/plattform-admin 2>&1 | tee -a /tmp/netzprobe.log || true
       - name: Click through the candidate in ${{ matrix.browser }}
         shell: bash
         env:
