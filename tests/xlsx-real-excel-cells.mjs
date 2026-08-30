@@ -22,6 +22,25 @@ const xlsx=async(strings,rows)=>parseXlsx(await buildZip([
   ['xl/worksheets/sheet1.xml',sheet(rows)],
 ],{deflate:true}));
 
+// 0. Der schwerste Befund: OOXML darf jedes Element mit einem Namensraum-Praefix schreiben.
+//    Excel selbst laesst es weg, viele erzeugende Werkzeuge nicht. Eine echte Kundendatei
+//    (03_Kurse.xlsx aus dem Abnahmepaket) schrieb <x:row>, <x:c>, <x:v> - und wurde als voellig
+//    leer gelesen: 0 Zeilen fuer eine Datei mit 24 Kursen. Der Kunde bekam "keine verwertbare
+//    Zeile" fuer eine Datei voller Daten.
+const prefixed=await parseXlsx(await buildZip([
+  ['xl/sharedStrings.xml','<?xml version="1.0"?><x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:si><x:t>course_name</x:t></x:si><x:si><x:t>course_code</x:t></x:si><x:si><x:t>Verwaltungsgrundlagen A</x:t></x:si><x:si><x:t>ADM-26-01</x:t></x:si></x:sst>'],
+  ['xl/worksheets/sheet1.xml','<?xml version="1.0"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:cols><x:col min="1" max="1" width="10"/></x:cols><x:sheetData>'+
+    '<x:row r="1"><x:c r="A1" t="s"><x:v>0</x:v></x:c><x:c r="B1" t="s"><x:v>1</x:v></x:c></x:row>'+
+    '<x:row r="2"><x:c r="A2" t="s"><x:v>2</x:v></x:c><x:c r="B2" t="s"><x:v>3</x:v></x:c></x:row>'+
+    '</x:sheetData></x:worksheet>'],
+],{deflate:true}));
+assert.deepEqual(prefixed.headers,['course_name','course_code'],
+  `eine Datei mit Namensraum-Praefix darf nicht leer gelesen werden, gelesen: ${JSON.stringify(prefixed.headers)}`);
+assert.equal(prefixed.rows.length,1,'die Datenzeile muss ankommen');
+assert.equal(prefixed.rows[0].course_name,'Verwaltungsgrundlagen A');
+// <x:cols>/<x:col> beginnen ebenfalls mit "c" - sie duerfen nicht als Zellen gelesen werden.
+assert.ok(!Object.keys(prefixed.rows[0]).some(k=>/^spalte_/.test(k)),'Spaltendefinitionen sind keine Zellen');
+
 // 1. Der Befund: eine formatierte Leerzelle vor den Daten.
 const strings=['course_name','course_code','Pflege 2026 A','PF26A','Pflege 2026 B','PF26B'];
 const withStyledEmpty=await xlsx(strings,
@@ -90,4 +109,4 @@ for(const code of importCodes){
 assert.notEqual(text('XLSX_UNSUPPORTED_COMPRESSION_14'),GENERIC,
   'auch ein kuenftiger Excel-Abbruchgrund muss einen verstaendlichen Satz bekommen');
 
-console.log(`XLSX aus echtem Excel: Leerzellen, Luecken, inlineStr und Zahlen werden gelesen ohne die Nachbarzelle zu verschlucken; ${importCodes.size} Fehlercodes des Importwegs haben einen verstaendlichen Satz: OK`);
+console.log(`XLSX aus echtem Excel: Namensraum-Praefixe, Leerzellen, Luecken, inlineStr und Zahlen werden gelesen ohne die Nachbarzelle zu verschlucken; ${importCodes.size} Fehlercodes des Importwegs haben einen verstaendlichen Satz: OK`);
