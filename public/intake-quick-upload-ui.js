@@ -23,11 +23,60 @@ if(INTAKE_QUICK_PATH){
     };
     input.click();
   }
+  // Ein ganzer Ordner soll sich einfach ins Fenster ziehen lassen. Der Browser gibt beim Ablegen
+  // eines Ordners keine Dateiliste heraus, sondern einen Verzeichniseintrag, den man selbst
+  // durchlaufen muss - und readEntries liefert hoechstens 100 Eintraege je Aufruf, deshalb wird
+  // bis zur leeren Antwort weitergelesen. Ohne das kaeme von einem grossen Ordner nur der Anfang an.
+  const MAX_DROP_FILES=500,MAX_DROP_DEPTH=8;
+  async function entryFiles(entry,out,depth){
+    if(!entry||out.length>=MAX_DROP_FILES||depth>MAX_DROP_DEPTH)return out;
+    if(entry.isFile){const file=await new Promise(res=>entry.file(res,()=>res(null)));if(file)out.push(file);return out;}
+    if(entry.isDirectory){const reader=entry.createReader();for(;;){const batch=await new Promise(res=>reader.readEntries(res,()=>res([])));if(!batch.length)break;for(const child of batch)await entryFiles(child,out,depth+1);if(out.length>=MAX_DROP_FILES)break;}}
+    return out;
+  }
+  const hasFiles=e=>[...(e.dataTransfer?.types||[])].includes('Files');
+  function dropZone(){
+    if(document.querySelector('#intake-drop-overlay'))return;
+    const zone=document.createElement('div');zone.id='intake-drop-overlay';zone.hidden=true;
+    zone.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.72);pointer-events:none';
+    zone.innerHTML='<div style="border:3px dashed #fff;border-radius:18px;padding:38px 46px;text-align:center;color:#fff;font-size:1.1rem;max-width:min(560px,90vw)"><strong style="display:block;font-size:1.35rem;margin-bottom:8px">Ordner hier ablegen</strong>Ganze Ordner, einzelne Dateien oder ein ZIP-Archiv. Das Portal sortiert selbst und fragt nur nach, was wirklich unklar ist.</div>';
+    document.body.append(zone);
+    const show=()=>{zone.hidden=false;},hide=()=>{zone.hidden=true;};
+    let depth=0;
+    // Ein Ablegebereich, den es schon gibt - etwa im Stundenplan-Dialog -, behandelt seinen Wurf
+    // selbst und hat dann preventDefault gesetzt. Diese Uebernahme hier darf ihm nicht dazwischen-
+    // funken, sonst laende dieselbe Datei zusaetzlich im Eingang.
+    const foreign=e=>e.defaultPrevented||!!(e.target instanceof Element&&e.target.closest('.modal-back,.modal'));
+    addEventListener('dragenter',e=>{if(!hasFiles(e)||foreign(e))return;e.preventDefault();depth++;show();});
+    addEventListener('dragover',e=>{if(!hasFiles(e)||foreign(e))return;e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='copy';});
+    addEventListener('dragleave',e=>{if(!hasFiles(e))return;depth=Math.max(0,depth-1);if(!depth)hide();});
+    addEventListener('drop',async e=>{
+      if(!hasFiles(e)||foreign(e))return;
+      e.preventDefault();depth=0;hide();
+      // Die Eintraege muessen synchron aus dem Ereignis geholt werden - nach dem ersten await ist
+      // die Ablage des Browsers geleert.
+      const entries=[...(e.dataTransfer?.items||[])].map(x=>x.webkitGetAsEntry?.()).filter(Boolean);
+      const plain=[...(e.dataTransfer?.files||[])];
+      let picked=plain,folder=false;
+      if(entries.length){const out=[];for(const entry of entries)await entryFiles(entry,out,0);if(out.length)picked=out;folder=entries.some(x=>x.isDirectory);}
+      const files=usable(picked),dropped=picked.length-files.length;
+      if(!files.length)return alert(folder?'In diesem Ordner ist keine lesbare Unterlage. Unterstützt werden PDF, Word, OpenDocument, CSV, Excel, JSON, Text, ZIP und Bilder.':'Keine lesbare Unterlage abgelegt.');
+      upload(files,{folder,dropped}).catch(x=>alert(x.message));
+    });
+  }
   function enhance(){const side=document.querySelector('.side');if(!side||side.querySelector('#intake-quick-upload-nav'))return;const anchor=side.querySelector('#intake-center-nav');
     const b=document.createElement('button');b.id='intake-quick-upload-nav';b.className='nav';b.type='button';b.textContent='Unterlagen jetzt einwerfen';
     const f=document.createElement('button');f.id='intake-folder-upload-nav';f.className='nav';f.type='button';f.textContent='Ganzen Ordner einlesen';
+    // Ohne diese Markierung sortiert die Kundenverwaltung den Knopf hinter "Weitere Bereiche" -
+    // die Liste der dauerhaft sichtbaren Eintraege ist fest, und neue stehen nicht darin. Der
+    // Weg, auf dem ein Bildungstraeger seine Daten ueberhaupt ins Portal bekommt, darf nicht
+    // der vierzehnte Eintrag in einem Klappmenue sein.
+    f.dataset.customerNavPrimary='1';
+    f.dataset.customerNavSourceLabel='Ganzen Ordner einlesen';
     if(anchor?.nextSibling)side.insertBefore(b,anchor.nextSibling);else side.append(b);
     b.insertAdjacentElement('afterend',f);
-    b.onclick=()=>choose(false);f.onclick=()=>choose(true);}
+    b.onclick=()=>choose(false);f.onclick=()=>choose(true);
+    f.title='Ordner lassen sich auch einfach ins Fenster ziehen.';
+    dropZone();}
   new MutationObserver(()=>queueMicrotask(enhance)).observe(document.querySelector('#app')||document.body,{subtree:true,childList:true});enhance();
 }

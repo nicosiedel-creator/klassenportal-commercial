@@ -190,6 +190,15 @@ assert.ok(processBody.indexOf('applyOrganizationImport')<processBody.lastIndexOf
 // ---------------------------------------------------------------------------------------------
 const quickUi=await readFile('public/intake-quick-upload-ui.js','utf8');
 assert.match(quickUi,/webkitdirectory/,'die Kundenverwaltung muss einen ganzen Ordner annehmen');
+// Die Kundenverwaltung sortiert jeden Navigationseintrag, der nicht ausdruecklich als sichtbar
+// markiert ist, hinter "Weitere Bereiche". Der Weg, auf dem ein Bildungstraeger seine Daten
+// ueberhaupt ins Portal bekommt, darf nicht in einem Klappmenue verschwinden.
+const folderNav=quickUi.slice(quickUi.indexOf("id='intake-folder-upload-nav'"));
+assert.match(folderNav.slice(0,600),/dataset\.customerNavPrimary='1'/,
+  'der Ordner-Einlesen-Knopf muss dauerhaft sichtbar bleiben');
+const customerUi=await readFile('public/customer-admin-ui.js','utf8');
+assert.match(customerUi,/customerNavPrimary==='1'/,
+  'die Kundenverwaltung muss diese Markierung weiterhin auswerten - sonst ist sie wirkungslos');
 assert.match(quickUi,/\.zip/,'ein gezippter Ordner muss annehmbar sein');
 const publicUi=await readFile('public/intake-public-upload.js','utf8');
 assert.match(publicUi,/webkitdirectory|#folder/,'auch die oeffentliche Einreichseite muss einen Ordner annehmen');

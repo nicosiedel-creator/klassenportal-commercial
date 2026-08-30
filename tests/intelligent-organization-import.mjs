@@ -12,7 +12,7 @@ const lazy=await readFile('public/customer-admin-lazy-modules.js','utf8');
 for(const table of ['organization_import_batches','organization_import_results'])assert.ok(migration.includes(`TABLE IF NOT EXISTS ${table}`),`missing ${table}`);
 assert.match(migration,/preview_digest TEXT NOT NULL/,'organization import preview must be immutable');
 assert.match(migration,/expires_at TEXT NOT NULL/,'organization previews must expire');
-assert.match(service,/OrganizationCandidateType='course'\|'subject'\|'participant'\|'class_admin'\|'guest'\|'teacher'\|'tenant_admin_review'/,'all safe organization entity types must be recognized');
+assert.match(service,/OrganizationCandidateType='org_unit'\|'resource'\|'course'\|'subject'\|'participant'\|'class_admin'\|'guest'\|'teacher'\|'tenant_admin_review'/,'all safe organization entity types must be recognized');
 assert.match(service,/TENANT_ADMIN_CONFIRMATION_REQUIRED/,'tenant admin rights must never be silently imported');
 assert.match(service,/type==='class_admin'/,'class admin candidates must have a dedicated import path');
 assert.match(service,/baseRole=type==='guest'\?'guest':'participant'/,'class admin must inherit participant baseline');
@@ -26,7 +26,7 @@ assert.match(service,/ORGANIZATION_IMPORT_PREVIEW_CHANGED/,'apply must reject mo
 assert.match(service,/selected_indexes/,'only selected safe candidates may be applied');
 assert.match(fileImport,/parseCsv/);assert.match(fileImport,/parseXlsx/);assert.match(fileImport,/application\/json/);assert.match(fileImport,/PDF_CLIENT_EXTRACTION_REQUIRED/);
 assert.match(router,/organization\/import\/file-preview/);assert.match(router,/organization\/import\/apply/);
-assert.match(ui,/Organisation automatisch einlesen/,'customer admin must expose universal organization import');
+assert.match(ui,/Bildungsträger automatisch einlesen/,'customer admin must expose universal organization import');
 assert.match(ui,/Klassenadmins bleiben Schüler mit Zusatzrecht/,'UI must explain class-admin student model');
 assert.match(ui,/Kundenadmin-Recht wird aus Sicherheitsgründen nie automatisch vergeben/,'UI must explain protected tenant-admin assignment');
 assert.match(ui,/vendor\/pdfjs\/pdf\.mjs/,'text PDFs must use bundled client PDF extraction');

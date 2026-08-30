@@ -13,7 +13,7 @@ const [enterprise,enterpriseUx,planning,ui,i18n,lazy,html,dropdown,autopilot]=aw
   readFile('public/customer-autopilot-entry.js','utf8')
 ]);
 
-for(const label of ['Übersicht','Klassen/Kurse','Benutzer & Rollen','Teilnehmer importieren','Inhalte','Prüfungen','Module','Paket & Abrechnung'])assert.ok(ui.includes(`'${label}'`),`primary customer navigation missing ${label}`);
+for(const label of ['Übersicht','Klassen/Kurse','Benutzer & Rollen','Bildungsträger importieren','Inhalte','Prüfungen','Module','Paket & Abrechnung'])assert.ok(ui.includes(`'${label}'`),`primary customer navigation missing ${label}`);
 for(const group of ['Lernen & Kommunikation','Organisation & Betrieb','Automatisierung & Education OS','Technik & Integrationen'])assert.ok(ui.includes(group),`customer navigation group missing ${group}`);
 for(const wording of ['Dokumente hochladen','Organisation & Struktur','Verantwortliche & Vertretungen','SSO, SCIM & API'])assert.ok(i18n.includes(wording),`localized customer navigation wording missing ${wording}`);
 assert.match(i18n,/customerNavSourceLabel/,'language pack must preserve stable source labels when localizing dynamic navigation');

@@ -16,6 +16,8 @@ assert.match(ui,/findNav\(view\)/,'setup actions must resolve dynamic module nav
 assert.match(ui,/window\.KPCustomerModules\.loadGroup\('organization'\)/,'setup shortcuts must load organization features only when needed');
 assert.match(ui,/enterprise-structure-nav/,'organisation shortcut must resolve the dynamically injected enterprise structure control');
 assert.match(ui,/Teilnehmer importieren/,'participant shortcut must target the dedicated participant import area');
+assert.match(ui,/action\('provider_import','Organigramm einlesen'\)/,'die Vorbereitungsliste muss den automatischen Organigramm-Import erreichbar machen');
+assert.match(ui,/view==='provider_import'/,'ohne Auflösung fuehrt der Knopf ins Leere');
 assert.match(onboarding,/setup-preparation-ui\.js/,'onboarding must load setup preparation guidance');
 assert.match(customer,/setup-preparation-ui\.js\?v=20260822-5/,'customer admin must load the current event-driven setup guidance');
 assert.match(ui,/const progress=content\.querySelector\('#kp-setup-progress'\);[\s\S]*if\(!progress\)\{content\.querySelector\('#kp-setup-preparation'\)\?\.remove\(\);return;\}/,'customer checklist must not appear until server setup status is available');

@@ -9,6 +9,38 @@
 // aufgeführt, wird ein allgemein verständlicher Satz gezeigt, kein SCREAMING_SNAKE.
 (function(){
   const TEXTS={
+    // Datei-Import: Organisation, Kurse, Faecher, Rollen
+    // Standorte, Organisationseinheiten und Ressourcen
+    ORG_UNIT_NAME_REQUIRED:'Diese Zeile hat keinen Namen für die Einheit. Ohne Namen lässt sich kein Standort und kein Bereich anlegen.',
+    ORG_UNIT_PARENT_INVALID:'Eine Einheit kann nicht ihr eigener übergeordneter Knoten sein.',
+    ORG_UNIT_PARENT_UNRESOLVED:'Der übergeordnete Knoten dieser Einheit konnte nicht aufgelöst werden. Bitte die Spalte parent_external_id prüfen.',
+    ORG_UNIT_TYPE_INACTIVE:'Dieser Einheitentyp ist in eurem Portal abgeschaltet. Bitte ihn unter Organisation & Struktur wieder aktivieren oder in der Datei einen anderen Typ angeben.',
+    ORG_UNIT_TYPE_MISSING:'Der Typ dieser Einheit konnte nicht angelegt werden. Bitte unter Organisation & Struktur einen Typ anlegen und den Import wiederholen.',
+    ORG_TYPE_NOT_FOUND:'Dieser Einheitentyp ist in eurem Portal nicht vorhanden.',
+    ORG_TYPE_INVALID:'Dieser Einheitentyp ist nicht zulässig. Erlaubt sind Kleinbuchstaben, Ziffern, Bindestrich und Unterstrich.',
+    ORG_EXTERNAL_ID_EXISTS:'Eine Einheit mit dieser externen Kennung gibt es bereits.',
+    ORG_UNIT_FIELDS_REQUIRED:'Für eine Einheit werden Name und Typ benötigt.',
+    ORG_UNIT_NOT_FOUND:'Diese Organisationseinheit wurde nicht gefunden.',
+    ORG_HIERARCHY_CYCLE:'Diese Zuordnung würde einen Ringschluss in der Organisationsstruktur erzeugen.',
+    FORBIDDEN_ORG_SCOPE:'Für diese Organisationseinheit fehlt dir die Berechtigung.',
+    RESOURCE_NAME_REQUIRED:'Diese Zeile hat keinen Namen für den Raum bzw. die Ressource.',
+    FORBIDDEN_PLANNING_MANAGE:'Räume und Ressourcen darf nur die Kundenadministration oder eine Person mit Kursverwaltungsrecht pflegen.',
+    UNSUPPORTED_ORGANIZATION_IMPORT_FILE:'Dieses Dateiformat wird nicht unterstützt. Möglich sind CSV, XLSX, JSON, TXT und textbasierte PDF.',
+    IMPORT_JSON_ROWS_REQUIRED:'Diese JSON-Datei enthält keine Datensätze. Erwartet wird eine Liste oder ein Feld "rows".',
+    ORGANIZATION_IMPORT_DATA_REQUIRED:'Aus dieser Datei ließ sich keine verwertbare Zeile lesen. Bitte prüfe, ob die erste Zeile die Spaltenüberschriften enthält.',
+    ORGANIZATION_IMPORT_TOO_LARGE:'Diese Datei enthält zu viele Zeilen. Bitte in kleineren Teilen einlesen.',
+    ORGANIZATION_IMPORT_NOT_FOUND:'Diese Vorschau ist nicht mehr vorhanden. Bitte die Datei erneut einlesen.',
+    ORGANIZATION_IMPORT_NOT_PENDING:'Diese Vorschau wurde bereits übernommen.',
+    ORGANIZATION_IMPORT_EXPIRED:'Die Vorschau ist abgelaufen. Bitte die Datei erneut einlesen.',
+    ORGANIZATION_IMPORT_PREVIEW_CHANGED:'Die Vorschau hat sich zwischenzeitlich geändert. Bitte die Datei erneut einlesen.',
+    SUBJECT_NAME_REQUIRED:'Für ein Fach fehlt der Name.',
+    TEACHER_NAME_REQUIRED:'Für eine Lehrkraft fehlt der Name.',
+    COURSE_NOT_RESOLVED:'Der Kurs ließ sich nicht eindeutig zuordnen. Bitte Kursname oder Kurscode ergänzen.',
+    // Excel im Einzelnen: der Grund gehoert benannt, ohne Innereien preiszugeben.
+    XLSX_NO_WORKSHEET:'Diese Excel-Datei enthält kein lesbares Tabellenblatt.',
+    XLSX_CELL_TOO_LARGE:'Eine Zelle dieser Excel-Datei enthält zu viel Text.',
+    XLSX_TOO_MANY_ROWS:'Diese Excel-Datei enthält zu viele Zeilen. Bitte in kleineren Teilen einlesen.',
+    XLSX_TOO_MANY_COLUMNS:'Diese Excel-Datei enthält zu viele Spalten.',
     // Anmeldung und Sitzung
     UNAUTHENTICATED:'Die Sitzung ist abgelaufen. Bitte melde dich erneut an.',
     LOGIN_REQUIRED:'Bitte melde dich an, um fortzufahren.',
@@ -187,6 +219,10 @@
     const base=code.split(':')[0];
     if(TEXTS[base])return TEXTS[base];
     if(base==='FIELD_REQUIRED')return 'Bitte fülle alle Pflichtfelder aus.';
+    // Der Leser fuer Excel-Dateien kennt viele einzelne Abbruchgruende. Sie alle sagen dem
+    // Kunden dasselbe: diese Datei laesst sich nicht lesen, und so kommt er weiter. Ein
+    // technischer Code wie XLSX_ZIP_EOCD_MISSING hilft ihm dabei nicht.
+    if(base.startsWith('XLSX_'))return 'Diese Excel-Datei ließ sich nicht lesen. Bitte in Excel erneut als .xlsx speichern oder als CSV exportieren.';
     if(TECHNICAL.test(code))return GENERIC;
     return code;
   };

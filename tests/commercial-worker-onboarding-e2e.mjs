@@ -195,6 +195,8 @@ async function autonomousFolderIntakeAudit(fixtureEnv){
     ['Traeger/kurse.csv',`course_name,course_code\n${kursA},ABN-A-${run}\n${kursB},ABN-B-${run}\n`],
     ['Traeger/faecher.csv',`fach,fachkuerzel\nAbnahme Anatomie ${run},AN${run.slice(-4)}\n`],
     ['Traeger/teilnehmer.csv',`name,email,kurscode\nAbnahme Lernende ${run},abnahme.${run}@example.invalid,ABN-A-${run}\n`],
+    ['Traeger/organigramm.csv',`node_type,external_id,parent_external_id,name,type,street,postal_code,city,country\nlocation,ABN-LOC-${run},ABN-ROOT-${run},Abnahme Campus ${run},Standort,Datenbogenweg 17,12627,Berlin,DE\norg_unit,ABN-OU-${run},ABN-LOC-${run},Abnahme Fachbereich ${run},Fachbereich,,,,\n`],
+    ['Traeger/raeume.csv',`resource_type,external_id,name,location_external_id,capacity,features,status\nRaum,ABN-ROOM-${run},Abnahme Seminarraum ${run},ABN-LOC-${run},24,Beamer;Whiteboard,verfügbar\n`],
     ['Traeger/.DS_Store','x'],
   ],{deflate:true});
   const form=new FormData();
@@ -229,10 +231,31 @@ async function autonomousFolderIntakeAudit(fixtureEnv){
   // Die Struktur muss auch in der Rueckverfolgung stehen, nicht nur ihre Wirkung.
   assert.ok(view.data?.organization?.batch_id,'the batch must remember its organization import');
   const orgTypes=(view.data.organization.candidates||[]).map(c=>c.type).sort();
-  assert.ok(orgTypes.includes('course')&&orgTypes.includes('subject'),
-    `courses and subjects must be recognised as structure, got ${orgTypes.join(',')}`);
+  for(const expected of ['course','subject','org_unit','resource'])
+    assert.ok(orgTypes.includes(expected),`${expected} must be recognised as structure, got ${orgTypes.join(',')}`);
 
-  console.log('Ganzer Ordner eingeworfen -> Kurse, Faecher und der Teilnehmer des neuen Kurses ohne Handgriff verarbeitet: OK.');
+  // Standorte, Bereiche und Raeume muessen wirklich entstanden sein - im echten Worker, mit dem
+  // Systemkonto des Eingangs, nicht nur im Entwurf. Vorher landete genau dieses Organigramm als
+  // Personenliste ohne E-Mail in der Handpruefung.
+  const unitsResponse=await api(`/api/enterprise/org/units?tenant_id=${encodeURIComponent(tenantId)}`,{headers:{cookie}});
+  assert.equal(unitsResponse.status,200,`org unit listing failed: ${unitsResponse.text}`);
+  const units=unitsResponse.data?.units||[];
+  const campus=units.find(x=>String(x.name)===`Abnahme Campus ${run}`),bereich=units.find(x=>String(x.name)===`Abnahme Fachbereich ${run}`);
+  assert.ok(campus,`the campus from the folder must exist, got ${units.map(x=>x.name).join(',')}`);
+  assert.ok(bereich,'the department from the folder must exist');
+  assert.equal(String(campus.type_key),'location','a campus must become a location');
+  assert.equal(String(bereich.parent_id),String(campus.id),'the hierarchy of the folder must survive');
+  assert.equal(JSON.parse(String(campus.metadata_json||'{}')).city,'Berlin','the address of a campus must not be lost');
+
+  const resourceResponse=await api(`/api/education/planning/resources?tenant_id=${encodeURIComponent(tenantId)}`,{headers:{cookie}});
+  assert.equal(resourceResponse.status,200,`resource listing failed: ${resourceResponse.text}`);
+  const room=(resourceResponse.data?.resources||[]).find(x=>String(x.name)===`Abnahme Seminarraum ${run}`);
+  assert.ok(room,'the room from the folder must exist as a resource, not as a person');
+  assert.equal(String(room.resource_type),'room');
+  assert.equal(Number(room.capacity),24);
+  assert.equal(String(room.location),`Abnahme Campus ${run}`,'the room must sit at the campus the same folder created');
+
+  console.log('Ganzer Ordner eingeworfen -> Standorte, Bereiche, Raeume, Kurse, Faecher und der Teilnehmer des neuen Kurses ohne Handgriff verarbeitet: OK.');
 }
 
 try{
