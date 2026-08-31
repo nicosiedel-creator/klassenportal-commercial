@@ -68,7 +68,12 @@ assert.match(advanced,/Promise\.all\(\[substitutionsPromise,surveysPromise,feedP
 assert.match(advanced,/o\.survey_id IN \(\$\{marks\(ids\.length\)\}\)/,'survey options must be batched instead of queried once per survey');
 assert.match(brandingSchema,/let ensured:Promise<void>\|null=null/,'branding schema readiness must be cached per worker isolate');
 assert.match(brandingSchema,/if\(ensured\)return ensured/,'ready branding schema must not run PRAGMA checks on every portal request');
-assert.match(brandingSchema,/if\(repaired\)await env\.DB\.prepare\(`UPDATE tenant_settings/,'palette normalization must write only when runtime repair was actually necessary');
+// Vorher stand hier: schreibe nur, wenn die Reparatur wirklich noetig war. Die Schreibung ist
+// inzwischen ganz entfallen - sie lief als UPDATE ohne tenant_id ueber alle Mandanten, ausgeloest
+// aus Lesepfaden, und dieselbe Normalisierung steht in Migration 0042_branding_palette.sql.
+// Die Zusicherung wird dadurch strenger, nicht schwaecher: gar keine Schreibung statt einer
+// bedingten. Laufzeitnachweis dazu in tests/schema-repair-boundary.mjs.
+assert.doesNotMatch(brandingSchema,/UPDATE tenant_settings/,'branding schema repair must not write tenant data on a read request at all');
 
 assert.match(dash,/async function build\(data\)\{[^}]*render\(data\);void enrichAssignments\(data\)/,'weekly dashboard must render before personal assignment enrichment');
 assert.match(dash,/kp:portal-data/,'dashboard must consume the base portal data event rather than refetching the overview');

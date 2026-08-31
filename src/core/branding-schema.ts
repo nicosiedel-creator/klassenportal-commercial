@@ -37,16 +37,17 @@ export async function ensureBrandingSchema(env:Env):Promise<void>{
   if(!supportsDirectD1(env))return;
   if(ensured)return ensured;
   ensured=(async()=>{
-    let current=await settingsColumns(env),repaired=false;
+    let current=await settingsColumns(env);
     for(const [name,definition] of Object.entries(requiredBrandingColumns) as [keyof typeof requiredBrandingColumns,string][]){
       if(current.has(name))continue;
       await addColumnSafely(env,name,definition);
-      repaired=true;
       current=await settingsColumns(env);
     }
-    // Normal production migrations already normalize the palette. Only perform
-    // this write if runtime schema repair actually had to add a missing column.
-    if(repaired)await env.DB.prepare(`UPDATE tenant_settings SET background_color='#ece8df' WHERE lower(background_color) IN ('#ffffff','#fefefe','#fafafa','#f9fafb','#f8fafc')`).run();
+    // Diese Funktion repariert ausschliesslich Schema, sie fasst keine Kundendaten an.
+    // Frueher lief hier zusaetzlich eine Palettennormalisierung als UPDATE ohne tenant_id, also
+    // ueber alle Mandanten - ausgeloest aus Lesepfaden wie getSettings und der oeffentlichen
+    // Kursportalseite, ohne Auditeintrag. Dieselbe Normalisierung steht bereits in Migration
+    // 0042_branding_palette.sql; Datenkorrekturen gehoeren dorthin, nicht in eine Laufzeitwache.
   })().catch(error=>{ensured=null;throw error;});
   return ensured;
 }

@@ -102,7 +102,12 @@ async function repairRecoverySchema(env:Env):Promise<void>{
         SELECT RAISE(IGNORE);
       END`,
   ];
-  for(const statement of statements)await env.DB.prepare(statement).run();
+  // Als Batch, nicht als Schleife: DROP TRIGGER gefolgt von CREATE TRIGGER ist einzeln
+  // ausgefuehrt fuer parallele Requests offen - zwei Isolate, die gleichzeitig ein historisches
+  // Schema vorfinden, koennen sich zwischen DROP und CREATE verschraenken, und das zweite
+  // CREATE scheitert mit "already exists" ausgerechnet auf dem Onboarding-Pfad. Ein Batch
+  // laeuft in einer Transaktion und in einem Roundtrip.
+  await env.DB.batch(statements.map(statement=>env.DB.prepare(statement)));
 }
 
 async function ensureRecoveryTables(env:Env):Promise<void>{
