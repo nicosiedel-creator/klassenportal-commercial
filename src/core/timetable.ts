@@ -23,22 +23,34 @@ const ALIASES: Record<MappingKey,string[]> = {
   date:['datum','date','tag','unterrichtstag','schultag'],
   start:['beginn','start','von','startzeit','beginn_uhrzeit','uhrzeit_von','start_uhrzeit'],
   end:['ende','end','bis','endzeit','ende_uhrzeit','uhrzeit_bis','schluss'],
-  subject:['fach','fachbezeichnung','fach_bezeichnung','fachname','fach_name','subject','unterrichtsfach','modul','modulbezeichnung','lernfeld','lernfeldbezeichnung','thema'],
+  subject:['fach','topic','thema_der_stunde','fachbezeichnung','fach_bezeichnung','fachname','fach_name','subject','unterrichtsfach','modul','modulbezeichnung','lernfeld','lernfeldbezeichnung','thema'],
   subjectShort:['fachkurzel','fachkuerzel','fach_kurzel','fach_kuerzel','kurzel','kuerzel','kurzbezeichnung','fachcode','fach_code','subject_code','modulcode','modul_code'],
   teacher:['dozent','dozentin','dozentenname','dozent_name','lehrer','lehrkraft','lehrkraftname','trainer','trainerin','trainername','teacher','referent','referentin'],
   room:['raum','room','ort','unterrichtsraum','standort'],
   notes:['hinweis','hinweise','info','infos','information','informationen','bemerkung','bemerkungen','notiz','notizen'],
-  course:['klasse','kurs','course','class','gruppe','lehrgang'],
+  // Reihenfolge ist hier Absicht: eine Kursliste eines Bildungstraegers fuehrt oft mehrere
+  // Kursspalten nebeneinander - course_id (seine eigene Kennung), course_code und
+  // course_external_id. Die eigene Kennung des Kunden sagt dem Portal nichts; sein Kurscode
+  // dagegen steht auch an den Kursen, die aus derselben Kursliste entstanden sind. Wird die
+  // erste passende Spalte genommen und das ist course_id, scheitert jede einzelne Zeile an
+  // "Klasse/Kurs konnte nicht eindeutig zugeordnet werden" - gemessen an 07_Stundenplan.csv
+  // eines echten Abnahmepakets.
+  course:['kurscode','course_code','klassencode','class_code','course_external_id','external_course_id','klasse','kurs','course','class','gruppe','lehrgang','course_id','kurs_id'],
   mode:['unterricht','unterrichtsart','format','modus','durchfuhrung','durchfuehrung','prasenz_online','praesenz_online'],
 };
 
+// Gesucht wird in der Reihenfolge der Bezeichnungen, nicht in der Reihenfolge der Kopfzeilen.
+// Vorher entschied, welche passende Spalte in der Datei zuerst stand: fuehrt eine Datei
+// course_id vor course_code, gewann die eigene Kennung des Kunden - und jede Zeile scheiterte an
+// der Klassenzuordnung. Die Bezeichnungsliste ist eine Rangfolge, und so wird sie jetzt auch
+// gelesen.
 function detectMapping(headers:string[]):Mapping {
   const out:Mapping={};
   for(const key of Object.keys(ALIASES) as MappingKey[]){
     const aliases=ALIASES[key];
-    const exact=headers.find(h=>aliases.includes(normalizeHeader(h)));
+    const exact=aliases.map(alias=>headers.find(h=>normalizeHeader(h)===alias)).find(Boolean);
     if(exact){out[key]=exact;continue;}
-    const fuzzy=headers.find(h=>aliases.some(a=>normalizeHeader(h).includes(a)||a.includes(normalizeHeader(h))));
+    const fuzzy=aliases.map(alias=>headers.find(h=>normalizeHeader(h).includes(alias)||alias.includes(normalizeHeader(h)))).find(Boolean);
     if(fuzzy)out[key]=fuzzy;
   }
   return out;
@@ -108,6 +120,24 @@ function inferCourseFromFilename(fileName:string,all:CourseRow[],auth:CoreAuthCo
   return scored[0].c;
 }
 
+// Nennt eine Zeile ihren Kurs mehrfach - eigene Kennung, Kurscode, externe Kennung -, darf der
+// Import nicht daran scheitern, dass die Spaltenzuordnung auf die unbrauchbarste davon fiel.
+// Zuerst gilt die zugeordnete Spalte; loest sie nicht auf, zaehlen die uebrigen Kursspalten
+// derselben Zeile. Aufgeloest wird dabei mit demselben Verfahren wie zuvor, also nur eindeutig.
+const ROW_COURSE_HEADERS=['course_code','kurscode','klassencode','class_code','course_external_id','external_course_id','klasse','kurs','course','class','course_id','kurs_id'];
+function resolveCourseFromRow(raw:RawRow,mapping:Mapping,allCourses:CourseRow[]):CourseRow|null{
+  const direct=resolveCourse(value(raw,mapping,'course'),allCourses);if(direct)return direct;
+  // Auch hier gilt die Rangfolge der Bezeichnungen und nicht die Spaltenfolge der Datei: sonst
+  // entschiede wieder der Zufall des Exports, welche Kursspalte einer Zeile zaehlt.
+  for(const alias of ROW_COURSE_HEADERS){
+    for(const header of Object.keys(raw)){
+      if(header===mapping.course)continue;
+      if(normalizeHeader(header)!==alias)continue;
+      const found=resolveCourse(String(raw[header]??''),allCourses);if(found)return found;
+    }
+  }
+  return null;
+}
 function buildNormalized(rawRows:RawRow[],mapping:Mapping,allCourses:CourseRow[],fallbackCourseId:string|undefined,auth:CoreAuthContext):{rows:NormalizedLesson[];issues:ImportIssue[];duplicates:number} {
   const issues:ImportIssue[]=[],rows:NormalizedLesson[]=[];let duplicates=0;
   for(const key of ['date','start','end'] as MappingKey[]) if(!mapping[key]) issues.push({row:1,field:key,message:'Erforderliche Spalte wurde nicht erkannt oder zugeordnet.'});
@@ -118,7 +148,7 @@ function buildNormalized(rawRows:RawRow[],mapping:Mapping,allCourses:CourseRow[]
   const seen=new Set<string>();
   rawRows.forEach((raw,index)=>{
     const rowNo=index+2;
-    const course=fallback??resolveCourse(value(raw,mapping,'course'),allCourses);
+    const course=fallback??resolveCourseFromRow(raw,mapping,allCourses);
     if(!course){issues.push({row:rowNo,field:'course',message:'Klasse/Kurs konnte nicht eindeutig zugeordnet werden.',value:value(raw,mapping,'course')});return;}
     if(!course.is_active){issues.push({row:rowNo,field:'course',message:'Die Klasse ist nicht aktiv.',value:course.name});return;}
     try{requireCourseAccess(auth,course.id);}catch{issues.push({row:rowNo,field:'course',message:'Keine Berechtigung für diese Klasse.',value:course.name});return;}
