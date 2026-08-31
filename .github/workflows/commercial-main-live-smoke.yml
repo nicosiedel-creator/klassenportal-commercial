@@ -73,6 +73,31 @@ jobs:
           test "$code" = 200 || { echo "Frozen webhook acknowledgement returned $code" >&2; cat /tmp/webhook >&2; exit 1; }
           jq -e '.ok == true and .ignored == true and .paymentProcessing == "disabled"' /tmp/webhook >/dev/null
           echo 'Deployed Worker EU-D1, release-lock, onboarding and payment-freeze contracts: OK'
+
+          # Der Fehler, den diese Zeilen verhindern, ist schon einmal passiert: die Weiterleitung
+          # /portal-admin -> /plattform-admin stand im Worker, ihr Test war gruen, und in Produktion
+          # lief sie nie - der Asset-Dienst beantwortete unbekannte Adressen selbst mit index.html,
+          # bevor der Worker gefragt wurde. Gemessen wird deshalb am wirklich ausgelieferten
+          # Worker, nicht an der Absicht im Quelltext.
+          #
+          # Der Verifikationshost ist gesperrt; die Weiterleitung laeuft trotzdem, weil sie vor der
+          # Release-Sperre entschieden wird. Genau das wird hier mitgeprueft.
+          for pair in "/KUNDEN-admin /kunden-admin" "/PLATTFORM-ADMIN /plattform-admin" "/portal-admin /plattform-admin" "/customer-admin /kunden-admin" "/kunden-admin.html /kunden-admin"; do
+            set -- $pair
+            code=$(curl -sS --max-time 15 -o /dev/null -D /tmp/redirect -w '%{http_code}' "$WORKER_BASE$1")
+            test "$code" = 308 || { echo "$1 must lead to $2 permanently, got $code" >&2; head -c 300 /tmp/redirect >&2; exit 1; }
+            target=$(awk 'tolower($1)=="location:"{print $2}' /tmp/redirect | tr -d '\r')
+            test "$target" = "$2" || { echo "$1 must point at $2, got '$target'" >&2; exit 1; }
+          done
+
+          # Und eine Adresse, die es nicht gibt, darf unter keinen Umstaenden eine Portalseite
+          # ausliefern. Gesperrt antwortet sie 503, freigegeben 404 - niemals 200 mit der Startseite.
+          code=$(curl -sS --max-time 15 -o /tmp/unknown -w '%{http_code}' "$WORKER_BASE/gibt-es-nicht-$GITHUB_RUN_ID")
+          case "$code" in 404|503) ;; *) echo "unknown address returned $code instead of 404/503" >&2; head -c 300 /tmp/unknown >&2; exit 1;; esac
+          if grep -Fq 'kp-build-commit' /tmp/unknown; then
+            echo "unknown address served the portal start page instead of an honest answer" >&2; exit 1
+          fi
+          echo 'Deployed Worker address contract: one address per surface, unknown addresses serve no portal page: OK'
       - uses: actions/setup-node@v4
         with:
           node-version: 22

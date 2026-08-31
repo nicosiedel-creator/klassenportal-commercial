@@ -175,6 +175,18 @@ for (const eintrag of PAGE_ADDRESSES)
   assert.ok(laeuftDurchDenWorker(eintrag.path),
     `${eintrag.path} laeuft am Worker vorbei und traegt deshalb weder Sicherheitsheader noch die Release-Sperre`);
 
+// Und der Beweis muss am ausgelieferten Worker gefuehrt werden, nicht nur hier. Genau daran ist
+// die letzte Freigabe gescheitert: die Weiterleitung stand im Worker, ihr Test war gruen, und in
+// Produktion lief sie nie. Der Live-Smoke misst sie deshalb am wirklich deployten Worker.
+const smoke = await readFile('.github/workflows/commercial-main-live-smoke.yml', 'utf8');
+for (const [schreibweise, ziel] of [['/KUNDEN-admin', '/kunden-admin'], ['/portal-admin', '/plattform-admin'], ['/customer-admin', '/kunden-admin']])
+  assert.ok(smoke.includes(`"${schreibweise} ${ziel}"`),
+    `der Live-Smoke muss am ausgelieferten Worker pruefen, dass ${schreibweise} nach ${ziel} fuehrt`);
+assert.match(smoke, /unknown address returned \$code instead of 404\/503/,
+  'der Live-Smoke muss pruefen, dass eine unbekannte Adresse in Produktion keine 200 liefert');
+assert.match(smoke, /unknown address served the portal start page/,
+  'der Live-Smoke muss pruefen, dass eine unbekannte Adresse in Produktion keine Portalseite ausliefert');
+
 // ---------------------------------------------------------------- 5. Die Seite sagt, was sie ist
 // Die Oberflaeche darf ihre Rolle nicht aus der Adresse raten. Genau dieser Vergleich hat unter
 // /KUNDEN-admin die Startseite fuer die Kundenverwaltung gehalten.
