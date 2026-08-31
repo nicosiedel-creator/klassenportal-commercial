@@ -21,9 +21,55 @@ function showTemporaryPassword(result){
   back.querySelector('#op-copy-password').onclick=e=>opCopy(result.temporary_password,e.currentTarget);
 }
 async function openMembershipManager(){
-  const tenant=opTenant(),[users,courses]=await Promise.all([opApi(`/api/tenant/users?tenant_id=${encodeURIComponent(tenant)}`).then(x=>x.users||[]),opCourses()]);
+  const tenant=opTenant(),[users,courses,me]=await Promise.all([
+    opApi(`/api/tenant/users?tenant_id=${encodeURIComponent(tenant)}`).then(x=>x.users||[]),
+    opCourses(),
+    opApi('/api/auth/me').then(x=>x.user||null).catch(()=>null),
+  ]);
   const back=opModal('Benutzer & Rollen verwalten',`<div class="table-wrap"><table><tr><th>Name</th><th>E-Mail</th><th>Rolle</th><th>Klasse/Kurs</th><th></th></tr>${users.map(u=>`<tr><td>${opEsc(u.display_name)}</td><td>${opEsc(u.email)}</td><td>${opEsc(u.role)}</td><td>${opEsc(courses.find(c=>c.id===u.course_id)?.name||'Organisation')}</td><td style="white-space:nowrap"><button class="btn secondary op-member-edit" data-id="${opEsc(u.membership_id||'')}">Bearbeiten</button> <button class="btn secondary op-user-reset" data-user="${opEsc(u.id)}">Passwort neu</button> <button class="btn secondary op-member-delete" data-id="${opEsc(u.membership_id||'')}">Entfernen</button></td></tr>`).join('')}</table></div><p class="muted">„Entfernen“ löscht nur die Zuordnung zu diesem Kunden bzw. dieser Klasse, nicht das Benutzerkonto bei anderen Mandanten.</p>`);
-  back.querySelectorAll('.op-member-edit').forEach(b=>b.onclick=()=>{const u=users.find(x=>x.membership_id===b.dataset.id);if(!u)return;back.remove();opForm('Rolle/Zuweisung bearbeiten',`<div class="notice"><strong>${opEsc(u.display_name)}</strong><div class="muted">${opEsc(u.email)}</div></div><div class="row"><label class="field">Rolle<select name="role"><option value="tenant_admin" ${u.role==='tenant_admin'?'selected':''}>Kunden-Admin</option><option value="class_admin" ${u.role==='class_admin'?'selected':''}>Klassenverantwortliche/r</option><option value="participant" ${u.role==='participant'?'selected':''}>Teilnehmer/in</option><option value="guest" ${u.role==='guest'?'selected':''}>Gast</option></select></label><label class="field">Klasse/Kurs<select name="course_id"><option value="">Organisation / nur bei Kunden-Admin</option>${opOptions(courses,u.course_id)}</select></label></div>`,f=>opApi(`/api/tenant/memberships/${encodeURIComponent(u.membership_id)}?tenant_id=${encodeURIComponent(tenant)}`,{method:'PATCH',body:JSON.stringify(Object.fromEntries(f))}));});
+  // Zwei Dinge waren hier nur ueber eine Fehlermeldung zu erfahren, und in einem frisch
+  // eingerichteten Mandanten scheiterte dadurch jede denkbare Eingabe:
+  //
+  // 1. Wer sich selbst bearbeitet, kann sein eigenes Kunden-Admin-Recht nicht abgeben
+  //    (CANNOT_REMOVE_OWN_TENANT_ADMIN) - richtig so, sonst sperrt man sich aus. In einem neuen
+  //    Mandanten ist man aber der einzige Benutzer, also fuehrte jeder Versuch dorthin.
+  // 2. Jede Rolle ausser Kunden-Admin braucht eine Klasse (COURSE_ID_REQUIRED). Die Klassenaus-
+  //    wahl stand aber auf "Organisation" - also scheiterte auch das.
+  //
+  // Beides steht jetzt im Dialog, bevor etwas abgeschickt wird.
+  back.querySelectorAll('.op-member-edit').forEach(b=>b.onclick=()=>{const u=users.find(x=>x.membership_id===b.dataset.id);if(!u)return;const self=String(u.id)===String(me?.id||'');back.remove();openMemberForm(u,self,courses,tenant);});
+  function openMemberForm(u,self,courses,tenant){
+    const roles=[['tenant_admin','Kunden-Admin'],['class_admin','Klassenverantwortliche/r'],['participant','Teilnehmer/in'],['guest','Gast']];
+    const selbstHinweis=self&&u.role==='tenant_admin'
+      ? '<div class="notice"><strong>Das ist dein eigenes Konto.</strong><div class="muted" style="margin-top:4px">Dein Kunden-Admin-Recht kannst du dir nicht selbst entziehen – sonst sperrst du dich aus deinem eigenen Portal aus. Lege zuerst eine zweite Person als Kunden-Admin an; danach kann diese deine Rolle ändern.</div></div>'
+      : '';
+    const keineKlassen=!courses.length
+      ? '<div class="notice"><strong>Es gibt noch keine Klasse.</strong><div class="muted" style="margin-top:4px">Klassenverantwortliche, Teilnehmer und Gäste brauchen eine Klasse. Lege zuerst unter „Klassen/Kurse“ eine an – oder lies sie unter „Bildungsträger importieren“ ein.</div></div>'
+      : '';
+    const form=opForm('Rolle/Zuweisung bearbeiten',
+      `<div class="notice"><strong>${opEsc(u.display_name)}</strong><div class="muted">${opEsc(u.email)}</div></div>${selbstHinweis}${keineKlassen}`
+      +`<div class="row"><label class="field">Rolle<select name="role" ${self&&u.role==='tenant_admin'?'disabled':''}>`
+      +roles.map(([v,l])=>`<option value="${v}" ${u.role===v?'selected':''} ${self&&u.role==='tenant_admin'&&v!=='tenant_admin'?'disabled':''}>${opEsc(l)}</option>`).join('')
+      +`</select></label><label class="field">Klasse/Kurs<select name="course_id" data-member-course><option value="">Ganze Organisation (nur für Kunden-Admin)</option>${opOptions(courses,u.course_id)}</select></label></div>`
+      +`<div class="muted" data-member-hint style="margin-top:6px"></div>`,
+      f=>opApi(`/api/tenant/memberships/${encodeURIComponent(u.membership_id)}?tenant_id=${encodeURIComponent(tenant)}`,{method:'PATCH',body:JSON.stringify(Object.fromEntries(f))}));
+    // Die Klassenauswahl haengt an der Rolle. Wer "Teilnehmer/in" waehlt und die Klasse auf
+    // "Ganze Organisation" stehen laesst, bekam bisher erst nach dem Absenden COURSE_ID_REQUIRED.
+    const rolle=form?.querySelector('[name="role"]'),klasse=form?.querySelector('[data-member-course]'),hinweis=form?.querySelector('[data-member-hint]'),senden=form?.querySelector('.op-form button.btn');
+    const abgleichen=()=>{
+      if(!rolle||!klasse)return;
+      const braucht=rolle.value!=='tenant_admin';
+      klasse.disabled=!braucht;
+      if(!braucht)klasse.value='';
+      else if(!klasse.value&&courses.length)klasse.value=courses[0].id;
+      const fehlt=braucht&&!klasse.value;
+      if(hinweis)hinweis.textContent=braucht
+        ? (fehlt?'Für diese Rolle wird eine Klasse benötigt.':'Diese Rolle gilt für die gewählte Klasse.')
+        : 'Kunden-Admins gelten für die ganze Organisation, nicht für eine einzelne Klasse.';
+      if(senden)senden.disabled=fehlt||(self&&u.role==='tenant_admin'&&rolle.value!=='tenant_admin');
+    };
+    rolle?.addEventListener('change',abgleichen);klasse?.addEventListener('change',abgleichen);abgleichen();
+  }
   back.querySelectorAll('.op-user-reset').forEach(b=>b.onclick=async()=>{const u=users.find(x=>String(x.id)===String(b.dataset.user));if(!u||!confirm(`Passwort für ${u.display_name} wirklich zurücksetzen? Alle bestehenden Anmeldungen dieser Person werden beendet.`))return;b.disabled=true;try{const r=await opApi(`/api/tenant/users/${encodeURIComponent(u.id)}/reset-password?tenant_id=${encodeURIComponent(tenant)}`,{method:'POST',body:'{}'});back.remove();showTemporaryPassword(r);}catch(x){alert(x.message);b.disabled=false;}});
   back.querySelectorAll('.op-member-delete').forEach(b=>b.onclick=async()=>{const u=users.find(x=>x.membership_id===b.dataset.id);if(!u||!confirm(`Zuordnung von ${u.display_name} wirklich entfernen?`))return;try{await opApi(`/api/tenant/memberships/${encodeURIComponent(u.membership_id)}?tenant_id=${encodeURIComponent(tenant)}`,{method:'DELETE'});back.remove();location.reload();}catch(x){alert(x.message);}});
 }

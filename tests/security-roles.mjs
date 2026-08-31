@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 import { authForTenant, hashPassword, verifyPassword } from '../dist/core/auth.js';
 import { asStudentView, forbidClassAdminStudentData } from '../dist/core/student-role.js';
-import { assertSameOrigin, b64, cookie, randomBytes, toArrayBuffer } from '../dist/core/utils.js';
+import { assertSameOrigin, b64, cookie, noCookie, randomBytes, requestIsSecure, toArrayBuffer } from '../dist/core/utils.js';
 
 async function legacyHash(password,iterations=100000){
   const salt=randomBytes(16),key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
@@ -50,5 +50,23 @@ assert.throws(()=>assertSameOrigin(new Request('https://portal.example/api/x',{m
 assert.throws(()=>assertSameOrigin(new Request('https://portal.example/api/x',{method:'POST',headers:{origin:'https://evil.example'}}),'https://portal.example'),/CSRF_ORIGIN_MISMATCH/);
 assert.doesNotThrow(()=>assertSameOrigin(new Request('https://portal.example/api/x',{method:'GET',headers:{origin:'https://evil.example'}}),'https://portal.example'));
 assert.match(cookie('kp_session','abc',60),/HttpOnly; Secure; SameSite=Strict/);
+
+// Secure haengt seit dem WebKit-Befund an der Anfrage: ueber https gesetzt, ueber http nicht,
+// weil WebKit ein Secure-Cookie ueber http vollstaendig verwirft - auch von der Rueckadresse.
+// Diese Ausnahme darf ausschliesslich http betreffen. Alles andere - auch eine fehlende oder
+// unlesbare Adresse - bleibt sicher.
+assert.equal(requestIsSecure(new Request('https://portal.example/api/auth/login',{method:'POST'})),true,'https muss als sicher gelten');
+assert.equal(requestIsSecure(undefined),true,'ohne Anfrage muss Secure vorsichtshalber gesetzt bleiben');
+assert.equal(requestIsSecure(new Request('http://127.0.0.1:8787/api/auth/login',{method:'POST'})),false,'nur der lokale http-Lauf darf die Ausnahme ausloesen');
+assert.equal(requestIsSecure({url:'keine-gueltige-adresse'}),true,'eine unlesbare Adresse muss vorsichtshalber als sicher gelten');
+for(const secure of [cookie('kp_session','abc',60,requestIsSecure(new Request('https://portal.example/x'))),noCookie('kp_session',requestIsSecure(new Request('https://portal.example/x')))]){
+  assert.match(secure,/; Secure;/,'ueber https muss Secure am Sitzungscookie stehen');
+  assert.match(secure,/HttpOnly/,'HttpOnly gilt immer');
+  assert.match(secure,/SameSite=Strict/,'SameSite=Strict gilt immer');
+}
+for(const local of [cookie('kp_session','abc',60,false),noCookie('kp_session',false)]){
+  assert.doesNotMatch(local,/Secure/,'ueber http darf Secure nicht gesetzt sein - sonst speichert WebKit das Cookie nicht');
+  assert.match(local,/HttpOnly; SameSite=Strict/,'HttpOnly und SameSite=Strict duerfen dabei nicht mit entfallen');
+}
 
 console.log('Security hardening + class-admin-as-student role isolation tests: OK');

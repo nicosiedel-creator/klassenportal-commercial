@@ -93,6 +93,9 @@ function abortTracker(){
     },
     unanswered(){return[...aborted].filter(([path])=>!served.has(path)).map(([path,count])=>`${path} (${count}x abgebrochen, nie beantwortet)`);},
     total(){return[...aborted.values()].reduce((sum,count)=>sum+count,0);},
+    // Genau die Pfade, die im Lauf abgebrochen UND beantwortet wurden - also die, deren Abbruch
+    // oben bereits als unbedenklich verbucht ist.
+    abortedAndAnswered(){return[...aborted.keys()].filter(path=>served.has(path));},
   };
 }
 const aborts=abortTracker();
@@ -104,6 +107,27 @@ async function navigate(target,url,options){navigation.depth++;try{return await 
 // die Seite; script-src 'self' laesst ihn nicht laufen. Der Host steht namentlich hier, damit
 // keine andere blockierte Anfrage stillschweigend mitverschwindet.
 const CSP_BLOCKED_EXTERNAL=/^https:\/\/static\.cloudflareinsights\.com\//;
+// WebKit meldet einen abgebrochenen fetch zweimal: einmal als requestfailed - dort verbucht ihn
+// der Abbruchzaehler oben - und einmal als Konsolenmeldung "Fetch API cannot load <URL> due to
+// access control checks.", die Playwright fuer WebKit als pageerror weiterreicht. Deshalb schlug
+// der WebKit-Lauf am Ende mit zwei Seitenfehlern fehl, obwohl der gesamte Ablauf durchlief und
+// /api/auth/me im selben Lauf hundertfach beantwortet wurde. Die Stellen fangen die Ablehnung
+// selbst ab (routeAdmin und routeParticipant haben beide try/catch) - es ist also nichts
+// unbehandelt, sondern dieselbe Meldung ein zweites Mal.
+//
+// Verworfen wird deshalb ausschliesslich, was dieselbe Bedingung erfuellt wie ein unbedenklicher
+// Abbruch: die Meldung ist ein Ladefehler UND sie nennt einen Pfad, den der Abbruchzaehler in
+// diesem Lauf sowohl abgebrochen als auch beantwortet gesehen hat. Trifft das nicht zu - weil
+// gar kein Abbruch verbucht wurde oder der Pfad nie geliefert hat -, bleibt es ein Befund. Eine
+// von der CSP verweigerte Anfrage faellt nicht darunter: ihr errorText passt auf kein
+// Abbruchmuster, sie landet also in failedRequests und laesst den Lauf weiterhin scheitern.
+const LOAD_FAILURE=/cannot load|failed to fetch|networkerror|load failed|network error|abgebrochen/i;
+function abortedPageErrors(details,abortedAndAnsweredPaths){return details.filter(detail=>pageErrorIsKnownAbort(detail,abortedAndAnsweredPaths));}
+function pageErrorIsKnownAbort(detail,abortedAndAnsweredPaths){
+  const text=String(detail||'');
+  if(!LOAD_FAILURE.test(text))return false;
+  return abortedAndAnsweredPaths.some(path=>path.length>1&&text.includes(path));
+}
 page.on('requestfailed',request=>{const errorText=request.failure()?.errorText||'failed';if(navigationAbort(request,errorText))return;if(/csp/i.test(errorText)&&CSP_BLOCKED_EXTERNAL.test(request.url()))return;failedRequests.push(`${request.method()} ${request.url()} :: ${errorText}`);});
 // Eine Antwort, die eine Navigation ausdruecklich zulaesst, ist keine unerwartete Antwort. Die
 // Release-Sperre antwortet auf /produkt, /kunden-admin und /dozentenportal mit 503 - genau das
@@ -877,7 +901,11 @@ try{
   console.log(externalNoise.length
     ?`${externalNoise.length} externe Meldung(en) ignoriert (nicht aus dem Portal): ${externalNoise.map(t=>t.replace(/\s+/g,' ').slice(0,90)).join(' | ')}`
     :'keine externen Konsolenmeldungen - die Seite laedt nichts Fremdes mehr');
-  if(pageErrors.length)fail(`page errors: ${pageErrors.join(' | ')}`);if(unexpectedHttp.length)fail(`unexpected browser HTTP responses: ${unexpectedHttp.map(x=>`${x.status} ${x.url}`).join(' | ')}`);if(relevantConsole.length)fail(`console errors: ${relevantConsole.join(' | ')}`);if(failedRequests.length)fail(`failed browser requests: ${failedRequests.join(' | ')}`);
+  const knownAborts=abortedPageErrors(pageErrors,aborts.abortedAndAnswered()),realPageErrors=pageErrors.filter(x=>!knownAborts.includes(x));
+  console.log(knownAborts.length
+    ?`${knownAborts.length} Seitenfehler als bereits verbuchter Abbruch erkannt (Pfad im Lauf abgebrochen und beantwortet): ${knownAborts.map(t=>t.replace(/\s+/g,' ').slice(0,110)).join(' | ')}`
+    :'keine Seitenfehler, die auf einen bereits verbuchten Abbruch zurueckgehen');
+  if(realPageErrors.length)fail(`page errors: ${realPageErrors.join(' | ')}`);if(unexpectedHttp.length)fail(`unexpected browser HTTP responses: ${unexpectedHttp.map(x=>`${x.status} ${x.url}`).join(' | ')}`);if(relevantConsole.length)fail(`console errors: ${relevantConsole.join(' | ')}`);if(failedRequests.length)fail(`failed browser requests: ${failedRequests.join(' | ')}`);
   // Abgebrochene Anfragen sind fuer sich unbedenklich - solange derselbe Pfad im Lauf auch
   // beantwortet wurde. Ein Pfad, der nur abbricht, hat nie geliefert und ist ein Befund.
   const unanswered=aborts.unanswered();

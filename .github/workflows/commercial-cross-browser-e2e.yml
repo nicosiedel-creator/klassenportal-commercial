@@ -2,24 +2,32 @@ name: Commercial cross-browser E2E
 
 # Firefox und WebKit fahren denselben Ablauf wie der Chromium-Gate.
 #
-# Stand der WebKit-Untersuchung: WebKit erreicht auf den GitHub-Runnern den lokalen Server
-# nicht. Die Diagnose im Lauf meldet jedes Mal dasselbe - "about:blank: ok in 7-9ms |
-# eingebautes Dokument: ok in 10-21ms | node erreicht den Server: 200 | Navigation über IP:
-# Timeout | Navigation über localhost: Timeout" - und im Worker-Protokoll kommt keine einzige
-# Anfrage von WebKit an. Ausgeschlossen sind damit: eine kaputte Installation (die Engine
-# rendert in einstelligen Millisekunden), das Runner-Abbild (identisch auf ubuntu-latest und
-# ubuntu-24.04), die Adressform (127.0.0.1 und localhost laufen beide in die
-# Zeitueberschreitung), die Erreichbarkeit des Servers (node bekommt 200, und die
-# Bereitschaftspruefung verlangt vorher fuenf Antworten in Folge) und die Playwright-Fassung
-# (1.55.0 und 1.62.1 verhalten sich gleich). Firefox faehrt denselben Ablauf auf demselben
-# Runner gegen denselben Server vollstaendig durch. Es ist also kein Befund am Portal - es
-# erreicht das Portal nichts. Wer hier weitersucht, faengt bei der Netzschicht dieser
-# WebKit-Fassung unter Linux an, nicht bei den vier oben ausgeschlossenen Ursachen.
+# WebKit war hier wochenlang rot, und die Untersuchung lief lange in die Irre - weil ihre erste
+# Feststellung falsch war: "im Worker-Protokoll kommt keine einzige Anfrage von WebKit an".
+# Tatsaechlich schickte die Engine sieben Anfragen und bekam eine Antwort. Der Reihe nach
+# gemessen und damit ausgeschlossen: kaputte Installation, Runner-Abbild, Adressform,
+# Erreichbarkeit des Servers, Playwright-Fassung, die Netzschicht von WebKit unter Linux, die
+# Benutzernamensraum-Sperre von Ubuntu 24.04 und die Einstellungen, mit denen die Abnahme ihre
+# Seite oeffnet.
 #
-# Der Workflow läuft absichtlich nicht bei jedem Pull Request: Er ist neu, seine Befunde sind noch unbekannt,
-# und browserabhängige Fehler sollen gefunden und behoben werden, ohne einen gesunden
-# Release aufzuhalten. Sobald er stabil grün läuft, kann er auf pull_request erweitert
-# und zum Pflicht-Gate gemacht werden.
+# Der Grund stand schliesslich im Klartext im Protokoll (Lauf 33323216016):
+#
+#   https://127.0.0.1:8787/styles.css :: Error performing TLS handshake:
+#   An unexpected TLS packet was received.
+#
+# Die Seite laedt ueber http, ihre Dateien wurden aber ueber https angefragt. Ursache ist
+# upgrade-insecure-requests in der Sicherheitsrichtlinie des Portals: ueber https gehoert die
+# Anweisung dorthin, ueber http nehmen Chromium und Firefox die Rueckadresse davon aus - WebKit
+# nicht. Behoben in src/index.ts: ueber http entfaellt genau diese eine Anweisung, alles andere
+# bleibt. tests/csp-scheme-contract.mjs haelt beides fest.
+#
+# scripts/browser-local-network-probe.mjs bleibt als Messung im Lauf: sie hat den Unterschied
+# zwischen "erreicht die Engine einen lokalen Server" und "erreicht sie diesen einen" ueberhaupt
+# erst sichtbar gemacht und nennt jede Anfrage beim Namen, die ohne Antwort bleibt.
+#
+# Der Workflow läuft absichtlich nicht bei jedem Pull Request: browserabhängige Fehler sollen
+# gefunden und behoben werden, ohne einen gesunden Release aufzuhalten. Sobald er stabil grün
+# läuft, kann er auf pull_request erweitert und zum Pflicht-Gate gemacht werden.
 on:
   workflow_dispatch:
   push:
@@ -82,19 +90,24 @@ jobs:
       # Server die Anfrage ueberhaupt, wie nennt die Engine den Netzfehler, und haelt sie sich
       # ueberhaupt fuer verbunden.
       #
-      # Zusaetzlich der naechstliegende Verdacht, ausgesprochen und gemessen statt vermutet:
-      # Ubuntu 24.04 sperrt unprivilegierte Benutzernamensraeume per AppArmor
-      # (kernel.apparmor_restrict_unprivileged_userns=1). WebKit trennt Darstellung und Netz in
-      # zwei Prozesse - das passt zum Befund, dass gerendert wird und nur das Netz ausfaellt.
-      # Die Messung laeuft deshalb zweimal: einmal wie vorgefunden, einmal nach dem Loesen der
-      # Sperre. Erst der Vergleich beider Zeilen im Protokoll sagt, ob der Verdacht stimmt.
+      # Ergebnis der ersten Messung (Lauf 33319723183, Ubuntu 24.04.4, WebKit 26.0): die Engine
+      # erreicht einen lokalen node-Server in 37 ms mit Status 200 - vor UND nach dem Loesen der
+      # Benutzernamensraum-Sperre gleichermassen, obwohl die Sperre gesetzt war. Damit ist der
+      # naechstliegende Verdacht widerlegt und die Netzschicht von WebKit unter Linux als Ursache
+      # ausgeschlossen. Der Schritt zum Loesen der Sperre bleibt nur als Vergleichspunkt stehen.
+      #
+      # Was bleibt: die Abnahme oeffnet ihre Seite anders als diese Messung - mit Fenstergroesse,
+      # Sprache und eigener Browserkennung. Die Messung faehrt dieselbe Navigation jetzt einmal
+      # je Einstellung. Welche Zeile in die Zeitueberschreitung laeuft, benennt die Ursache.
       - name: Measure local reachability for ${{ matrix.browser }} as found
         shell: bash
         run: |
           set -uo pipefail
-          echo "apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 'nicht vorhanden')"
-          if unshare --user --map-root-user true 2>/dev/null; then echo "unprivilegierte Benutzernamensraeume: nutzbar"; else echo "unprivilegierte Benutzernamensraeume: BLOCKIERT"; fi
-          node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} || true
+          echo '--- wie vorgefunden ---' | tee /tmp/netzprobe.log
+          . /etc/os-release && echo "Runner: $PRETTY_NAME" | tee -a /tmp/netzprobe.log
+          echo "apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 'nicht vorhanden')" | tee -a /tmp/netzprobe.log
+          if unshare --user --map-root-user true 2>/dev/null; then echo "unprivilegierte Benutzernamensraeume: nutzbar" | tee -a /tmp/netzprobe.log; else echo "unprivilegierte Benutzernamensraeume: BLOCKIERT" | tee -a /tmp/netzprobe.log; fi
+          node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} 2>&1 | tee -a /tmp/netzprobe.log || true
       - name: Release the user-namespace restriction on this runner
         shell: bash
         run: |
@@ -107,7 +120,16 @@ jobs:
           fi
       - name: Measure local reachability for ${{ matrix.browser }} again
         shell: bash
-        run: node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} || true
+        run: |
+          set -uo pipefail
+          echo '--- nach dem Loesen der Sperre ---' | tee -a /tmp/netzprobe.log
+          node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} 2>&1 | tee -a /tmp/netzprobe.log || true
+          {
+            echo "### Netzprobe ${{ matrix.browser }}"
+            echo '```text'
+            cat /tmp/netzprobe.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Prepare exact local PR candidate and real onboarding fixtures
         shell: bash
         run: |
@@ -124,6 +146,17 @@ jobs:
           WORKERS_CI_GUARD_ACTIVE=1 npx wrangler dev --config wrangler.browser-e2e.json --local --ip 127.0.0.1 --port 8787 --local-upstream 127.0.0.1 --upstream-protocol http >/tmp/commercial-wrangler-e2e.log 2>&1 &
           echo $! >/tmp/commercial-wrangler-e2e.pid
           node scripts/wait-for-local-candidate.mjs http://127.0.0.1:8787/plattform-admin /tmp/commercial-wrangler-e2e.log
+      # Die entscheidende Trennung. Bis hierher ist belegt: die Engine erreicht einen lokalen
+      # node-Server in Millisekunden, mit und ohne Benutzernamensraum-Sperre, schlicht und mit
+      # genau den Einstellungen der Abnahme. Sie erreicht nur diesen einen Server nicht.
+      # Diese Messung faehrt deshalb beides in derselben Sekunde: den eigenen node-Server und den
+      # laufenden Kandidaten. Und sie zaehlt mit, ob die Engine die Anfrage ueberhaupt abschickt.
+      - name: Measure the running candidate against a plain server
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo '--- gegen den laufenden Kandidaten ---' | tee -a /tmp/netzprobe.log
+          node scripts/browser-local-network-probe.mjs ${{ matrix.browser }} --url http://127.0.0.1:8787/plattform-admin 2>&1 | tee -a /tmp/netzprobe.log || true
       - name: Click through the candidate in ${{ matrix.browser }}
         shell: bash
         env:
@@ -162,6 +195,8 @@ jobs:
       - name: Repeat the failure at the end of the log
         if: failure()
         run: |
+          echo '--- Netzprobe (Messung vor dem eigentlichen Lauf) ---'
+          cat /tmp/netzprobe.log || true
           echo '--- Browser-E2E: letzte Zeilen ---'
           tail -n 40 /tmp/commercial-browser-e2e.log || true
       - name: Stop local PR candidate
