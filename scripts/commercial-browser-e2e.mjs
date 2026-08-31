@@ -589,6 +589,22 @@ async function educationOsDialogContract(){
   const opener=page.locator('#kp-autopilot-primary');
   if(!(await opener.count()))fail('the customer administration has no Autopilot entry');
   if(await page.locator('#kp-autopilot-primary').count()!==1)fail(`the Autopilot entry exists ${await page.locator('#kp-autopilot-primary').count()} times - its id must be unique`);
+
+  // Der Hinweis unter der Kachel wurde vom Modul selbst gebaut und lief an der Uebersetzung
+  // vorbei: auf Englisch stand dort weiter "Änderung beschreiben → prüfen → simulieren".
+  // Geprueft wird der Sprachwechsel, wie ihn ein Kunde macht - ueber die Sprachwahl der Seite.
+  {
+    const hinweis=()=>page.locator('#kp-autopilot-primary small').first().innerText();
+    const deutsch=(await hinweis()).trim();
+    if(deutsch!=='Änderung beschreiben → prüfen → simulieren')fail(`der Autopilot-Hinweis lautet auf Deutsch "${deutsch}"`);
+    await page.selectOption('#kp-language-select select','en');
+    await page.waitForTimeout(1500);
+    const englisch=(await hinweis()).trim();
+    if(englisch!=='Describe change → review → simulate')fail(`nach dem Wechsel auf Englisch steht unter der Autopilot-Kachel weiterhin "${englisch}"`);
+    await page.selectOption('#kp-language-select select','de');
+    await page.waitForTimeout(1500);
+    if((await hinweis()).trim()!==deutsch)fail('der Wechsel zurueck auf Deutsch stellt den Hinweis nicht wieder her');
+  }
   await opener.click();
   await page.locator('.eo-os-back').waitFor({timeout:20000}).catch(()=>fail('the Autopilot did not open its surface'));
   await page.waitForTimeout(1200);
