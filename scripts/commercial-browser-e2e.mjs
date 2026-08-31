@@ -645,6 +645,47 @@ async function educationOsDialogContract(){
   console.log('Education OS surface obeys the shared dialog contract: OK');
 }
 
+// Die Kundenverwaltung laedt fuenf Modulgruppen erst auf Klick nach. Was dabei in die Navigation
+// eingehaengt wird, steht in keinem HTML - es entsteht im Browser, und ein Fehler dabei ist still.
+//
+// Gemessen: beim Nachladen von "Organisation & Betrieb" warf intake-quick-upload-ui.js sechsmal
+// NotFoundError ("The node before which the new node is to be inserted is not a child of this
+// node"). Der Fehler flog, bevor die beiden Knoepfe eingehaengt waren - danach fehlten
+// "Unterlagen jetzt einwerfen" und "Ganzen Ordner einlesen" vollstaendig. Das sind genau die zwei
+// Wege, auf denen ein Bildungstraeger seine Daten ueberhaupt ins Portal bekommt.
+async function customerModuleGroupsContract(){
+  // Die gemeinsame Seite ist an dieser Stelle bereits als Kunden-Admin angemeldet - derselbe Weg,
+  // den educationOsDialogContract nimmt.
+  await route('/kunden-admin');
+  await page.locator('.side .nav').first().waitFor({timeout:30000});
+  await page.waitForTimeout(2000);
+  const eigene=[];
+  const horcher=error=>eigene.push(pageErrorDetail(page,error).slice(0,300));
+  page.on('pageerror',horcher);
+  try{
+    const gruppen=await page.$$eval('[data-kp-load-group]',els=>els.map(e=>e.dataset.kpLoadGroup));
+    if(gruppen.length<3)fail(`die Kundenverwaltung bietet nur ${gruppen.length} nachladbare Modulgruppen an`);
+    for(const gruppe of gruppen){
+      const oeffner=page.locator('#kp-customer-more-toggle');
+      if(await oeffner.count()&&await oeffner.getAttribute('aria-expanded')!=='true')await oeffner.click().catch(()=>{});
+      await page.waitForTimeout(400);
+      const starter=page.locator(`[data-kp-load-group="${gruppe}"]`).first();
+      if(!(await starter.count()))continue;
+      await starter.click({timeout:8000}).catch(()=>{});
+      await page.waitForTimeout(2500);
+      if(eigene.length)fail(`beim Nachladen der Modulgruppe "${gruppe}" warf die Kundenverwaltung: ${eigene.join(' | ')}`);
+    }
+    // Und die beiden Einwurfwege haengen wirklich in der Leiste, nicht nur im Quelltext.
+    for(const [kennung,name] of [['#intake-quick-upload-nav','Unterlagen jetzt einwerfen'],['#intake-folder-upload-nav','Ganzen Ordner einlesen']]){
+      const oeffner=page.locator('#kp-customer-more-toggle');
+      if(await oeffner.count()&&await oeffner.getAttribute('aria-expanded')!=='true')await oeffner.click().catch(()=>{});
+      if(!(await page.locator(kennung).count()))
+        fail(`"${name}" fehlt nach dem Nachladen in der Navigation der Kundenverwaltung`);
+    }
+    console.log(`Kundenverwaltung: ${gruppen.length} Modulgruppen ohne Seitenfehler nachgeladen, beide Einwurfwege in der Leiste: OK`);
+  }finally{page.off('pageerror',horcher);}
+}
+
 // Was der Browser aus einer Seite macht, steht nicht im ausgelieferten HTML: die
 // Einstiegsflächen bauen sich per JavaScript auf. Eine Prüfung der Quelltexte hätte deshalb
 // nichts gefunden - im Browser gemessen hatten Anmeldung, Kundenverwaltung und
@@ -837,6 +878,7 @@ try{
     await acceptedOfferOnboarding();
     await adminDialogContract('/kunden-admin');
     await educationOsDialogContract();
+    await customerModuleGroupsContract();
     await adminDialogContract('/plattform-admin');
   }else if(mode==='locked-production'){
     productionReleased=await productionIsReleased();
