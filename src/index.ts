@@ -39,6 +39,7 @@ import { runPlatformAutomationCycle } from './core/automation-cycle.js';
 import { handleMicrosoftGraphApi } from './core/microsoft-graph-router.js';
 import { handleCollaborationReportingApi } from './core/collaboration-reporting-router.js';
 import { handleLiveStudyApi } from './core/live-study-router.js';
+import { matchPageAddress, refererSurface } from './core/page-routes.js';
 import type { Env } from './core/types.js';
 import { requestIsSecure } from './core/utils.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
@@ -67,7 +68,10 @@ function accessError(e:unknown):Response{const raw=String((e as Error)?.message|
 function jsonError(code:string,status:number):Response{return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 function publicError(e:unknown):Response{const raw=String((e as Error)?.message||'PUBLIC_PORTAL_ERROR'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PUBLIC_PORTAL_ERROR',status=code.includes('NOT_FOUND')?404:['LOGIN_REQUIRED','ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(code)?401:code==='PUBLIC_PORTAL_ERROR'?500:400;return jsonError(code,status);}
 function jsonOk(data:unknown):Response{return new Response(JSON.stringify({ok:true,...(data as Record<string,unknown>)}),{status:200,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
-function customerSupportReferer(request:Request):boolean{try{const value=request.headers.get('referer');return !!value&&new URL(value).pathname.replace(/\/$/,'')==='/kunden-admin';}catch{return false;}}
+// Die Sperre fragt die Adresstabelle, nicht die Schreibweise: /KUNDEN-admin ist dieselbe
+// Kundenoberflaeche wie /kunden-admin und darf nicht schreibend werden, nur weil die Adresse
+// anders geschrieben ist.
+function customerSupportReferer(request:Request):boolean{return refererSurface(request.headers.get('referer'))==='kunden';}
 async function blockPlatformSupportWrite(request:Request,env:Env):Promise<Response|null>{
   const url=new URL(request.url),method=request.method.toUpperCase();
   if(!url.pathname.startsWith('/api/')||method==='GET'||method==='HEAD'||url.pathname==='/api/auth/logout'||!customerSupportReferer(request))return null;
@@ -76,12 +80,29 @@ async function blockPlatformSupportWrite(request:Request,env:Env):Promise<Respon
 }
 
 const LEGAL_PATHS=['/impressum','/datenschutz','/agb','/avv','/unterauftragsverarbeiter','/datenportabilitaet','/rechtsverstoss-melden'] as const;
-function releaseGateBypass(path:string):boolean{const trimmed=path==='/'?'/':path.replace(/\/+$/,'').replace(/\.html$/,'');const normalized=trimmed==='/index'?'/':trimmed||'/';if(normalized==='/'||normalized==='/plattform-admin'||normalized==='/portal-admin'||normalized==='/portaladmin'||normalized==='/api/platform'||normalized.startsWith('/api/platform/')||normalized==='/api/auth'||normalized.startsWith('/api/auth/')||normalized==='/api/public/legal'||normalized==='/api/legal/report'||normalized==='/api/payments'||normalized.startsWith('/api/payments/')||normalized==='/api/integrations/microsoft/callback')return true;if(normalized==='/lernabend-vfa13'||normalized==='/vfa-study-entry'||normalized==='/vfa-study-presenter'||normalized==='/vfa-study-quiz'||normalized.startsWith('/quiz/vfa13/')||normalized.startsWith('/api/live-study/'))return true;if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren','/testcenter','/certificate-verify',...LEGAL_PATHS].includes(normalized as any))return true;if(normalized.startsWith('/brand/logo/'))return true;return/\.(?:js|css|mjs|map|png|jpe?g|webp|svg|ico|woff2?|ttf)$/i.test(normalized);}
+function releaseGateBypass(path:string):boolean{const trimmed=path==='/'?'/':path.replace(/\/+$/,'').replace(/\.html$/,'');const normalized=trimmed==='/index'?'/':trimmed||'/';if(normalized==='/'||normalized==='/plattform-admin'||normalized==='/api/platform'||normalized.startsWith('/api/platform/')||normalized==='/api/auth'||normalized.startsWith('/api/auth/')||normalized==='/api/public/legal'||normalized==='/api/legal/report'||normalized==='/api/payments'||normalized.startsWith('/api/payments/')||normalized==='/api/integrations/microsoft/callback')return true;if(normalized==='/lernabend-vfa13'||normalized==='/vfa-study-entry'||normalized==='/vfa-study-presenter'||normalized==='/vfa-study-quiz'||normalized.startsWith('/quiz/vfa13/')||normalized.startsWith('/api/live-study/'))return true;if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren','/testcenter','/certificate-verify',...LEGAL_PATHS].includes(normalized as any))return true;if(normalized.startsWith('/brand/logo/'))return true;return/\.(?:js|css|mjs|map|png|jpe?g|webp|svg|ico|woff2?|ttf)$/i.test(normalized);}
 async function releaseGateAllowsLockedRequest(path:string,request:Request,env:Env):Promise<boolean>{if(releaseGateBypass(path))return true;if(await acceptanceModeAllowsLockedRequest(env,request))return true;if(!path.startsWith('/api/'))return false;try{return!!(await getSession(env,request))?.isPlatformAdmin;}catch{return false;}}
 function productionLockedResponse(path:string,reason:string|null):Response{const headers={'cache-control':'no-store','retry-after':'300'};if(path.startsWith('/api/')||path.startsWith('/public/')||path.startsWith('/calendar/')||path.startsWith('/scim/'))return new Response(JSON.stringify({ok:false,error:'PRODUCTION_RELEASE_LOCKED'}),{status:503,headers:{...headers,'content-type':'application/json; charset=utf-8'}});const html='<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Klassenportal</title><body style="font-family:system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f8fafc;color:#0f172a"><main style="max-width:560px;margin:24px;padding:28px;background:#fff;border:1px solid #e2e8f0;border-radius:18px"><h1 style="margin-top:0">Klassenportal vorübergehend nicht verfügbar</h1><p>Diese Version ist noch nicht für den Produktivbetrieb freigegeben. Bitte versuche es später erneut.</p></main></body></html>';void reason;return new Response(html,{status:503,headers:{...headers,'content-type':'text/html; charset=utf-8'}});}
 
+// Die Seite nennt die angefragte Adresse bewusst nicht: sie wird nicht zurueckgespiegelt, und
+// sie verraet nichts ueber den inneren Aufbau. Ein Weg zurueck reicht.
+const ADDRESS_NOT_FOUND_HTML='<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Seite nicht gefunden \u00b7 Klassenportal</title><body style="font-family:system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f8fafc;color:#0f172a"><main style="max-width:560px;margin:24px;padding:28px;background:#fff;border:1px solid #e2e8f0;border-radius:18px"><h1 style="margin-top:0;font-size:1.4rem">Diese Seite gibt es nicht</h1><p>Die aufgerufene Adresse geh\u00f6rt zu keiner Seite des Klassenportals. M\u00f6glicherweise ist sie veraltet oder enth\u00e4lt einen Tippfehler.</p><p><a href="/" style="color:#1d4ed8">Zur Startseite</a></p></main></body></html>';
+function addressNotFoundResponse(request:Request):Response{
+  const headers={'cache-control':'no-store','content-type':'text/html; charset=utf-8'};
+  if(request.method==='HEAD')return new Response(null,{status:404,headers});
+  if(!(request.headers.get('accept')||'').includes('text/html'))return new Response('Nicht gefunden',{status:404,headers:{'cache-control':'no-store','content-type':'text/plain; charset=utf-8'}});
+  return new Response(ADDRESS_NOT_FOUND_HTML,{status:404,headers});
+}
+
 async function routeRequest(request:Request,env:Env):Promise<Response>{
   const url=new URL(request.url),clean=url.pathname.replace(/\/$/,'');
+  // Zuerst die Schreibweise, dann alles andere. Eine Adresse dieses Portals wird auf ihre eine
+  // kanonische Form gefuehrt, bevor irgendetwas sie beantwortet - auch vor der Release-Sperre:
+  // eine Weiterleitung liefert keinen Inhalt aus, und ein Lesezeichen mit alter Schreibweise
+  // soll im gesperrten Zustand dort landen, wo die Sperre ueber es entscheidet, statt vorher
+  // eine 503 fuer eine Adresse zu bekommen, die es so gar nicht gibt.
+  const address=matchPageAddress(url.pathname);
+  if(address?.kind==='redirect'){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return new Response(null,{status:308,headers:{location:address.location+url.search,'cache-control':'no-store'}});}
   if(!releaseGateBypass(url.pathname)){const release=await productionReleaseAccess(env,request);if(release.production&&!release.allowed&&!await releaseGateAllowsLockedRequest(url.pathname,request,env))return productionLockedResponse(url.pathname,release.reason);}
   const supportBlock=await blockPlatformSupportWrite(request,env);if(supportBlock)return supportBlock;
 
@@ -92,12 +113,6 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   if(['/passwort-vergessen','/passwort-zuruecksetzen','/konto-aktivieren'].includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/account-action.html',request.url),{method:request.method,headers:request.headers}));}
   if((LEGAL_PATHS as readonly string[]).includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return renderLegalDocument(env,clean.slice(1) as any);}
   if(clean==='/produkt'){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/produkt.html',request.url),{method:request.method,headers:request.headers}));}
-  // Die Plattformverwaltung liegt unter /plattform-admin. Wer /portal-admin aufruft - ein
-  // naheliegender Vertipper, und offenbar in Lesezeichen gelandet -, bekam bisher stillschweigend
-  // die Startseite: unbekannte Adressen werden als Einzelseiten-Anwendung behandelt und liefern
-  // index.html. Das sah aus wie ein Portal, war aber die Kundenoberflaeche mit fremder Navigation.
-  // Statt einer Seite, die es nicht gibt, fuehrt der Weg jetzt dorthin, wo er hin soll.
-  if(clean==='/portal-admin'||clean==='/portaladmin'){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return new Response(null,{status:308,headers:{location:'/plattform-admin'+url.search,'cache-control':'no-store'}});}
   if(['/plattform-admin','/kunden-admin','/klassen-admin'].includes(clean)){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});const asset=clean==='/kunden-admin'?'/customer-admin.html':clean==='/klassen-admin'?'/class-admin.html':'/platform-admin.html';return env.ASSETS.fetch(new Request(new URL(asset,request.url),{method:request.method,headers:request.headers}));}
   if(clean==='/dozentenportal'||clean==='/dozentenportal.html'){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/dozentenportal.html',request.url),{method:request.method,headers:request.headers}));}
   if(clean==='/lernabend-vfa13'){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Methode nicht erlaubt',{status:405});return env.ASSETS.fetch(new Request(new URL('/vfa-study-presenter.html',request.url),{method:request.method,headers:request.headers}));}
@@ -136,7 +151,11 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   const portability=await handlePortabilityRequest(request,env,portabilityConfig,r=>resolvePortabilityAuth(env,r));if(portability)return portability;
   const api=await handleCoreApi(request,env);if(api){if(onboardingPost)return augmentPaidOnboardingResponse(env,request,api);return api;}
   const pub=await handlePublicApi(request,env);if(pub)return pub;
-  return env.ASSETS.fetch(request);
+  // Was bis hierher kommt, ist entweder eine ausgelieferte Datei - oder es gibt es nicht. Bis
+  // zu dieser Aenderung bekam der zweite Fall index.html mit Status 200: jeder Vertipper sah
+  // eine Verwaltungsoberflaeche, die nicht zu seiner Adresse gehoerte.
+  const asset=await env.ASSETS.fetch(request);
+  return asset.status===404?addressNotFoundResponse(request):asset;
 }
 
 export default{

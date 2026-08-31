@@ -1,6 +1,9 @@
 const root=document.querySelector('#app');
 const APP_ASSET_VERSION='20260822-performance-2';
-const CUSTOMER_PATH=location.pathname.replace(/\/$/,'')==='/kunden-admin';
+// Welche Oberflaeche laeuft, sagt die ausgelieferte Seite - nicht die Adresse, unter der sie
+// geoeffnet wurde. Ein Adressvergleich beantwortet die Frage falsch, sobald dieselbe Seite
+// unter einer zweiten Schreibweise ankommt.
+const CUSTOMER_PATH=document.body?.dataset?.surface==='kunden';
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function safeContinuation(){const value=new URLSearchParams(location.search).get('continue')||'';try{if(!value)return'';const u=new URL(value,location.origin);if(u.origin!==location.origin)return'';const p=u.pathname.replace(/\/$/,'')||'/';if(['/plattform-admin','/kunden-admin','/klassen-admin'].includes(p))return p+u.search;if(/^\/portal\/[^/]+\/[^/?#]+$/.test(p))return p+u.search;return'';}catch{return'';}}
 async function getMe(){const r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});if(!r.ok)return null;return(await r.json()).user||null;}

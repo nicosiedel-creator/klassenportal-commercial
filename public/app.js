@@ -1,10 +1,12 @@
 const root=document.querySelector('#app');
-const CUSTOMER_PATH=location.pathname.replace(/\/$/,'')==='/kunden-admin';
-// Die Plattformoberflaeche wird an der Seite erkannt, die ausgeliefert wurde, nicht nur an einer
-// Adresse: platform-admin.html traegt dafuer eine Klasse, so wie customer-admin.html es laengst
-// tut. Ein Pfad allein ist zu wenig - haette der Server unter einer anderen Adresse dieselbe
-// Seite geliefert, stuende hier die Kundennavigation.
-const PLATFORM_SURFACE=location.pathname.replace(/\/$/,'')==='/plattform-admin'||Boolean(document.body?.classList?.contains('platform-portal-admin'));
+const SURFACE=document.body?.dataset?.surface||'';
+const CUSTOMER_PATH=SURFACE==='kunden';
+// Welche Oberflaeche laeuft, sagt die ausgelieferte Seite: jede Huelle traegt dafuer
+// data-surface. Die Adresse ist dafuer die falsche Quelle - unter /KUNDEN-admin kam bis vor
+// kurzem index.html an, und ein Adressvergleich haette dort die Startseite fuer die
+// Kundenverwaltung gehalten. Der Server fuehrt jede Schreibweise jetzt auf ihre eine Adresse
+// zurueck; die Oberflaeche verlaesst sich trotzdem nicht darauf, sondern auf die Seite.
+const PLATFORM_SURFACE=SURFACE==='plattform';
 const S={me:window.__KP_BOOT_USER??null,tenants:[],tenantId:null,courses:[],contentCourseId:'',setupTenantId:null,view:'overview'};delete window.__KP_BOOT_USER;
 // Die Einrichtung fuer einen Kunden ueberlebt ein Neuladen, aber nicht das Schliessen des Tabs:
 // sie ist ein bewusster Arbeitsmodus, kein Dauerzustand.

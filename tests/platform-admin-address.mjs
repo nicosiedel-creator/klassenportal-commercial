@@ -48,13 +48,31 @@ assert.notEqual(echt.status, 308, 'die Plattformverwaltung darf nicht auf sich s
 assert.equal(echt.status, 200, 'sie liefert ihre Seite aus');
 
 // Die Weiterleitung muss auch vor der Live-Freigabe funktionieren - sonst laeuft ein Lesezeichen
-// im gesperrten Zustand in eine 503 statt an sein Ziel. /plattform-admin ist dort ausgenommen,
-// der Weg dorthin muss es auch sein.
+// im gesperrten Zustand in eine 503 statt an sein Ziel. Frueher stand /portal-admin dafuer in der
+// Umgehungsliste der Release-Sperre. Das ist nicht mehr noetig und waere ein toter Eintrag: die
+// Schreibweise wird jetzt vor der Sperre auf ihre kanonische Form gefuehrt.
+//
+// Gemessen wird deshalb die Reihenfolge selbst, nicht der Listeneintrag. Eine gesperrte Umgebung:
+// Produktionsursprung gesetzt, aber keine freigegebene Worker-Version.
+const GESPERRT = { APP_ORIGIN: 'https://klassenportal.app' };
+const gesperrt = await antwort('https://klassenportal.app/portal-admin', 'GET', GESPERRT);
+assert.equal(gesperrt.status, 308,
+  `im gesperrten Zustand muss /portal-admin weiterleiten statt zu sperren, geantwortet wurde ${gesperrt.status}`);
+assert.equal(gesperrt.headers.get('location'), '/plattform-admin');
+
+// Gegenprobe: die Sperre selbst greift in dieser Umgebung wirklich - sonst misst der Test nichts.
+const zielGesperrt = await antwort('https://klassenportal.app/kunden-admin', 'GET', GESPERRT);
+assert.equal(zielGesperrt.status, 503,
+  `die Release-Sperre muss in dieser Umgebung greifen, geantwortet wurde ${zielGesperrt.status}`);
+
+// Und der tote Eintrag ist weg: /portal-admin darf die Sperre nicht mehr ausdruecklich umgehen.
 const { readFile } = await import('node:fs/promises');
 const source = await readFile('src/index.ts', 'utf8');
 const bypass = source.slice(source.indexOf('function releaseGateBypass('), source.indexOf('\nasync function releaseGateAllowsLockedRequest('));
-for (const pfad of ['/plattform-admin', '/portal-admin', '/portaladmin'])
-  assert.ok(bypass.includes(`normalized==='${pfad}'`),
-    `${pfad} muss von der Release-Sperre ausgenommen sein wie sein Ziel`);
+assert.ok(bypass.includes("normalized==='/plattform-admin'"),
+  'die Plattformverwaltung selbst muss von der Release-Sperre ausgenommen bleiben');
+for (const pfad of ['/portal-admin', '/portaladmin'])
+  assert.ok(!bypass.includes(`normalized==='${pfad}'`),
+    `${pfad} braucht keinen Eintrag in der Umgehungsliste mehr und darf keinen toten fuehren`);
 
 console.log('Adressen der Plattformverwaltung: /portal-admin und /portaladmin führen dauerhaft nach /plattform-admin statt still die Kundenoberfläche zu zeigen: OK');

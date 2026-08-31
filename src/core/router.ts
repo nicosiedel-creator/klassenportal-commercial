@@ -16,6 +16,7 @@ import { assertTenantWriteAllowed, calculateCommercialOffer, createPaidBooking, 
 import { deleteLearningMaterial, downloadLearningMaterial, listLearningMaterials, updateLearningMaterial, uploadLearningMaterial } from './materials.js';
 import { listTenantAudit, listUserNotifications, markAllNotificationsRead, markNotificationRead } from './support.js';
 import { closeSurvey, createOrRotateCalendarFeed, createSubstitutionUpdate, createSurvey, deleteSubstitutionUpdate, deleteSurvey, getTeamsIntegration, listCalendarFeeds, listSubstitutionUpdates, listSurveys, saveTeamsIntegration, statisticsSummary, testTeamsIntegration, voteSurvey } from './advanced-modules.js';
+import { refererSurface } from './page-routes.js';
 
 function err(e:unknown):Response{
   const ex=e as Error&{issues?:unknown;targeting?:unknown};const code=safeErrorCode(e);
@@ -32,7 +33,10 @@ function err(e:unknown):Response{
   return json({ok:false,error:code,issues:ex?.issues,targeting:ex?.targeting},status);
 }
 async function body(request:Request):Promise<Record<string,unknown>>{try{const b=await request.json() as Record<string,unknown>;if(b.course_id==='')b.course_id=null;return b;}catch{return{};}}
-function customerSupportRequest(request:Request):boolean{try{const ref=request.headers.get('referer');return !!ref&&new URL(ref).pathname.replace(/\/$/,'')==='/kunden-admin';}catch{return false;}}
+// Dieselbe Frage wie in blockPlatformSupportWrite, dieselbe Antwortquelle: die Adresstabelle.
+// Vorher stand hier ein Vergleich auf die exakte Schreibweise - /KUNDEN-admin galt damit nicht
+// als Supportansicht und lieferte volle Plattformrechte in einen Kundenbereich.
+function customerSupportRequest(request:Request):boolean{return refererSurface(request.headers.get('referer'))==='kunden';}
 
 export async function handleCoreApi(request:Request,env:Env):Promise<Response|null>{
   const u=new URL(request.url);if(!u.pathname.startsWith('/api/'))return null;
