@@ -42,11 +42,29 @@ import { handleLiveStudyApi } from './core/live-study-router.js';
 import type { Env } from './core/types.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
+const CONTENT_SECURITY_POLICY="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://login.microsoftonline.com; frame-src https://www.youtube-nocookie.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests";
 const SECURITY_HEADERS:Record<string,string>={
   'x-content-type-options':'nosniff','x-frame-options':'DENY','referrer-policy':'strict-origin-when-cross-origin','permissions-policy':'camera=(), microphone=(), geolocation=()','cross-origin-opener-policy':'same-origin','strict-origin-agent-cluster':'?1','strict-transport-security':'max-age=31536000; includeSubDomains',
-  'content-security-policy':"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://login.microsoftonline.com; frame-src https://www.youtube-nocookie.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests",
+  'content-security-policy':CONTENT_SECURITY_POLICY,
 };
-function harden(response:Response):Response{const headers=new Headers(response.headers);for(const[k,v]of Object.entries(SECURITY_HEADERS))if(!headers.has(k))headers.set(k,v);headers.set('x-request-id',crypto.randomUUID());if((headers.get('content-type')||'').includes('text/html'))headers.set('cache-control','no-store');return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}
+// upgrade-insecure-requests laesst den Browser jede Unterressource auf https umstellen. Ueber
+// https ist das genau richtig und bleibt unveraendert - die Auslieferung im Betrieb laeuft
+// ausschliesslich darueber.
+//
+// Ueber http ist die Anweisung dagegen sinnlos und schaedlich: es gibt dort nichts zu sichern,
+// aber der Browser stellt trotzdem um. Chromium und Firefox nehmen die Rueckadresse davon aus,
+// WebKit nicht. Gemessen im Cross-Browser-Lauf 33323216016: das Dokument kam an, und genau die
+// sechs Dateien, die es nachlaedt, scheiterten an
+// "Error performing TLS handshake: An unexpected TLS packet was received" - unter
+// https://127.0.0.1:8787/styles.css, obwohl die Seite selbst ueber http geladen wurde. Die
+// Seite blieb dadurch ohne Stylesheet und ohne ihre Skripte.
+//
+// Die Anweisung entfaellt deshalb ueber http. Das schwaecht nichts ab, was ueber https gilt.
+function contentSecurityPolicy(secure:boolean):string{return secure?CONTENT_SECURITY_POLICY:CONTENT_SECURITY_POLICY.replace('; upgrade-insecure-requests','');}
+function harden(response:Response,secure=true):Response{const headers=new Headers(response.headers);for(const[k,v]of Object.entries(SECURITY_HEADERS))if(!headers.has(k))headers.set(k,k==='content-security-policy'?contentSecurityPolicy(secure):v);headers.set('x-request-id',crypto.randomUUID());if((headers.get('content-type')||'').includes('text/html'))headers.set('cache-control','no-store');return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}
+// Im Betrieb kommt jede Anfrage ueber https herein. Nur der lokale Lauf spricht http, und eine
+// unlesbare Adresse gilt vorsichtshalber als sicher: dann bleibt die Anweisung stehen.
+function requestIsSecure(request:Request):boolean{try{return new URL(request.url).protocol!=='http:';}catch{return true;}}
 function accessError(e:unknown):Response{const raw=String((e as Error)?.message||'PAYMENT_REQUIRED'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PAYMENT_REQUIRED',status=code==='TRIAL_EXPIRED'?410:code==='TRIAL_READ_ONLY'?423:402;return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 function jsonError(code:string,status:number):Response{return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 function publicError(e:unknown):Response{const raw=String((e as Error)?.message||'PUBLIC_PORTAL_ERROR'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PUBLIC_PORTAL_ERROR',status=code.includes('NOT_FOUND')?404:['LOGIN_REQUIRED','ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(code)?401:code==='PUBLIC_PORTAL_ERROR'?500:400;return jsonError(code,status);}
@@ -118,7 +136,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
 }
 
 export default{
-  async fetch(request:Request,env:Env):Promise<Response>{try{return harden(await routeRequest(request,env));}catch(error){console.error('Unhandled request error',{path:new URL(request.url).pathname,error:String((error as Error)?.message||error)});return harden(jsonError('INTERNAL_ERROR',500));}},
+  async fetch(request:Request,env:Env):Promise<Response>{const secure=requestIsSecure(request);try{return harden(await routeRequest(request,env),secure);}catch(error){console.error('Unhandled request error',{path:new URL(request.url).pathname,error:String((error as Error)?.message||error)});return harden(jsonError('INTERNAL_ERROR',500),secure);}},
   async email(message:{from:string;to:string;raw:ReadableStream<Uint8Array>;rawSize?:number;headers?:Headers;setReject?(reason:string):void},env:Env):Promise<void>{await handleCloudflareInboundEmail(message,env);},
   async scheduled(controller:{cron?:string},env:Env):Promise<void>{
     const migration=await runEuStorageMigrationCycle(env).catch(error=>{console.error('EU storage migration cycle failed',{error:String((error as Error)?.message||error)});return{active:true,complete:false,copied:0,skipped:0,scanned:0,pending:true};});
