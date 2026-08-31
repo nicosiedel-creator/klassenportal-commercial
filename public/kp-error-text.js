@@ -89,7 +89,7 @@
     COURSE_CODE_REQUIRED:'Bitte gib ein Kürzel für die Klasse bzw. den Kurs an.',
     COURSE_CODE_EXISTS:'Dieses Kürzel ist in dieser Organisation bereits vergeben.',
     COURSE_NOT_FOUND:'Die gewählte Klasse bzw. der Kurs existiert nicht mehr.',
-    ACCESS_CODE_REQUIRED:'Für diese Zugangsart wird ein Zugangscode mit mindestens 6 Zeichen benötigt.',
+    ACCESS_CODE_REQUIRED:'Für diese Zugangsart wird ein Zugangscode mit mindestens 10 Zeichen benötigt.',
     ACCESS_MODE_INVALID:'Die gewählte Zugangsart ist ungültig.',
     ROLE_INVALID:'Die gewählte Rolle ist ungültig.',
     EMAIL_INVALID:'Bitte gib eine gültige E-Mail-Adresse ein.',

@@ -22,7 +22,12 @@ async function deriveLegacyPbkdf2(password:string,salt:Uint8Array,iterations:num
 function constantTimeEqual(actual:Uint8Array,expected:Uint8Array):boolean{if(actual.length!==expected.length)return false;let diff=0;for(let i=0;i<actual.length;i++)diff|=actual[i]^expected[i];return diff===0;}
 function passwordNeedsUpgrade(stored:string):boolean{const parts=stored.split('$');if(parts[0]!=='scrypt')return true;return Number(parts[1])!==SCRYPT_N||Number(parts[2])!==SCRYPT_R||Number(parts[3])!==SCRYPT_P;}
 
-export async function hashPassword(password:string):Promise<string>{if(password.length<10||password.length>256)throw new Error('PASSWORD_LENGTH_INVALID');const salt=randomBytes(16),actual=await deriveScrypt(password,salt);return`scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${b64(salt)}$${b64(actual)}`;}
+// Diese Untergrenze gilt nicht nur fuer Passwoerter: ein Zugriffscode einer Klasse wird mit
+// derselben Funktion gehasht und faellt damit unter dieselbe Regel. Sie steht deshalb hier
+// einmal und wird von den Aufrufern benutzt, statt an jeder Stelle neu geraten zu werden.
+export const PASSWORD_MIN_LENGTH=10;
+export const PASSWORD_MAX_LENGTH=256;
+export async function hashPassword(password:string):Promise<string>{if(password.length<PASSWORD_MIN_LENGTH||password.length>PASSWORD_MAX_LENGTH)throw new Error('PASSWORD_LENGTH_INVALID');const salt=randomBytes(16),actual=await deriveScrypt(password,salt);return`scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${b64(salt)}$${b64(actual)}`;}
 export async function verifyPassword(password:string,stored:string):Promise<boolean>{const parts=stored.split('$');if(parts[0]==='scrypt'){const[,nText,rText,pText,saltText,hashText]=parts;if(!nText||!rText||!pText||!saltText||!hashText)return false;const N=Number(nText),r=Number(rText),p=Number(pText);let salt:Uint8Array,expected:Uint8Array;try{salt=fromB64(saltText);expected=fromB64(hashText);}catch{return false;}if(salt.length<16||expected.length<32)return false;try{return constantTimeEqual(await deriveScrypt(password,salt,expected.length,N,r,p),expected);}catch{return false;}}if(parts[0]==='pbkdf2'){const[,iterText,saltText,hashText]=parts;if(!iterText||!saltText||!hashText)return false;const iterations=Number(iterText);let salt:Uint8Array,expected:Uint8Array;try{salt=fromB64(saltText);expected=fromB64(hashText);}catch{return false;}if(salt.length<16||expected.length<32)return false;try{return constantTimeEqual(await deriveLegacyPbkdf2(password,salt,iterations,expected.length*8),expected);}catch{return false;}}return false;}
 
 async function rateKey(request:Request,email:string):Promise<string>{const ip=request.headers.get('CF-Connecting-IP')??'unknown';return sha256Text(`${ip}|${email}`);}

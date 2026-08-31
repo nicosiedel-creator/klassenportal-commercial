@@ -3,7 +3,7 @@ import { audit } from './audit.js';
 import { requireCourseAccess, requireRole } from './permissions.js';
 import { hasPermission } from './enterprise-access.js';
 import { nowIso, safeString, slugify } from './utils.js';
-import { hashPassword } from './auth.js';
+import { hashPassword, PASSWORD_MIN_LENGTH } from './auth.js';
 
 const defs={
   homework:{table:'homework',required:['course_id','title'],fields:['course_id','subject_id','title','description','due_at','submission_info'],touch:true},
@@ -23,7 +23,7 @@ export async function updateCourse(env:Env,auth:CoreAuthContext,tenantId:string,
   if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'){if(!hasPermission(auth,'courses.manage'))throw new Error('FORBIDDEN_PERMISSION');requireCourseAccess(auth,courseId);}const current=await env.DB.prepare('SELECT * FROM courses WHERE id=? AND tenant_id=?').bind(courseId,tenantId).first<Record<string,unknown>>();if(!current)throw new Error('COURSE_NOT_FOUND');
   const name=safeString(input.name??current.name,200);if(!name)throw new Error('COURSE_NAME_REQUIRED');const code=slugify(input.code??current.code??name).slice(0,40);if(!code)throw new Error('COURSE_CODE_REQUIRED');
   const mode=String(input.access_mode??current.access_mode??'login');if(!['public','link_code','login','hybrid'].includes(mode))throw new Error('ACCESS_MODE_INVALID');
-  let accessHash=current.access_code_hash??null;if(mode==='public'||mode==='login')accessHash=null;else{const newCode=input.access_code===undefined?'':safeString(input.access_code,128);if(newCode){if(newCode.length<6)throw new Error('ACCESS_CODE_REQUIRED');accessHash=await hashPassword(newCode);}if(!accessHash)throw new Error('ACCESS_CODE_REQUIRED');}
+  let accessHash=current.access_code_hash??null;if(mode==='public'||mode==='login')accessHash=null;else{const newCode=input.access_code===undefined?'':safeString(input.access_code,128);if(newCode){if(newCode.length<PASSWORD_MIN_LENGTH)throw new Error('ACCESS_CODE_REQUIRED');accessHash=await hashPassword(newCode);}if(!accessHash)throw new Error('ACCESS_CODE_REQUIRED');}
   const active=input.is_active===undefined?Number(current.is_active)!==0:!!input.is_active,ts=nowIso();
   if(code!==String(current.code??'')&&await env.DB.prepare('SELECT id FROM courses WHERE tenant_id=? AND code=? AND id<>?').bind(tenantId,code,courseId).first())throw new Error('COURSE_CODE_EXISTS');
   await env.DB.prepare('UPDATE courses SET location_id=?,name=?,code=?,start_date=?,end_date=?,access_mode=?,access_code_hash=?,is_active=?,updated_at=? WHERE id=? AND tenant_id=?').bind(input.location_id===undefined?current.location_id:(input.location_id||null),name,code,input.start_date===undefined?current.start_date:(input.start_date||null),input.end_date===undefined?current.end_date:(input.end_date||null),mode,accessHash,active?1:0,ts,courseId,tenantId).run();
