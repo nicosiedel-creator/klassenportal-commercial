@@ -19,6 +19,13 @@
     LESSON_TIME_REQUIRED:'Dieser Unterrichtsstunde fehlt der Beginn oder das Ende. Beides wird für den Stundenplan gebraucht.',
     LESSON_END_BEFORE_START:'Das Ende dieser Unterrichtsstunde liegt vor ihrem Beginn.',
     COURSE_NOT_RESOLVED:'Die Klasse bzw. der Kurs dieser Zeile konnte nicht eindeutig zugeordnet werden.',
+    // Portalrollen für Beschäftigte
+    STAFF_ORG_UNIT_REQUIRED:'Diese beschäftigte Person nennt keinen Bereich. Eine Freigabe gilt immer für einen Standort oder Bereich – ohne den lässt sie sich nicht erteilen.',
+    STAFF_ORG_UNIT_NOT_FOUND:'Der angegebene Bereich wurde im Portal nicht gefunden. Lies zuerst das Organigramm ein oder lege den Bereich an.',
+    ACCESS_RESPONSIBLE_CONFIRMATION_REQUIRED:'„Verantwortlich“ schließt das Recht ein, weiteren Personen Rechte zu vergeben. Das wird über den Sammelimport nie automatisch erteilt – vergib es unter „Struktur, Standorte & Zuständigkeiten“.',
+    SELF_ELEVATION_FORBIDDEN:'Du kannst dir selbst keine Verantwortlichen-Freigabe erteilen.',
+    GRANT_VALIDITY_INVALID:'Das Ende der Gültigkeit muss nach ihrem Beginn liegen.',
+    ORG_PROFILE_INVALID:'Dieses Rechteprofil gibt es nicht.',
     // Standorte, Organisationseinheiten und Ressourcen
     ORG_UNIT_NAME_REQUIRED:'Diese Zeile hat keinen Namen für die Einheit. Ohne Namen lässt sich kein Standort und kein Bereich anlegen.',
     ORG_UNIT_PARENT_INVALID:'Eine Einheit kann nicht ihr eigener übergeordneter Knoten sein.',

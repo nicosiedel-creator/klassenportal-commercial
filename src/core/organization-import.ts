@@ -5,13 +5,14 @@ import { createCourse } from './data.js';
 import { enforceCourseEntitlement } from './commerce.js';
 import { createTenantUser } from './users.js';
 import { createTeacherPortalTeacher, saveTeacherPortalAssignment } from './teacher-portal.js';
-import { createOrgUnit } from './enterprise-organization.js';
+import { createOrgUnit, resolveTenantUser } from './enterprise-organization.js';
+import { profilePermissions, type OrgPermission, type OrgProfile } from './enterprise-access.js';
 import { savePlanningResource } from './planning-constraints.js';
 import { id, normalizeEmail, nowIso, safeString, sha256Text, slugify } from './utils.js';
 import { parseDate, parseTime } from './timetable.js';
 
-export type OrganizationCandidateType='org_unit'|'resource'|'course'|'subject'|'lesson'|'participant'|'class_admin'|'guest'|'teacher'|'tenant_admin_review';
-export type OrganizationCandidate={type:OrganizationCandidateType;display_name:string|null;email:string|null;course_id:string|null;course_name:string|null;course_code:string|null;course_ref:string|null;subject_name:string|null;subject_short_name:string|null;confidence:number;warnings:string[];source_row:number|null;synthesized?:boolean;external_id?:string|null;parent_external_id?:string|null;org_unit_type_key?:string|null;org_unit_type_label?:string|null;org_unit_ref?:string|null;address?:Record<string,string>|null;resource_kind?:string|null;resource_status?:string|null;capacity?:number|null;features?:string[]|null;lesson_date?:string|null;lesson_start?:string|null;lesson_end?:string|null;room?:string|null;notes?:string|null;};
+export type OrganizationCandidateType='org_unit'|'resource'|'course'|'subject'|'lesson'|'participant'|'class_admin'|'guest'|'teacher'|'staff'|'tenant_admin_review';
+export type OrganizationCandidate={type:OrganizationCandidateType;display_name:string|null;email:string|null;course_id:string|null;course_name:string|null;course_code:string|null;course_ref:string|null;subject_name:string|null;subject_short_name:string|null;confidence:number;warnings:string[];source_row:number|null;synthesized?:boolean;external_id?:string|null;parent_external_id?:string|null;org_unit_type_key?:string|null;org_unit_type_label?:string|null;org_unit_ref?:string|null;address?:Record<string,string>|null;resource_kind?:string|null;resource_status?:string|null;capacity?:number|null;features?:string[]|null;lesson_date?:string|null;lesson_start?:string|null;lesson_end?:string|null;room?:string|null;notes?:string|null;access_profile?:OrgProfile|null;access_permissions?:OrgPermission[]|null;access_label?:string|null;};
 type ExistingCourse={id:string;name:string;code:string};
 const norm=(v:unknown,max=300)=>safeString(v,max).replace(/\s+/g,' ').trim();
 const key=(v:unknown)=>norm(v).toLocaleLowerCase('de-DE').replace(/[ä]/g,'ae').replace(/[ö]/g,'oe').replace(/[ü]/g,'ue').replace(/[ß]/g,'ss').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
@@ -103,6 +104,7 @@ const EXPLICIT_ROLE:[RegExp,OrganizationCandidateType][]=[
   [/^(org_unit|orgunit|organisationseinheit|standort|location)$/,'org_unit'],
   [/^(resource|ressource|raum|room)$/,'resource'],
   [/^(lesson|unterricht|unterrichtsstunde|stunde|stundenplan|schulstunde|timetable)$/,'lesson'],
+  [/^(staff|beschaeftigt|beschaeftigte|beschaeftigter|mitarbeiter|mitarbeiterin)$/,'staff'],
 ];
 // Ein ganzer Ordner enthaelt in aller Regel auch den Stundenplan. Bisher hatte diese Weiche
 // dafuer kein Gleis: eine Stundenplanzeile nennt einen Kurscode, also erkannte importRole sie
@@ -132,6 +134,69 @@ function lessonData(row:Record<string,unknown>){
   const notes=[mode?`Unterrichtsart: ${mode}`:'',teacher?`Dozent/in: ${teacher}`:'',topic].filter(Boolean).join('\n')||null;
   return{date,start,end,room,notes};
 }
+// --- Portalrollen fuer Beschaeftigte -----------------------------------------------------------
+// Eine Beschaeftigtenliste fuehrt Menschen, die keiner Klasse angehoeren: Standortleitung,
+// Pruefungskoordination, Teilnehmendenservice, Qualitaetsmanagement, IT-Support. Bis hierher
+// fielen sie in den Auffangfall "Teilnehmer" und blieben dort mit COURSE_REQUIRED liegen - fuer
+// eine Verwaltungskraft ohne Kurs gab es schlicht keine Rolle.
+//
+// Das Portal hat dafuer laengst das richtige Werkzeug: eine Freigabe auf einer
+// Organisationseinheit, mit Profil, Gueltigkeit und Vererbung auf Unterbereiche
+// (org_permission_grants). Genau die wird hier vergeben - dieselbe, die ein Kunden-Admin unter
+// "Struktur, Standorte & Zustaendigkeiten" von Hand erteilt.
+//
+// Die Staffelung folgt der Funktion, nicht dem Wunsch: wer koordiniert, darf bearbeiten; wer
+// auswertet, darf lesen und auswerten; die Technik bekommt keine Teilnehmendendaten. Und
+// "Verantwortlich" schliesst das Recht ein, weitere Rechte zu vergeben - das entsteht in diesem
+// Sammelimport niemals von selbst, sondern wird ausdruecklich zur Bestaetigung vorgelegt, genau
+// wie ein gefundenes Kunden-Admin-Recht.
+const STAFF_READ_ONLY:OrgPermission[]=['org.view','courses.view'];
+const STAFF_FUNCTIONS:[RegExp,OrgProfile,OrgPermission[]|null,string][]=[
+  [/leitung|geschaeftsfuehrung|geschaeftsleitung|direktion|vorstand/,'responsible',null,'Verantwortlich'],
+  [/qualitaet|qualitaetsmanagement|revision|audit|controlling/,'reporting',null,'Auswertung'],
+  [/it_?support|it_?betrieb|edv|systemadministration|technik|helpdesk/,'custom',STAFF_READ_ONLY,'Nur lesen (ohne Teilnehmendendaten)'],
+  [/koordination|koordinator|management|managerin|service|sekretariat|sachbearbeitung|verwaltung|betreuung|beratung|pruefung|praxis|curriculum|lehrplan/,'editor',null,'Bearbeiten'],
+];
+export type StaffAccess={profile:OrgProfile;permissions:OrgPermission[];label:string;confirm:boolean};
+// Ohne erkennbare Funktion bleibt es beim sparsamsten Zuschnitt: sehen, was es gibt, und sonst
+// nichts. Fail closed - eine unbekannte Funktion ist kein Grund, mehr zu geben.
+export function staffAccess(row:Record<string,unknown>):StaffAccess{
+  const fn=key(rowValue(row,'role','rolle','funktion','function','position','taetigkeit','aufgabe','bereichsrolle'));
+  for(const [pattern,profile,permissions,label] of STAFF_FUNCTIONS){
+    if(!pattern.test(fn))continue;
+    return{profile,permissions:permissions??profilePermissions(profile),label,confirm:profile==='responsible'};
+  }
+  return{profile:'custom',permissions:STAFF_READ_ONLY,label:'Nur lesen (ohne Teilnehmendendaten)',confirm:false};
+}
+// Eine Zeile beschreibt eine beschaeftigte Person, wenn sie einen Menschen nennt und ihre
+// Funktion eine Verwaltungsfunktion ist. Ohne Menschen ist es eine Organisationseinheit, keine
+// Person - deshalb diese Bedingung und nicht nur das Wort.
+function namesAPerson(row:Record<string,unknown>):boolean{
+  return Boolean(rowValue(row,'display_name','name','person','person_name','first_name','vorname','last_name','nachname','email','e_mail','mail','emailadresse'));
+}
+export function staffSignal(row:Record<string,unknown>):boolean{
+  if(!namesAPerson(row))return false;
+  const fn=key(rowValue(row,'role','rolle','funktion','function','position','taetigkeit','aufgabe','bereichsrolle'));
+  return STAFF_FUNCTIONS.some(([pattern])=>pattern.test(fn));
+}
+// Nennt die Datei die Portalrolle beim Namen, gilt sie. Das Abnahmepaket eines Kunden fuehrt
+// dafuer eine eigene Spalte portal_role mit genau diesen Werten - sie zu ignorieren und stattdessen
+// aus der Funktionsbezeichnung zu raten, waere absichtlich schlechter.
+const PORTAL_ROLE:[RegExp,OrganizationCandidateType][]=[
+  [/^(customer_admin|tenant_admin|kunden_?admin|bildungstraeger_admin)$/,'tenant_admin_review'],
+  [/^(instructor|teacher|dozent|dozentin|lehrkraft|trainer)$/,'teacher'],
+  [/^(staff|mitarbeiter|mitarbeiterin|beschaeftigt|beschaeftigte|beschaeftigter)$/,'staff'],
+  [/^(class_admin|klassen_?admin)$/,'class_admin'],
+  [/^(participant|student|studentin|teilnehmer|teilnehmerin|schueler|schuelerin)$/,'participant'],
+  [/^(guest|gast)$/,'guest'],
+];
+export function portalRole(row:Record<string,unknown>):OrganizationCandidateType|null{
+  const raw=key(rowValue(row,'portal_role','portalrolle','portal_rolle'));
+  if(!raw)return null;
+  for(const [pattern,role] of PORTAL_ROLE)if(pattern.test(raw))return role;
+  return null;
+}
+
 // Diese Rueckfaelle suchten das Wort irgendwo in der Angabe. "Exkursion" enthaelt "kurs", also
 // wurden im Abnahmepaket eines Kunden acht Exkursionen zu Kursen; "Gastronomie" enthielte "gast",
 // "Fachbereich" enthaelt "fach". Gesucht wird deshalb das ganze Wort: key() macht aus jeder
@@ -141,12 +206,14 @@ function word(pattern:string,raw:string):boolean{return new RegExp(`(^|_)(${patt
 export function importRole(row:Record<string,unknown>):OrganizationCandidateType{
   const raw=key(rowValue(row,'role','rolle','funktion','person_type','personenart','typ','type'));
   for(const [pattern,role] of EXPLICIT_ROLE)if(pattern.test(raw))return role;
+  const stated=portalRole(row);if(stated)return stated;
   if(lessonSignal(row))return'lesson';
   if(word('tenant_admin|kunden_?admin|bildungstraeger_admin|gesamtadmin|organisationsadmin',raw))return'tenant_admin_review';
   if(resourceSignal(row,raw))return'resource';
   if(orgUnitSignal(row,raw))return'org_unit';
   if(word('class_admin|klassen_?admin',raw))return'class_admin';
   if(word('teacher|dozent|dozentin|lehrkraft|trainer|trainerin',raw))return'teacher';
+  if(staffSignal(row))return'staff';
   if(word('guest|gast',raw))return'guest';
   if(word('course|kurs|klasse',raw))return'course';
   if(word('subject|fach',raw))return'subject';
@@ -185,6 +252,12 @@ function baseCandidate(row:Record<string,unknown>,i:number,courses:ExistingCours
     return{type,display_name:x.name,email:null,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:null,subject_short_name:null,confidence:Math.max(0,100-warnings.length*25),warnings,source_row:i,external_id:x.external_id,parent_external_id:null,org_unit_ref:norm(rowValue(row,'location_external_id','org_unit_external_id','standort','location'),160)||null,resource_kind:x.kind,resource_status:x.status,capacity:x.capacity,features:x.features};}
   if(type==='org_unit'){const u=orgUnitData(row);if(!u.name)warnings.push('ORG_UNIT_NAME_REQUIRED');if(u.external_id&&u.parent_external_id&&key(u.external_id)===key(u.parent_external_id))warnings.push('ORG_UNIT_PARENT_INVALID');
     return{type,display_name:u.name,email:null,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:null,subject_short_name:null,confidence:Math.max(0,100-warnings.length*25),warnings,source_row:i,external_id:u.external_id,parent_external_id:u.parent_external_id,org_unit_type_key:u.type.key,org_unit_type_label:u.type.label,address:u.address};}
+  if(type==='staff'){const access=staffAccess(row),unitRef=norm(rowValue(row,'org_unit_external_id','org_unit','organisationseinheit_id','location_external_id','bereich','standort'),160)||null;
+    name=personName(row,'participant')||null;email=validEmail(rowValue(row,'email','e_mail','mail','emailadresse'))||null;
+    if(!name)warnings.push('NAME_REQUIRED');if(!email)warnings.push('EMAIL_REQUIRED');
+    if(!unitRef)warnings.push('STAFF_ORG_UNIT_REQUIRED');
+    if(access.confirm)warnings.push('ACCESS_RESPONSIBLE_CONFIRMATION_REQUIRED');
+    return{type,display_name:name,email,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:null,subject_short_name:null,confidence:Math.max(0,100-warnings.filter(w=>w!=='ACCESS_RESPONSIBLE_CONFIRMATION_REQUIRED').length*25),warnings,source_row:i,org_unit_ref:unitRef,access_profile:access.profile,access_permissions:access.permissions,access_label:access.label};}
   if(type==='lesson'){const l=lessonData(row);
     if(!l.date)warnings.push('LESSON_DATE_REQUIRED');if(!l.start||!l.end)warnings.push('LESSON_TIME_REQUIRED');
     if(l.start&&l.end&&l.end<=l.start)warnings.push('LESSON_END_BEFORE_START');
@@ -206,7 +279,7 @@ async function existingCourses(env:Env,tenantId:string){const r=await env.DB.pre
 // aus dem Stundenplan ergaenzte Platzhalter wurde vor der echten Zeile angelegt. Die Klasse hiess
 // danach "PFL-A". Mit dem Code als Merkmal fallen beide zusammen, und mergeDuplicates behaelt die
 // echte Zeile.
-function candidateSignature(c:OrganizationCandidate){if(c.type==='course')return`${c.type}|${key(c.course_code||c.course_name||c.display_name||'')}`;if(c.type==='lesson')return`${c.type}|${c.course_id||c.course_ref||''}|${c.lesson_date||''}|${c.lesson_start||''}|${c.lesson_end||''}|${key(c.room||'')}`;if(c.type==='resource')return`${c.type}|${key(c.resource_kind||'')}|${key(c.display_name)}`;if(c.type==='subject')return`${c.type}|${key(c.subject_name||c.display_name)}`;if(c.type==='org_unit')return`${c.type}|${key(c.external_id||c.display_name)}`;return`${c.type}|${key(c.email||c.display_name)}|${c.course_id||c.course_ref||''}`;}
+function candidateSignature(c:OrganizationCandidate){if(c.type==='staff')return`${c.type}|${key(c.email||c.display_name)}|${key(c.org_unit_ref||'')}`;if(c.type==='course')return`${c.type}|${key(c.course_code||c.course_name||c.display_name||'')}`;if(c.type==='lesson')return`${c.type}|${c.course_id||c.course_ref||''}|${c.lesson_date||''}|${c.lesson_start||''}|${c.lesson_end||''}|${key(c.room||'')}`;if(c.type==='resource')return`${c.type}|${key(c.resource_kind||'')}|${key(c.display_name)}`;if(c.type==='subject')return`${c.type}|${key(c.subject_name||c.display_name)}`;if(c.type==='org_unit')return`${c.type}|${key(c.external_id||c.display_name)}`;return`${c.type}|${key(c.email||c.display_name)}|${c.course_id||c.course_ref||''}`;}
 function synthesize(candidates:OrganizationCandidate[],courses:ExistingCourse[]){const out:OrganizationCandidate[]=[],courseSeen=new Set<string>(),subjectSeen=new Set<string>();for(const c of candidates){if(c.type!=='course'&&!c.course_id&&(c.course_name||c.course_code)&&!c.warnings.includes('COURSE_AMBIGUOUS')&&!c.warnings.includes('COURSE_NOT_FOUND')){const k=key(c.course_code||c.course_name);if(k&&!courseSeen.has(k)){courseSeen.add(k);out.push({synthesized:true,type:'course',display_name:c.course_name||c.course_code,email:null,course_id:null,course_name:c.course_name||c.course_code,course_code:c.course_code||null,course_ref:k,subject_name:null,subject_short_name:null,confidence:100,warnings:[],source_row:c.source_row});}}}for(const c of candidates){if(c.type!=='subject'&&c.subject_name){const k=key(c.subject_name);if(k&&!subjectSeen.has(k)){subjectSeen.add(k);out.push({synthesized:true,type:'subject',display_name:c.subject_name,email:null,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:c.subject_name,subject_short_name:c.subject_short_name,confidence:100,warnings:[],source_row:c.source_row});}}}const existingCourseKeys=new Set(courses.flatMap(c=>[key(c.id),key(c.code),key(c.name)]));const combined=[...out.filter(c=>c.type!=='course'||!existingCourseKeys.has(key(c.course_code||c.course_name))),...candidates];return mergeDuplicates(combined);}
 // Zwei Zeilen koennen denselben Fund beschreiben: die Kursliste nennt den Kurs mitsamt seinem
 // Bereich, und die Teilnehmerliste nennt denselben Kurs noch einmal - woraus zusaetzlich ein
@@ -266,7 +339,18 @@ async function ensureLesson(env:Env,tenantId:string,lesson:{courseId:string;subj
   await env.DB.prepare('INSERT INTO lessons(id,tenant_id,course_id,subject_id,teacher_id,starts_at,ends_at,room,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(lid,tenantId,lesson.courseId,lesson.subjectId,null,lesson.startsAt,lesson.endsAt,lesson.room,lesson.notes,nowIso()).run();
   return{id:lid,created:true};
 }
-export const ORGANIZATION_BLOCKING_WARNINGS=new Set(['RESOURCE_NAME_REQUIRED','ORG_UNIT_NAME_REQUIRED','ORG_UNIT_PARENT_INVALID','COURSE_NAME_REQUIRED','SUBJECT_NAME_REQUIRED','LESSON_DATE_REQUIRED','LESSON_TIME_REQUIRED','LESSON_END_BEFORE_START','NAME_REQUIRED','EMAIL_REQUIRED','COURSE_REQUIRED','COURSE_AMBIGUOUS','COURSE_NOT_FOUND','TENANT_ADMIN_CONFIRMATION_REQUIRED']);
+// Eine Freigabe je Person und Bereich. Wird derselbe Ordner ein zweites Mal geworfen, entsteht
+// keine zweite - und eine von Hand veraenderte Freigabe wird nicht ueberschrieben: was der
+// Kunden-Admin selbst eingestellt hat, gilt.
+async function ensureStaffGrant(env:Env,auth:CoreAuthContext,tenantId:string,grant:{userId:string;unitId:string;profile:OrgProfile;permissions:OrgPermission[]}){
+  const existing=await env.DB.prepare("SELECT id FROM org_permission_grants WHERE tenant_id=? AND user_id=? AND org_unit_id=? AND status='active'").bind(tenantId,grant.userId,grant.unitId).first<{id:string}>();
+  if(existing)return{id:existing.id,created:false};
+  const grantId=id('grt_'),ts=nowIso();
+  await env.DB.prepare("INSERT INTO org_permission_grants(id,tenant_id,user_id,org_unit_id,profile,permissions_json,inherit_descendants,valid_from,valid_until,status,source,source_ref,granted_by,created_at,updated_at) VALUES(?,?,?,?,?,?,1,NULL,NULL,'active','import',?,?,?,?)")
+    .bind(grantId,tenantId,grant.userId,grant.unitId,grant.profile,JSON.stringify(grant.permissions),`organization-import:${grant.unitId}:${grant.userId}`,auth.userId,ts,ts).run();
+  return{id:grantId,created:true};
+}
+export const ORGANIZATION_BLOCKING_WARNINGS=new Set(['RESOURCE_NAME_REQUIRED','ORG_UNIT_NAME_REQUIRED','ORG_UNIT_PARENT_INVALID','COURSE_NAME_REQUIRED','SUBJECT_NAME_REQUIRED','LESSON_DATE_REQUIRED','LESSON_TIME_REQUIRED','LESSON_END_BEFORE_START','STAFF_ORG_UNIT_REQUIRED','STAFF_ORG_UNIT_NOT_FOUND','ACCESS_RESPONSIBLE_CONFIRMATION_REQUIRED','NAME_REQUIRED','EMAIL_REQUIRED','COURSE_REQUIRED','COURSE_AMBIGUOUS','COURSE_NOT_FOUND','TENANT_ADMIN_CONFIRMATION_REQUIRED']);
 async function recordResult(env:Env,batchId:string,tenantId:string,index:number,type:string,action:string,entityId:string|null,detail:unknown){await env.DB.prepare('INSERT INTO organization_import_results(id,batch_id,tenant_id,candidate_index,entity_type,action,entity_id,detail_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id('oir_'),batchId,tenantId,index,type,action,entityId,JSON.stringify(detail??{}),nowIso()).run();}
 // Der Typ einer Einheit muss im Mandanten bekannt sein, bevor eine Einheit ihn tragen darf.
 // Angelegt wird er nur, wenn er fehlt: hat der Kunde einen Typ bewusst abgeschaltet oder
@@ -323,11 +407,23 @@ async function applyOrgUnits(env:Env,auth:CoreAuthContext,tenantId:string,batchI
   }
   return byExternal;
 }
-export async function applyOrganizationImport(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){requireRole(auth,'tenant_admin');const batchId=norm(input.batch_id,100),digest=norm(input.digest,128),batch=await env.DB.prepare('SELECT preview_digest,preview_json,status,expires_at FROM organization_import_batches WHERE id=? AND tenant_id=?').bind(batchId,tenantId).first<{preview_digest:string;preview_json:string;status:string;expires_at:string}>();if(!batch)throw new Error('ORGANIZATION_IMPORT_NOT_FOUND');if(batch.status!=='preview')throw new Error('ORGANIZATION_IMPORT_NOT_PENDING');if(batch.expires_at<=nowIso())throw new Error('ORGANIZATION_IMPORT_EXPIRED');if(batch.preview_digest!==digest)throw new Error('ORGANIZATION_IMPORT_PREVIEW_CHANGED');const rows=JSON.parse(batch.preview_json) as OrganizationCandidate[],selected=new Set((Array.isArray(input.selected_indexes)?input.selected_indexes:rows.map((_,i)=>i)).map(Number)),results:any[]=[];const orgUnits=await applyOrgUnits(env,auth,tenantId,batchId,rows,selected,results);const order:OrganizationCandidateType[]=['resource','course','subject','lesson','participant','class_admin','guest','teacher','tenant_admin_review'];for(const type of order)for(let i=0;i<rows.length;i++){const r=rows[i];if(r.type!==type||!selected.has(i))continue;if(r.warnings.some(w=>ORGANIZATION_BLOCKING_WARNINGS.has(w))){const x={index:i,type,action:'skipped',reason:'REVIEW_REQUIRED'};results.push(x);await recordResult(env,batchId,tenantId,i,type,x.action,null,x);continue;}try{
+export async function applyOrganizationImport(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){requireRole(auth,'tenant_admin');const batchId=norm(input.batch_id,100),digest=norm(input.digest,128),batch=await env.DB.prepare('SELECT preview_digest,preview_json,status,expires_at FROM organization_import_batches WHERE id=? AND tenant_id=?').bind(batchId,tenantId).first<{preview_digest:string;preview_json:string;status:string;expires_at:string}>();if(!batch)throw new Error('ORGANIZATION_IMPORT_NOT_FOUND');if(batch.status!=='preview')throw new Error('ORGANIZATION_IMPORT_NOT_PENDING');if(batch.expires_at<=nowIso())throw new Error('ORGANIZATION_IMPORT_EXPIRED');if(batch.preview_digest!==digest)throw new Error('ORGANIZATION_IMPORT_PREVIEW_CHANGED');const rows=JSON.parse(batch.preview_json) as OrganizationCandidate[],selected=new Set((Array.isArray(input.selected_indexes)?input.selected_indexes:rows.map((_,i)=>i)).map(Number)),results:any[]=[];const orgUnits=await applyOrgUnits(env,auth,tenantId,batchId,rows,selected,results);const order:OrganizationCandidateType[]=['resource','course','subject','lesson','participant','class_admin','guest','teacher','staff','tenant_admin_review'];for(const type of order)for(let i=0;i<rows.length;i++){const r=rows[i];if(r.type!==type||!selected.has(i))continue;if(r.warnings.some(w=>ORGANIZATION_BLOCKING_WARNINGS.has(w))){const x={index:i,type,action:'skipped',reason:'REVIEW_REQUIRED'};results.push(x);await recordResult(env,batchId,tenantId,i,type,x.action,null,x);continue;}try{
     if(type==='resource'){const name=r.display_name;if(!name)throw new Error('RESOURCE_NAME_REQUIRED');const kind=norm(r.resource_kind,30)||'room',found=await env.DB.prepare('SELECT id FROM planning_resources WHERE tenant_id=? AND resource_type=? AND name=?').bind(tenantId,kind,name).first<{id:string}>();if(found){results.push({index:i,type,action:'existing',entity_id:found.id});await recordResult(env,batchId,tenantId,i,type,'existing',found.id,{});continue;}const unit=orgUnits.get(key(r.org_unit_ref||'')),saved=await savePlanningResource(env,auth,tenantId,{name,resource_type:kind,code:r.external_id||null,location:unit?.name||norm(r.org_unit_ref,160)||null,capacity:r.capacity??null,features:r.features??null,status:r.resource_status||'active'}) as {resource_id:string};results.push({index:i,type,action:'created',entity_id:saved.resource_id});await recordResult(env,batchId,tenantId,i,type,'created',saved.resource_id,{kind});continue;}
     if(type==='course'){const name=r.course_name||r.display_name||r.course_code;if(!name)throw new Error('COURSE_NAME_REQUIRED');const unitId=orgUnits.get(key(r.org_unit_ref||''))?.id||null,found=await findCourse(env,tenantId,r);if(found){const linked=await linkCourseOrgUnit(env,tenantId,found,unitId);results.push({index:i,type,action:'existing',entity_id:found,org_unit_id:linked});await recordResult(env,batchId,tenantId,i,type,'existing',found,{org_unit_id:linked});continue;}await enforceCourseEntitlement(env,tenantId);const c=await createCourse(env,auth,tenantId,{name,code:r.course_code||slugify(name),access_mode:'login'}) as any;const linked=await linkCourseOrgUnit(env,tenantId,String(c?.id||''),unitId);results.push({index:i,type,action:'created',entity_id:c?.id,org_unit_id:linked});await recordResult(env,batchId,tenantId,i,type,'created',c?.id||null,{org_unit_id:linked});continue;}
     if(type==='subject'){const name=r.subject_name||r.display_name;if(!name)throw new Error('SUBJECT_NAME_REQUIRED');const s=await ensureSubject(env,tenantId,name,r.subject_short_name);results.push({index:i,type,action:s.created?'created':'existing',entity_id:s.id});await recordResult(env,batchId,tenantId,i,type,s.created?'created':'existing',s.id,{});continue;}
     if(type==='lesson'){const courseId=await findCourse(env,tenantId,r);if(!courseId)throw new Error('COURSE_NOT_RESOLVED');if(!r.lesson_date||!r.lesson_start||!r.lesson_end)throw new Error('LESSON_TIME_REQUIRED');const subject=r.subject_name?await ensureSubject(env,tenantId,r.subject_name,r.subject_short_name??null):null;const saved=await ensureLesson(env,tenantId,{courseId,subjectId:subject?.id??null,startsAt:`${r.lesson_date}T${r.lesson_start}:00`,endsAt:`${r.lesson_date}T${r.lesson_end}:00`,room:r.room??null,notes:r.notes??null});const action=saved.created?'created':'existing';results.push({index:i,type,action,entity_id:saved.id,course_id:courseId});await recordResult(env,batchId,tenantId,i,type,action,saved.id,{courseId,startsAt:`${r.lesson_date}T${r.lesson_start}:00`});continue;}
+    if(type==='staff'){
+      const unit=orgUnits.get(key(r.org_unit_ref||''));
+      if(!unit)throw new Error('STAFF_ORG_UNIT_NOT_FOUND');
+      if(!r.display_name||!r.email)throw new Error('USER_FIELDS_REQUIRED');
+      const profile=(r.access_profile??'custom') as OrgProfile,permissions=r.access_permissions??profilePermissions(profile);
+      const target=await resolveTenantUser(env,auth,tenantId,{email:r.email,display_name:r.display_name});
+      const saved=await ensureStaffGrant(env,auth,tenantId,{userId:target.id,unitId:unit.id,profile,permissions});
+      const action=saved.created?(target.created?'created_invited':'access_granted'):'existing';
+      results.push({index:i,type,action,user_id:target.id,org_unit_id:unit.id,grant_id:saved.id,profile});
+      await recordResult(env,batchId,tenantId,i,type,action,target.id,{unitId:unit.id,grantId:saved.id,profile,permissions});
+      continue;
+    }
     if(type==='tenant_admin_review'){const x={index:i,type,action:'skipped',reason:'TENANT_ADMIN_CONFIRMATION_REQUIRED'};results.push(x);await recordResult(env,batchId,tenantId,i,type,x.action,null,x);continue;}
     const courseId=await findCourse(env,tenantId,r);
     if(type==='participant'||type==='class_admin'||type==='guest'){if(!courseId)throw new Error('COURSE_NOT_RESOLVED');if(!r.display_name||!r.email)throw new Error('USER_FIELDS_REQUIRED');const baseRole=type==='guest'?'guest':'participant',user=await createTenantUser(env,auth,tenantId,{display_name:r.display_name,email:r.email,role:baseRole,course_id:courseId});let capability=null;if(type==='class_admin')capability=await createTenantUser(env,auth,tenantId,{display_name:r.display_name,email:r.email,role:'class_admin',course_id:courseId});const action=user.invitation_sent?'created_invited':'existing_added';results.push({index:i,type,action,user_id:user.user_id,course_id:courseId,class_admin_membership_id:capability?.membership_id||null});await recordResult(env,batchId,tenantId,i,type,action,user.user_id,{courseId,classAdmin:type==='class_admin'});continue;}
