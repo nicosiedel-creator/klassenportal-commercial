@@ -35,6 +35,7 @@ const SOURCE = [
   grab('function loadFailure('),
   grab('async function content(){'),
   grab('async function exams(){'),
+  grab('async function users(){'),
 ].join('\n');
 
 // Der Server liefert einem Kunden-Admin ohne course_id bewusst den gesamten Mandanten. Genau
@@ -55,13 +56,17 @@ function run(state, { answers = {}, rejects = {} } = {}) {
   const S = { tenantId: 'ten_1', courses: [], contentCourseId: '', me: {}, ...state };
   const api = async (url) => {
     requested.push(url);
+    if (url.startsWith('/api/tenant/users')) {
+      if (rejects.users) throw Object.assign(new Error(rejects.users), { code: rejects.users });
+      return { ok: true, users: answers.users || [] };
+    }
     const type = String(url.split('/api/content/')[1] || '').split('?')[0];
     if (rejects[type]) throw Object.assign(new Error(rejects[type]), { code: rejects[type] });
     return { ok: true, items: answers[type] || [] };
   };
   const env = new Function(
     'S', 'api', 'frame', 'qa', 'q', 'supportReadOnly', 'contentModal', 'bindCoursePicker', 'formModal', 'notice', 'window',
-    `${SOURCE}\nreturn {courseOptions,courseName,contentScope,contentCoursePicker,contentItem,loadFailure,content,exams};`,
+    `${SOURCE}\nreturn {courseOptions,courseName,contentScope,contentCoursePicker,contentItem,loadFailure,content,exams,users};`,
   )(
     S,
     api,
@@ -181,6 +186,20 @@ const cardOf = (body, label) => {
   assert.deepEqual(courseIdsIn(t.requested), [null, null, null, null, null], 'ohne Klassen darf keine course_id erfunden werden');
   await t.env.exams();
   assert.match(t.rendered.body, /Keine Prüfungen/, 'ein leerer Mandant meldet leer - und nicht einen Fehler');
+}
+
+// 9. Dieselbe Verwechslung stand in "Benutzer & Rollen": schlug die Abfrage fehl, sah der Kunde
+//    eine leere Tabelle - also dasselbe Bild wie bei einem Mandanten ganz ohne Benutzer.
+{
+  const ok = run({ courses: COURSES }, { answers: { users: [{ display_name: 'Anna Beispiel', email: 'anna@example.invalid', role: 'participant', course_id: 'crs_a' }] } });
+  await ok.env.users();
+  assert.match(ok.rendered.body, /Anna Beispiel/, 'vorhandene Benutzer muessen erscheinen');
+  assert.doesNotMatch(ok.rendered.body, /class="error"/, 'ohne Fehler darf kein Fehler dastehen');
+
+  const bad = run({ courses: COURSES }, { rejects: { users: 'FORBIDDEN' } });
+  await bad.env.users();
+  assert.match(bad.rendered.body, /class="error"/, 'eine fehlgeschlagene Benutzerabfrage muss als Fehler erscheinen');
+  assert.match(bad.rendered.body, /role="alert"/, 'und zwar so, dass ein Screenreader sie ansagt');
 }
 
 console.log('Kundenadmin-Inhalte: Stundenplan und Pruefungen sind nicht mehr auf die erste Klasse verengt, jede Klasse ist waehlbar, Fehler erscheinen als Fehler: OK');
