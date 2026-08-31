@@ -1,5 +1,5 @@
 import type { IntakeExtracted } from './intake-document-extract.js';
-import { importRole, textRows } from './organization-import.js';
+import { importRole, rowValue, textRows } from './organization-import.js';
 
 // Ein Mandant wirft einen ganzen Ordner ein. Darin liegt alles durcheinander: Vertraege einzelner
 // Teilnehmer, Teilnehmerlisten, Kurslisten, Fachlisten, Dozentenlisten. Bisher wurde jeder Eingang
@@ -10,7 +10,7 @@ import { importRole, textRows } from './organization-import.js';
 // Rollenerkennung wie der Organisationsimport selbst (importRole): zwei eigene Definitionen
 // wuerden auseinanderlaufen, und dann faende die Weiche etwas anderes als der Importer.
 
-export type IntakeRoute='organization'|'participants';
+export type IntakeRoute='organization'|'participants'|'none';
 export type RouteDecision={source:string;route:IntakeRoute;reason:string;items:number};
 
 // Ein Vertrag nennt sich selbst so. Diese Woerter stehen in Ausbildungs-, Schulungs- und
@@ -26,9 +26,24 @@ const CONTRACT_SIGNAL=/\b(?:ausbildungsvertrag|schulungsvertrag|umschulungsvertr
 // weil importRole ihn schon erkannt hat - und die wenigen Faelle, die sie zusaetzlich faengt,
 // wuerde sie falsch einsortieren. Eine reine Teilnehmerliste mit einer Fachspalte ist eine
 // Teilnehmerliste.
+// Und die Gegenprobe zum Auffangfall: importRole gibt am Ende "participant" zurueck, wenn ihm
+// nichts anderes einfaellt. Fuer einen ganzen Ordner ist das zu wenig. Gemessen am Abnahmepaket
+// eines Kunden landeten so ueber siebenhundert Zeilen in der Teilnehmerpruefung, in denen keine
+// einzige Person steht: Abwesenheiten, Pruefungstermine, Meldungen, Lernziele, Zertifikate,
+// Umfragen, ein Jahresgrundplan. Jede davon wurde als Teilnehmer ohne Name und ohne E-Mail
+// vorgelegt - hunderte Zeilen Handpruefung fuer nichts, und der Eindruck, der Import erkenne
+// nichts.
+//
+// Eine Zeile ohne Person ist keine Person. Fuehrt eine Unterlage in keiner einzigen Zeile einen
+// Namen, eine E-Mail oder ein Personenfeld, ist sie kein Teilnehmerimport - und sie wird als
+// solche benannt, statt als kaputte Teilnehmerliste vorgelegt zu werden.
+const PERSON_COLUMNS=['display_name','name','person','person_name','participant','participant_name','teilnehmer','teilnehmer_name','schueler','schuelerin','student','studentin','first_name','vorname','last_name','nachname','email','e_mail','mail','emailadresse','teacher','teacher_name','dozent','dozent_name','lehrkraft'];
+export function rowHasPerson(row:Record<string,unknown>):boolean{return Boolean(rowValue(row,...PERSON_COLUMNS));}
+
 export function routeRows(rows:Record<string,unknown>[]):{route:IntakeRoute;reason:string}{
   if(!rows.length)return{route:'participants',reason:'EMPTY'};
   if(rows.some(row=>importRole(row)!=='participant'))return{route:'organization',reason:'ROLE_OTHER_THAN_PARTICIPANT'};
+  if(!rows.some(rowHasPerson))return{route:'none',reason:'NO_PERSON_IN_DOCUMENT'};
   return{route:'participants',reason:'PERSON_ROWS'};
 }
 
@@ -62,6 +77,7 @@ export function routeExtracted(into:RoutedIntake,source:string,extracted:IntakeE
   if(extracted.kind==='rows'){
     const decision=routeRows(extracted.rows);
     into.decisions.push({source,route:decision.route,reason:decision.reason,items:extracted.rows.length});
+    if(decision.route==='none'){into.unsupported.push(source);return into;}
     (decision.route==='organization'?into.organizationRows:into.participantRows).push(...extracted.rows);
     return into;
   }

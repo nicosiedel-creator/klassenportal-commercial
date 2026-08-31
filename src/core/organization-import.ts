@@ -129,19 +129,25 @@ function lessonData(row:Record<string,unknown>){
   const notes=[mode?`Unterrichtsart: ${mode}`:'',topic].filter(Boolean).join('\n')||null;
   return{date,start,end,room,teacher,notes};
 }
+// Diese Rueckfaelle suchten das Wort irgendwo in der Angabe. "Exkursion" enthaelt "kurs", also
+// wurden im Abnahmepaket eines Kunden acht Exkursionen zu Kursen; "Gastronomie" enthielte "gast",
+// "Fachbereich" enthaelt "fach". Gesucht wird deshalb das ganze Wort: key() macht aus jeder
+// Angabe eine Folge von Woertern mit Unterstrich dazwischen, und genau darauf wird geprueft.
+// "teilnehmer_aktiv" oder "dozent_extern" treffen weiterhin, "exkursion" nicht mehr.
+function word(pattern:string,raw:string):boolean{return new RegExp(`(^|_)(${pattern})(_|$)`).test(raw);}
 export function importRole(row:Record<string,unknown>):OrganizationCandidateType{
   const raw=key(rowValue(row,'role','rolle','funktion','person_type','personenart','typ','type'));
   for(const [pattern,role] of EXPLICIT_ROLE)if(pattern.test(raw))return role;
   if(lessonSignal(row))return'lesson';
-  if(/tenant_admin|kunden_?admin|bildungstraeger_admin|gesamtadmin|organisationsadmin/.test(raw))return'tenant_admin_review';
+  if(word('tenant_admin|kunden_?admin|bildungstraeger_admin|gesamtadmin|organisationsadmin',raw))return'tenant_admin_review';
   if(resourceSignal(row,raw))return'resource';
   if(orgUnitSignal(row,raw))return'org_unit';
-  if(/class_admin|klassen_?admin/.test(raw))return'class_admin';
-  if(/teacher|dozent|dozentin|lehrkraft|trainer|trainerin/.test(raw))return'teacher';
-  if(/guest|gast/.test(raw))return'guest';
-  if(/course|kurs|klasse/.test(raw))return'course';
-  if(/subject|fach/.test(raw))return'subject';
-  if(/participant|teilnehmer|teilnehmerin|schueler|schuelerin|student|studentin/.test(raw))return'participant';
+  if(word('class_admin|klassen_?admin',raw))return'class_admin';
+  if(word('teacher|dozent|dozentin|lehrkraft|trainer|trainerin',raw))return'teacher';
+  if(word('guest|gast',raw))return'guest';
+  if(word('course|kurs|klasse',raw))return'course';
+  if(word('subject|fach',raw))return'subject';
+  if(word('participant|teilnehmer|teilnehmerin|schueler|schuelerin|student|studentin',raw))return'participant';
   const teacherSignal=rowValue(row,'teacher','teacher_name','dozent','dozent_name','lehrkraft');if(teacherSignal)return'teacher';
   const personSignal=rowValue(row,'display_name','name','person','person_name','participant','participant_name','teilnehmer','schueler','student'),emailSignal=rowValue(row,'email','e_mail','mail','emailadresse');
   if(!personSignal&&!emailSignal){if(rowValue(row,'course_name','kurs','klasse','lehrgang','massnahme','course_code','kurscode','klassencode'))return'course';if(rowValue(row,'subject_name','subject','fach','fachname'))return'subject';}
