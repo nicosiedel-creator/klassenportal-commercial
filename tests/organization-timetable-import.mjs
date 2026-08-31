@@ -115,6 +115,33 @@ assert.equal(zweiteAnwendung.results.filter(r => r.type === 'lesson' && r.action
   'beim zweiten Wurf muss jede Stunde als vorhanden erkannt werden');
 assert.equal(lessons().length, 3, 'und es duerfen keine weiteren Stunden entstehen');
 
+// Der Fall, der am echten Abnahmepaket alle 509 Stunden liegen liess: die Klasse gibt es beim
+// Hochladen noch nicht, und die Zeile nennt neben dem Kurscode auch die Kennung, unter der der
+// Kunde die Klasse fuehrt ("CRS-777"). Wird beim Anlegen nach dieser Kennung gesucht, findet der
+// Import die eben erst angelegte Klasse nicht - COURSE_NOT_RESOLVED fuer jede einzelne Stunde.
+const EIGENE_KENNUNG = `course_id,course_code,course_name,date,start_time,end_time
+CRS-777,BUE-27-03,Bürokommunikation 2027,2026-12-01,09:00,12:15
+CRS-777,BUE-27-03,,2026-12-02,09:00,12:15
+`;
+const eigene = await previewOrganizationImport(env, auth, T, { source_name: 'eigene-kennung.csv', rows: rowsOf(EIGENE_KENNUNG) });
+assert.equal(eigene.summary.counts.lesson, 2, 'beide Stunden bleiben Stunden');
+for (const c of eigene.candidates)
+  assert.notEqual(c.course_ref, 'crs_777',
+    `das Merkmal, mit dem die Klasse gesucht wird, darf nicht die Kundenkennung sein: ${c.type} -> ${c.course_ref}`);
+assert.equal(eigene.candidates.find(c => c.type === 'lesson').course_ref, 'bue_27_03',
+  'gesucht wird mit dem Kurscode');
+assert.equal(eigene.summary.counts.course, 1, 'und ihre Klasse wird einmal mit angelegt');
+const eigeneAngewendet = await apply(eigene);
+const eigeneStunden = eigeneAngewendet.results.filter(r => r.type === 'lesson');
+assert.deepEqual(eigeneStunden.map(r => r.action), ['created', 'created'],
+  `beide Stunden muessen an der neuen Klasse entstehen, bekommen: ${JSON.stringify(eigeneStunden)}`);
+const buero = db.prepare("SELECT id,name FROM courses WHERE tenant_id=? AND code='BUE-27-03' COLLATE NOCASE").get(T);
+assert.ok(buero, 'die Klasse muss unter ihrem Kurscode angelegt sein, nicht unter der Kundenkennung');
+assert.equal(buero.name, 'Bürokommunikation 2027', 'und unter ihrem Namen');
+assert.equal(lessons().filter(l => l.course_id === buero.id).length, 2, 'beide Stunden haengen an ihr');
+assert.equal(db.prepare("SELECT COUNT(*) n FROM courses WHERE tenant_id=? AND code='CRS-777' COLLATE NOCASE").get(T).n, 0,
+  'unter der Kundenkennung darf keine zweite Klasse entstehen');
+
 // Kursliste und Stundenplan im selben Ordner: die Kursliste nennt die Klasse beim Namen, der
 // Stundenplan nur ueber ihren Code. Beides muss dieselbe Klasse sein - sonst legt der aus dem
 // Stundenplan ergaenzte Platzhalter die Klasse unter ihrem Code an, und sie heisst danach
