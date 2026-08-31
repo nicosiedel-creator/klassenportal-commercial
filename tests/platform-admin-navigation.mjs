@@ -29,9 +29,9 @@ const grab = head => {
 };
 const SOURCE = [
   grab('const CUSTOMER_PATH='),
-  grab('const PLATFORM_PATH='),
+  grab('const PLATFORM_SURFACE='),
   grab('const S={me:window.__KP_BOOT_USER'),
-  grab('try{if(PLATFORM_PATH)S.setupTenantId='),
+  grab('try{if(PLATFORM_SURFACE)S.setupTenantId='),
   grab('const TENANT_NAVS='),
   grab('const CUSTOMER_NAVS='),
   grab('const PLATFORM_NAVS='),
@@ -48,10 +48,10 @@ const neuerSpeicher = (gespeichert = null) => {
   const speicher = new Map(gespeichert ? [['kp_setup_tenant', gespeichert]] : []);
   return { getItem: k => speicher.get(k) ?? null, setItem: (k, v) => speicher.set(k, String(v)), removeItem: k => speicher.delete(k) };
 };
-function oberflaeche(pfad, { gespeichert = null, store = neuerSpeicher(gespeichert) } = {}) {
-  const env = new Function('window', 'location', 'sessionStorage', 'localStorage',
+function oberflaeche(pfad, { gespeichert = null, store = neuerSpeicher(gespeichert), koerperklasse = '' } = {}) {
+  const env = new Function('window', 'location', 'document', 'sessionStorage', 'localStorage',
     `${SOURCE}\nreturn {S,navigation,setupMode,setupTenantName,startSetup,endSetup,selectTenant};`)(
-    {}, { pathname: pfad }, store, { getItem: () => null, setItem() {}, removeItem() {} });
+    {}, { pathname: pfad }, { body: { classList: { contains: c => c === koerperklasse } } }, store, { getItem: () => null, setItem() {}, removeItem() {} });
   env.S.tenants = KUNDEN;
   return env;
 }
@@ -144,6 +144,18 @@ for (const pfad of ['/kunden-admin', '/']) {
   assert.equal(p.setupTenantName(), '', 'und hat keinen Namen, den man anzeigen könnte');
 }
 
+// 5b. Erkannt wird die Plattformoberfläche an der Seite, die ausgeliefert wurde - nicht nur an
+//     einer Adresse. Gemeldet wurde genau der umgekehrte Fall: /portal-admin ist keine Route,
+//     der Server lieferte dafür still die Startseite, und die zeigte die Kundenverwaltung.
+{
+  const ueberKlasse = oberflaeche('/irgendeine-andere-adresse', { koerperklasse: 'platform-portal-admin' });
+  assert.deepEqual(eintraege(ueberKlasse), ['overview', 'tenants'],
+    'wird die Plattformseite ausgeliefert, gilt ihre Navigation - unabhängig von der Adresse');
+  const fremd = oberflaeche('/portal-admin');
+  assert.deepEqual(eintraege(fremd), ['overview', 'tenants', ...TENANT_BEREICHE],
+    'eine fremde Adresse ohne Plattformseite bleibt die gewöhnliche Oberfläche');
+}
+
 // ---------------------------------------------------------------------------------------------
 // 6. Die Leiste ist die Wahrheit: was dort nicht steht, wird auch nicht gebaut. Sonst bliebe ein
 //    Kundenbereich über S.view erreichbar, obwohl niemand ihn geöffnet hat.
@@ -152,12 +164,12 @@ const renderLine = grab('async function render()');
 function renderIn(pfad) {
   const gebaut = [];
   const views = Object.fromEntries(['overview', 'tenants', 'courses', 'users', 'content', 'exams', 'branding', 'modules', 'data'].map(n => [n, () => gebaut.push(n)]));
-  const env = new Function('window', 'location', 'sessionStorage', 'localStorage', 'views', 'frame', 'q', 'h',
+  const env = new Function('window', 'location', 'document', 'sessionStorage', 'localStorage', 'views', 'frame', 'q', 'h',
     `${SOURCE}
      const {overview,tenants,courses,users,content,exams,branding,modules,data}=views;
      ${renderLine}
      return {S,render,navigation};`)(
-    {}, { pathname: pfad }, { getItem: () => null, setItem() {}, removeItem() {} }, { getItem: () => null, setItem() {}, removeItem() {} },
+    {}, { pathname: pfad }, { body: { classList: { contains: () => false } } }, { getItem: () => null, setItem() {}, removeItem() {} }, { getItem: () => null, setItem() {}, removeItem() {} },
     views, () => {}, () => ({ onclick: null }), v => String(v));
   env.S.tenants = KUNDEN;
   return { env, gebaut };
@@ -188,7 +200,7 @@ const frameLine = grab('function frame(');
 assert.match(frameLine, /#tenantPick'\)\?\.addEventListener\('change',async e=>\{selectTenant\(e\.target\.value\);/,
   'die Kundenauswahl muss über selectTenant gehen, nicht direkt an S.tenantId schreiben');
 assert.match(frameLine, /setupBanner\(\)/, 'während einer Einrichtung muss der Hinweis im Rahmen stehen');
-assert.match(frameLine, /PLATFORM_PATH&&!setupMode\(\)\?'':picker\(\)/,
+assert.match(frameLine, /PLATFORM_SURFACE&&!setupMode\(\)\?'':picker\(\)/,
   'die Kundenauswahl gehört auf der Plattformseite nur in die Einrichtung');
 
 const platformUi = await readFile('public/platform-admin-ui.js', 'utf8');
