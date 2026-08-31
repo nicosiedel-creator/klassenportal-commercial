@@ -14,6 +14,11 @@
     FORBIDDEN_ROLE_ASSIGNMENT:'Diese Rolle darfst du nicht vergeben. Klassenverantwortliche können Teilnehmende und Gäste ihrer Klasse verwalten; alles Weitere kann die Kundenadministration.',
     CLASS_ADMIN_PARTICIPANT_MANAGED:'Diese Person ist Klassenverantwortliche/r ihrer Klasse. Nimm ihr zuerst dieses Zusatzrecht, danach lässt sich die Zuordnung ändern.',
     CANNOT_REMOVE_OWN_TENANT_ADMIN:'Dein eigenes Kunden-Admin-Recht kannst du dir nicht entziehen – sonst sperrst du dich aus. Lege zuerst eine zweite Person als Kunden-Admin an.',
+    // Unterrichtsstunden aus einem Stundenplan
+    LESSON_DATE_REQUIRED:'Diese Unterrichtsstunde hat kein lesbares Datum. Ohne Datum lässt sie sich nicht in den Stundenplan einordnen.',
+    LESSON_TIME_REQUIRED:'Dieser Unterrichtsstunde fehlt der Beginn oder das Ende. Beides wird für den Stundenplan gebraucht.',
+    LESSON_END_BEFORE_START:'Das Ende dieser Unterrichtsstunde liegt vor ihrem Beginn.',
+    COURSE_NOT_RESOLVED:'Die Klasse bzw. der Kurs dieser Zeile konnte nicht eindeutig zugeordnet werden.',
     // Standorte, Organisationseinheiten und Ressourcen
     ORG_UNIT_NAME_REQUIRED:'Diese Zeile hat keinen Namen für die Einheit. Ohne Namen lässt sich kein Standort und kein Bereich anlegen.',
     ORG_UNIT_PARENT_INVALID:'Eine Einheit kann nicht ihr eigener übergeordneter Knoten sein.',

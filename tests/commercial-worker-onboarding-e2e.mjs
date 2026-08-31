@@ -197,6 +197,11 @@ async function autonomousFolderIntakeAudit(fixtureEnv){
     ['Traeger/teilnehmer.csv',`name,email,kurscode\nAbnahme Lernende ${run},abnahme.${run}@example.invalid,ABN-A-${run}\n`],
     ['Traeger/organigramm.csv',`node_type,external_id,parent_external_id,name,type,street,postal_code,city,country\nlocation,ABN-LOC-${run},ABN-ROOT-${run},Abnahme Campus ${run},Standort,Datenbogenweg 17,12627,Berlin,DE\norg_unit,ABN-OU-${run},ABN-LOC-${run},Abnahme Fachbereich ${run},Fachbereich,,,,\n`],
     ['Traeger/raeume.csv',`resource_type,external_id,name,location_external_id,capacity,features,status\nRaum,ABN-ROOM-${run},Abnahme Seminarraum ${run},ABN-LOC-${run},24,Beamer;Whiteboard,verfügbar\n`],
+    // Ein Ordner eines Bildungstraegers enthaelt seinen Stundenplan. Bis hierher hatte die
+    // Weiche dafuer kein Gleis: eine Stundenplanzeile nennt einen Kurscode, also wurde sie als
+    // Kurs gelesen - und der Stundenplan verschwand stillschweigend ("Stundenplaene hochgeladen
+    // und diese wurden nicht erkannt").
+    ['Traeger/stundenplan.csv',`course_code,date,start_time,end_time,room,session_type,topic\nABN-A-${run},2026-09-07,08:15,11:30,Abnahme Seminarraum ${run},Unterricht,Abnahme Regelunterricht ${run}\nABN-A-${run},2026-09-08,12:30,15:45,Abnahme Seminarraum ${run},Online,Abnahme Vertiefung ${run}\n`],
     ['Traeger/.DS_Store','x'],
   ],{deflate:true});
   const form=new FormData();
@@ -231,7 +236,7 @@ async function autonomousFolderIntakeAudit(fixtureEnv){
   // Die Struktur muss auch in der Rueckverfolgung stehen, nicht nur ihre Wirkung.
   assert.ok(view.data?.organization?.batch_id,'the batch must remember its organization import');
   const orgTypes=(view.data.organization.candidates||[]).map(c=>c.type).sort();
-  for(const expected of ['course','subject','org_unit','resource'])
+  for(const expected of ['course','subject','org_unit','resource','lesson'])
     assert.ok(orgTypes.includes(expected),`${expected} must be recognised as structure, got ${orgTypes.join(',')}`);
 
   // Standorte, Bereiche und Raeume muessen wirklich entstanden sein - im echten Worker, mit dem
@@ -255,7 +260,21 @@ async function autonomousFolderIntakeAudit(fixtureEnv){
   assert.equal(Number(room.capacity),24);
   assert.equal(String(room.location),`Abnahme Campus ${run}`,'the room must sit at the campus the same folder created');
 
-  console.log('Ganzer Ordner eingeworfen -> Standorte, Bereiche, Raeume, Kurse, Faecher und der Teilnehmer des neuen Kurses ohne Handgriff verarbeitet: OK.');
+  // Und der Stundenplan desselben Ordners muss wirklich im Portal stehen - an der Klasse, die
+  // derselbe Ordner gerade erst angelegt hat, mit Raum und Unterrichtsart.
+  const lessonsResponse=await api(`/api/content/lessons?tenant_id=${encodeURIComponent(tenantId)}&course_id=${encodeURIComponent(resolvedCourse.id)}`,{headers:{cookie}});
+  assert.equal(lessonsResponse.status,200,`lesson listing failed: ${lessonsResponse.text}`);
+  const lessons=(lessonsResponse.data?.items||[]).filter(x=>String(x.course_id)===String(resolvedCourse.id));
+  assert.equal(lessons.length,2,`both lessons from the folder must exist, got ${JSON.stringify(lessons)}`);
+  const first=lessons.find(x=>String(x.starts_at).startsWith('2026-09-07'));
+  assert.ok(first,`the first lesson must carry its date, got ${lessons.map(x=>x.starts_at).join(',')}`);
+  assert.equal(String(first.starts_at),'2026-09-07T08:15:00','date and start time must be joined');
+  assert.equal(String(first.ends_at),'2026-09-07T11:30:00');
+  assert.equal(String(first.room),`Abnahme Seminarraum ${run}`,'the room of the row belongs on the lesson');
+  assert.match(String(first.notes||''),/Unterrichtsart: Unterricht/,'the session type belongs in the note');
+  assert.match(String(first.notes||''),new RegExp(`Abnahme Regelunterricht ${run}`),'the topic of the lesson belongs in the note');
+
+  console.log('Ganzer Ordner eingeworfen -> Standorte, Bereiche, Raeume, Kurse, Faecher, Stundenplan und der Teilnehmer des neuen Kurses ohne Handgriff verarbeitet: OK.');
 }
 
 try{

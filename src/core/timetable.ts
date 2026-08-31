@@ -64,7 +64,10 @@ async function parseFile(file:File):Promise<{headers:string[];rows:RawRow[]}> {
 }
 
 function two(n:number):string{return String(n).padStart(2,'0');}
-function parseDate(value:unknown):string|null {
+// Auch der Organisationsimport liest inzwischen Stundenplanzeilen. Er benutzt bewusst dieselbe
+// Datums- und Zeiterkennung wie der Stundenplanimport - zwei eigene Definitionen wuerden
+// auseinanderlaufen, und dann laese der eine Weg ein anderes Datum als der andere.
+export function parseDate(value:unknown):string|null {
   if(value===null||value===undefined||value==='')return null;
   if(typeof value==='number'&&Number.isFinite(value)){
     const d=new Date(Date.UTC(1899,11,30)+Math.floor(value)*86400000);
@@ -75,7 +78,7 @@ function parseDate(value:unknown):string|null {
   m=s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/); if(m){let y=Number(m[3]);if(y<100)y+=y<70?2000:1900;return `${y}-${two(Number(m[2]))}-${two(Number(m[1]))}`;}
   const d=new Date(s); return Number.isNaN(d.getTime())?null:d.toISOString().slice(0,10);
 }
-function parseTime(value:unknown):string|null {
+export function parseTime(value:unknown):string|null {
   if(value===null||value===undefined||value==='')return null;
   if(typeof value==='number'&&Number.isFinite(value)){
     if(value>=0&&value<1){const mins=Math.round(value*24*60)%1440;return `${two(Math.floor(mins/60))}:${two(mins%60)}`;}
