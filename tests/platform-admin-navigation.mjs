@@ -28,6 +28,7 @@ const grab = head => {
   return line;
 };
 const SOURCE = [
+  grab('const SURFACE='),
   grab('const CUSTOMER_PATH='),
   grab('const PLATFORM_SURFACE='),
   grab('const S={me:window.__KP_BOOT_USER'),
@@ -48,10 +49,13 @@ const neuerSpeicher = (gespeichert = null) => {
   const speicher = new Map(gespeichert ? [['kp_setup_tenant', gespeichert]] : []);
   return { getItem: k => speicher.get(k) ?? null, setItem: (k, v) => speicher.set(k, String(v)), removeItem: k => speicher.delete(k) };
 };
-function oberflaeche(pfad, { gespeichert = null, store = neuerSpeicher(gespeichert), koerperklasse = '' } = {}) {
-  const env = new Function('window', 'location', 'document', 'sessionStorage', 'localStorage',
+// Welche Oberflaeche laeuft, sagt die ausgelieferte Seite ueber data-surface - nicht die Adresse.
+// Der Prueftisch stellt deshalb genau das, was der Browser dort vorfindet, und gar keine Adresse:
+// wuerde app.js sie doch lesen, faellt das hier sofort auf.
+function oberflaeche(seite, { gespeichert = null, store = neuerSpeicher(gespeichert) } = {}) {
+  const env = new Function('window', 'document', 'sessionStorage', 'localStorage',
     `${SOURCE}\nreturn {S,navigation,setupMode,setupTenantName,startSetup,endSetup,selectTenant};`)(
-    {}, { pathname: pfad }, { body: { classList: { contains: c => c === koerperklasse } } }, store, { getItem: () => null, setItem() {}, removeItem() {} });
+    {}, { body: { dataset: { surface: seite } } }, store, { getItem: () => null, setItem() {}, removeItem() {} });
   env.S.tenants = KUNDEN;
   return env;
 }
@@ -60,7 +64,7 @@ const TENANT_BEREICHE = ['courses', 'users', 'content', 'exams', 'branding', 'mo
 
 // 1. Der Befund: auf der Plattformseite gehört kein Kundenbereich in die Leiste.
 {
-  const p = oberflaeche('/plattform-admin');
+  const p = oberflaeche('plattform');
   assert.deepEqual(eintraege(p), ['overview', 'tenants'],
     `die Plattformleiste führt nur Plattformbereiche, gefunden: ${eintraege(p).join(', ')}`);
   for (const bereich of TENANT_BEREICHE)
@@ -69,15 +73,15 @@ const TENANT_BEREICHE = ['courses', 'users', 'content', 'exams', 'branding', 'mo
 }
 
 // 2. Der Kundenbereich bleibt unverändert - dort ist genau das die Arbeit.
-for (const pfad of ['/kunden-admin', '/']) {
-  const k = oberflaeche(pfad);
+for (const seite of ['kunden', 'start']) {
+  const k = oberflaeche(seite);
   assert.deepEqual(eintraege(k), ['overview', 'tenants', ...TENANT_BEREICHE],
-    `${pfad} muss die vollständige Kundenleiste behalten`);
+    `die Seite "${seite}" muss die vollständige Kundenleiste behalten`);
 }
 
 // 3. Wer für einen Kunden einrichtet, wählt ihn aus - und bekommt dann dessen Bereiche.
 {
-  const p = oberflaeche('/plattform-admin');
+  const p = oberflaeche('plattform');
   p.startSetup('ten_a');
   assert.equal(p.setupMode(), true, 'nach der Auswahl wird eingerichtet');
   assert.equal(p.S.tenantId, 'ten_a', 'und zwar in diesem Kundenbereich');
@@ -96,7 +100,7 @@ for (const pfad of ['/kunden-admin', '/']) {
 //     Kunden meinen - sonst nennt der Hinweis den einen, während die Bereiche schon die Daten
 //     des anderen zeigen. Der gerade offene Bereich bleibt dabei stehen.
 {
-  const p = oberflaeche('/plattform-admin');
+  const p = oberflaeche('plattform');
   p.startSetup('ten_a');
   p.S.view = 'users';
   p.selectTenant('ten_b');
@@ -108,7 +112,7 @@ for (const pfad of ['/kunden-admin', '/']) {
 
 // Und im Kundenbereich bleibt ein Kundenwechsel ein Kundenwechsel, keine Einrichtung.
 {
-  const k = oberflaeche('/kunden-admin');
+  const k = oberflaeche('kunden');
   k.selectTenant('ten_b');
   assert.equal(k.S.tenantId, 'ten_b', 'der Kundenbereich wechselt den Mandanten');
   assert.equal(k.S.setupTenantId, null, 'ohne daraus eine Einrichtung zu machen');
@@ -117,11 +121,11 @@ for (const pfad of ['/kunden-admin', '/']) {
 // 3b. Beendet heißt beendet: nach dem Neuladen darf die Einrichtung nicht wieder offen sein.
 {
   const store = neuerSpeicher();
-  const erste = oberflaeche('/plattform-admin', { store });
+  const erste = oberflaeche('plattform', { store });
   erste.startSetup('ten_a');
   assert.equal(store.getItem('kp_setup_tenant'), 'ten_a', 'die begonnene Einrichtung wird gemerkt');
   erste.endSetup();
-  const nachNeuladen = oberflaeche('/plattform-admin', { store });
+  const nachNeuladen = oberflaeche('plattform', { store });
   assert.equal(nachNeuladen.setupMode(), false,
     'eine beendete Einrichtung darf nach dem Neuladen nicht zurückkehren');
   assert.deepEqual(eintraege(nachNeuladen), ['overview', 'tenants']);
@@ -129,31 +133,32 @@ for (const pfad of ['/kunden-admin', '/']) {
 
 // 4. Eine gespeicherte Einrichtung überlebt das Neuladen - aber nur auf der Plattformseite.
 {
-  const p = oberflaeche('/plattform-admin', { gespeichert: 'ten_b' });
+  const p = oberflaeche('plattform', { gespeichert: 'ten_b' });
   assert.equal(p.setupMode(), true, 'die begonnene Einrichtung ist nach dem Neuladen noch offen');
   assert.equal(p.setupTenantName(), 'Zweiter Träger');
-  const k = oberflaeche('/kunden-admin', { gespeichert: 'ten_b' });
+  const k = oberflaeche('kunden', { gespeichert: 'ten_b' });
   assert.equal(k.S.setupTenantId, null, 'im Kundenbereich gibt es keinen Einrichtungsmodus');
 }
 
 // 5. Fail closed: eine Auswahl, die es nicht mehr gibt, öffnet keine Bereiche.
 {
-  const p = oberflaeche('/plattform-admin', { gespeichert: 'ten_geloescht' });
+  const p = oberflaeche('plattform', { gespeichert: 'ten_geloescht' });
   assert.equal(p.setupMode(), false, 'ein unbekannter Kunde ist kein Einrichtungsmodus');
   assert.deepEqual(eintraege(p), ['overview', 'tenants'], 'und öffnet keine Kundenbereiche');
   assert.equal(p.setupTenantName(), '', 'und hat keinen Namen, den man anzeigen könnte');
 }
 
-// 5b. Erkannt wird die Plattformoberfläche an der Seite, die ausgeliefert wurde - nicht nur an
-//     einer Adresse. Gemeldet wurde genau der umgekehrte Fall: /portal-admin ist keine Route,
-//     der Server lieferte dafür still die Startseite, und die zeigte die Kundenverwaltung.
+// 5b. Erkannt wird die Oberfläche an der Seite, die ausgeliefert wurde - nicht an der Adresse.
+//     Gemeldet wurde genau der umgekehrte Fall: unter /KUNDEN-admin und /portal-admin lieferte
+//     der Server still die Startseite aus, und die zeigte die Kundenverwaltung. Ein Vergleich auf
+//     die Adresse hätte dort die falsche Leiste gebaut.
 {
-  const ueberKlasse = oberflaeche('/irgendeine-andere-adresse', { koerperklasse: 'platform-portal-admin' });
-  assert.deepEqual(eintraege(ueberKlasse), ['overview', 'tenants'],
-    'wird die Plattformseite ausgeliefert, gilt ihre Navigation - unabhängig von der Adresse');
-  const fremd = oberflaeche('/portal-admin');
-  assert.deepEqual(eintraege(fremd), ['overview', 'tenants', ...TENANT_BEREICHE],
-    'eine fremde Adresse ohne Plattformseite bleibt die gewöhnliche Oberfläche');
+  const plattform = oberflaeche('plattform');
+  assert.deepEqual(eintraege(plattform), ['overview', 'tenants'],
+    'wird die Plattformseite ausgeliefert, gilt ihre Navigation');
+  for (const seite of ['start', 'kunden', 'klassen', '', undefined])
+    assert.deepEqual(eintraege(oberflaeche(seite)), ['overview', 'tenants', ...TENANT_BEREICHE],
+      `eine Seite, die sich nicht als Plattformseite ausgibt (${String(seite)}), bleibt die gewöhnliche Oberfläche`);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -161,21 +166,21 @@ for (const pfad of ['/kunden-admin', '/']) {
 //    Kundenbereich über S.view erreichbar, obwohl niemand ihn geöffnet hat.
 // ---------------------------------------------------------------------------------------------
 const renderLine = grab('async function render()');
-function renderIn(pfad) {
+function renderIn(seite) {
   const gebaut = [];
   const views = Object.fromEntries(['overview', 'tenants', 'courses', 'users', 'content', 'exams', 'branding', 'modules', 'data'].map(n => [n, () => gebaut.push(n)]));
-  const env = new Function('window', 'location', 'document', 'sessionStorage', 'localStorage', 'views', 'frame', 'q', 'h',
+  const env = new Function('window', 'document', 'sessionStorage', 'localStorage', 'views', 'frame', 'q', 'h',
     `${SOURCE}
      const {overview,tenants,courses,users,content,exams,branding,modules,data}=views;
      ${renderLine}
      return {S,render,navigation};`)(
-    {}, { pathname: pfad }, { body: { classList: { contains: () => false } } }, { getItem: () => null, setItem() {}, removeItem() {} }, { getItem: () => null, setItem() {}, removeItem() {} },
+    {}, { body: { dataset: { surface: seite } } }, { getItem: () => null, setItem() {}, removeItem() {} }, { getItem: () => null, setItem() {}, removeItem() {} },
     views, () => {}, () => ({ onclick: null }), v => String(v));
   env.S.tenants = KUNDEN;
   return { env, gebaut };
 }
 for (const bereich of TENANT_BEREICHE) {
-  const { env, gebaut } = renderIn('/plattform-admin');
+  const { env, gebaut } = renderIn('plattform');
   env.S.view = bereich;
   await env.render();
   assert.deepEqual(gebaut, ['overview'],
@@ -183,7 +188,7 @@ for (const bereich of TENANT_BEREICHE) {
   assert.equal(env.S.view, 'overview', 'und der Bereich darf nicht als gewählt stehen bleiben');
 }
 {
-  const { env, gebaut } = renderIn('/kunden-admin');
+  const { env, gebaut } = renderIn('kunden');
   env.S.view = 'users';
   await env.render();
   assert.deepEqual(gebaut, ['users'], 'im Kundenbereich wird derselbe Bereich sehr wohl gebaut');

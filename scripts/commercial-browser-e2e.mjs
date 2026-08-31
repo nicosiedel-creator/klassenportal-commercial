@@ -399,6 +399,44 @@ async function platformAdministrationContract(){
     await admin.locator('input[name="password"]').fill(password);
     await admin.locator('button[type="submit"]').click();
     await admin.locator('aside.side button.nav').filter({hasText:/^Kunden-Einrichtung$/}).first().waitFor({timeout:20000});
+
+    // Die Seitenleiste endet unten links mit "Abmelden". Genau dort haengt die Sprachwahl fest
+    // (position:fixed;left:12px;bottom:12px). Gemessen bei 1440x1000: Abmelden 937-976,
+    // Sprachwahl 958-988 - die weisse Sprachpille lag auf der unteren Haelfte des
+    // Abmelde-Knopfes, und weil beide am unteren Rand haengen, in jeder Fensterhoehe gleich.
+    //
+    // Geprueft wird nicht die eine Pille, sondern die Regel: kein festgepinntes Element darf ein
+    // Bedienelement der Seitenleiste ueberdecken. Zwei Fensterhoehen, damit eine Ueberdeckung,
+    // die am unteren Rand mitwandert, nicht zufaellig durchrutscht.
+    for(const height of [1000,700]){
+      await admin.setViewportSize({width:1440,height});
+      await admin.waitForTimeout(400);
+      const overlaps=await admin.evaluate(()=>{
+        const visible=el=>{const r=el.getBoundingClientRect();const s=getComputedStyle(el);return r.width>1&&r.height>1&&s.visibility!=='hidden'&&s.display!=='none'&&Number(s.opacity)>0.05;};
+        const side=document.querySelector('aside.side');
+        if(!side)return[{control:'aside.side',cover:'die Seitenleiste selbst fehlt'}];
+        const controls=[...side.querySelectorAll('button,a,select')].filter(visible);
+        const pinned=[...document.querySelectorAll('body *')].filter(el=>
+          !side.contains(el)&&!el.contains(side)&&getComputedStyle(el).position==='fixed'&&visible(el)
+          &&el.getAttribute('aria-hidden')!=='true'&&!el.closest('[role="dialog"]'));
+        const found=[];
+        for(const control of controls){
+          const a=control.getBoundingClientRect();
+          for(const el of pinned){
+            const b=el.getBoundingClientRect();
+            if(a.left<b.right&&b.left<a.right&&a.top<b.bottom&&b.top<a.bottom)
+              found.push({control:(control.textContent||'').trim().slice(0,30),
+                cover:(el.id?'#'+el.id:el.tagName.toLowerCase())+' '+(el.textContent||'').trim().slice(0,30),
+                box:`${Math.round(a.top)}-${Math.round(a.bottom)} vs ${Math.round(b.top)}-${Math.round(b.bottom)}`});
+          }
+        }
+        return found;
+      });
+      if(overlaps.length)fail(`in der Plattformverwaltung (${1440}x${height}) verdeckt ein festgepinntes Element die Seitenleiste: `+
+        overlaps.map(o=>`"${o.control}" von ${o.cover} (${o.box||''})`).join('; '));
+    }
+    await admin.setViewportSize({width:1440,height:1000});
+    await admin.waitForTimeout(300);
     await admin.locator('aside.side button.nav').filter({hasText:/^Kunden-Einrichtung$/}).first().click();
     await admin.locator('#pa-new').waitFor({timeout:15000});
 
