@@ -24,6 +24,14 @@ const grab = (head) => {
   return line;
 };
 
+// Mehrzeilige Funktionen werden als Block geschnitten, nicht zeilenweise.
+const block = (head, foot) => {
+  const from = app.indexOf(head);
+  assert.notEqual(from, -1, `"${head}" muss in public/app.js auffindbar bleiben`);
+  const to = app.indexOf(foot, from);
+  assert.notEqual(to, -1, `das Ende von "${head}" muss auffindbar bleiben`);
+  return app.slice(from, to);
+};
 const SOURCE = [
   grab('const h=v=>'),
   grab('function courseOptions('),
@@ -33,6 +41,7 @@ const SOURCE = [
   grab('function contentMeta('),
   grab('function contentItem('),
   grab('function loadFailure('),
+  block('function upcomingFirst(', '\nfunction contentItem('),
   grab('async function content(){'),
   grab('async function exams(){'),
   grab('async function users(){'),
@@ -66,7 +75,7 @@ function run(state, { answers = {}, rejects = {} } = {}) {
   };
   const env = new Function(
     'S', 'api', 'frame', 'qa', 'q', 'supportReadOnly', 'contentModal', 'bindCoursePicker', 'formModal', 'notice', 'window',
-    `${SOURCE}\nreturn {courseOptions,courseName,contentScope,contentCoursePicker,contentItem,loadFailure,content,exams,users};`,
+    `${SOURCE}\nreturn {courseOptions,courseName,contentScope,contentCoursePicker,contentItem,loadFailure,upcomingFirst,content,exams,users};`,
   )(
     S,
     api,
@@ -200,6 +209,32 @@ const cardOf = (body, label) => {
   await bad.env.users();
   assert.match(bad.rendered.body, /class="error"/, 'eine fehlgeschlagene Benutzerabfrage muss als Fehler erscheinen');
   assert.match(bad.rendered.body, /role="alert"/, 'und zwar so, dass ein Screenreader sie ansagt');
+}
+
+// 10. Ein eingelesener Jahresstundenplan liefert seine Stunden nach Beginn aufsteigend. Die
+//     ersten acht waeren damit die aeltesten - beim Abnahmepaket der September des Vorjahres.
+//     Wer "Inhalte" oeffnet, will wissen, was als Naechstes ansteht.
+{
+  const t = run({ courses: COURSES });
+  const stunden = [
+    { id: 'l1', course_id: 'crs_a', starts_at: '2025-09-01T08:00' },
+    { id: 'l2', course_id: 'crs_a', starts_at: '2025-09-02T08:00' },
+    { id: 'l3', course_id: 'crs_a', starts_at: '2027-03-04T08:00' },
+    { id: 'l4', course_id: 'crs_a', starts_at: '2027-03-05T08:00' },
+  ];
+  const kommend = t.env.upcomingFirst('lessons', stunden, '2026-08-31');
+  assert.equal(kommend.upcoming, true, 'gibt es kuenftige Stunden, stehen sie vorn');
+  assert.deepEqual(kommend.rows.map(x => x.id), ['l3', 'l4'], 'und zwar genau die kuenftigen');
+
+  const nurAlt = t.env.upcomingFirst('lessons', stunden.slice(0, 2), '2026-08-31');
+  assert.equal(nurAlt.upcoming, false, 'gibt es nur vergangene, ist nichts "als Naechstes"');
+  assert.deepEqual(nurAlt.rows.map(x => x.id), ['l2', 'l1'], 'dann stehen die juengsten vorn');
+
+  // Alle anderen Bereiche bleiben unangetastet - Meldungen etwa sind absichtlich neueste zuerst.
+  const meldungen = [{ id: 'm1', published_at: '2025-01-01' }, { id: 'm2', published_at: '2027-01-01' }];
+  assert.deepEqual(t.env.upcomingFirst('announcements', meldungen, '2026-08-31').rows.map(x => x.id), ['m1', 'm2'],
+    'nur der Stundenplan wird umsortiert');
+  assert.deepEqual(t.env.upcomingFirst('lessons', [], '2026-08-31').rows, [], 'ohne Stunden passiert nichts');
 }
 
 console.log('Kundenadmin-Inhalte: Stundenplan und Pruefungen sind nicht mehr auf die erste Klasse verengt, jede Klasse ist waehlbar, Fehler erscheinen als Fehler: OK');
