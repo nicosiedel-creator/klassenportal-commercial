@@ -97,10 +97,22 @@ export function assertSameOrigin(request: Request, appOrigin?: string): void {
   }
 }
 
-export function cookie(name: string, value: string, maxAge: number): string {
-  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+// Im Betrieb kommt jede Anfrage ueber https herein. Nur der lokale Lauf spricht http, und eine
+// unlesbare oder fehlende Adresse gilt vorsichtshalber als sicher - dann bleibt Secure gesetzt.
+export function requestIsSecure(request?: Request): boolean {
+  if (!request) return true;
+  try { return new URL(request.url).protocol !== 'http:'; } catch { return true; }
 }
 
-export function noCookie(name: string): string {
-  return `${name}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
+// Secure gehoert an jedes Sitzungscookie - ueber https. Ueber http verweigert WebKit ein
+// Secure-Cookie vollstaendig, waehrend Chromium und Firefox die Rueckadresse davon ausnehmen.
+// Gemessen im Cross-Browser-Lauf 33363859545: nach der Einrichtung meldete /api/auth/me den
+// Status 200 ohne Benutzer - das Cookie war nie gespeichert worden. Ueber http entfaellt deshalb
+// genau dieses eine Merkmal; HttpOnly, SameSite=Strict und Path bleiben in jedem Fall.
+export function cookie(name: string, value: string, maxAge: number, secure = true): string {
+  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly;${secure ? ' Secure;' : ''} SameSite=Strict; Max-Age=${maxAge}`;
+}
+
+export function noCookie(name: string, secure = true): string {
+  return `${name}=; Path=/; HttpOnly;${secure ? ' Secure;' : ''} SameSite=Strict; Max-Age=0`;
 }

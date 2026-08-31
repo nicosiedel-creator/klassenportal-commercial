@@ -40,6 +40,7 @@ import { handleMicrosoftGraphApi } from './core/microsoft-graph-router.js';
 import { handleCollaborationReportingApi } from './core/collaboration-reporting-router.js';
 import { handleLiveStudyApi } from './core/live-study-router.js';
 import type { Env } from './core/types.js';
+import { requestIsSecure } from './core/utils.js';
 import { handlePortabilityRequest, portabilityConfig, runScheduledTenantBackups } from './portability/index.js';
 
 const CONTENT_SECURITY_POLICY="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://login.microsoftonline.com; frame-src https://www.youtube-nocookie.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests";
@@ -62,9 +63,6 @@ const SECURITY_HEADERS:Record<string,string>={
 // Die Anweisung entfaellt deshalb ueber http. Das schwaecht nichts ab, was ueber https gilt.
 function contentSecurityPolicy(secure:boolean):string{return secure?CONTENT_SECURITY_POLICY:CONTENT_SECURITY_POLICY.replace('; upgrade-insecure-requests','');}
 function harden(response:Response,secure=true):Response{const headers=new Headers(response.headers);for(const[k,v]of Object.entries(SECURITY_HEADERS))if(!headers.has(k))headers.set(k,k==='content-security-policy'?contentSecurityPolicy(secure):v);headers.set('x-request-id',crypto.randomUUID());if((headers.get('content-type')||'').includes('text/html'))headers.set('cache-control','no-store');return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}
-// Im Betrieb kommt jede Anfrage ueber https herein. Nur der lokale Lauf spricht http, und eine
-// unlesbare Adresse gilt vorsichtshalber als sicher: dann bleibt die Anweisung stehen.
-function requestIsSecure(request:Request):boolean{try{return new URL(request.url).protocol!=='http:';}catch{return true;}}
 function accessError(e:unknown):Response{const raw=String((e as Error)?.message||'PAYMENT_REQUIRED'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PAYMENT_REQUIRED',status=code==='TRIAL_EXPIRED'?410:code==='TRIAL_READ_ONLY'?423:402;return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 function jsonError(code:string,status:number):Response{return new Response(JSON.stringify({ok:false,error:code}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 function publicError(e:unknown):Response{const raw=String((e as Error)?.message||'PUBLIC_PORTAL_ERROR'),code=/^[A-Z][A-Z0-9_]{2,80}$/.test(raw)?raw:'PUBLIC_PORTAL_ERROR',status=code.includes('NOT_FOUND')?404:['LOGIN_REQUIRED','ACCESS_CODE_REQUIRED','LOGIN_OR_CODE_REQUIRED'].includes(code)?401:code==='PUBLIC_PORTAL_ERROR'?500:400;return jsonError(code,status);}
