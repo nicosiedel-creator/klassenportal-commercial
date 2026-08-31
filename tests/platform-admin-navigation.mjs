@@ -40,6 +40,7 @@ const SOURCE = [
   grab('function setupTenantName()'),
   grab('function startSetup('),
   grab('function endSetup()'),
+  grab('function selectTenant('),
 ].join('\n');
 
 const KUNDEN = [{ id: 'ten_a', name: 'Märkische Bildungsakademie' }, { id: 'ten_b', name: 'Zweiter Träger' }];
@@ -49,7 +50,7 @@ const neuerSpeicher = (gespeichert = null) => {
 };
 function oberflaeche(pfad, { gespeichert = null, store = neuerSpeicher(gespeichert) } = {}) {
   const env = new Function('window', 'location', 'sessionStorage', 'localStorage',
-    `${SOURCE}\nreturn {S,navigation,setupMode,setupTenantName,startSetup,endSetup};`)(
+    `${SOURCE}\nreturn {S,navigation,setupMode,setupTenantName,startSetup,endSetup,selectTenant};`)(
     {}, { pathname: pfad }, store, { getItem: () => null, setItem() {}, removeItem() {} });
   env.S.tenants = KUNDEN;
   return env;
@@ -89,6 +90,28 @@ for (const pfad of ['/kunden-admin', '/']) {
   assert.equal(p.setupMode(), false, 'und sie verschwinden wieder, wenn die Einrichtung endet');
   assert.deepEqual(eintraege(p), ['overview', 'tenants']);
   assert.equal(p.S.view, 'overview', 'zurück auf die Plattformübersicht');
+}
+
+// 3a. Der Wechsel des Kunden während einer Einrichtung: Hinweis und Bereiche müssen denselben
+//     Kunden meinen - sonst nennt der Hinweis den einen, während die Bereiche schon die Daten
+//     des anderen zeigen. Der gerade offene Bereich bleibt dabei stehen.
+{
+  const p = oberflaeche('/plattform-admin');
+  p.startSetup('ten_a');
+  p.S.view = 'users';
+  p.selectTenant('ten_b');
+  assert.equal(p.S.setupTenantId, 'ten_b', 'die Einrichtung wechselt mit');
+  assert.equal(p.S.tenantId, 'ten_b', 'und die Bereiche arbeiten im selben Kundenbereich');
+  assert.equal(p.setupTenantName(), 'Zweiter Träger', 'der Hinweis nennt denselben Kunden');
+  assert.equal(p.S.view, 'users', 'der gerade offene Bereich bleibt stehen');
+}
+
+// Und im Kundenbereich bleibt ein Kundenwechsel ein Kundenwechsel, keine Einrichtung.
+{
+  const k = oberflaeche('/kunden-admin');
+  k.selectTenant('ten_b');
+  assert.equal(k.S.tenantId, 'ten_b', 'der Kundenbereich wechselt den Mandanten');
+  assert.equal(k.S.setupTenantId, null, 'ohne daraus eine Einrichtung zu machen');
 }
 
 // 3b. Beendet heißt beendet: nach dem Neuladen darf die Einrichtung nicht wieder offen sein.
@@ -158,6 +181,16 @@ for (const bereich of TENANT_BEREICHE) {
 // 7. Die nachträgliche Korrektur darf nicht zurückkommen: sie würde beim Einrichten für einen
 //    Kunden genau die Bereiche wieder verstecken, die app.js dafür bewusst einblendet.
 // ---------------------------------------------------------------------------------------------
+// Die Verdrahtung selbst: die Kundenauswahl liegt in frame() und laesst sich ohne Dokument nicht
+// ausfuehren. Geprueft wird deshalb, dass sie ueber die Entscheidung oben laeuft und nicht wieder
+// direkt an S.tenantId schreibt - genau daran liefen Hinweis und Bereiche vorher auseinander.
+const frameLine = grab('function frame(');
+assert.match(frameLine, /#tenantPick'\)\?\.addEventListener\('change',async e=>\{selectTenant\(e\.target\.value\);/,
+  'die Kundenauswahl muss über selectTenant gehen, nicht direkt an S.tenantId schreiben');
+assert.match(frameLine, /setupBanner\(\)/, 'während einer Einrichtung muss der Hinweis im Rahmen stehen');
+assert.match(frameLine, /PLATFORM_PATH&&!setupMode\(\)\?'':picker\(\)/,
+  'die Kundenauswahl gehört auf der Plattformseite nur in die Einrichtung');
+
 const platformUi = await readFile('public/platform-admin-ui.js', 'utf8');
 assert.doesNotMatch(platformUi, /querySelectorAll\('\[data-v\]'\)/,
   'die Plattformoberfläche darf die Leiste nicht mehr nachträglich umbauen - sie entsteht in app.js richtig');
