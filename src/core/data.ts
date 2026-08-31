@@ -3,7 +3,7 @@ import { audit } from './audit.js';
 import { requireCourseAccess, requireRole } from './permissions.js';
 import { canManageOrgUnit, hasPermission } from './enterprise-access.js';
 import { id, nowIso, safeString, slugify } from './utils.js';
-import { hashPassword } from './auth.js';
+import { hashPassword, PASSWORD_MIN_LENGTH } from './auth.js';
 import { sendTeamsWorkflowNotification } from './advanced-modules.js';
 import { ensureBrandingSchema } from './branding-schema.js';
 
@@ -42,7 +42,23 @@ export async function listCourses(env:Env,auth:CoreAuthContext,tenantId:string){
 export async function createCourse(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
   const orgUnitId=safeString(input.org_unit_id,100)||null;if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'){if(!hasPermission(auth,'courses.manage'))throw new Error('FORBIDDEN_PERMISSION');if(!orgUnitId||!await canManageOrgUnit(env,auth,tenantId,orgUnitId,'courses.manage'))throw new Error('FORBIDDEN_ORG_SCOPE');}
   if(orgUnitId){const u=await env.DB.prepare("SELECT id FROM org_units WHERE tenant_id=? AND id=? AND status='active'").bind(tenantId,orgUnitId).first();if(!u)throw new Error('ORG_UNIT_NOT_FOUND');}
-  const name=safeString(input.name,200);if(!name)throw new Error('COURSE_NAME_REQUIRED');const code=slugify(input.code||name).slice(0,40),mode=String(input.access_mode||'login');if(!['public','link_code','login','hybrid'].includes(mode))throw new Error('ACCESS_MODE_INVALID');const accessCode=safeString(input.access_code,128);if((mode==='link_code'||mode==='hybrid')&&accessCode.length<6)throw new Error('ACCESS_CODE_REQUIRED');const accessHash=accessCode?await hashPassword(accessCode):null,courseId=id('crs_'),ts=nowIso();
+  const name=safeString(input.name,200);if(!name)throw new Error('COURSE_NAME_REQUIRED');const code=slugify(input.code||name).slice(0,40),mode=String(input.access_mode||'login');if(!['public','link_code','login','hybrid'].includes(mode))throw new Error('ACCESS_MODE_INVALID');const accessCode=safeString(input.access_code,128);
+  // Zwei Regeln standen hier nebeneinander und widersprachen sich: die eigene verlangte 6 Zeichen,
+  // der Hasher darunter 10. Gemessen gegen echtes SQLite mit dem echten Schema:
+  //   3 und 5 Zeichen -> ACCESS_CODE_REQUIRED (die eigene Regel)
+  //   6, 7, 8, 9      -> PASSWORD_LENGTH_INVALID ("Das Passwort muss zwischen 10 und 256 Zeichen
+  //                      lang sein") - fuer ein Feld, das "Zugriffscode" heisst und in dem nie ein
+  //                      Passwort stand
+  //   10              -> angelegt
+  // Vier Zeichenlaengen, die die Oberflaeche erlaubte und der Server mit einer Meldung ueber ein
+  // Passwort ablehnte. Es gilt jetzt eine Regel, und zwar die, die wirklich speicherbar ist.
+  //
+  // Ausserdem wurde der Code in jeder Zugangsart gehasht - auch bei "Login" und "Oeffentlich", wo
+  // es gar keinen gibt. Ein versehentlich getippter kurzer Code liess damit das Anlegen der ganzen
+  // Klasse scheitern. updateCourse macht es an derselben Stelle laengst richtig.
+  const brauchtCode=mode==='link_code'||mode==='hybrid';
+  if(brauchtCode&&accessCode.length<PASSWORD_MIN_LENGTH)throw new Error('ACCESS_CODE_REQUIRED');
+  const accessHash=brauchtCode?await hashPassword(accessCode):null,courseId=id('crs_'),ts=nowIso();
   // The (tenant_id, code) uniqueness is a customer-visible rule, not an internal failure: report it
   // as a conflict instead of letting the storage constraint surface as an unhandled error.
   if(await env.DB.prepare('SELECT id FROM courses WHERE tenant_id=? AND code=?').bind(tenantId,code).first())throw new Error('COURSE_CODE_EXISTS');const statements=[env.DB.prepare('INSERT INTO courses(id,tenant_id,location_id,name,code,start_date,end_date,access_mode,access_code_hash,is_active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,1,?,?)').bind(courseId,tenantId,input.location_id||null,name,code,input.start_date||null,input.end_date||null,mode,accessHash,ts,ts)];if(orgUnitId)statements.push(env.DB.prepare('INSERT INTO course_org_units(tenant_id,course_id,org_unit_id,is_primary,created_at) VALUES(?,?,?,?,?)').bind(tenantId,courseId,orgUnitId,1,ts));await env.DB.batch(statements);await audit(env.DB,auth.userId,'course.created',tenantId,courseId,'course',courseId,{name,code,mode,orgUnitId});return env.DB.prepare('SELECT id,tenant_id,location_id,name,code,start_date,end_date,access_mode,is_active,created_at,updated_at FROM courses WHERE id=? AND tenant_id=?').bind(courseId,tenantId).first();
