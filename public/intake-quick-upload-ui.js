@@ -44,7 +44,15 @@ if(INTAKE_QUICK_PATH){
     // der vierzehnte Eintrag in einem Klappmenue sein.
     f.dataset.customerNavPrimary='1';
     f.dataset.customerNavSourceLabel='Ganzen Ordner einlesen';
-    if(anchor?.nextSibling)side.insertBefore(b,anchor.nextSibling);else side.append(b);
+    // Der Anker wird mit side.querySelector() gesucht, also irgendwo unterhalb der Leiste - auf der
+    // Kundenoberflaeche liegt er in .kp-customer-nav-group-items und ist damit gerade kein direktes
+    // Kind von .side. side.insertBefore() verlangt aber genau das und warf deshalb
+    // NotFoundError: "The node before which the new node is to be inserted is not a child of this
+    // node". Der Fehler flog vor beiden append-Zeilen: gemessen im Browser fehlten danach
+    // "Unterlagen jetzt einwerfen" und "Ganzen Ordner einlesen" vollstaendig in der Navigation -
+    // also genau die zwei Wege, auf denen ein Bildungstraeger seine Daten ins Portal bekommt.
+    // Eingefuegt wird jetzt neben dem Anker, dort wo er wirklich haengt.
+    if(anchor?.parentNode)anchor.parentNode.insertBefore(b,anchor.nextSibling);else side.append(b);
     b.insertAdjacentElement('afterend',f);
     b.onclick=()=>void choose(false);f.onclick=openDropDialog;
     f.title='Ordner lassen sich auch einfach ins Fenster ziehen.';
