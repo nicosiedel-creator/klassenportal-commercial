@@ -54,13 +54,23 @@ assert.deepEqual(rowsOf('location_id,external_id,parent_external_id,name,street,
   ['org_unit'],'auch ohne Typspalte ist eine Zeile mit Standortkennung und Anschrift eine Einheit');
 const ohneTyp=rowsOf('location_id,external_id,parent_external_id,name,street,postal_code,city,country\nLOC-001,LOC-BER-NORD,ORG-MBA-TEST,Campus Nord,Datenbogenweg 17,12627,Berlin,DE\n');
 
-// Die Gegenprobe. Genau hier darf die neue Regel NICHT greifen:
-assert.equal(importRole({role:'Leitung',display_name:'Frau Alma Reiter',email:'alma@example.invalid'}),'participant',
-  'eine Person mit E-Mail bleibt eine Person, auch wenn ihre Funktion "Leitung" heisst');
-assert.equal(importRole({role:'Leitung',display_name:'Frau Alma Reiter',email:'alma@example.invalid',location_id:'LOC-1'}),'participant',
-  'auch neben einer Standortspalte bleibt eine Person mit E-Mail eine Person');
-assert.equal(importRole({role:'Leitung',first_name:'Alma',last_name:'Reiter'}),'participant',
-  'ein Vor- und Nachname ist eine Person, kein Bereich');
+// Die Gegenprobe. Genau hier darf die Struktur-Erkennung NICHT greifen: wer einen Namen und eine
+// E-Mail hat, ist ein Mensch und kein Bereich. Welche Art Mensch, entscheidet die Funktion -
+// "Leitung" ist eine Verwaltungsfunktion, also eine beschaeftigte Person mit Rechten auf ihrem
+// Bereich, und kein Kursteilnehmer. Die Zusage, um die es hier geht, bleibt dieselbe: keine
+// Organisationseinheit.
+const KEINE_EINHEIT=[
+  [{role:'Leitung',display_name:'Frau Alma Reiter',email:'alma@example.invalid'},'staff',
+    'eine Person mit E-Mail bleibt eine Person, auch wenn ihre Funktion "Leitung" heisst'],
+  [{role:'Leitung',display_name:'Frau Alma Reiter',email:'alma@example.invalid',location_id:'LOC-1'},'staff',
+    'auch neben einer Standortspalte bleibt eine Person mit E-Mail eine Person'],
+  [{role:'Leitung',first_name:'Alma',last_name:'Reiter'},'staff',
+    'ein Vor- und Nachname ist eine Person, kein Bereich'],
+];
+for(const [row,erwartet,warum] of KEINE_EINHEIT){
+  assert.equal(importRole(row),erwartet,warum);
+  assert.notEqual(importRole(row),'org_unit',`${warum} - und erst recht keine Organisationseinheit`);
+}
 assert.equal(importRole({fach:'Anatomie',fachkuerzel:'ANA'}),'subject','ein Fach bleibt ein Fach');
 assert.equal(importRole({course_name:'Pflege 2026 A',course_code:'PF26A'}),'course','ein Kurs bleibt ein Kurs');
 assert.equal(importRole({display_name:'Jonas Weber',email:'jonas@example.invalid',kurs:'PF26A'}),'participant',

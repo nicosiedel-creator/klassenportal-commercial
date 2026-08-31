@@ -202,6 +202,15 @@ async function autonomousFolderIntakeAudit(fixtureEnv){
     // Kurs gelesen - und der Stundenplan verschwand stillschweigend ("Stundenplaene hochgeladen
     // und diese wurden nicht erkannt").
     ['Traeger/stundenplan.csv',`course_code,date,start_time,end_time,room,session_type,topic\nABN-A-${run},2026-09-07,08:15,11:30,Abnahme Seminarraum ${run},Unterricht,Abnahme Regelunterricht ${run}\nABN-A-${run},2026-09-08,12:30,15:45,Abnahme Seminarraum ${run},Online,Abnahme Vertiefung ${run}\n`],
+    // Und die Beschaeftigten: Menschen ohne Klasse. Fuer sie gab es bis hierher keine Rolle - sie
+    // fielen in den Auffangfall "Teilnehmer" und blieben mit COURSE_REQUIRED liegen. Jetzt
+    // bekommen sie eine Freigabe auf ihrem Bereich, gestaffelt nach Funktion.
+    //
+    // Bewusst keine Leitungsfunktion in diesem Ordner: "Verantwortlich" schliesst das Vergeben
+    // weiterer Rechte ein und wird deshalb zur Bestaetigung vorgelegt - womit dieser Ordner nicht
+    // mehr vollstaendig eindeutig waere, worum es hier aber gerade geht. Dass aus einem Import nie
+    // eine Verantwortlichen-Freigabe entsteht, prueft tests/organization-staff-roles.mjs.
+    ['Traeger/beschaeftigte.csv',`first_name,last_name,role,email,org_unit_external_id,portal_role\nAbnahme,Service ${run},Teilnehmendenservice,abnahme.service.${run}@example.invalid,ABN-OU-${run},staff\nAbnahme,Technik ${run},IT-Support,abnahme.technik.${run}@example.invalid,ABN-OU-${run},staff\n`],
     ['Traeger/.DS_Store','x'],
   ],{deflate:true});
   const form=new FormData();
@@ -236,7 +245,7 @@ async function autonomousFolderIntakeAudit(fixtureEnv){
   // Die Struktur muss auch in der Rueckverfolgung stehen, nicht nur ihre Wirkung.
   assert.ok(view.data?.organization?.batch_id,'the batch must remember its organization import');
   const orgTypes=(view.data.organization.candidates||[]).map(c=>c.type).sort();
-  for(const expected of ['course','subject','org_unit','resource','lesson'])
+  for(const expected of ['course','subject','org_unit','resource','lesson','staff'])
     assert.ok(orgTypes.includes(expected),`${expected} must be recognised as structure, got ${orgTypes.join(',')}`);
 
   // Standorte, Bereiche und Raeume muessen wirklich entstanden sein - im echten Worker, mit dem
@@ -274,7 +283,30 @@ async function autonomousFolderIntakeAudit(fixtureEnv){
   assert.match(String(first.notes||''),/Unterrichtsart: Unterricht/,'the session type belongs in the note');
   assert.match(String(first.notes||''),new RegExp(`Abnahme Regelunterricht ${run}`),'the topic of the lesson belongs in the note');
 
-  console.log('Ganzer Ordner eingeworfen -> Standorte, Bereiche, Raeume, Kurse, Faecher, Stundenplan und der Teilnehmer des neuen Kurses ohne Handgriff verarbeitet: OK.');
+  // Die Portalrollen der Beschaeftigten. Geprueft wird hier, was dieser Lauf ehrlich pruefen kann:
+  // dass der echte Worker aus den Zeilen des Ordners beschaeftigte Personen macht, mit dem Bereich
+  // des Ordners und dem Profil ihrer Funktion. Das Erteilen der Freigabe selbst legt ein Konto an
+  // und verschickt dessen Aktivierung - dafuer braucht es einen Postausgang, den dieser lokale
+  // Lauf bewusst nicht hat (und dieser Lauf verschickt grundsaetzlich keine Post). Dass die
+  // Freigabe dann mit den richtigen Rechten am richtigen Bereich entsteht, prueft
+  // tests/organization-staff-roles.mjs gegen echtes SQLite mit allen Migrationen.
+  const staffCandidates=(view.data?.organization?.candidates||[]).filter(c=>c.type==='staff');
+  assert.equal(staffCandidates.length,2,`both staff rows must be recognised as staff, got ${JSON.stringify(staffCandidates)}`);
+  const byProfile=Object.fromEntries(staffCandidates.map(c=>[String(c.access_profile),c]));
+  assert.ok(byProfile.editor,`the participant service must be staffed as editor, got ${Object.keys(byProfile).join(',')}`);
+  assert.ok(byProfile.custom,'the IT support must get its own narrow set');
+  assert.deepEqual(byProfile.custom.access_permissions,['org.view','courses.view'],
+    'the IT support must not be offered participant data');
+  assert.ok(!(byProfile.editor.access_permissions||[]).includes('access.manage'),
+    'editing must not include handing out rights');
+  assert.equal(staffCandidates.filter(c=>String(c.access_profile)==='responsible').length,0,
+    'no responsible profile comes out of this folder');
+  for(const c of staffCandidates){
+    assert.equal(String(c.org_unit_ref),`ABN-OU-${run}`,'the staff grant must point at the unit of the same folder');
+    assert.deepEqual(c.warnings||[],[],`a clean staff row must not carry a warning: ${JSON.stringify(c.warnings)}`);
+  }
+
+  console.log('Ganzer Ordner eingeworfen -> Standorte, Bereiche, Raeume, Kurse, Faecher, Stundenplan, Portalrollen der Beschaeftigten und der Teilnehmer des neuen Kurses ohne Handgriff verarbeitet: OK.');
 }
 
 try{
