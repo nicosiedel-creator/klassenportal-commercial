@@ -11,7 +11,7 @@ import { id, normalizeEmail, nowIso, safeString, sha256Text, slugify } from './u
 import { parseDate, parseTime } from './timetable.js';
 
 export type OrganizationCandidateType='org_unit'|'resource'|'course'|'subject'|'lesson'|'participant'|'class_admin'|'guest'|'teacher'|'tenant_admin_review';
-export type OrganizationCandidate={type:OrganizationCandidateType;display_name:string|null;email:string|null;course_id:string|null;course_name:string|null;course_code:string|null;course_ref:string|null;subject_name:string|null;subject_short_name:string|null;confidence:number;warnings:string[];source_row:number|null;synthesized?:boolean;external_id?:string|null;parent_external_id?:string|null;org_unit_type_key?:string|null;org_unit_type_label?:string|null;org_unit_ref?:string|null;address?:Record<string,string>|null;resource_kind?:string|null;resource_status?:string|null;capacity?:number|null;features?:string[]|null;lesson_date?:string|null;lesson_start?:string|null;lesson_end?:string|null;room?:string|null;teacher_name?:string|null;notes?:string|null;};
+export type OrganizationCandidate={type:OrganizationCandidateType;display_name:string|null;email:string|null;course_id:string|null;course_name:string|null;course_code:string|null;course_ref:string|null;subject_name:string|null;subject_short_name:string|null;confidence:number;warnings:string[];source_row:number|null;synthesized?:boolean;external_id?:string|null;parent_external_id?:string|null;org_unit_type_key?:string|null;org_unit_type_label?:string|null;org_unit_ref?:string|null;address?:Record<string,string>|null;resource_kind?:string|null;resource_status?:string|null;capacity?:number|null;features?:string[]|null;lesson_date?:string|null;lesson_start?:string|null;lesson_end?:string|null;room?:string|null;notes?:string|null;};
 type ExistingCourse={id:string;name:string;code:string};
 const norm=(v:unknown,max=300)=>safeString(v,max).replace(/\s+/g,' ').trim();
 const key=(v:unknown)=>norm(v).toLocaleLowerCase('de-DE').replace(/[ä]/g,'ae').replace(/[ö]/g,'oe').replace(/[ü]/g,'ue').replace(/[ß]/g,'ss').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
@@ -123,11 +123,14 @@ function lessonData(row:Record<string,unknown>){
   const start=parseTime(rowValue(row,'start_time','beginn','start','von','startzeit','uhrzeit_von','beginn_uhrzeit'));
   const end=parseTime(rowValue(row,'end_time','ende','end','bis','endzeit','uhrzeit_bis','ende_uhrzeit','schluss'));
   const room=norm(rowValue(row,'room','raum','unterrichtsraum','room_external_id','raum_nr','raumnummer'),200)||null;
-  const teacher=norm(rowValue(row,'teacher','dozent','dozentin','lehrkraft','trainer','instructor','instructor_external_id','dozent_name'),200)||null;
+  // Nur Namen, keine Kennungen: "instructor_external_id: EMP-001" als "Dozent/in: EMP-001" in den
+  // Hinweis zu schreiben, waere eine Auskunft, die keine ist. Eine Zuordnung zum Dozentenstamm
+  // entsteht hier ohnehin nicht - dafuer gibt es die Dozentenliste.
+  const teacher=norm(rowValue(row,'teacher','dozent','dozentin','lehrkraft','trainer','dozent_name','teacher_name'),200)||null;
   const mode=norm(rowValue(row,'session_type','unterrichtsart','unterricht','format','modus'),120);
   const topic=norm(rowValue(row,'topic','thema','thema_der_stunde','hinweis','bemerkung','notiz','notes'),1500);
-  const notes=[mode?`Unterrichtsart: ${mode}`:'',topic].filter(Boolean).join('\n')||null;
-  return{date,start,end,room,teacher,notes};
+  const notes=[mode?`Unterrichtsart: ${mode}`:'',teacher?`Dozent/in: ${teacher}`:'',topic].filter(Boolean).join('\n')||null;
+  return{date,start,end,room,notes};
 }
 // Diese Rueckfaelle suchten das Wort irgendwo in der Angabe. "Exkursion" enthaelt "kurs", also
 // wurden im Abnahmepaket eines Kunden acht Exkursionen zu Kursen; "Gastronomie" enthielte "gast",
@@ -187,7 +190,7 @@ function baseCandidate(row:Record<string,unknown>,i:number,courses:ExistingCours
     if(l.start&&l.end&&l.end<=l.start)warnings.push('LESSON_END_BEFORE_START');
     if(!resolved.course&&!c.name&&!c.code&&!c.id)warnings.push('COURSE_REQUIRED');
     if(resolved.warning)warnings.push(resolved.warning);if(!resolved.course&&(c.name||c.code)&&!resolved.warning)warnings.push('COURSE_WILL_BE_CREATED');
-    return{type,display_name:[l.date,l.start&&l.end?`${l.start}–${l.end}`:''].filter(Boolean).join(' ')||null,email:null,course_id:resolved.course?.id||null,course_name:resolved.course?.name||c.name,course_code:resolved.course?.code||c.code,course_ref:courseRef(c),subject_name:s.name,subject_short_name:s.short,confidence:Math.max(0,100-warnings.filter(w=>w!=='COURSE_WILL_BE_CREATED').length*25),warnings,source_row:i,lesson_date:l.date,lesson_start:l.start,lesson_end:l.end,room:l.room,teacher_name:l.teacher,notes:l.notes,org_unit_ref:norm(rowValue(row,'org_unit_external_id','location_external_id','org_unit','organisationseinheit_id'),160)||null};}
+    return{type,display_name:[l.date,l.start&&l.end?`${l.start}–${l.end}`:''].filter(Boolean).join(' ')||null,email:null,course_id:resolved.course?.id||null,course_name:resolved.course?.name||c.name,course_code:resolved.course?.code||c.code,course_ref:courseRef(c),subject_name:s.name,subject_short_name:s.short,confidence:Math.max(0,100-warnings.filter(w=>w!=='COURSE_WILL_BE_CREATED').length*25),warnings,source_row:i,lesson_date:l.date,lesson_start:l.start,lesson_end:l.end,room:l.room,notes:l.notes,org_unit_ref:norm(rowValue(row,'org_unit_external_id','location_external_id','org_unit','organisationseinheit_id'),160)||null};}
   if(type==='course'){name=c.name||norm(rowValue(row,'name','display_name'),200)||null;if(!name&&!c.code)warnings.push('COURSE_NAME_REQUIRED');}
   else if(type==='subject'){name=s.name||norm(rowValue(row,'name','display_name'),200)||null;if(!name)warnings.push('SUBJECT_NAME_REQUIRED');}
   else{name=personName(row,type)||null;email=validEmail(rowValue(row,'email','e_mail','mail','emailadresse','teacher_email','dozent_email'))||null;if(!name)warnings.push('NAME_REQUIRED');if(!email&&type!=='teacher')warnings.push('EMAIL_REQUIRED');if(type==='teacher'&&!email)warnings.push('TEACHER_PORTAL_EMAIL_MISSING');}

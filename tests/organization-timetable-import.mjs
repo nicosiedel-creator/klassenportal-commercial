@@ -107,6 +107,9 @@ assert.match(rows[0].notes || '', /Unterrichtsart: Unterricht/, 'die Unterrichts
 assert.match(rows[0].notes || '', /Regelunterricht Verwaltungsgrundlagen A/, 'das Thema der Stunde ebenso');
 assert.equal(rows[2].starts_at, '2026-09-09T12:30:00', 'auch die dritte Stunde muss stimmen');
 assert.match(rows[2].notes || '', /Unterrichtsart: Online/, 'eine Online-Stunde bleibt als solche erkennbar');
+assert.doesNotMatch(rows[0].notes || '', /EMP-001/,
+  'eine Dozentenkennung ist kein Dozentenname - sie gehoert nicht als Auskunft in den Hinweis');
+
 
 // Derselbe Ordner ein zweites Mal geworfen darf den Stundenplan nicht verdoppeln.
 const zweiter = await previewOrganizationImport(env, auth, T, { source_name: '07_Stundenplan.csv', rows: planRows });
@@ -114,6 +117,17 @@ const zweiteAnwendung = await apply(zweiter);
 assert.equal(zweiteAnwendung.results.filter(r => r.type === 'lesson' && r.action === 'existing').length, 3,
   'beim zweiten Wurf muss jede Stunde als vorhanden erkannt werden');
 assert.equal(lessons().length, 3, 'und es duerfen keine weiteren Stunden entstehen');
+
+// Nennt die Datei die Lehrkraft beim Namen, steht sie im Hinweis.
+const MIT_DOZENT = `course_code,date,start_time,end_time,dozent
+ADM-26-01,2026-09-21,08:15,11:30,Dario Falkenau
+`;
+const mitDozent = await previewOrganizationImport(env, auth, T, { source_name: 'dozent.csv', rows: rowsOf(MIT_DOZENT) });
+assert.equal(mitDozent.candidates[0].type, 'lesson', 'eine Dozentenspalte macht daraus keine Personenzeile');
+await apply(mitDozent);
+const mitName = lessons().find(l => String(l.starts_at).startsWith('2026-09-21'));
+assert.ok(mitName, 'die Stunde muss entstehen');
+assert.match(mitName.notes || '', /Dozent\/in: Dario Falkenau/, 'der Name der Lehrkraft gehoert in den Hinweis');
 
 // Der Fall, der am echten Abnahmepaket alle 509 Stunden liegen liess: die Klasse gibt es beim
 // Hochladen noch nicht, und die Zeile nennt neben dem Kurscode auch die Kennung, unter der der
