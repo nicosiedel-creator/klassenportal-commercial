@@ -11,3 +11,4 @@ public/vendor/
 # nie ins Repository - auch dann nicht, wenn ein abgebrochener Lauf sie liegen lässt.
 wrangler.browser-e2e.json
 wrangler.browser-e2e-runtime.json
+wrangler.browser-e2e-*.json

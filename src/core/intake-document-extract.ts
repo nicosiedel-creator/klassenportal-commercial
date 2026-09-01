@@ -26,7 +26,21 @@ async function unzip(buffer:ArrayBuffer,wanted:(name:string)=>boolean,onSkipped?
 function xmlText(xml:string){return xml.replace(/<w:tab\/?[^>]*>/gi,'\t').replace(/<w:br\/?[^>]*>/gi,'\n').replace(/<\/w:p>/gi,'\n').replace(/<text:line-break\/?[^>]*>/gi,'\n').replace(/<\/text:p>/gi,'\n').replace(/<[^>]+>/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&').replace(/[ \t]+/g,' ').replace(/\n\s+/g,'\n').trim();}
 async function docxText(buffer:ArrayBuffer){const f=await unzip(buffer,n=>n==='word/document.xml'||n.startsWith('word/header')||n.startsWith('word/footer'));const parts=[...f.entries()].sort().map(([,b])=>xmlText(decoder.decode(b))).filter(Boolean);return parts.join('\n');}
 async function odtText(buffer:ArrayBuffer){const f=await unzip(buffer,n=>n==='content.xml');const b=f.get('content.xml');return b?xmlText(decoder.decode(b)):'';}
-function jsonRows(value:unknown):Record<string,unknown>[]|null{if(Array.isArray(value))return value.filter(x=>x&&typeof x==='object') as Record<string,unknown>[];if(value&&typeof value==='object'&&Array.isArray((value as any).rows))return (value as any).rows;return null;}
+// Ein Traeger beschreibt sich selbst als ein flaches Objekt: Name, Anschrift, Kontakt. Gemessen
+// im Kundenlauf stand dessen 01_Organisation.json im Pruef-Cockpit als "unsupported" - ausgerechnet
+// die Datei mit den Stammdaten. Ein Objekt, dessen Werte allesamt einfache Angaben sind, ist genau
+// eine Zeile. Steckt dagegen eine Verschachtelung darin, ist es keine Zeile - dann bleibt es wie
+// bisher unlesbar, statt geraten zu werden.
+function jsonRows(value:unknown):Record<string,unknown>[]|null{
+  if(Array.isArray(value))return value.filter(x=>x&&typeof x==='object') as Record<string,unknown>[];
+  if(value&&typeof value==='object'){
+    const obj=value as Record<string,unknown>;
+    if(Array.isArray(obj.rows))return obj.rows as Record<string,unknown>[];
+    const werte=Object.values(obj);
+    if(werte.length&&werte.every(v=>v===null||v===undefined||['string','number','boolean'].includes(typeof v)))return[obj];
+  }
+  return null;
+}
 function textAllowed(buffer:ArrayBuffer){return buffer.byteLength<=MAX_TEXT_BYTES;}
 
 // Ein hochgeladener Ordner kommt als ZIP an. Er wird ausgepackt und jeder enthaltene Eintrag
