@@ -136,4 +136,36 @@ for (const endung of ['.ics', '.eml'])
   assert.ok(seite.includes(`accept=`) && (seite.match(/accept="([^"]+)"/) || [])[1]?.includes(endung),
     `die öffentliche Upload-Seite muss ${endung} anbieten`);
 
+// ---------------------------------------------------------------------------------------------
+// 5. Die Stammdatendatei des Trägers. Sie beschreibt EINE Organisation - also ein flaches Objekt,
+//    kein Array. jsonRows kannte nur Array oder {rows:[...]}, deshalb stand ausgerechnet
+//    01_Organisation.json im Prüf-Cockpit als "unsupported · UNSUPPORTED_DOCUMENT".
+// ---------------------------------------------------------------------------------------------
+const alsJson = o => new TextEncoder().encode(JSON.stringify(o)).buffer;
+const traeger = {
+  name: 'Hellersdorfer Bildungs gGmbH', portal_name: 'Hellersdorfer Bildungsportal',
+  street: 'Stendaler Straße 99', postal_code: '12627', city: 'Berlin', country: 'Deutschland',
+  phone: '+49 30 555 019 260', contact_email: 'sarah.koehler@traeger.example.invalid',
+};
+const flach = await extractIntakeDocument('01_Organisation.json', 'application/json', alsJson(traeger));
+assert.equal(flach.kind, 'rows', `die Stammdatendatei muss lesbar sein, war: ${flach.kind}`);
+assert.equal(flach.rows.length, 1, 'eine Organisation ist genau eine Zeile');
+assert.equal(flach.rows[0].name, 'Hellersdorfer Bildungs gGmbH');
+assert.equal(flach.rows[0].city, 'Berlin', 'die Anschrift muss vollständig ankommen');
+
+// Ein Array bleibt ein Array, und {rows:[...]} bleibt {rows:[...]} - das Bisherige gilt weiter.
+const array = await extractIntakeDocument('liste.json', 'application/json', alsJson([{ name: 'A' }, { name: 'B' }]));
+assert.equal(array.rows.length, 2, 'ein Array bleibt ein Array');
+const mitRows = await extractIntakeDocument('liste.json', 'application/json', alsJson({ rows: [{ name: 'A' }] }));
+assert.equal(mitRows.rows.length, 1, 'ein Objekt mit rows-Feld bleibt unverändert');
+
+// Und es wird nichts geraten: ein verschachteltes Objekt ist keine Zeile und bleibt unlesbar,
+// statt zu einer Zeile flachgedrückt zu werden, in der die Hälfte fehlt.
+const verschachtelt = await extractIntakeDocument('paket.json', 'application/json',
+  alsJson({ traeger: { name: 'X' }, kurse: [{ code: 'K1' }] }));
+assert.equal(verschachtelt.kind, 'unsupported',
+  `ein verschachteltes Objekt darf nicht als eine Zeile ausgegeben werden, war: ${verschachtelt.kind}`);
+const leer = await extractIntakeDocument('leer.json', 'application/json', alsJson({}));
+assert.equal(leer.kind, 'unsupported', 'ein leeres Objekt ist keine Zeile');
+
 console.log('Kalender und E-Mails im Import: .ics wird zu Terminzeilen, .eml zum lesbaren Vorgang, und alle drei Filter davor lassen beide durch: OK');

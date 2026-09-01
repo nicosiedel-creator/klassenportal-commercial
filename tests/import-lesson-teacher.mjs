@@ -132,4 +132,40 @@ assert.throws(()=>db.prepare('INSERT INTO teachers(id,tenant_id,name,email,exter
   .run('tch_x','ten_les','Jemand',null,'D001',TS),/constraint|UNIQUE/i,
   'dieselbe Dozentenkennung darf am selben Träger nicht zweimal vergeben werden');
 
+// ---------------------------------------------------------------------------------------------
+// 5. Der Fall aus dem echten Kundenlauf: EIN eingeworfener Ordner, EIN Stapel - Dozentenliste und
+//    Stundenplan liegen darin gemischt. Solange die Übernahme 'lesson' vor 'teacher' abarbeitete,
+//    war der Dozentenstamm beim Anlegen der Stunde noch leer: gemessen 29 Unterrichtsstunden ohne
+//    eine einzige Dozentin, obwohl beide Listen im selben Stapel lagen.
+// ---------------------------------------------------------------------------------------------
+const db2=new DatabaseSync(':memory:');
+db2.exec('PRAGMA foreign_keys=ON;');
+db2.exec('CREATE TABLE IF NOT EXISTS d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,applied_at TEXT DEFAULT CURRENT_TIMESTAMP);');
+for(const name of (await readdir('migrations')).filter(f=>f.endsWith('.sql')).sort())db2.exec(await readFile(`migrations/${name}`,'utf8'));
+const T2='ten_mix',U2='usr_mix';
+db2.exec(`
+INSERT INTO tenants(id,name,slug,status,created_at,updated_at) VALUES('${T2}','Hellersdorfer Bildungs gGmbH','hbg-mix','active','${TS}','${TS}');
+INSERT INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at) VALUES('${U2}','admin2@example.invalid','Admin','x',0,0,'active','${TS}','${TS}');
+INSERT INTO memberships(id,tenant_id,course_id,user_id,role,created_at) VALUES('mem_mix','${T2}',NULL,'${U2}','tenant_admin','${TS}');
+INSERT INTO courses(id,tenant_id,location_id,name,code,access_mode,is_active,created_at,updated_at) VALUES('crs_mix','${T2}',NULL,'Umschulung VFA','VFA-26-A','login',1,'${TS}','${TS}');
+`);
+const env2={DB:d1(db2)};
+const auth2={userId:U2,role:'tenant_admin',tenantIds:[T2],courseIds:[],orgUnitIds:[],permissions:[],isPlatformAdmin:false};
+// Die Stundenzeile steht hier absichtlich VOR der Dozentenzeile - so kommt ein Ordner an.
+const gemischt=[
+  {typ:'Unterricht',datum:'10.09.2026',beginn:'08:15',ende:'11:30',course_code:'VFA-26-A',dozenten_id:'D001',raum:'A-204'},
+  {dozenten_id:'D001',display_name:'Dr. Lena Hoffmann',email:'lena.hoffmann@traeger.example.invalid'},
+];
+const vorschau=await previewOrganizationImport(env2,auth2,T2,{source_name:'Ordner',rows:gemischt});
+const typen=vorschau.candidates.map(c=>c.type);
+assert.ok(typen.includes('lesson')&&typen.includes('teacher'),
+  `beide Zeilenarten müssen im selben Stapel erkannt werden, gefunden: ${JSON.stringify(typen)}`);
+await applyOrganizationImport(env2,auth2,T2,{batch_id:vorschau.batch_id,digest:vorschau.digest});
+const dozent=db2.prepare("SELECT id FROM teachers WHERE tenant_id=? AND external_id='D001'").get(T2);
+assert.ok(dozent,'die Dozentin muss aus demselben Stapel entstehen');
+const stunde=db2.prepare('SELECT teacher_id FROM lessons WHERE tenant_id=?').get(T2);
+assert.ok(stunde,'die Unterrichtsstunde muss aus demselben Stapel entstehen');
+assert.equal(stunde.teacher_id,dozent.id,
+  'im selben Stapel muss die Dozentin vor der Stunde angelegt werden - sonst steht die Stunde ohne sie da');
+
 console.log('import-lesson-teacher: ok');

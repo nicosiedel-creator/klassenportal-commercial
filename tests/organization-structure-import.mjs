@@ -236,8 +236,12 @@ mixed[3].name='Pflege & Gesundheit';
 // Die Kurszeile steht in der Datei zweimal: einmal ohne Bereichsangabe und einmal mit. Aus beiden
 // darf ein Fund werden, und die Bereichsangabe darf dabei nicht verloren gehen.
 mixed.splice(2,0,{role:'Kurs',course_name:'Pflege 2026 A',course_code:'PF26A'});
-assert.deepEqual(mixed.map(importRole),['participant','teacher','course','course','org_unit'],
-  'die Datei nennt Teilnehmer zuerst und die Einheit zuletzt - genau umgekehrt zur noetigen Reihenfolge');
+// Und ganz vorn eine Unterrichtsstunde - die Zeilenart mit den meisten Abhaengigkeiten: sie
+// braucht ihren Kurs UND ihre Dozentin, und beide stehen in dieser Datei hinter ihr.
+mixed.unshift({role:'Unterricht',datum:'10.09.2026',beginn:'08:15',ende:'11:30',
+  course_code:'PF26A',dozent:'Alma Reiter',raum:'A-1'});
+assert.deepEqual(mixed.map(importRole),['lesson','participant','teacher','course','course','org_unit'],
+  'die Datei nennt die Stunde zuerst und die Einheit zuletzt - genau umgekehrt zur noetigen Reihenfolge');
 
 // Neue Personen bekommen eine Einladung. Ohne Mailweg lehnt der Import sie zu Recht ab - das ist
 // eine eigene Regel und darf diese Messung der Reihenfolge nicht verdecken. Der Versand selbst
@@ -257,9 +261,22 @@ const mixedResult=await applyOrganizationImport(mailEnv,auth,T,{batch_id:mixedPr
 const step=type=>mixedResult.results.findIndex(r=>r.type===type);
 assert.ok(step('org_unit')<step('course'),'die Einheit muss vor dem Kurs entstehen');
 assert.ok(step('course')<step('participant'),'der Kurs muss vor seinem Teilnehmer entstehen');
-assert.ok(step('participant')<step('teacher'),'der Dozent wird zuletzt zugeordnet');
+// Der Dozent haengt an seinem Kurs, nicht am Teilnehmer. Frueher stand hier "der Dozent wird
+// zuletzt zugeordnet" - das hielt eine zufaellige Reihenfolge fest, keine Abhaengigkeit, und
+// verdeckte die eine, die wirklich zaehlt: eine Unterrichtsstunde braucht ihre Dozentin. Solange
+// 'lesson' vor 'teacher' lief, ergab ein ganzer eingeworfener Ordner 29 Stunden ohne eine
+// einzige Dozentin, obwohl beide Listen darin lagen.
+assert.ok(step('course')<step('teacher'),'der Dozent haengt an seinem Kurs und muss nach ihm entstehen');
+assert.ok(step('teacher')<step('lesson'),'die Dozentin muss vor der Unterrichtsstunde entstehen, die sie haelt');
 for(const r of mixedResult.results)
   assert.notEqual(r.action,'skipped',`nichts darf an der Reihenfolge scheitern: ${JSON.stringify(r)}`);
+// Und die Zuordnung ist wirklich entstanden, nicht nur die Reihenfolge stimmig: die Stunde aus
+// derselben Datei traegt die Dozentin aus derselben Datei.
+const gehalteneStunde=db.prepare('SELECT teacher_id FROM lessons WHERE tenant_id=?').get(T);
+assert.ok(gehalteneStunde,'die Unterrichtsstunde aus derselben Datei muss entstanden sein');
+assert.equal(gehalteneStunde.teacher_id,
+  db.prepare('SELECT id FROM teachers WHERE tenant_id=? AND name=?').get(T,'Alma Reiter')?.id,
+  'die Stunde muss die Dozentin tragen, die dieselbe Datei anlegt');
 const neuerKurs=db.prepare('SELECT id FROM courses WHERE tenant_id=? AND code=?').get(T,'pf26a');
 assert.ok(neuerKurs,'der Kurs aus derselben Datei muss entstanden sein');
 assert.equal(db.prepare('SELECT COUNT(*) n FROM memberships WHERE tenant_id=? AND course_id=?').get(T,neuerKurs.id).n>0,true,
