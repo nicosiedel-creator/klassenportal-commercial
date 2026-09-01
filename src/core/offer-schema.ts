@@ -20,7 +20,9 @@ export async function ensureOfferSchema(env:Env):Promise<void>{
     terms_accepted INTEGER NOT NULL CHECK(terms_accepted IN (0,1)),dpa_accepted INTEGER NOT NULL CHECK(dpa_accepted IN (0,1)),snapshot_json TEXT NOT NULL,
     FOREIGN KEY(quote_id) REFERENCES commercial_quotes(id) ON DELETE CASCADE)`).run();
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS commercial_offer_events (
-    id TEXT PRIMARY KEY,quote_id TEXT NOT NULL,event_type TEXT NOT NULL,detail_json TEXT,created_at TEXT NOT NULL,
+    id TEXT PRIMARY KEY,quote_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('created','published','viewed','accepted','cancelled','expired','onboarding_created','email_sent','email_failed')),
+    detail_json TEXT,created_at TEXT NOT NULL,
     FOREIGN KEY(quote_id) REFERENCES commercial_quotes(id) ON DELETE CASCADE)`).run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_offer_events_quote ON commercial_offer_events(quote_id,created_at DESC)').run();
   ensured=true;

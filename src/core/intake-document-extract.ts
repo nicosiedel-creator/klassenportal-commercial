@@ -42,7 +42,9 @@ function ignorableEntry(name:string){
 function folderEntryWanted(name:string){
   if(ignorableEntry(name))return false;
   const base=name.split('/').pop()||'';
-  return /\.(?:csv|xlsx|json|txt|docx|odt|pdf|png|jpe?g|webp|tiff?|heic)$/i.test(base);
+  // Dieselbe Liste wie fuer einzeln eingeworfene Dateien - sonst verliert ein Kunde, der seinen
+  // Ordner als ZIP packt, genau die Unterlagen, die er einzeln haette einwerfen koennen.
+  return /\.(?:csv|xlsx|json|txt|docx|odt|pdf|ics|eml|png|jpe?g|webp|tiff?|heic)$/i.test(base);
 }
 function guessType(name:string){
   const n=name.toLowerCase();
@@ -52,6 +54,8 @@ function guessType(name:string){
   if(n.endsWith('.txt'))return'text/plain';
   if(n.endsWith('.docx'))return'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   if(n.endsWith('.odt'))return'application/vnd.oasis.opendocument.text';
+  if(n.endsWith('.ics'))return'text/calendar';
+  if(n.endsWith('.eml'))return'message/rfc822';
   if(n.endsWith('.pdf'))return'application/pdf';
   return'application/octet-stream';
 }
@@ -73,6 +77,123 @@ async function extractFolderArchive(buffer:ArrayBuffer):Promise<IntakeExtracted>
   return{kind:'archive',entries,skipped};
 }
 
+// Kalendereintraege und E-Mails waren die einzigen Unterlagenarten, die ein Kunde einwirft und die
+// hier gar nicht erst ankamen: der Ordner-Einwurf filterte .ics und .eml schon im Browser weg, und
+// hier haetten sie "unsupported" ergeben. Gemessen an einem echten Abnahmepaket: von 18 Dateien
+// wurden 4 nicht uebertragen - der Pruefungskalender und drei Betriebsmails (Raumsperrung,
+// Dozentenausfall, Pruefungsverschiebung). Genau die Vorgaenge, die den Betrieb aendern.
+//
+// Ein Kalender wird als Zeilen gelesen, damit er sich mit einer Pruefungs- oder Stundenplanliste
+// zusammenfuehren laesst statt daneben zu stehen. Eine Mail wird als Text gelesen; ueber ihren
+// Inhalt entscheidet dieselbe Stelle wie bei einem Word-Dokument.
+
+// RFC 5545: fortgesetzte Zeilen beginnen mit Leerzeichen oder Tabulator.
+function unfoldIcs(text:string):string[]{
+  const out:string[]=[];
+  for(const raw of text.split(/\r?\n/)){
+    if(/^[ \t]/.test(raw)&&out.length)out[out.length-1]+=raw.slice(1);
+    else out.push(raw);
+  }
+  return out;
+}
+function icsValue(v:string):string{return v.replace(/\\n/gi,' ').replace(/\\,/g,',').replace(/\\;/g,';').replace(/\\\\/g,'\\').trim();}
+// 20260918T090000 / 20260918T090000Z / 20260918 -> Datum und Uhrzeit getrennt, deutsch geschrieben,
+// damit die Spalten zu denen einer eingeworfenen Pruefungs- oder Stundenplanliste passen.
+function icsMoment(raw:string):{datum:string;zeit:string}{
+  const m=/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?/.exec(raw.trim());
+  if(!m)return{datum:'',zeit:''};
+  return{datum:`${m[3]}.${m[2]}.${m[1]}`,zeit:m[4]?`${m[4]}:${m[5]}`:''};
+}
+export function icsRows(text:string):Record<string,unknown>[]{
+  const rows:Record<string,unknown>[]=[];
+  let feld:Record<string,string>|null=null;
+  for(const line of unfoldIcs(text)){
+    const trimmed=line.trim();
+    if(/^BEGIN:VEVENT$/i.test(trimmed)){feld={};continue;}
+    if(/^END:VEVENT$/i.test(trimmed)){
+      if(feld){
+        const start=icsMoment(feld.DTSTART||''),ende=icsMoment(feld.DTEND||'');
+        const titel=feld.SUMMARY||'';
+        // "BGB-Klausur 1 (VFA-26-A)" - der Kurs steht in Klammern am Ende. Nur dann wird er
+        // uebernommen; geraten wird nichts.
+        const klammer=/\(([A-Za-z0-9][A-Za-z0-9._\/-]{1,39})\)\s*$/.exec(titel);
+        rows.push({
+          Termin_ID:(feld.UID||'').split('@')[0],
+          Titel:klammer?titel.slice(0,klammer.index).trim():titel,
+          Kurscode:klammer?klammer[1]:'',
+          Datum:start.datum,Beginn:start.zeit,Ende:ende.zeit||'',
+          Raum:feld.LOCATION||'',Beschreibung:feld.DESCRIPTION||'',
+        });
+      }
+      feld=null;continue;
+    }
+    if(!feld)continue;
+    const i=trimmed.indexOf(':');
+    if(i<1)continue;
+    const name=trimmed.slice(0,i).split(';')[0].toUpperCase();
+    if(['UID','SUMMARY','DTSTART','DTEND','LOCATION','DESCRIPTION'].includes(name))feld[name]=icsValue(trimmed.slice(i+1));
+  }
+  return rows;
+}
+
+// Quoted-printable kodiert Bytes, nicht Zeichen: "=C3=BC" sind die zwei UTF-8-Bytes eines "ü".
+// Wer sie einzeln in Zeichen verwandelt, bekommt "Ã¼" - aus "Prüfung" wird "PrÃ¼fung". Deshalb
+// erst zu Bytes, dann als UTF-8 lesen.
+function decodeQuotedPrintable(body:string):string{
+  const ohneUmbruch=body.replace(/=\r?\n/g,'');
+  const bytes:number[]=[];
+  for(let i=0;i<ohneUmbruch.length;i++){
+    const c=ohneUmbruch[i];
+    if(c==='='&&/^[0-9A-Fa-f]{2}$/.test(ohneUmbruch.slice(i+1,i+3))){bytes.push(parseInt(ohneUmbruch.slice(i+1,i+3),16));i+=2;continue;}
+    for(const b of new TextEncoder().encode(c))bytes.push(b);
+  }
+  return new TextDecoder('utf-8').decode(new Uint8Array(bytes));
+}
+// Kopfzeilen tragen Umlaute nach RFC 2047: "=?UTF-8?Q?Pr=C3=BCfung?=" oder base64-kodiert.
+// Ohne diese Zeile steht der Betreff einer gewoehnlichen deutschen Mail als Buchstabensalat im
+// Pruefungscockpit.
+function decodeHeaderWord(value:string):string{
+  return value.replace(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g,(ganz,_zeichensatz,art,inhalt)=>{
+    try{
+      if(/^[Bb]$/.test(art)){
+        const roh=atob(inhalt);const bytes=new Uint8Array(roh.length);
+        for(let i=0;i<roh.length;i++)bytes[i]=roh.charCodeAt(i);
+        return new TextDecoder('utf-8').decode(bytes);
+      }
+      return decodeQuotedPrintable(inhalt.replace(/_/g,' '));
+    }catch{return ganz;}
+  });
+}
+// Aus einer Mail wird der Vorgang, nicht der Umschlag: Betreff, Datum, Absender und der lesbare
+// Textteil. Mehrteilige Mails liefern ihren ersten Textteil; ist keiner dabei, bleibt es beim Kopf.
+export function emlText(raw:string):string{
+  const trenner=raw.indexOf('\r\n\r\n')>=0?'\r\n\r\n':'\n\n';
+  const kopfText=raw.slice(0,Math.max(raw.indexOf(trenner),0)||raw.length);
+  const kopfZeilen:string[]=[];
+  for(const zeile of kopfText.split(/\r?\n/)){
+    if(/^[ \t]/.test(zeile)&&kopfZeilen.length)kopfZeilen[kopfZeilen.length-1]+=' '+zeile.trim();
+    else kopfZeilen.push(zeile);
+  }
+  const kopf=(name:string)=>{
+    const treffer=kopfZeilen.find(z=>z.toLowerCase().startsWith(name.toLowerCase()+':'));
+    return treffer?decodeHeaderWord(treffer.slice(name.length+1).trim()):'';
+  };
+  let koerper=raw.slice(raw.indexOf(trenner)+trenner.length);
+  const grenze=/boundary="?([^";\r\n]+)"?/i.exec(kopfText);
+  if(grenze){
+    const teile=koerper.split(new RegExp('--'+grenze[1].replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+    const text=teile.find(t=>/content-type:\s*text\/plain/i.test(t))||teile.find(t=>t.trim());
+    if(text){
+      const i=text.indexOf(trenner);
+      koerper=i>=0?text.slice(i+trenner.length):text;
+      if(/content-transfer-encoding:\s*quoted-printable/i.test(text))koerper=decodeQuotedPrintable(koerper);
+    }
+  }else if(/content-transfer-encoding:\s*quoted-printable/i.test(kopfText))koerper=decodeQuotedPrintable(koerper);
+  const kopfzeile=[['Betreff',kopf('Subject')],['Datum',kopf('Date')],['Von',kopf('From')],['An',kopf('To')]]
+    .filter(([,v])=>v).map(([k,v])=>`${k}: ${v}`).join('\n');
+  return [kopfzeile,koerper.replace(/\r/g,'').trim()].filter(Boolean).join('\n\n').trim();
+}
+
 export async function extractIntakeDocument(filename:string,contentType:string,buffer:ArrayBuffer):Promise<IntakeExtracted>{
   const name=filename.toLowerCase(),type=contentType.toLowerCase(),bytes=new Uint8Array(buffer);
   if(name.endsWith('.zip')||type==='application/zip'||type==='application/x-zip-compressed'){if(!zipMagic(bytes))return{kind:'unsupported'};try{return await extractFolderArchive(buffer);}catch{return{kind:'unsupported'};}}
@@ -83,6 +204,8 @@ export async function extractIntakeDocument(filename:string,contentType:string,b
   if(name.endsWith('.odt')||type==='application/vnd.oasis.opendocument.text'){if(!zipMagic(bytes))return{kind:'unsupported'};const text=await odtText(buffer);return text?{kind:'texts',texts:[text]}:{kind:'unsupported'};}
   if(name.endsWith('.rtf')||name.endsWith('.html')||name.endsWith('.htm')||type==='application/rtf'||type==='text/rtf'||type==='text/html')return{kind:'unsupported'};
   if(name.endsWith('.txt')||type==='text/plain'){if(!textAllowed(buffer))return{kind:'unsupported'};const text=decoder.decode(buffer).trim();return text?{kind:'texts',texts:[text]}:{kind:'unsupported'};}
+  if(name.endsWith('.ics')||type==='text/calendar'){if(!textAllowed(buffer))return{kind:'unsupported'};const rows=icsRows(decoder.decode(buffer));return rows.length?{kind:'rows',rows}:{kind:'unsupported'};}
+  if(name.endsWith('.eml')||type==='message/rfc822'){if(!textAllowed(buffer))return{kind:'unsupported'};const text=emlText(decoder.decode(buffer));return text?{kind:'texts',texts:[text]}:{kind:'unsupported'};}
   if(name.endsWith('.pdf')||type==='application/pdf')return pdfMagic(bytes)?{kind:'client_pdf'}:{kind:'unsupported'};
   if(/\.(?:png|jpe?g|webp|tiff?|heic)$/i.test(name)||type.startsWith('image/'))return{kind:'ocr_required'};
   return{kind:'unsupported'};

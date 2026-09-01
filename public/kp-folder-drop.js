@@ -6,8 +6,8 @@
 // zieht. Deshalb liegt sie sichtbar im Dialog, und die Erkennung dahinter ist an beiden Stellen
 // dieselbe.
 (function(){
-  const ACCEPT='.pdf,.csv,.xlsx,.json,.txt,.docx,.odt,.zip,.png,.jpg,.jpeg,.webp,.tif,.tiff';
-  const SUPPORTED=/\.(?:pdf|csv|xlsx|json|txt|docx|odt|zip|png|jpe?g|webp|tiff?|heic)$/i;
+  const ACCEPT='.pdf,.csv,.xlsx,.json,.txt,.docx,.odt,.zip,.ics,.eml,.png,.jpg,.jpeg,.webp,.tif,.tiff';
+  const SUPPORTED=/\.(?:pdf|csv|xlsx|json|txt|docx|odt|zip|ics|eml|png|jpe?g|webp|tiff?|heic)$/i;
   const STRUCTURED=/\.(?:csv|xlsx|json|txt)$/i;
   const MAX_FILES=500,MAX_DEPTH=8;
 
@@ -56,8 +56,8 @@
   }
 
   const emptyMessage=folder=>folder
-    ?'In diesem Ordner ist keine lesbare Unterlage. Unterstützt werden PDF, Word, OpenDocument, CSV, Excel, JSON, Text, ZIP und Bilder.'
-    :'Keine lesbare Unterlage dabei. Unterstützt werden PDF, Word, OpenDocument, CSV, Excel, JSON, Text, ZIP und Bilder.';
+    ?'In diesem Ordner ist keine lesbare Unterlage. Unterstützt werden PDF, Word, OpenDocument, CSV, Excel, JSON, Text, Kalender (ICS), E-Mails (EML), ZIP und Bilder.'
+    :'Keine lesbare Unterlage dabei. Unterstützt werden PDF, Word, OpenDocument, CSV, Excel, JSON, Text, Kalender (ICS), E-Mails (EML), ZIP und Bilder.';
 
   // Eine sichtbare Ablegeflaeche mit beiden Auswahlknoepfen. Sie meldet jedes Ergebnis in derselben
   // Form zurueck, egal ob abgelegt, als Ordner oder als Einzeldateien gewaehlt.
