@@ -24,7 +24,10 @@ function error(e:unknown):Response{
     :code==='INTERNAL_ERROR'?500:400);
   return out({ok:false,error:code},status);
 }
-function deliveryError(e:unknown){return{sent:false,mailId:null,error:String((e as Error)?.message||'MAIL_SEND_FAILED')};}
+// Was hier hineingereicht wird, steht gleich in der Oberflaeche. Die rohe Meldung der Datenbank
+// gehoert dort nicht hin - gemessen stand im Hinweisfenster woertlich "D1_ERROR: CHECK
+// constraint failed: event_type IN (...) SQLITE_CONSTRAINT".
+function deliveryError(e:unknown){return{sent:false,mailId:null,error:safeErrorCode(e)};}
 function activeOriginUrl(request:Request,value:string):string{
   try{const src=new URL(value),dst=new URL(request.url);return `${dst.origin}${src.pathname}${src.search}${src.hash}`;}catch{return value;}
 }
