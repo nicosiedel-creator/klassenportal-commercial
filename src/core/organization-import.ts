@@ -11,8 +11,8 @@ import { savePlanningResource } from './planning-constraints.js';
 import { id, normalizeEmail, nowIso, safeString, sha256Text, slugify } from './utils.js';
 import { parseDate, parseTime } from './timetable.js';
 
-export type OrganizationCandidateType='org_unit'|'resource'|'course'|'subject'|'lesson'|'participant'|'class_admin'|'guest'|'teacher'|'staff'|'tenant_admin_review';
-export type OrganizationCandidate={type:OrganizationCandidateType;display_name:string|null;email:string|null;course_id:string|null;course_name:string|null;course_code:string|null;course_ref:string|null;subject_name:string|null;subject_short_name:string|null;confidence:number;warnings:string[];source_row:number|null;synthesized?:boolean;external_id?:string|null;parent_external_id?:string|null;org_unit_type_key?:string|null;org_unit_type_label?:string|null;org_unit_ref?:string|null;address?:Record<string,string>|null;resource_kind?:string|null;resource_status?:string|null;capacity?:number|null;features?:string[]|null;lesson_date?:string|null;lesson_start?:string|null;lesson_end?:string|null;room?:string|null;notes?:string|null;access_profile?:OrgProfile|null;access_permissions?:OrgPermission[]|null;access_label?:string|null;teacher_ref?:string|null;};
+export type OrganizationCandidateType='org_unit'|'resource'|'course'|'subject'|'lesson'|'exam'|'participant'|'class_admin'|'guest'|'teacher'|'staff'|'tenant_admin_review';
+export type OrganizationCandidate={type:OrganizationCandidateType;display_name:string|null;email:string|null;course_id:string|null;course_name:string|null;course_code:string|null;course_ref:string|null;subject_name:string|null;subject_short_name:string|null;confidence:number;warnings:string[];source_row:number|null;synthesized?:boolean;external_id?:string|null;parent_external_id?:string|null;org_unit_type_key?:string|null;org_unit_type_label?:string|null;org_unit_ref?:string|null;address?:Record<string,string>|null;resource_kind?:string|null;resource_status?:string|null;capacity?:number|null;features?:string[]|null;lesson_date?:string|null;lesson_start?:string|null;lesson_end?:string|null;room?:string|null;notes?:string|null;access_profile?:OrgProfile|null;access_permissions?:OrgPermission[]|null;access_label?:string|null;teacher_ref?:string|null;exam_title?:string|null;allowed_aids?:string|null;};
 type ExistingCourse={id:string;name:string;code:string};
 const norm=(v:unknown,max=300)=>safeString(v,max).replace(/\s+/g,' ').trim();
 const key=(v:unknown)=>norm(v).toLocaleLowerCase('de-DE').replace(/[ä]/g,'ae').replace(/[ö]/g,'oe').replace(/[ü]/g,'ue').replace(/[ß]/g,'ss').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
@@ -104,6 +104,7 @@ const EXPLICIT_ROLE:[RegExp,OrganizationCandidateType][]=[
   [/^(org_unit|orgunit|organisationseinheit|standort|location)$/,'org_unit'],
   [/^(resource|ressource|raum|room)$/,'resource'],
   [/^(lesson|unterricht|unterrichtsstunde|stunde|stundenplan|schulstunde|timetable)$/,'lesson'],
+  [/^(exam|pruefung|pruefungen|klausur|leistungskontrolle|examen)$/,'exam'],
   [/^(staff|beschaeftigt|beschaeftigte|beschaeftigter|mitarbeiter|mitarbeiterin)$/,'staff'],
 ];
 // Ein ganzer Ordner enthaelt in aller Regel auch den Stundenplan. Bisher hatte diese Weiche
@@ -119,6 +120,24 @@ const EXPLICIT_ROLE:[RegExp,OrganizationCandidateType][]=[
 export function lessonSignal(row:Record<string,unknown>):boolean{
   const d=lessonData(row);
   return Boolean(d.date&&d.start&&d.end);
+}
+// Eine Pruefung sieht aus wie eine Unterrichtsstunde: Datum, Beginn, Ende, Kurs, Raum. Sie ist
+// aber ein eigener Vorgang - und sie traegt eine Kennung, ueber die derselbe Termin aus zwei
+// Dateien (Pruefungsliste und Pruefungskalender) zu EINER Pruefung zusammenfaellt statt zu zweien.
+const EXAM_WORDS=/(klausur|pruefung|prufung|leistungskontrolle|examen|abschlusstest|zwischentest)/;
+export function examSignal(row:Record<string,unknown>):boolean{
+  const kennung=norm(rowValue(row,'pruefung_id','pruefungs_id','pruefungsid','exam_id','klausur_id'),160);
+  if(kennung)return true;
+  // Ein Kalendereintrag traegt nur eine allgemeine Terminkennung. Er gilt nur dann als Pruefung,
+  // wenn sein eigener Titel es sagt - geraten wird nicht.
+  const terminId=norm(rowValue(row,'termin_id','event_id','uid'),160);
+  if(!terminId)return false;
+  const d=lessonData(row);
+  if(!d.date||!d.start)return false;
+  return EXAM_WORDS.test(key(rowValue(row,'titel','title','bezeichnung','summary','display_name')));
+}
+export function examRef(row:Record<string,unknown>):string|null{
+  return norm(rowValue(row,'pruefung_id','pruefungs_id','pruefungsid','exam_id','klausur_id','termin_id','event_id','uid'),160)||null;
 }
 function lessonData(row:Record<string,unknown>){
   const date=parseDate(rowValue(row,'date','datum','tag','unterrichtstag','schultag'));
@@ -208,6 +227,7 @@ export function importRole(row:Record<string,unknown>):OrganizationCandidateType
   const raw=key(rowValue(row,'role','rolle','funktion','person_type','personenart','typ','type'));
   for(const [pattern,role] of EXPLICIT_ROLE)if(pattern.test(raw))return role;
   const stated=portalRole(row);if(stated)return stated;
+  if(examSignal(row))return'exam';
   if(lessonSignal(row))return'lesson';
   if(word('tenant_admin|kunden_?admin|bildungstraeger_admin|gesamtadmin|organisationsadmin',raw))return'tenant_admin_review';
   if(resourceSignal(row,raw))return'resource';
@@ -266,6 +286,17 @@ function baseCandidate(row:Record<string,unknown>,i:number,courses:ExistingCours
     if(!unitRef)warnings.push('STAFF_ORG_UNIT_REQUIRED');
     if(access.confirm)warnings.push('ACCESS_RESPONSIBLE_CONFIRMATION_REQUIRED');
     return{type,display_name:name,email,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:null,subject_short_name:null,confidence:Math.max(0,100-warnings.filter(w=>w!=='ACCESS_RESPONSIBLE_CONFIRMATION_REQUIRED').length*25),warnings,source_row:i,org_unit_ref:unitRef,access_profile:access.profile,access_permissions:access.permissions,access_label:access.label};}
+  if(type==='exam'){const l=lessonData(row);
+    if(!l.date)l.date=parseDate(rowValue(row,'current_date','exam_date','pruefungsdatum','pruefungstermin','termin','termindatum','geplant_am'));const titel=norm(rowValue(row,'titel','title','bezeichnung','summary','display_name'),300)||null;
+    if(!titel)warnings.push('EXAM_TITLE_REQUIRED');if(!l.date||!l.start)warnings.push('EXAM_TIME_REQUIRED');
+    if(resolved.warning)warnings.push(resolved.warning);
+    if(!resolved.course&&(c.name||c.code)&&!resolved.warning)warnings.push('COURSE_WILL_BE_CREATED');
+    return{type,display_name:titel,email:null,course_id:resolved.course?.id||null,course_name:resolved.course?.name||c.name,
+      course_code:resolved.course?.code||c.code,course_ref:courseRef(c),subject_name:s.name,subject_short_name:s.short,
+      confidence:Math.max(0,100-warnings.filter(w=>w!=='COURSE_WILL_BE_CREATED').length*25),warnings,source_row:i,
+      lesson_date:l.date,lesson_start:l.start,lesson_end:l.end,room:l.room,exam_title:titel,
+      allowed_aids:norm(rowValue(row,'hilfsmittel','allowed_aids','beschreibung','description','hinweis'),1000)||null,
+      external_id:examRef(row),org_unit_ref:null};}
   if(type==='lesson'){const l=lessonData(row);
     if(!l.date)warnings.push('LESSON_DATE_REQUIRED');if(!l.start||!l.end)warnings.push('LESSON_TIME_REQUIRED');
     if(l.start&&l.end&&l.end<=l.start)warnings.push('LESSON_END_BEFORE_START');
@@ -339,6 +370,27 @@ export async function previewOrganizationImport(env:Env,auth:CoreAuthContext,ten
   const raw=kept.map(r=>baseCandidate(r.row,r.index,courses)),merged=synthesize(raw,courses);await markOrgUnitParents(env,tenantId,merged);const candidates=canonical(merged),digest=await sha256Text(JSON.stringify(candidates)),batchId=id('oib_'),ts=nowIso(),expires=new Date(Date.now()+2*3600_000).toISOString(),sourceName=norm(input.source_name,250)||'Organisationsimport',sourceKind=norm(input.source_kind,50)||'structured';await env.DB.prepare("INSERT INTO organization_import_batches(id,tenant_id,source_name,source_kind,preview_digest,preview_json,status,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,'preview',?,?,?)").bind(batchId,tenantId,sourceName,sourceKind,digest,JSON.stringify(candidates),auth.userId,ts,expires).run();await audit(env.DB,auth.userId,'organization.import.previewed',tenantId,undefined,'organization_import_batch',batchId,{sourceName,total:candidates.length,summary:summary(candidates)});return{batch_id:batchId,digest,expires_at:expires,candidates,summary:summary(candidates)};}
 async function findCourse(env:Env,tenantId:string,c:OrganizationCandidate){if(c.course_id)return c.course_id;const ref=key(c.course_ref||c.course_code||c.course_name);if(!ref)return null;const r=await env.DB.prepare('SELECT id,name,code FROM courses WHERE tenant_id=? AND is_active=1').bind(tenantId).all<ExistingCourse>();const found=(r.results??[]).filter(x=>[key(x.id),key(x.code),key(x.name)].includes(ref));return found.length===1?String(found[0].id):null;}
 async function ensureSubject(env:Env,tenantId:string,name:string,shortName:string|null){const existing=await env.DB.prepare('SELECT id FROM subjects WHERE tenant_id=? AND name=? COLLATE NOCASE').bind(tenantId,name).first<{id:string}>();if(existing)return{...existing,created:false};const sid=id('sub_');await env.DB.prepare('INSERT INTO subjects(id,tenant_id,name,short_name,created_at) VALUES(?,?,?,?,?)').bind(sid,tenantId,name,shortName,nowIso()).run();return{id:sid,created:true};}
+// Dieselbe Pruefung kommt aus der Pruefungsliste UND aus dem Pruefungskalender - beide nennen
+// dieselbe Kennung. Sie darf daraus genau einmal entstehen. Und wird sie spaeter verschoben,
+// aendert sich die bestehende Pruefung, statt dass eine zweite danebensteht.
+async function ensureExam(env:Env,tenantId:string,exam:{courseId:string;subjectId:string|null;title:string;startsAt:string;endsAt:string|null;room:string|null;aids:string|null;externalId:string|null}){
+  const ts=nowIso();
+  const found=exam.externalId
+    ?await env.DB.prepare('SELECT id FROM exams WHERE tenant_id=? AND external_id=?').bind(tenantId,exam.externalId).first<{id:string}>()
+    :await env.DB.prepare('SELECT id FROM exams WHERE tenant_id=? AND course_id=? AND title=? COLLATE NOCASE AND starts_at=?').bind(tenantId,exam.courseId,exam.title,exam.startsAt).first<{id:string}>();
+  if(found){
+    // Angaben werden ergaenzt und berichtigt, aber nie durch Leerstellen ersetzt: was schon
+    // dasteht, geht durch eine Datei ohne diese Spalte nicht verloren.
+    await env.DB.prepare(`UPDATE exams SET course_id=?,subject_id=COALESCE(?,subject_id),title=?,starts_at=?,
+      ends_at=COALESCE(?,ends_at),room=COALESCE(?,room),allowed_aids=COALESCE(?,allowed_aids),updated_at=? WHERE tenant_id=? AND id=?`)
+      .bind(exam.courseId,exam.subjectId,exam.title,exam.startsAt,exam.endsAt,exam.room,exam.aids,ts,tenantId,String(found.id)).run();
+    return{id:String(found.id),created:false};
+  }
+  const eid=id('exm_');
+  await env.DB.prepare('INSERT INTO exams(id,tenant_id,course_id,subject_id,title,starts_at,ends_at,room,allowed_aids,external_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
+    .bind(eid,tenantId,exam.courseId,exam.subjectId,exam.title,exam.startsAt,exam.endsAt,exam.room,exam.aids,exam.externalId,ts,ts).run();
+  return{id:eid,created:true};
+}
 // Eine Stundenplanzeile nennt die Dozentin als Kennung, als E-Mail oder als Namen. Zugeordnet
 // wird nur, was eindeutig ist: genau ein Treffer im Dozentenstamm. Bleibt es mehrdeutig oder
 // unbekannt, bleibt die Stunde ohne Dozent/in - geraten wird nichts.
@@ -377,7 +429,7 @@ async function ensureStaffGrant(env:Env,auth:CoreAuthContext,tenantId:string,gra
     .bind(grantId,tenantId,grant.userId,grant.unitId,grant.profile,JSON.stringify(grant.permissions),`organization-import:${grant.unitId}:${grant.userId}`,auth.userId,ts,ts).run();
   return{id:grantId,created:true};
 }
-export const ORGANIZATION_BLOCKING_WARNINGS=new Set(['RESOURCE_NAME_REQUIRED','ORG_UNIT_NAME_REQUIRED','ORG_UNIT_PARENT_INVALID','COURSE_NAME_REQUIRED','SUBJECT_NAME_REQUIRED','LESSON_DATE_REQUIRED','LESSON_TIME_REQUIRED','LESSON_END_BEFORE_START','STAFF_ORG_UNIT_REQUIRED','STAFF_ORG_UNIT_NOT_FOUND','ACCESS_RESPONSIBLE_CONFIRMATION_REQUIRED','NAME_REQUIRED','EMAIL_REQUIRED','COURSE_REQUIRED','COURSE_AMBIGUOUS','COURSE_NOT_FOUND','TENANT_ADMIN_CONFIRMATION_REQUIRED']);
+export const ORGANIZATION_BLOCKING_WARNINGS=new Set(['RESOURCE_NAME_REQUIRED','ORG_UNIT_NAME_REQUIRED','ORG_UNIT_PARENT_INVALID','COURSE_NAME_REQUIRED','SUBJECT_NAME_REQUIRED','LESSON_DATE_REQUIRED','LESSON_TIME_REQUIRED','LESSON_END_BEFORE_START','EXAM_TITLE_REQUIRED','EXAM_TIME_REQUIRED','STAFF_ORG_UNIT_REQUIRED','STAFF_ORG_UNIT_NOT_FOUND','ACCESS_RESPONSIBLE_CONFIRMATION_REQUIRED','NAME_REQUIRED','EMAIL_REQUIRED','COURSE_REQUIRED','COURSE_AMBIGUOUS','COURSE_NOT_FOUND','TENANT_ADMIN_CONFIRMATION_REQUIRED']);
 async function recordResult(env:Env,batchId:string,tenantId:string,index:number,type:string,action:string,entityId:string|null,detail:unknown){await env.DB.prepare('INSERT INTO organization_import_results(id,batch_id,tenant_id,candidate_index,entity_type,action,entity_id,detail_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id('oir_'),batchId,tenantId,index,type,action,entityId,JSON.stringify(detail??{}),nowIso()).run();}
 // Der Typ einer Einheit muss im Mandanten bekannt sein, bevor eine Einheit ihn tragen darf.
 // Angelegt wird er nur, wenn er fehlt: hat der Kunde einen Typ bewusst abgeschaltet oder
@@ -439,10 +491,20 @@ export async function applyOrganizationImport(env:Env,auth:CoreAuthContext,tenan
 // beim Anlegen der Stunde noch leer - ein ganzer eingeworfener Ordner ergab 29 Stunden ohne eine
 // einzige Dozentin, obwohl beide Listen im selben Stapel lagen. Dozierende haengen von nichts ab
 // und koennen deshalb gefahrlos vorher laufen.
-  const order:OrganizationCandidateType[]=['resource','course','subject','teacher','staff','lesson','participant','class_admin','guest','tenant_admin_review'];for(const type of order)for(let i=0;i<rows.length;i++){const r=rows[i];if(r.type!==type||!selected.has(i))continue;if(r.warnings.some(w=>ORGANIZATION_BLOCKING_WARNINGS.has(w))){const x={index:i,type,action:'skipped',reason:'REVIEW_REQUIRED'};results.push(x);await recordResult(env,batchId,tenantId,i,type,x.action,null,x);continue;}try{
+  const order:OrganizationCandidateType[]=['resource','course','subject','teacher','staff','lesson','exam','participant','class_admin','guest','tenant_admin_review'];for(const type of order)for(let i=0;i<rows.length;i++){const r=rows[i];if(r.type!==type||!selected.has(i))continue;if(r.warnings.some(w=>ORGANIZATION_BLOCKING_WARNINGS.has(w))){const x={index:i,type,action:'skipped',reason:'REVIEW_REQUIRED'};results.push(x);await recordResult(env,batchId,tenantId,i,type,x.action,null,x);continue;}try{
     if(type==='resource'){const name=r.display_name;if(!name)throw new Error('RESOURCE_NAME_REQUIRED');const kind=norm(r.resource_kind,30)||'room',found=await env.DB.prepare('SELECT id FROM planning_resources WHERE tenant_id=? AND resource_type=? AND name=?').bind(tenantId,kind,name).first<{id:string}>();if(found){results.push({index:i,type,action:'existing',entity_id:found.id});await recordResult(env,batchId,tenantId,i,type,'existing',found.id,{});continue;}const unit=orgUnits.get(key(r.org_unit_ref||'')),saved=await savePlanningResource(env,auth,tenantId,{name,resource_type:kind,code:r.external_id||null,location:unit?.name||norm(r.org_unit_ref,160)||null,capacity:r.capacity??null,features:r.features??null,status:r.resource_status||'active'}) as {resource_id:string};results.push({index:i,type,action:'created',entity_id:saved.resource_id});await recordResult(env,batchId,tenantId,i,type,'created',saved.resource_id,{kind});continue;}
     if(type==='course'){const name=r.course_name||r.display_name||r.course_code;if(!name)throw new Error('COURSE_NAME_REQUIRED');const unitId=orgUnits.get(key(r.org_unit_ref||''))?.id||null,found=await findCourse(env,tenantId,r);if(found){const linked=await linkCourseOrgUnit(env,tenantId,found,unitId);results.push({index:i,type,action:'existing',entity_id:found,org_unit_id:linked});await recordResult(env,batchId,tenantId,i,type,'existing',found,{org_unit_id:linked});continue;}await enforceCourseEntitlement(env,tenantId);const c=await createCourse(env,auth,tenantId,{name,code:r.course_code||slugify(name),access_mode:'login'}) as any;const linked=await linkCourseOrgUnit(env,tenantId,String(c?.id||''),unitId);results.push({index:i,type,action:'created',entity_id:c?.id,org_unit_id:linked});await recordResult(env,batchId,tenantId,i,type,'created',c?.id||null,{org_unit_id:linked});continue;}
     if(type==='subject'){const name=r.subject_name||r.display_name;if(!name)throw new Error('SUBJECT_NAME_REQUIRED');const s=await ensureSubject(env,tenantId,name,r.subject_short_name);results.push({index:i,type,action:s.created?'created':'existing',entity_id:s.id});await recordResult(env,batchId,tenantId,i,type,s.created?'created':'existing',s.id,{});continue;}
+    if(type==='exam'){const courseId=await findCourse(env,tenantId,r);if(!courseId)throw new Error('COURSE_NOT_RESOLVED');
+      const titel=norm(r.exam_title||r.display_name,300);if(!titel)throw new Error('EXAM_TITLE_REQUIRED');
+      if(!r.lesson_date||!r.lesson_start)throw new Error('EXAM_TIME_REQUIRED');
+      const fach=r.subject_name?await ensureSubject(env,tenantId,r.subject_name,r.subject_short_name??null):null;
+      const gespeichert=await ensureExam(env,tenantId,{courseId,subjectId:fach?.id??null,title:titel,
+        startsAt:`${r.lesson_date}T${r.lesson_start}:00`,endsAt:r.lesson_end?`${r.lesson_date}T${r.lesson_end}:00`:null,
+        room:r.room??null,aids:r.allowed_aids??null,externalId:norm(r.external_id,160)||null});
+      const aktion=gespeichert.created?'created':'updated';
+      results.push({index:i,type,action:aktion,entity_id:gespeichert.id,course_id:courseId});
+      await recordResult(env,batchId,tenantId,i,type,aktion,gespeichert.id,{title:titel});continue;}
     if(type==='lesson'){const courseId=await findCourse(env,tenantId,r);if(!courseId)throw new Error('COURSE_NOT_RESOLVED');if(!r.lesson_date||!r.lesson_start||!r.lesson_end)throw new Error('LESSON_TIME_REQUIRED');const subject=r.subject_name?await ensureSubject(env,tenantId,r.subject_name,r.subject_short_name??null):null;const teacherId=await findTeacher(env,tenantId,r.teacher_ref);const saved=await ensureLesson(env,tenantId,{courseId,subjectId:subject?.id??null,teacherId,startsAt:`${r.lesson_date}T${r.lesson_start}:00`,endsAt:`${r.lesson_date}T${r.lesson_end}:00`,room:r.room??null,notes:r.notes??null});const action=saved.created?'created':'existing';results.push({index:i,type,action,entity_id:saved.id,course_id:courseId});await recordResult(env,batchId,tenantId,i,type,action,saved.id,{courseId,startsAt:`${r.lesson_date}T${r.lesson_start}:00`});continue;}
     if(type==='staff'){
       const unit=orgUnits.get(key(r.org_unit_ref||''));
