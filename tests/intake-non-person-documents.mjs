@@ -25,7 +25,7 @@ YP-001,PLAN-001,ORG-MBA-TEST,2026-09-01,Semesterstart,ORG-MBA-TEST,Start Regelbe
   '10_Meldungen.xlsx': [`message_id,external_id,parent_external_id,course_external_id,publish_at,language,title,body,audience,status
 MSG-001,MSG-001,EXT-ADM-26-01,EXT-ADM-26-01,2026-09-02 08:00,de-DE,Willkommen,Startinformationen.,course,veroeffentlicht`, 'none'],
   '11_Pruefungen.xlsx': [`exam_id,external_id,parent_external_id,course_external_id,title,exam_type,original_date,current_date,start_time,end_time,room_external_id,status,version
-EX-001,EX-001,EXT-ADM-26-01,EXT-ADM-26-01,Leistungsnachweis,Klausur,2026-11-04,2026-11-04,09:00,10:30,ROOM-BM-B201,geplant,1`, 'none'],
+EX-001,EX-001,EXT-ADM-26-01,EXT-ADM-26-01,Leistungsnachweis,Klausur,2026-11-04,2026-11-04,09:00,10:30,ROOM-BM-B201,geplant,1`, 'organization'],
   '12_Abwesenheiten.xlsx': [`attendance_id,external_id,parent_external_id,participant_external_id,course_external_id,date,status,minutes_absent,excused,recorded_by_external_id,private_data
 ATT-001-1,ATT-001-1,PAR-0001,PAR-0001,EXT-ADM-26-01,2026-09-07,anwesend,0,nein,EMP-001,ja`, 'none'],
   '13_Umfragen.xlsx': [`survey_id,external_id,parent_external_id,title,audience,start_date,end_date,anonymous,status
@@ -46,6 +46,23 @@ for (const [name, [csv, erwartet]] of Object.entries(DATEIEN)) {
   assert.equal(decision.route, erwartet,
     `${name} gehoert auf das Gleis "${erwartet}", geroutet wurde "${decision.route}" (${decision.reason})`);
 }
+
+// Zur Pruefungsliste: sie stand hier auf "none", solange es fuer eine Pruefung kein Ziel gab -
+// "none" heisst "erkannt, aber nirgends abzulegen". Inzwischen gibt es die Pruefung als eigenen
+// Vorgang mit eigener Kennung, genau wie den Stundenplan, der aus demselben Grund laengst auf
+// "organization" laeuft. Sie wird deshalb vorgelegt statt verworfen - angelegt wird sie erst,
+// wenn der Kunde sie im Pruef-Cockpit ankreuzt.
+//
+// Entscheidend bleibt die Abgrenzung: alle uebrigen Unterlagen ohne Person muessen weiterhin auf
+// "none" liegen. Genau das misst die Schleife oben Datei fuer Datei - eine Prüfungserkennung, die
+// zu weit greift, faellt dort sofort auf.
+assert.equal(routeRows(rowsOf(DATEIEN['11_Pruefungen.xlsx'][0])).reason,'ROLE_OTHER_THAN_PARTICIPANT',
+  'die Pruefungsliste wird als Pruefung erkannt, nicht als Teilnehmerliste');
+assert.equal(importRole(rowsOf(DATEIEN['11_Pruefungen.xlsx'][0])[0]),'exam',
+  'eine Zeile mit einer Pruefungskennung ist eine Pruefung');
+for(const datei of ['09_Jahresgrundplan.xlsx','10_Meldungen.xlsx','12_Abwesenheiten.xlsx','13_Umfragen.xlsx','15_Curriculum.xlsx','17_Zertifikate.xlsx','20_ScenarioLab.xlsx'])
+  assert.notEqual(importRole(rowsOf(DATEIEN[datei][0])[0]),'exam',
+    `${datei} ist keine Pruefung - die Erkennung darf nicht auf eine beliebige Kennung anspringen`);
 
 // Der Grund muss benannt sein - sonst steht der Kunde vor einer Datei, die einfach fehlt.
 assert.equal(routeRows(rowsOf(DATEIEN['12_Abwesenheiten.xlsx'][0])).reason, 'NO_PERSON_IN_DOCUMENT');

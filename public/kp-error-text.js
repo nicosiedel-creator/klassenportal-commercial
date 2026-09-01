@@ -19,6 +19,9 @@
     LESSON_TIME_REQUIRED:'Dieser Unterrichtsstunde fehlt der Beginn oder das Ende. Beides wird für den Stundenplan gebraucht.',
     LESSON_END_BEFORE_START:'Das Ende dieser Unterrichtsstunde liegt vor ihrem Beginn.',
     COURSE_NOT_RESOLVED:'Die Klasse bzw. der Kurs dieser Zeile konnte nicht eindeutig zugeordnet werden.',
+    // Prüfungen aus einer Prüfungsliste oder einem Prüfungskalender
+    EXAM_TITLE_REQUIRED:'Dieser Prüfung fehlt die Bezeichnung. Ohne sie lässt sich nicht erkennen, worum es in der Prüfung geht.',
+    EXAM_TIME_REQUIRED:'Dieser Prüfung fehlt das Datum oder der Beginn. Beides wird für den Prüfungstermin gebraucht.',
     // Portalrollen für Beschäftigte
     STAFF_ORG_UNIT_REQUIRED:'Diese beschäftigte Person nennt keinen Bereich. Eine Freigabe gilt immer für einen Standort oder Bereich – ohne den lässt sie sich nicht erteilen.',
     STAFF_ORG_UNIT_NOT_FOUND:'Der angegebene Bereich wurde im Portal nicht gefunden. Lies zuerst das Organigramm ein oder lege den Bereich an.',
