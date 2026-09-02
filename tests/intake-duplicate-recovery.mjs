@@ -52,7 +52,10 @@ const hochladen=async(dateiname,inhalt)=>{
   form.append('files',new File([inhalt],dateiname,{type:'text/csv'}));
   return handleIntakePublicUpload(env,TOKEN,new Request('https://portal.example.invalid/x',{method:'POST',body:form}));
 };
-const zustand=()=>db.prepare('SELECT filename,extraction_state,error_code,r2_key FROM intake_documents ORDER BY created_at,id').all();
+// Nach Einwurf gruppieren, nicht nach Zeitstempel: alle Zeilen eines Einwurfs entstehen in
+// derselben Millisekunde, eine Sortierung danach wäre zufällig.
+const zustand=()=>db.prepare('SELECT filename,extraction_state,error_code,r2_key,batch_id FROM intake_documents ORDER BY rowid').all();
+const letzterEinwurf=()=>{const alle=zustand();const b=alle[alle.length-1]?.batch_id;return alle.filter(x=>x.batch_id===b);};
 
 // ---------------------------------------------------------------------------------------------
 // 1. Der erste Einwurf gelingt und legt den Inhalt ab.
@@ -64,37 +67,39 @@ assert.ok(alle[0].r2_key,'der Inhalt muss abgelegt sein');
 assert.notEqual(alle[0].error_code,'DUPLICATE_DOCUMENT','der erste Einwurf ist kein Doppel');
 
 // ---------------------------------------------------------------------------------------------
-// 2. Derselbe Inhalt ein zweites Mal: zu Recht als Doppel abgewiesen, solange das Original liegt.
+// 2. Dieselbe Datei ZWEIMAL IM SELBEN Einwurf: nur einmal verarbeitet. Das ist der Sinn der
+//    Prüfung - ein Ordner, in dem dieselbe Datei doppelt liegt.
 // ---------------------------------------------------------------------------------------------
-await hochladen('07_Stundenplan.csv',CSV);
-alle=zustand();
-assert.equal(alle.length,2);
-assert.equal(alle[1].error_code,'DUPLICATE_DOCUMENT','der zweite Einwurf desselben Inhalts ist ein Doppel');
-assert.equal(alle[1].r2_key,null,'eine Absage legt keinen Inhalt ab');
+const doppeltImOrdner=new FormData();
+doppeltImOrdner.append('files',new File([CSV],'a.csv',{type:'text/csv'}));
+doppeltImOrdner.append('files',new File([CSV],'b.csv',{type:'text/csv'}));
+await handleIntakePublicUpload(env,TOKEN,new Request('https://portal.example.invalid/x',{method:'POST',body:doppeltImOrdner}));
+const imOrdner=letzterEinwurf();
+assert.equal(imOrdner.filter(d=>d.error_code==='DUPLICATE_DOCUMENT').length,1,
+  `im selben Einwurf darf derselbe Inhalt nur einmal verarbeitet werden, gefunden: ${JSON.stringify(imOrdner)}`);
 
 // ---------------------------------------------------------------------------------------------
-// 3. Das Original wird gelöscht - und jetzt muss derselbe Inhalt WIEDER hochladbar sein.
-//    Vorher zählte die Prüfung ihre eigene Absage aus Schritt 2 als Original und wies für immer
-//    ab. Genau hier saß der Kunde fest.
+// 2b. Derselbe Inhalt in einem NEUEN Einwurf: das ist ein neuer Vorgang, kein Fehler. Ein Kunde,
+//     der sein Datenpaket erneut einwirft - nach einer Korrektur, nach einem Abbruch, oder
+//     schlicht später -, bekam vorher JEDE Datei als Doppel abgewiesen und einen unbrauchbaren
+//     Stapel. Gemessen bei einem Kunden: 21 von 21 Dateien "failed".
 // ---------------------------------------------------------------------------------------------
-db.prepare("UPDATE intake_documents SET r2_key=NULL,extraction_state='purged' WHERE r2_key IS NOT NULL").run();
 await hochladen('07_Stundenplan.csv',CSV);
-alle=zustand();
-const letzte=alle[alle.length-1];
-assert.notEqual(letzte.error_code,'DUPLICATE_DOCUMENT',
-  `nach dem Löschen des Originals muss derselbe Inhalt wieder hochladbar sein, war: ${JSON.stringify(letzte)}`);
-assert.ok(letzte.r2_key,'und der Inhalt muss wieder abgelegt werden');
+const erneut=letzterEinwurf();
+assert.equal(erneut.filter(d=>d.error_code==='DUPLICATE_DOCUMENT').length,0,
+  `ein erneuter Einwurf desselben Pakets muss durchgehen, war: ${JSON.stringify(erneut)}`);
+assert.ok(erneut.every(d=>d.r2_key),'und der Inhalt muss abgelegt werden');
 
 // ---------------------------------------------------------------------------------------------
-// 4. Eine Absage allein sperrt nichts mehr: auch nach mehreren Fehlversuchen geht es weiter,
-//    sobald kein Original mehr liegt.
+// 3. Und das beliebig oft: fünf Einwürfe desselben Pakets, fünf brauchbare Stapel. Vorher war
+//    ab dem ersten Fehlschlag dauerhaft zu, weil die Prüfung ihre eigenen Absagen als Original
+//    zählte.
 // ---------------------------------------------------------------------------------------------
-db.prepare("UPDATE intake_documents SET r2_key=NULL,extraction_state='purged' WHERE r2_key IS NOT NULL").run();
-for(let i=0;i<3;i++)await hochladen('07_Stundenplan.csv',CSV);
-const nachDrei=zustand();
-const gesperrt=nachDrei.slice(-3).filter(d=>d.error_code==='DUPLICATE_DOCUMENT').length;
-assert.ok(gesperrt<3,
-  `drei Versuche dürfen nicht alle abgewiesen werden, abgewiesen: ${gesperrt} - genau so entstand die Dauersperre`);
+for(let i=0;i<5;i++)await hochladen('07_Stundenplan.csv',CSV);
+const letzter=letzterEinwurf();
+assert.equal(letzter.filter(d=>d.error_code==='DUPLICATE_DOCUMENT').length,0,
+  `wiederholte Einwürfe dürfen nicht abgewiesen werden, abgewiesen: ${JSON.stringify(letzter.map(d=>d.error_code))}`);
+assert.ok(letzter.every(d=>d.r2_key),'jeder dieser Einwürfe muss seinen Inhalt ablegen');
 
 // ---------------------------------------------------------------------------------------------
 // 5. Und eine nicht lesbare Datei sperrt sich nicht selbst aus: wird das Format später

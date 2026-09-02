@@ -138,7 +138,19 @@ if(CUSTOMER_ADMIN_PATH){
   function schedule(reason='render'){if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;apply(reason);});}
 
   await loadMe();
-  window.addEventListener('kp:app-rendered',event=>schedule(event.detail?.view?`app:${event.detail.view}`:'app'));
+  // Die Bearbeiten-Fenster fuer Klassen, Benutzer/Rollen, Inhalte und Pruefungen liegen alle in
+  // operational-crud-ui.js, und das steckt in der Gruppe 'organization'. Geladen wurde die bisher
+  // nur ueber "Weitere Bereiche" oder die Einrichtung. Wer in der Seitenleiste direkt auf
+  // "Benutzer & Rollen" klickte, sah deshalb eine reine Anzeigetabelle: keine Rollenauswahl, kein
+  // Bearbeiten, kein Entfernen - der Knopf "Rollen verwalten" wurde nie angehaengt, weil sein
+  // Modul nie ankam. Gemeldet aus Produktion. Dieselben vier Seiten holen sich die Gruppe jetzt
+  // selbst, sobald sie angezeigt werden.
+  const OPERATIONS_VIEWS=new Set(['courses','users','content','exams']);
+  window.addEventListener('kp:app-rendered',event=>{
+    const view=String(event.detail?.view||'');
+    if(OPERATIONS_VIEWS.has(view))void Promise.resolve(window.KPCustomerModules?.loadGroup('organization')).catch(()=>{});
+    schedule(view?`app:${view}`:'app');
+  });
   document.addEventListener('change',e=>{if(e.target?.id==='tenantPick'){document.querySelector('#kp-setup-progress')?.remove();document.querySelector('#kp-setup-preparation')?.remove();document.querySelector('#kp-operations-hub')?.remove();document.querySelector('#kp-setup-progress-error')?.remove();setupLoadingTenant='';schedule('tenant');}});
   document.addEventListener('click',e=>{
     const lazy=e.target?.closest?.('[data-kp-load-group]');if(lazy){e.preventDefault();const group=lazy.dataset.kpLoadGroup;lazy.disabled=true;const original=lazy.innerHTML;lazy.textContent='Wird geladen …';Promise.resolve(window.KPCustomerModules?.loadGroup(group)).finally(()=>{lazy.disabled=false;lazy.innerHTML=original;schedule('modules');});return;}
