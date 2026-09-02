@@ -219,6 +219,101 @@
     TENANT_REQUIRED:'Bitte zuerst eine Organisation auswählen.',
     DOMAIN_INVALID:'Bitte eine gültige Domain angeben, etwa beispiel.de.',
 
+    // Anwesenheit und Klassenbuch - der meistbenutzte Teil des Tagesbetriebs
+    ATTENDANCE_DATE_INVALID:'Bitte ein gültiges Datum für die Anwesenheit angeben.',
+    ATTENDANCE_DAY_INVALID:'Für diesen Tag kann keine Anwesenheit erfasst werden.',
+    ATTENDANCE_MODE_INVALID:'Bitte eine der angebotenen Unterrichtsformen auswählen.',
+    ATTENDANCE_RECORDS_REQUIRED:'Bitte mindestens einen Anwesenheitseintrag erfassen.',
+    ATTENDANCE_RECORD_INVALID:'Ein Anwesenheitseintrag ist unvollständig. Bitte Status und Person prüfen.',
+    ATTENDANCE_DUPLICATE_USER:'Eine Person wurde doppelt erfasst. Bitte die Liste prüfen.',
+    ATTENDANCE_SESSION_CANCELLED:'Dieser Termin ist abgesagt. Für abgesagte Termine wird keine Anwesenheit erfasst.',
+    ATTENDANCE_SESSION_DATE_MISMATCH:'Das Datum passt nicht zu diesem Termin. Bitte den richtigen Termin wählen.',
+    ATTENDANCE_SOURCE_INVALID:'Bitte eine gültige Herkunft für den Termin angeben.',
+    ATTENDANCE_SOURCE_REF_REQUIRED:'Zu dieser Herkunft fehlt der Bezug auf den Termin.',
+    ATTENDANCE_WINDOW_INVALID:'Die Anwesenheit kann für diesen Zeitraum nicht mehr geändert werden.',
+    ABSENCE_RANGE_INVALID:'Bitte einen gültigen Abwesenheitszeitraum angeben; das Ende darf nicht vor dem Beginn liegen.',
+    ABSENCE_RANGE_TOO_LONG:'Dieser Abwesenheitszeitraum ist zu lang. Bitte in kürzere Abschnitte aufteilen.',
+    ABSENCE_DECISION_INVALID:'Bitte eine der angebotenen Entscheidungen auswählen.',
+    ABSENCE_NOTICE_NOT_PENDING:'Diese Abwesenheitsmeldung wurde bereits entschieden.',
+
+    // Noten
+    GRADE_INVALID:'Bitte eine gültige Note nach der hinterlegten Notenskala eingeben.',
+    GRADE_TITLE_REQUIRED:'Bitte eine Bezeichnung für diese Bewertung angeben.',
+
+    // Diskussionen und Nachrichten
+    DISCUSSION_THREAD_NOT_FOUND:'Dieser Beitrag wurde nicht gefunden.',
+    DISCUSSION_THREAD_INVALID:'Bitte einen gültigen Beitrag auswählen.',
+    DISCUSSION_THREAD_LOCKED:'Dieser Beitrag ist geschlossen. Es können keine Antworten mehr geschrieben werden.',
+    DISCUSSION_MESSAGE_REQUIRED:'Bitte einen Text eingeben.',
+    DISCUSSION_RATE_LIMIT:'Es wurden zu viele Beiträge in kurzer Zeit geschrieben. Bitte einen Moment warten.',
+    DISCUSSION_RETENTION_INVALID:'Bitte eine gültige Aufbewahrungsdauer angeben.',
+    FORBIDDEN_DISCUSSION_THREAD:'Für diesen Beitrag fehlt die erforderliche Berechtigung.',
+    COURSE_FORUM_DISABLED:'Das Forum ist für diese Klasse nicht freigeschaltet.',
+    PARTICIPANT_THREAD_CREATION_DISABLED:'Teilnehmende dürfen in dieser Klasse keine eigenen Beiträge eröffnen.',
+    DIRECT_MESSAGES_DISABLED:'Direktnachrichten sind für diese Klasse nicht freigeschaltet.',
+    DIRECT_MESSAGE_RECIPIENTS_INVALID:'Bitte gültige Empfängerinnen und Empfänger auswählen.',
+    DIRECT_MESSAGE_RECIPIENT_INVALID:'Diese Person kann hier nicht als Empfänger ausgewählt werden.',
+    TENANT_ADMIN_REQUIRED_FOR_DIRECT_MODERATION:'Direktnachrichten darf nur die Kundenverwaltung moderieren.',
+
+    // Umfragen
+    SURVEY_NOT_FOUND:'Diese Umfrage wurde nicht gefunden.',
+    SURVEY_FIELDS_REQUIRED:'Bitte alle Pflichtfelder der Umfrage ausfüllen.',
+    SURVEY_OPTIONS_INVALID:'Bitte gültige Antwortmöglichkeiten angeben.',
+    SURVEY_OPTION_NOT_FOUND:'Diese Antwortmöglichkeit wurde nicht gefunden.',
+    SURVEY_STATUS_INVALID:'Bitte einen gültigen Status für die Umfrage auswählen.',
+
+    // Auswertungen
+    REPORT_DATASET_INVALID:'Bitte eine der angebotenen Datenquellen auswählen.',
+    REPORT_COLUMNS_INVALID:'Bitte gültige Spalten für die Auswertung auswählen.',
+    REPORT_DEFINITION_INVALID:'Diese gespeicherte Auswertung ist nicht mehr gültig. Bitte neu zusammenstellen.',
+
+    // Dozentenzuordnung und Vertretung
+    TEACHER_ASSIGNMENT_NOT_FOUND:'Diese Zuordnung zum Dozentenportal wurde nicht gefunden.',
+    TEACHER_ASSIGNMENT_FIELDS_REQUIRED:'Bitte alle Pflichtfelder der Zuordnung ausfüllen.',
+    TEACHER_EMAIL_INVALID:'Bitte eine gültige E-Mail-Adresse für die Dozentin oder den Dozenten angeben.',
+    TEACHER_USER_NOT_FOUND:'Zu dieser Dozentin oder diesem Dozenten gibt es noch kein Benutzerkonto.',
+    TEACHER_STUDENT_ROLE_CONFLICT:'Dieselbe Person kann in derselben Klasse nicht gleichzeitig unterrichten und teilnehmen.',
+    FORBIDDEN_TEACHER_COURSE:'Für diese Klasse fehlt die Freigabe im Dozentenportal.',
+    SUBSTITUTION_NOT_FOUND:'Dieser Vertretungsfall wurde nicht gefunden.',
+    SUBSTITUTION_FIELDS_REQUIRED:'Bitte alle Pflichtfelder der Vertretung ausfüllen.',
+
+    // Erscheinungsbild
+    LOGO_REQUIRED:'Bitte eine Logodatei auswählen.',
+    LOGO_FORMAT_INVALID:'Dieses Bildformat wird nicht unterstützt. Bitte PNG, JPG oder SVG verwenden.',
+    LOGO_TOO_LARGE:'Diese Logodatei ist zu groß. Bitte kleiner speichern.',
+    COLOR_INVALID:'Bitte eine gültige Farbe angeben, etwa #2563eb.',
+    BRANDING_CONTRAST_TOO_LOW:'Der Kontrast dieser Farben ist zu gering und wäre für manche Menschen nicht lesbar. Bitte kräftigere Farben wählen.',
+    WHITE_BACKGROUND_NOT_ALLOWED:'Ein rein weißer Hintergrund ist hier nicht zulässig. Bitte einen leicht abgesetzten Ton wählen.',
+    CUSTOM_DOMAIN_MANAGED_SEPARATELY:'Die eigene Domain wird in einem eigenen Bereich verwaltet und kann hier nicht geändert werden.',
+
+    // Tarif, Module und Grenzen
+    PLAN_COURSE_LIMIT_EXCEEDED:'Die im Tarif enthaltene Zahl an Klassen ist erreicht. Bitte eine Klasse archivieren oder den Tarif erweitern.',
+    PLAN_LIMIT_INVALID:'Diese Tarifgrenze ist nicht gültig.',
+    ENTITLEMENT_NOT_FOUND:'Für diesen Kunden ist kein Leistungsumfang hinterlegt.',
+    FEATURE_KEY_INVALID:'Diese Funktion ist nicht bekannt.',
+    FEATURE_NOT_AVAILABLE:'Diese Funktion ist im aktuellen Tarif nicht enthalten.',
+    MODULE_MANAGED_BY_BILLING:'Dieses Modul wird über die Abrechnung verwaltet und kann hier nicht umgeschaltet werden.',
+    MODULE_MANAGED_BY_PACKAGE:'Dieses Modul gehört zum gebuchten Paket und kann nicht einzeln abgeschaltet werden.',
+    SELF_SERVICE_EXPANSION_DISABLED:'Die Erweiterung durch den Kunden selbst ist derzeit nicht freigeschaltet.',
+    SETTINGS_NOT_FOUND:'Für diesen Kunden sind noch keine Einstellungen hinterlegt.',
+    NO_CHANGE:'Es gab nichts zu ändern - die Angaben entsprechen bereits dem gespeicherten Stand.',
+    NUMBER_INVALID:'Bitte eine gültige Zahl eingeben.',
+    CURRENCY_INVALID:'Bitte eine gültige Währung angeben.',
+    CONTENT_TYPE_INVALID:'Dieser Dateityp wird hier nicht unterstützt.',
+
+    // Benachrichtigungen und Teams
+    PUSH_NOT_CONFIGURED:'Push-Benachrichtigungen sind für dieses Portal nicht eingerichtet.',
+    PUSH_ENDPOINT_INVALID:'Diese Push-Anmeldung ist ungültig. Bitte die Benachrichtigungen im Browser neu erlauben.',
+    PUSH_ENDPOINT_ALREADY_OWNED:'Diese Push-Anmeldung gehört bereits zu einem anderen Konto.',
+    PUSH_VAPID_KEY_INVALID:'Die Einrichtung der Push-Benachrichtigungen ist unvollständig. Bitte an den Support wenden.',
+    TEAMS_WEBHOOK_REQUIRED:'Bitte die Teams-Webhook-Adresse angeben.',
+    TEAMS_WEBHOOK_INVALID:'Diese Teams-Webhook-Adresse ist nicht gültig.',
+    TEAMS_TEST_FAILED:'Die Testnachricht an Teams konnte nicht zugestellt werden. Bitte die Webhook-Adresse prüfen.',
+
+    // Anmeldung: technische Reste, die niemand als Code lesen sollte
+    PASSWORD_DERIVATION_PARAMS_INVALID:'Dieses Kennwort kann nicht geprüft werden. Bitte das Kennwort zurücksetzen lassen.',
+    LEGACY_PASSWORD_PARAMS_INVALID:'Dieses Kennwort stammt aus einem alten Verfahren und muss zurückgesetzt werden.',
+
     // Einwurf: Dateien, Pakete, Verlinkung
     INTAKE_FILES_REQUIRED:'Bitte mindestens eine Datei auswählen.',
     INTAKE_TOO_MANY_FILES:'Es wurden zu viele Dateien auf einmal ausgewählt. Bitte in kleineren Paketen einwerfen.',
