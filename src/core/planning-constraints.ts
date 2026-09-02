@@ -1,7 +1,7 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { audit } from './audit.js';
 import { hasPermission } from './enterprise-access.js';
-import { getTimetablePlan, publishTimetablePlan, validateTimetablePlan } from './learning-operations.js';
+import { getTimetablePlan, publishTimetablePlan, saveTimetablePlanEntry, validateTimetablePlan } from './learning-operations.js';
 import { id, nowIso, safeString } from './utils.js';
 
 function admin(auth:CoreAuthContext){return auth.isPlatformAdmin||auth.role==='tenant_admin';}
@@ -68,7 +68,75 @@ export async function planningSuggestions(env:Env,auth:CoreAuthContext,tenantId:
     FROM teachers t WHERE t.tenant_id=?
       AND NOT EXISTS(SELECT 1 FROM teacher_unavailability u WHERE u.tenant_id=t.tenant_id AND u.teacher_id=t.id AND u.starts_at<? AND u.ends_at>?)
       AND NOT EXISTS(SELECT 1 FROM lessons l WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND l.starts_at<? AND l.ends_at>?)
-    ORDER BY qualified DESC,familiarity DESC,day_minutes ASC,t.name LIMIT 20`).bind(subjectId,subjectId,courseId,starts,tenantId,ends,starts,ends,starts).all<Record<string,unknown>>()).results??[];
-  const rooms=(await env.DB.prepare(`SELECT r.id,r.name,r.code,r.location,r.capacity,r.features_json FROM planning_resources r WHERE r.tenant_id=? AND r.resource_type='room' AND r.status='active' AND (r.capacity IS NULL OR r.capacity>=?) AND NOT EXISTS(SELECT 1 FROM planning_resource_unavailability u WHERE u.tenant_id=r.tenant_id AND u.resource_id=r.id AND u.starts_at<? AND u.ends_at>?) AND NOT EXISTS(SELECT 1 FROM lesson_resource_reservations rr JOIN lessons l ON l.id=rr.lesson_id AND l.tenant_id=rr.tenant_id WHERE rr.tenant_id=r.tenant_id AND rr.resource_id=r.id AND l.starts_at<? AND l.ends_at>?) ORDER BY CASE WHEN r.capacity IS NULL THEN 999999 ELSE r.capacity END,r.name LIMIT 20`).bind(tenantId,participantCount,ends,starts,ends,starts).all<Record<string,unknown>>()).results??[];return{teachers,rooms,participant_count:participantCount};}
+      AND NOT EXISTS(SELECT 1 FROM timetable_plan_entries e JOIN timetable_plan_versions v ON v.id=e.plan_id AND v.tenant_id=e.tenant_id
+        WHERE e.tenant_id=t.tenant_id AND e.teacher_id=t.id AND v.status IN ('draft','review') AND e.starts_at<? AND e.ends_at>?
+          AND NOT(e.course_id=? AND e.starts_at=? AND e.ends_at=?))
+    ORDER BY qualified DESC,familiarity DESC,day_minutes ASC,t.name LIMIT 20`).bind(subjectId,subjectId,courseId,starts,tenantId,ends,starts,ends,starts,ends,starts,courseId,starts,ends).all<Record<string,unknown>>()).results??[];
+  const rooms=(await env.DB.prepare(`SELECT r.id,r.name,r.code,r.location,r.capacity,r.features_json FROM planning_resources r WHERE r.tenant_id=? AND r.resource_type='room' AND r.status='active' AND (r.capacity IS NULL OR r.capacity>=?) AND NOT EXISTS(SELECT 1 FROM planning_resource_unavailability u WHERE u.tenant_id=r.tenant_id AND u.resource_id=r.id AND u.starts_at<? AND u.ends_at>?) AND NOT EXISTS(SELECT 1 FROM lesson_resource_reservations rr JOIN lessons l ON l.id=rr.lesson_id AND l.tenant_id=rr.tenant_id WHERE rr.tenant_id=r.tenant_id AND rr.resource_id=r.id AND l.starts_at<? AND l.ends_at>?) AND NOT EXISTS(SELECT 1 FROM timetable_plan_entries e JOIN timetable_plan_versions v ON v.id=e.plan_id AND v.tenant_id=e.tenant_id LEFT JOIN timetable_plan_entry_resources pr ON pr.tenant_id=e.tenant_id AND pr.entry_id=e.id WHERE e.tenant_id=r.tenant_id AND v.status IN ('draft','review') AND e.starts_at<? AND e.ends_at>? AND (pr.resource_id=r.id OR lower(COALESCE(e.room,''))=lower(r.name) OR (r.code IS NOT NULL AND r.code<>'' AND lower(COALESCE(e.room,''))=lower(r.code))) AND NOT(e.course_id=? AND e.starts_at=? AND e.ends_at=?)) ORDER BY CASE WHEN r.capacity IS NULL THEN 999999 ELSE r.capacity END,r.name LIMIT 20`).bind(tenantId,participantCount,ends,starts,ends,starts,ends,starts,courseId,starts,ends).all<Record<string,unknown>>()).results??[];return{teachers,rooms,participant_count:participantCount};}
+
+// Erzeugt aus den hinterlegten Kursregeln einen vollstaendigen Stundenplanentwurf.
+// Bewusst nur ein Entwurf: es wird nichts veroeffentlicht, nichts im laufenden
+// Betrieb veraendert. Wo keine freie Person oder kein freier Raum gefunden wird,
+// entsteht KEIN Termin - die Luecke wird benannt, damit sie jemand entscheidet.
+const AUTOFILL_MAX_ENTRIES=500,AUTOFILL_MAX_DAYS=400;
+function tagSchluessel(d:Date){return d.toISOString().slice(0,10);}
+function uhrzeit(v:unknown,fallback:string){const s=safeString(v,5);return s&&/^\d\d:\d\d$/.test(s)?s:fallback;}
+export async function autofillTimetablePlan(env:Env,auth:CoreAuthContext,tenantId:string,planId:string,input:Record<string,unknown>){
+  requireManage(auth);
+  const plan=await env.DB.prepare('SELECT starts_on,ends_on,status FROM timetable_plan_versions WHERE tenant_id=? AND id=?').bind(tenantId,planId).first<{starts_on:string;ends_on:string;status:string}>();
+  if(!plan)throw new Error('TIMETABLE_PLAN_NOT_FOUND');
+  if(plan.status==='published'||plan.status==='archived')throw new Error('TIMETABLE_PLAN_LOCKED');
+  const gewuenscht=Array.isArray(input.course_ids)?[...new Set(input.course_ids.map(x=>safeString(x,120)).filter((x):x is string=>!!x))]:[];
+  const alle=(await env.DB.prepare(`SELECT c.id,c.name,r.earliest_start,r.latest_end,r.default_lesson_minutes,r.allow_saturday,r.allow_sunday
+    FROM courses c JOIN course_scheduling_rules r ON r.tenant_id=c.tenant_id AND r.course_id=c.id
+    WHERE c.tenant_id=? ORDER BY c.name`).bind(tenantId).all<Record<string,unknown>>()).results??[];
+  // Ohne ausdrueckliche Liste plant der Lauf, was die aufrufende Person verantwortet - eine
+  // Stundenplanung mit begrenztem Bereich koennte sonst nie ohne Liste starten, weil die erste
+  // fremde Klasse den ganzen Lauf abbraeche. Wird eine Klasse ausdruecklich genannt, gilt
+  // weiterhin: fehlt die Berechtigung, bricht der Lauf ab, statt sie still zu uebergehen.
+  const kurse=gewuenscht.length?alle.filter(k=>gewuenscht.includes(String(k.id)))
+    :alle.filter(k=>admin(auth)||auth.courseIds.includes(String(k.id)));
+  if(gewuenscht.length)for(const k of kurse)courseScope(auth,String(k.id));
+  if(!kurse.length)throw new Error('PLAN_AUTOFILL_NO_RULES');
+  const von=new Date(`${plan.starts_on}T00:00:00Z`),bis=new Date(`${plan.ends_on}T00:00:00Z`);
+  if(Number.isNaN(von.getTime())||Number.isNaN(bis.getTime())||von>bis)throw new Error('PLAN_RANGE_INVALID');
+  if((bis.getTime()-von.getTime())/86400000>AUTOFILL_MAX_DAYS)throw new Error('PLAN_RANGE_TOO_LONG');
+  let erzeugt=0;const luecken:Array<{course_id:string;course_name:string;date:string;reason:string}>=[];
+  for(const gewollt of gewuenscht)if(!kurse.some(k=>String(k.id)===gewollt)){
+    courseScope(auth,gewollt);
+    const name=await env.DB.prepare('SELECT name FROM courses WHERE tenant_id=? AND id=?').bind(tenantId,gewollt).first<{name:string}>();
+    luecken.push({course_id:gewollt,course_name:String(name?.name||''),date:plan.starts_on,reason:name?'NO_COURSE_RULES':'COURSE_NOT_FOUND'});
+  }
+  const proKurs=new Map<string,number>();
+  for(const k of kurse){
+    const kursId=String(k.id),kursName=String(k.name||''),
+      beginn=uhrzeit(k.earliest_start,'08:00'),dauer=Math.max(15,Math.min(600,Number(k.default_lesson_minutes||0)||90));
+    const [bh,bm]=beginn.split(':').map(Number),endeMinuten=bh*60+bm+dauer;
+    if(endeMinuten>=24*60){luecken.push({course_id:kursId,course_name:kursName,date:plan.starts_on,reason:'LESSON_EXCEEDS_DAY'});continue;}
+    const ende=`${String(Math.floor(endeMinuten/60)).padStart(2,'0')}:${String(endeMinuten%60).padStart(2,'0')}`;
+    if(k.latest_end&&ende>String(k.latest_end)){luecken.push({course_id:kursId,course_name:kursName,date:plan.starts_on,reason:'LESSON_AFTER_LATEST_END'});continue;}
+    proKurs.set(kursId,0);
+    for(let d=new Date(von.getTime());d<=bis;d.setUTCDate(d.getUTCDate()+1)){
+      if(erzeugt>=AUTOFILL_MAX_ENTRIES)break;
+      const dow=d.getUTCDay(),datum=tagSchluessel(d);
+      if(dow===6&&!Number(k.allow_saturday))continue;
+      if(dow===0&&!Number(k.allow_sunday))continue;
+      const start=`${datum}T${beginn}:00.000Z`,schluss=`${datum}T${ende}:00.000Z`;
+      if(await env.DB.prepare('SELECT 1 ok FROM timetable_plan_entries WHERE tenant_id=? AND plan_id=? AND course_id=? AND substr(starts_at,1,10)=? LIMIT 1').bind(tenantId,planId,kursId,datum).first())continue;
+      const gesperrt=await env.DB.prepare('SELECT title FROM planning_blackouts WHERE tenant_id=? AND blocks_teaching=1 AND (course_id IS NULL OR course_id=?) AND starts_at<? AND ends_at>? LIMIT 1').bind(tenantId,kursId,schluss,start).first<{title:string}>();
+      if(gesperrt)continue;
+      const vorschlag=await planningSuggestions(env,auth,tenantId,{course_id:kursId,starts_at:start,ends_at:schluss});
+      const person=(vorschlag.teachers as Array<Record<string,unknown>>)[0],raum=(vorschlag.rooms as Array<Record<string,unknown>>)[0];
+      if(!person||!raum){luecken.push({course_id:kursId,course_name:kursName,date:datum,reason:person?'NO_ROOM_AVAILABLE':'NO_TEACHER_AVAILABLE'});continue;}
+      const {entry_id}=await saveTimetablePlanEntry(env,auth,tenantId,planId,{course_id:kursId,teacher_id:String(person.id),room:String(raum.name||''),starts_at:start,ends_at:schluss,activity_type:'classroom',source:'automation'});
+      await linkPlanEntryResource(env,auth,tenantId,planId,entry_id,{resource_id:String(raum.id)});
+      erzeugt++;proKurs.set(kursId,(proKurs.get(kursId)||0)+1);
+    }
+  }
+  await audit(env.DB,auth.userId,'education.timetable_plan_autofilled',tenantId,undefined,'timetable_plan',planId,{created:erzeugt,gaps:luecken.length,courses:kurse.length});
+  return{plan_id:planId,created:erzeugt,limit_reached:erzeugt>=AUTOFILL_MAX_ENTRIES,
+    courses:kurse.map(k=>({course_id:String(k.id),course_name:String(k.name||''),created:proKurs.get(String(k.id))||0})),
+    gaps:luecken.slice(0,200),gap_count:luecken.length,published:false};
+}
 
 export async function substituteSuggestions(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,lessonId:string){requireManage(auth);courseScope(auth,courseId);const lesson=await env.DB.prepare('SELECT id,subject_id,teacher_id,starts_at,ends_at FROM lessons WHERE tenant_id=? AND course_id=? AND id=?').bind(tenantId,courseId,lessonId).first<Record<string,unknown>>();if(!lesson)throw new Error('LESSON_NOT_FOUND');const result=await planningSuggestions(env,auth,tenantId,{course_id:courseId,subject_id:lesson.subject_id,starts_at:lesson.starts_at,ends_at:lesson.ends_at});return{...result,teachers:(result.teachers as any[]).filter(t=>String(t.id)!==String(lesson.teacher_id||''))};}
