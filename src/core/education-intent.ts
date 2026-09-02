@@ -2,7 +2,7 @@ import type { CoreAuthContext, Env } from './types.js';
 import { simulateEducationScenario } from './education-scenarios.js';
 import { safeString } from './utils.js';
 
-interface IntentPreview{intent:string;scenario_type:string|null;confidence:number;complete:boolean;resolved:Record<string,unknown>;missing:string[];ambiguities:Array<{field:string;candidates:Array<{id:string;label:string}>}>;warnings:string[];explanation:string[];}
+interface IntentPreview{intent:string;scenario_type:string|null;confidence:number;complete:boolean;resolved:Record<string,unknown>;missing:string[];ambiguities:Array<{field:string;candidates:Array<{id:string;label:string}>}>;warnings:string[];explanation:string[];next_step?:{key:string;label:string;where:string}|null}
 function norm(v:string){return v.normalize('NFKC').toLocaleLowerCase('de-DE').replace(/[–—]/g,'-').replace(/\s+/g,' ').trim();}
 function partsAt(date:Date,timeZone:string){const parts=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(date),get=(t:string)=>Number(parts.find(p=>p.type===t)?.value||0);return{year:get('year'),month:get('month'),day:get('day'),hour:get('hour'),minute:get('minute'),second:get('second')};}
 function localDateKey(now:Date,timeZone:string){const p=partsAt(now,timeZone);return`${p.year}-${String(p.month).padStart(2,'0')}-${String(p.day).padStart(2,'0')}`;}
@@ -43,7 +43,17 @@ export async function previewEducationIntent(env:Env,auth:CoreAuthContext,tenant
     const treffer=await resolveEntity(env,tenantId,'resource',intent,explicit.resource_id);
     if(treffer.id)type='room_outage';
   }
-  if(!type)return{intent,scenario_type:null,confidence:0,complete:false,resolved,missing:['scenario_type'],ambiguities,warnings:['Die Absicht konnte keinem sicheren Szenario zugeordnet werden. Es wird nichts verändert.'],explanation:['Freitext wird ausschließlich in einen prüfbaren Szenariovorschlag übersetzt. Unklare Eingaben führen niemals zu Schreibzugriffen.']};
+  if(!type)return{intent,scenario_type:null,confidence:0,complete:false,resolved,missing:['scenario_type'],ambiguities,next_step:null,warnings:['Die Absicht konnte keinem sicheren Szenario zugeordnet werden. Es wird nichts verändert.'],explanation:['Freitext wird ausschließlich in einen prüfbaren Szenariovorschlag übersetzt. Unklare Eingaben führen niemals zu Schreibzugriffen.']};
+  // Wohin der Kunde als Naechstes muss. Reine Angabe, keine Ausfuehrung: der Absichtsweg
+  // schlaegt vor und fuehrt niemals aus - diese Bauart wird eigens geprueft.
+  const NAECHSTER_SCHRITT:Record<string,{key:string;label:string;where:string}>={
+    timetable_draft:{key:'timetable_autofill',label:'Stundenplan automatisch entwerfen',where:'Ressourcen & Regeln'},
+    schedule_rebalance:{key:'timetable_autofill',label:'Stundenplan automatisch entwerfen',where:'Ressourcen & Regeln'},
+    certificate_batch:{key:'certificate_course',label:'Bescheinigungen für die ganze Klasse vorbereiten',where:'Bescheinigungen / Zertifikate'},
+    reportbook_batch:{key:'reportbook_periods',label:'Berichtsheft-Zeiträume für die ganze Klasse eröffnen',where:'Berichtshefte'},
+    room_outage:{key:'planning_resources',label:'Sperrzeit für die Ressource eintragen',where:'Ressourcen & Regeln'},
+    teacher_absence:{key:'planning_absence',label:'Abwesenheit eintragen',where:'Ressourcen & Regeln'},
+  };
   explanation.push(`Erkanntes Szenario: ${type}.`);explanation.push(`Zeitangaben werden in der Mandanten-Zeitzone ${tz} aufgelöst.`);
   const d=relativeDate(intent,tz),period=datePeriod(intent,tz),range=timeRange(intent),course=await resolveEntity(env,tenantId,'course',intent,explicit.course_id);
   if(course.candidates.length)ambiguities.push({field:'course_id',candidates:course.candidates});if(course.id){resolved.course_id=course.id;resolved.course_label=course.label;}
@@ -110,7 +120,8 @@ export async function previewEducationIntent(env:Env,auth:CoreAuthContext,tenant
   const complete=missing.length===0&&ambiguities.length===0,base=.72,confidence=Math.max(0,Math.min(1,base+(complete?0.25:0)-(ambiguities.length*.2)-(missing.length*.12)));
   if(!complete)warnings.push('Die Eingabe ist nicht eindeutig genug für eine Simulation. Fehlende oder mehrdeutige Felder müssen zuerst aufgelöst werden.');
   explanation.push('Es wurden keine Produktivdaten verändert.');explanation.push('Auch eine vollständige Absicht erzeugt zunächst nur eine Simulation; Ausführung bleibt ein separater Passwortbestätigungs- und Freigabeschritt.');
-  return{intent,scenario_type:type,confidence:Math.round(confidence*100)/100,complete,resolved,missing:[...new Set(missing)],ambiguities,warnings,explanation};
+  const naechster=NAECHSTER_SCHRITT[type]??null;
+  return{intent,scenario_type:type,confidence:Math.round(confidence*100)/100,complete,resolved,missing:[...new Set(missing)],ambiguities,warnings,explanation,next_step:naechster};
 }
 
 export async function simulateEducationIntent(env:Env,auth:CoreAuthContext,tenantId:string,intentText:string,explicit:Record<string,unknown>={}){const preview=await previewEducationIntent(env,auth,tenantId,intentText,explicit);if(!preview.complete||!preview.scenario_type)throw new Error('INTENT_NOT_SAFE_TO_SIMULATE');const result=await simulateEducationScenario(env,auth,tenantId,preview.scenario_type,preview.resolved,intentText);return{preview,...result};}
