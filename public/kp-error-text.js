@@ -573,7 +573,7 @@
     CERTIFICATE_NOT_ISSUABLE:'Diese Bescheinigung muss zuerst freigegeben werden, bevor sie ausgestellt werden kann.',
     CERTIFICATE_NOT_REVOCABLE:'Diese Bescheinigung kann in ihrem aktuellen Stand nicht widerrufen werden.',
     CERTIFICATE_REVOCATION_REASON_REQUIRED:'Bitte einen Widerrufsgrund angeben; er wird bei der öffentlichen Prüfung angezeigt.',
-    CERTIFICATE_BATCH_TOO_LARGE:'Diese Klasse hat zu viele Teilnehmende für einen Sammellauf. Bitte in kleineren Gruppen vorbereiten.',
+    CERTIFICATE_BATCH_TOO_LARGE:'Diese Klasse hat mehr Teilnehmende, als ein Sammellauf sicher schafft. Bitte die Personen in zwei Gruppen auswählen und nacheinander vorbereiten - vorbereitete Bescheinigungen bleiben dabei erhalten.',
     FORBIDDEN_CERTIFICATE:'Für Bescheinigungen fehlt die erforderliche Berechtigung.',
 
     // Berichtsheft / Tätigkeitsnachweis
@@ -582,7 +582,7 @@
     REPORT_BOOK_DATE_REQUIRED:'Bitte ein Datum für den Eintrag angeben.',
     REPORT_BOOK_EMPTY:'Dieser Zeitraum enthält noch keine Einträge und kann deshalb nicht eingereicht werden.',
     REPORT_BOOK_LOCKED:'Dieser Zeitraum ist bereits eingereicht und kann nicht mehr geändert werden.',
-    REPORT_BOOK_BATCH_TOO_LARGE:'Diese Klasse hat zu viele Teilnehmende für einen Sammellauf. Bitte in kleineren Gruppen eröffnen.',
+    REPORT_BOOK_BATCH_TOO_LARGE:'Diese Klasse hat mehr Teilnehmende, als ein Sammellauf sicher schafft. Bitte an den Support wenden - so große Klassen brauchen einen eigenen Weg.',
     FORBIDDEN_REPORT_BOOK:'Für dieses Berichtsheft fehlt die erforderliche Berechtigung.',
 
     // Unterschriften
