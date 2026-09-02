@@ -131,6 +131,40 @@ export async function deleteTeacherAvailability(env:Env,auth:CoreAuthContext,ten
   return{availability_id:availabilityId};
 }
 
+// Geleistete Stunden je Dozentin oder Dozent in einem Zeitraum - fuer Honorarkraefte die
+// Grundlage ihrer Rechnung, fuer den Traeger die Kostenkontrolle.
+//
+// Getrennt ausgewiesen: was tatsaechlich stattgefunden hat (veroeffentlichter Unterricht) und
+// was erst geplant ist (Entwuerfe). Beides in eine Zahl zu werfen waere eine Rechnung ueber
+// Stunden, die es noch nicht gibt.
+export async function teacherWorkloadSummary(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
+  const von=safeString(input.from,10),bis=safeString(input.to,10);
+  if(!von||!bis||!/^\d{4}-\d\d-\d\d$/.test(von)||!/^\d{4}-\d\d-\d\d$/.test(bis)||von>bis)throw new Error('WORKLOAD_PERIOD_INVALID');
+  const gefiltert=safeString(input.teacher_id,120);
+  if(gefiltert)await assertTeacherSelfOrManage(env,auth,tenantId,gefiltert);
+  else if(!admin(auth)&&!hasPermission(auth,'courses.manage'))throw new Error('FORBIDDEN_TEACHER_WORKLOAD');
+  const sql=`SELECT t.id teacher_id,t.name teacher_name,
+      COALESCE(wr.max_weekly_minutes,0) max_weekly_minutes,
+      (SELECT COALESCE(SUM((julianday(l.ends_at)-julianday(l.starts_at))*1440),0) FROM lessons l
+        WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND substr(l.starts_at,1,10) BETWEEN ?1 AND ?2) held_minutes,
+      (SELECT COUNT(*) FROM lessons l WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND substr(l.starts_at,1,10) BETWEEN ?1 AND ?2) held_lessons,
+      (SELECT COALESCE(SUM((julianday(e.ends_at)-julianday(e.starts_at))*1440),0) FROM timetable_plan_entries e
+        JOIN timetable_plan_versions v ON v.id=e.plan_id AND v.tenant_id=e.tenant_id
+        WHERE e.tenant_id=t.tenant_id AND e.teacher_id=t.id AND v.status IN ('draft','review') AND substr(e.starts_at,1,10) BETWEEN ?1 AND ?2) planned_minutes
+    FROM teachers t LEFT JOIN teacher_workload_rules wr ON wr.tenant_id=t.tenant_id AND wr.teacher_id=t.id
+    WHERE t.tenant_id=?3${gefiltert?' AND t.id=?4':''} ORDER BY t.name`;
+  const r=gefiltert?await env.DB.prepare(sql).bind(von,bis,tenantId,gefiltert).all<Record<string,unknown>>()
+                   :await env.DB.prepare(sql).bind(von,bis,tenantId).all<Record<string,unknown>>();
+  const zeilen=(r.results??[]).map(x=>({
+    teacher_id:String(x.teacher_id),teacher_name:String(x.teacher_name||''),
+    held_minutes:Math.round(Number(x.held_minutes||0)),held_lessons:Number(x.held_lessons||0),
+    planned_minutes:Math.round(Number(x.planned_minutes||0)),
+    max_weekly_minutes:Number(x.max_weekly_minutes||0)}));
+  return{from:von,to:bis,rows:zeilen,
+    held_minutes_total:zeilen.reduce((n,x)=>n+x.held_minutes,0),
+    planned_minutes_total:zeilen.reduce((n,x)=>n+x.planned_minutes,0)};
+}
+
 export async function planningSuggestions(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){requireManage(auth);const courseId=required(input.course_id,120),starts=iso(input.starts_at),ends=iso(input.ends_at),subjectId=optional(input.subject_id,120);courseScope(auth,courseId);if(!starts||!ends||starts>=ends)throw new Error('SUGGESTION_TIME_INVALID');
   const tag=wochentag(starts),zeitVon=localTime(starts),zeitBis=localTime(ends),datum=dateKey(starts);
   // Die Auslastung zaehlt Unterricht UND Entwuerfe: sonst waere die vereinbarte Grenze einer

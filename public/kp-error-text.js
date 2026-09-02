@@ -286,6 +286,8 @@
     AVAILABILITY_PREFERENCE_INVALID:'Bitte angeben, ob dieses Zeitfenster möglich oder bevorzugt ist.',
     AVAILABILITY_TOO_MANY:'Für diese Person sind bereits sehr viele Zeitfenster hinterlegt. Bitte nicht mehr benötigte entfernen.',
     AVAILABILITY_NOT_FOUND:'Dieses Zeitfenster wurde nicht gefunden. Möglicherweise wurde es bereits entfernt.',
+    WORKLOAD_PERIOD_INVALID:'Bitte einen gültigen Zeitraum angeben; das Ende darf nicht vor dem Beginn liegen.',
+    FORBIDDEN_TEACHER_WORKLOAD:'Die Stundenübersicht aller Dozentinnen und Dozenten sieht nur die Planungsverwaltung. Die eigenen Stunden sind davon nicht betroffen.',
     FORBIDDEN_TEACHER_AVAILABILITY:'Arbeitszeiten darf nur die betreffende Person selbst oder die Planungsverwaltung eintragen.',
     TEACHER_NOT_FOUND:'Diese Dozentin oder dieser Dozent wurde nicht gefunden.',
 
