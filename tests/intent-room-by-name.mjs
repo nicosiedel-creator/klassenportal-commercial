@@ -173,4 +173,32 @@ assert.ok(sp2.warnings.some(w=>/Kursregeln/i.test(w)),
 const sp3=await frage('Der Stundenplan für Fachklasse Metall 3 muss neu gemacht werden');
 assert.equal(sp3.scenario_type,'schedule_rebalance','"neu" bleibt eine Umplanung, kein Neuentwurf');
 
+// ---------------------------------------------------------------------------------------------
+// Der Autopilot sagt, wohin es weitergeht - und verschweigt seine Warnungen nicht mehr.
+// ---------------------------------------------------------------------------------------------
+assert.deepEqual(sp.next_step,{key:'timetable_autofill',label:'Stundenplan automatisch entwerfen',where:'Ressourcen & Regeln'},
+  `ein erkannter Vorgang muss den nächsten Schritt nennen: ${JSON.stringify(sp.next_step)}`);
+const zg=await frage('Erstell die Abschlusszeugnisse für Fachklasse Metall 3');
+assert.equal(zg.scenario_type,'certificate_batch');
+assert.equal(zg.next_step.key,'certificate_course','Zeugnisse führen zur Vorbereitung für die ganze Klasse');
+const bh=await frage('Berichtshefte für Fachklasse Metall 3 anfordern');
+assert.equal(bh.scenario_type,'reportbook_batch');
+assert.equal(bh.next_step.key,'reportbook_periods');
+const unklar=await frage('Hallo, wie geht es dir?');
+assert.equal(unklar.scenario_type,null);
+assert.equal(unklar.next_step,null,'was nicht erkannt wurde, bekommt auch keinen nächsten Schritt');
+
+// Der Absichtsweg bleibt schreibfrei - das ist die Bauart, auf der die Zusage ruht.
+const intentQuelle=await readFile('src/core/education-intent.ts','utf8');
+assert.deepEqual(intentQuelle.match(/\b(INSERT INTO|UPDATE\s+[a-z_]+\s+SET|DELETE FROM)\b/gi)||[],[],
+  'der Absichtsweg darf weiterhin nichts schreiben');
+
+// Die Oberfläche zeigt jetzt, was der Server sagt - vorher wurde beides verworfen.
+const eoUi=await readFile('public/education-os-ui.js','utf8');
+assert.match(eoUi,/\(p\.warnings\|\|\[\]\)\.map/,'die Warnungen des Servers müssen angezeigt werden');
+assert.match(eoUi,/p\.next_step\?/,'der nächste Schritt muss angezeigt werden');
+for(const [code,wort] of [['timetable_draft','Stundenplan entwerfen'],['certificate_batch','Zeugnisse'],['reportbook_batch','Berichtshefte']])
+  assert.ok(eoUi.includes(`${code}:'`)&&eoUi.includes(wort),`das Szenario ${code} muss im Klartext stehen, nicht als Code`);
+assert.match(eoUi,/FEHLT_LABEL=\{course_id:'Klasse/,'fehlende Angaben müssen im Klartext benannt werden, nicht als Feldname');
+
 console.log('intent-room-by-name: ok');
