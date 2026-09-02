@@ -2,7 +2,7 @@ import type { Env } from './types.js';
 import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { certificateEligibleParticipants } from './certificate-eligible.js';
-import { approveCertificate, createVerificationLink, issueCertificate, listCertificateRecords, listCertificateTemplates, myCertificates, prepareCertificate, revokeCertificate, saveCertificateTemplate, verifyCertificate } from './certificates.js';
+import { prepareCertificatesForCourse,approveCertificate, createVerificationLink, issueCertificate, listCertificateRecords, listCertificateTemplates, myCertificates, prepareCertificate, revokeCertificate, saveCertificateTemplate, verifyCertificate } from './certificates.js';
 import { assertSameOrigin, authStatus, json, safeErrorCode, safeString } from './utils.js';
 
 async function body(request:Request){try{return await request.json() as Record<string,unknown>;}catch{return{};}}
@@ -18,6 +18,7 @@ export async function handleCertificatesApi(request:Request,env:Env):Promise<Res
     if(path==='/api/certificates/eligible'&&request.method==='GET'){const course=safeString(courseId||u.searchParams.get('target_course_id'),120);if(!course)throw new Error('COURSE_ID_REQUIRED');return json({ok:true,participants:await certificateEligibleParticipants(env,auth,tenantId,course)});}
     if(path==='/api/certificates/records'&&request.method==='GET')return json({ok:true,records:await listCertificateRecords(env,auth,tenantId,courseId)});
     if(path==='/api/certificates/prepare'&&request.method==='POST'){await assertTenantWriteAllowed(env,tenantId);const b=await body(request),course=safeString(b.course_id||courseId,120),user=safeString(b.user_id,120),template=safeString(b.template_id,120);if(!course||!user||!template)throw new Error('CERTIFICATE_PREPARE_FIELDS_REQUIRED');return json({ok:true,certificate:await prepareCertificate(env,auth,tenantId,course,user,template)},201);}
+    if(path==='/api/certificates/prepare-course'&&request.method==='POST'){await assertTenantWriteAllowed(env,tenantId);const b=await body(request),course=safeString(b.course_id||courseId,120),template=safeString(b.template_id,120);if(!course||!template)throw new Error('CERTIFICATE_PREPARE_FIELDS_REQUIRED');return json({ok:true,batch:await prepareCertificatesForCourse(env,auth,tenantId,course,template)},201);}
     const approve=path.match(/^\/api\/certificates\/([^/]+)\/approve$/);if(approve&&request.method==='POST'){await assertTenantWriteAllowed(env,tenantId);return json({ok:true,certificate:await approveCertificate(env,auth,tenantId,decodeURIComponent(approve[1]))});}
     const issue=path.match(/^\/api\/certificates\/([^/]+)\/issue$/);if(issue&&request.method==='POST'){await assertTenantWriteAllowed(env,tenantId);return json({ok:true,certificate:await issueCertificate(env,auth,tenantId,decodeURIComponent(issue[1]))});}
     const revoke=path.match(/^\/api\/certificates\/([^/]+)\/revoke$/);if(revoke&&request.method==='POST'){await assertTenantWriteAllowed(env,tenantId);const b=await body(request);return json({ok:true,certificate:await revokeCertificate(env,auth,tenantId,decodeURIComponent(revoke[1]),b.reason)});}
