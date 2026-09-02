@@ -128,7 +128,49 @@ assert.ok(/<button[^>]*data-apply-suggestion/.test(ui),'es muss eine Schaltfläc
 assert.ok(/data-pick="teacher"[\s\S]{0,400}data-pick="room"/.test(ui),'Dozent/in und Raum müssen wählbar sein');
 assert.ok(/timetable-plans\/\$\{encodeURIComponent\(planId\)\}\/entries/.test(ui),'die Auswahl muss als Planeintrag entstehen');
 assert.ok(/\/validate/.test(ui),'der Entwurf muss anschließend geprüft werden');
-assert.ok(!/\/publish/.test(ui),'veröffentlicht wird nicht von hier - das bleibt die Freigabe des Kunden');
+// Veröffentlichen gibt es in dieser Oberfläche - aber nur als ausdrückliche Freigabe des Kunden,
+// nie als Nebenwirkung der Übernahme eines Vorschlags. Deshalb wird nicht mehr die ganze Datei
+// geprüft, sondern der Übernahmeweg selbst; ausgeführt bewiesen in tests/planning-apply-suggestion.mjs.
+const rumpfVon=name=>{const a=ui.indexOf(`function ${name}(`);assert.ok(a>=0,`Funktion ${name} nicht gefunden`);
+  let auf=ui.indexOf('{',a),tiefe=0,i=auf;
+  for(;i<ui.length;i++){const c=ui[i];if(c==='{')tiefe++;else if(c==='}'){tiefe--;if(!tiefe)break;}}
+  return ui.slice(a,i+1);};
+const uebernahme=rumpfVon('bindeUebernahme');
+assert.ok(uebernahme.includes('data-apply-suggestion'),'der Übernahmeweg muss auffindbar bleiben');
+assert.ok(!/\/publish/.test(uebernahme),'die Übernahme eines Vorschlags darf niemals veröffentlichen');
+for(const stelle of ui.split('/publish').slice(0,-1))
+  assert.ok(/confirm\([\s\S]{0,400}$/.test(stelle),'veröffentlicht wird nur nach ausdrücklicher Rückfrage beim Kunden');
 assert.ok(/status:'draft'/.test(ui),'ein neuer Plan entsteht als Entwurf');
+
+// ---------------------------------------------------------------------------------------------
+// Stundenplan erstellen lassen: der Kunde will planen lassen, nicht umplanen.
+// ---------------------------------------------------------------------------------------------
+db.exec(`
+INSERT INTO courses(id,tenant_id,location_id,name,code,access_mode,is_active,created_at,updated_at) VALUES('crs_zeug','${T}',NULL,'Fachklasse Metall 3','FM3','login',1,'${TS}','${TS}');
+INSERT INTO courses(id,tenant_id,location_id,name,code,access_mode,is_active,created_at,updated_at) VALUES('crs_elektro','${T}',NULL,'Fachklasse Elektro 1','FE1','login',1,'${TS}','${TS}');
+`);
+db.exec(`INSERT INTO course_scheduling_rules(tenant_id,course_id,earliest_start,latest_end,default_lesson_minutes,allow_saturday,allow_sunday,updated_by,updated_at) VALUES('${T}','crs_zeug','08:00','16:00',90,0,0,'${U}','${TS}');`);
+const sp=await frage('Erstell den Stundenplan für Fachklasse Metall 3 vom 07.09.2026 bis 30.09.2026');
+assert.equal(sp.scenario_type,'timetable_draft',
+  `"Erstell den Stundenplan …" muss als Entwurfsauftrag erkannt werden, war: ${sp.scenario_type}`);
+assert.equal(sp.resolved.course_id,'crs_zeug','die Klasse muss beim Namen erkannt werden');
+assert.equal(sp.resolved.starts_on,'2026-09-07','der Zeitraum muss übernommen werden');
+assert.equal(sp.resolved.ends_on,'2026-09-30');
+assert.equal(sp.resolved.planned_courses,1,'es muss gezählt werden, wofür überhaupt Kursregeln hinterlegt sind');
+assert.ok(sp.warnings.some(w=>/nur|ausschließlich/i.test(w)&&/Entwurf/i.test(w)),
+  `es muss ausdrücklich stehen, dass nur ein Entwurf entsteht: ${JSON.stringify(sp.warnings)}`);
+assert.ok(sp.warnings.some(w=>/Bestätigung/i.test(w)),'und dass erst eine Bestätigung veröffentlicht');
+
+// Ohne hinterlegte Kursregeln wird das gesagt statt geraten.
+const sp2=await frage('Erstell den Stundenplan für Fachklasse Elektro 1 vom 07.09.2026 bis 30.09.2026');
+assert.equal(sp2.scenario_type,'timetable_draft');
+assert.equal(sp2.resolved.course_id,'crs_elektro');
+assert.equal(sp2.resolved.planned_courses,0);
+assert.ok(sp2.warnings.some(w=>/Kursregeln/i.test(w)),
+  `fehlende Kursregeln müssen benannt werden: ${JSON.stringify(sp2.warnings)}`);
+
+// Umplanen bleibt Umplanen - das bestehende Szenario wird nicht verdrängt.
+const sp3=await frage('Der Stundenplan für Fachklasse Metall 3 muss neu gemacht werden');
+assert.equal(sp3.scenario_type,'schedule_rebalance','"neu" bleibt eine Umplanung, kein Neuentwurf');
 
 console.log('intent-room-by-name: ok');

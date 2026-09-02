@@ -3,8 +3,7 @@ import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { requireDelegatedPrivilegeAccess } from './delegated-privilege.js';
 import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
-import {
-  getCourseSchedulingRules,linkPlanEntryResource,listPlanningBlackouts,listTeacherUnavailability,
+import { autofillTimetablePlan,getCourseSchedulingRules,linkPlanEntryResource,listPlanningBlackouts,listTeacherUnavailability,
   planningSuggestions,publishAdvancedTimetablePlan,saveCourseSchedulingRules,savePlanningBlackout,
   saveResourceUnavailability,saveTeacherWorkloadRules,substituteSuggestions,validateAdvancedTimetablePlan,
 } from './planning-constraints.js';
@@ -18,7 +17,7 @@ function fail(e:unknown){const code=safeErrorCode(e),status=authStatus(code)??(c
 
 export async function handlePlanningApi(request:Request,env:Env):Promise<Response|null>{
   const url=new URL(request.url),path=url.pathname;
-  const advancedPlan=/^\/api\/education\/timetable-plans\/[^/]+\/(?:validate|publish)$/.test(path);
+  const advancedPlan=/^\/api\/education\/timetable-plans\/[^/]+\/(?:validate|publish|autofill)$/.test(path);
   if(!path.startsWith('/api/education/planning/')&&!advancedPlan)return null;
   try{
     assertSameOrigin(request,env.APP_ORIGIN);
@@ -28,6 +27,7 @@ export async function handlePlanningApi(request:Request,env:Env):Promise<Respons
     if(request.method!=='GET'&&request.method!=='HEAD')await assertTenantWriteAllowed(env,tenantId);
 
     const validate=path.match(/^\/api\/education\/timetable-plans\/([^/]+)\/validate$/);if(validate&&request.method==='POST')return json({ok:true,...await validateAdvancedTimetablePlan(env,auth,tenantId,decodeURIComponent(validate[1]))});
+    const autofill=path.match(/^\/api\/education\/timetable-plans\/([^/]+)\/autofill$/);if(autofill&&request.method==='POST')return json({ok:true,...await autofillTimetablePlan(env,auth,tenantId,decodeURIComponent(autofill[1]),await body(request))},201);
     const publish=path.match(/^\/api\/education\/timetable-plans\/([^/]+)\/publish$/);if(publish&&request.method==='POST')return json({ok:true,...await publishAdvancedTimetablePlan(env,auth,tenantId,decodeURIComponent(publish[1]))});
 
     if(path==='/api/education/planning/resources'&&request.method==='GET')return json({ok:true,resources:await listPlanningResourcesManaged(env,auth,tenantId)});

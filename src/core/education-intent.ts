@@ -35,6 +35,9 @@ export async function previewEducationIntent(env:Env,auth:CoreAuthContext,tenant
   // auf vorhandene Ausfuehrung auf (Zeugnisse vorbereiten, Nachweise anfordern) und aendern von
   // sich aus nichts.
   if(!type&&/\b(zeugnis|zeugnisse|abschlusszeugnis|abschlusszeugnisse|bescheinigung|bescheinigungen|zertifikat|zertifikate)\b/.test(n))type='certificate_batch';
+  // "erstell den stundenplan fuer klasse a fuer september": der Kunde will planen lassen, nicht
+  // umplanen. schedule_rebalance verlangt "neu/umplan/optimier" und greift dafuer nicht.
+  if(!type&&/\b(stundenplan|stundenplaene|stundenpläne|unterrichtsplan|wochenplan)\b/.test(n)&&/\b(erstell\w*|erzeug\w*|anleg\w*|entwirf|entwerf\w*|plane|planen|planung)\b/.test(n))type='timetable_draft';
   if(!type&&/\b(berichtsheft|berichtshefte|taetigkeitsnachweis|taetigkeitsnachweise|tätigkeitsnachweis|tätigkeitsnachweise|nachweisheft)\b/.test(n))type='reportbook_batch';
   if(!type&&/\b(gesperrt|defekt|ausgefallen|nicht\s+verfügbar|nicht\s+verfuegbar|geschlossen)\b/.test(n)){
     const treffer=await resolveEntity(env,tenantId,'resource',intent,explicit.resource_id);
@@ -63,6 +66,21 @@ export async function previewEducationIntent(env:Env,auth:CoreAuthContext,tenant
       ?'Zeugnisse werden nur vorbereitet und zur Freigabe vorgelegt. Ausgestellt wird nichts ohne ausdrückliche Bestätigung.'
       :'Nachweise werden nur angefordert und zur Prüfung vorgelegt. Abgeschlossen wird nichts ohne ausdrückliche Bestätigung.');
     explanation.push('Die Klasse wird gegen die echten Mandantendaten aufgelöst; die Anzahl der Betroffenen stammt aus den geführten Mitgliedschaften.');
+  }
+  // Ein Stundenplanentwurf ist ein Vorschlag, kein Betrieb. Aufgeloest werden Klasse und Zeitraum
+  // gegen die echten Daten; geplant wird spaeter nur, wofuer Kursregeln hinterlegt sind.
+  if(type==='timetable_draft'){
+    const k=await resolveEntity(env,tenantId,'course',intent,explicit.course_id);
+    if(k.candidates.length)ambiguities.push({field:'course_id',candidates:k.candidates});
+    if(k.id){resolved.course_id=k.id;resolved.course_label=k.label;}
+    if(period){resolved.starts_on=period.start;resolved.ends_on=period.end;}else missing.push('period');
+    const regeln=k.id
+      ?await env.DB.prepare('SELECT COUNT(*) n FROM course_scheduling_rules WHERE tenant_id=? AND course_id=?').bind(tenantId,k.id).first<{n:number}>()
+      :await env.DB.prepare('SELECT COUNT(*) n FROM course_scheduling_rules WHERE tenant_id=?').bind(tenantId).first<{n:number}>();
+    resolved.planned_courses=Number(regeln?.n||0);
+    if(!resolved.planned_courses)warnings.push('Für die gewünschte Klasse sind keine Kursregeln hinterlegt. Ohne Kursregeln entsteht kein Termin.');
+    warnings.push('Es entsteht ausschließlich ein Stundenplanentwurf. Veröffentlicht wird er erst nach ausdrücklicher Bestätigung.');
+    explanation.push('Der Entwurf entsteht aus den hinterlegten Kursregeln, freien Dozentinnen und Dozenten und freien Räumen; Lücken werden benannt statt geraten.');
   }
   if(type==='teacher_absence'){
     const e=await resolveEntity(env,tenantId,'teacher',intent,explicit.teacher_id);if(e.candidates.length)ambiguities.push({field:'teacher_id',candidates:e.candidates});if(e.id){resolved.teacher_id=e.id;resolved.teacher_label=e.label;}else if(!e.candidates.length)missing.push('teacher_id');

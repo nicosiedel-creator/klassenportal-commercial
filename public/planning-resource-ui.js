@@ -42,6 +42,7 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
         <section class="card"><h3>Dozenten-Abwesenheit</h3><form data-absence><label class="field">Dozent/in *<select name="teacher_id" required>${options(teachers)}</select></label><div class="row"><label class="field">Beginn *<input name="starts_at" type="datetime-local" required></label><label class="field">Ende *<input name="ends_at" type="datetime-local" required></label></div><label class="field">Grund<input name="reason"></label><label class="field">Art<select name="source"><option value="manual">Manuell</option><option value="sickness">Krankheit</option><option value="vacation">Urlaub</option><option value="training">Fortbildung</option><option value="external">Extern</option></select></label><button class="btn" type="submit"${readOnly?' disabled':''}>Abwesenheit speichern</button></form><div data-absence-list style="margin-top:10px"></div></section>
         <section class="card"><h3>Kursregeln</h3><form data-rules><label class="field">Kurs / Klasse *<select name="course_id" required>${options(courses)}</select></label><div class="row"><label class="field">Frühester Beginn<input name="earliest_start" type="time"></label><label class="field">Spätestes Ende<input name="latest_end" type="time"></label></div><div class="row"><label class="field">Max. Minuten/Tag<input name="max_daily_minutes" type="number" min="0"></label><label class="field">Max. am Stück<input name="max_consecutive_minutes" type="number" min="0"></label><label class="field">Mindestpause<input name="min_break_minutes" type="number" min="0"></label></div><label><input type="checkbox" name="allow_saturday"> Samstag erlauben</label> <label><input type="checkbox" name="allow_sunday"> Sonntag erlauben</label><div><button class="btn" type="submit"${readOnly?' disabled':''}>Kursregeln speichern</button></div></form></section>
         <section class="card"><h3>Automatische Planungsvorschläge</h3><form data-suggestion><label class="field">Kurs / Klasse *<select name="course_id" required>${options(courses)}</select></label><div class="row"><label class="field">Beginn *<input name="starts_at" type="datetime-local" required></label><label class="field">Ende *<input name="ends_at" type="datetime-local" required></label></div><button class="btn secondary" type="submit">Passende Dozenten & Räume suchen</button></form><div data-suggestions style="margin-top:10px"></div></section>
+        <section class="card"><h3>Stundenplan automatisch entwerfen</h3><div class="notice"><strong>Erzeugt nur einen Entwurf</strong><div class="muted" style="margin-top:4px">Es wird nichts veröffentlicht und nichts im laufenden Betrieb verändert. Grundlage sind die hinterlegten Kursregeln. Wo keine freie Dozentin, kein freier Dozent oder kein freier Raum gefunden wird, entsteht bewusst kein Termin – die Lücke wird benannt.</div></div><form data-autofill style="margin-top:12px"><label class="field">Klassen / Kurse <span class="muted">nichts ausgewählt = alle mit Kursregeln</span><select name="course_ids" multiple size="6">${courses.map(c=>`<option value="${E(c.id)}">${E(c.name)}</option>`).join('')}</select></label><div class="row"><label class="field">Von *<input name="starts_on" type="date" required></label><label class="field">Bis *<input name="ends_on" type="date" required></label></div><button class="btn" type="submit"${readOnly?' disabled':''}>Entwurf erzeugen</button></form><div data-autofill-result style="margin-top:10px"></div></section>
       </div>`);
     if(errors.length)status(w,`Einzelne Bereiche konnten nicht geladen werden: ${errors.join(' ')}`,'warn');
 
@@ -65,6 +66,24 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
     const rulesForm=w.querySelector('[data-rules]');rulesForm.onsubmit=async e=>{e.preventDefault();if(readOnly)return;submitButton(rulesForm,true);const fd=new FormData(rulesForm),course=String(fd.get('course_id')||'');try{await api(q(`/api/education/planning/courses/${encodeURIComponent(course)}/rules`,t),{method:'PUT',body:JSON.stringify({earliest_start:String(fd.get('earliest_start')||'')||null,latest_end:String(fd.get('latest_end')||'')||null,max_daily_minutes:fd.get('max_daily_minutes')===''?null:Number(fd.get('max_daily_minutes')),max_consecutive_minutes:fd.get('max_consecutive_minutes')===''?null:Number(fd.get('max_consecutive_minutes')),min_break_minutes:fd.get('min_break_minutes')===''?null:Number(fd.get('min_break_minutes')),allow_saturday:fd.get('allow_saturday')==='on',allow_sunday:fd.get('allow_sunday')==='on'})});status(w,'Kursregeln gespeichert.');}catch(x){status(w,friendly(x.code,x.status),'warn');}finally{submitButton(rulesForm,false);}};
     rulesForm.elements.course_id.onchange=async()=>{const course=rulesForm.elements.course_id.value;if(!course)return;try{const d=await api(q(`/api/education/planning/courses/${encodeURIComponent(course)}/rules`,t)),r=d.rules||{};for(const k of ['earliest_start','latest_end','max_daily_minutes','max_consecutive_minutes','min_break_minutes'])rulesForm.elements[k].value=r[k]??'';rulesForm.elements.allow_saturday.checked=Boolean(Number(r.allow_saturday));rulesForm.elements.allow_sunday.checked=Boolean(Number(r.allow_sunday));}catch(x){status(w,friendly(x.code,x.status),'warn');}};
     const suggestionForm=w.querySelector('[data-suggestion]');suggestionForm.onsubmit=async e=>{e.preventDefault();const fd=new FormData(suggestionForm),out=w.querySelector('[data-suggestions]'),course=String(fd.get('course_id')||''),starts=localToUtc(fd.get('starts_at'),tz),ends=localToUtc(fd.get('ends_at'),tz);out.textContent='Vorschläge werden berechnet …';try{const d=await api(q('/api/education/planning/suggestions',t,{course_id:course,starts_at:starts,ends_at:ends}));out.innerHTML=`<div class="notice"><strong>${E(d.participant_count||0)} Teilnehmende berücksichtigt</strong><div class="muted">Nur verfügbare und passende Optionen werden vorgeschlagen.</div></div><h4>Dozent/in wählen</h4><div class="toolbar">${(d.teachers||[]).map(x=>`<button type="button" class="pill" data-pick="teacher" data-teacher-id="${E(x.id)}" data-label="${E(x.name)}" aria-pressed="false">${E(x.name)}${Number(x.qualified)?' · fachqualifiziert':''}</button>`).join('')||'<span class="muted">Kein passender Dozent frei.</span>'}</div><h4>Raum wählen</h4><div class="toolbar">${(d.rooms||[]).map(x=>`<button type="button" class="pill" data-pick="room" data-resource-id="${E(x.id)}" data-label="${E(x.name)}" aria-pressed="false">${E(x.name)}${x.capacity!=null?` · ${E(x.capacity)} Plätze`:''}</button>`).join('')||'<span class="muted">Kein passender Raum frei.</span>'}</div><div class="toolbar" style="margin-top:12px"><button type="button" class="btn" data-apply-suggestion disabled>In Stundenplanentwurf übernehmen</button><span class="muted" data-apply-hint>Wähle Dozent/in und Raum.</span></div><div data-apply-result style="margin-top:10px"></div>`;bindeUebernahme(out,{course,starts,ends});}catch(x){out.innerHTML=`<div class="notice">${E(friendly(x.code,x.status))}</div>`;}};
+
+    const autofillForm=w.querySelector('[data-autofill]');autofillForm.onsubmit=async e=>{
+      e.preventDefault();if(readOnly)return;
+      const fd=new FormData(autofillForm),ziel=w.querySelector('[data-autofill-result]'),
+        von=String(fd.get('starts_on')||''),bis=String(fd.get('ends_on')||''),
+        kurse=fd.getAll('course_ids').map(String).filter(Boolean);
+      if(!von||!bis||von>bis){ziel.innerHTML='<div class="notice">Bitte einen gültigen Zeitraum wählen: das Ende darf nicht vor dem Beginn liegen.</div>';return;}
+      submitButton(autofillForm,true);ziel.textContent='Entwurf wird erzeugt …';
+      try{
+        const planId=await entwurfFuer(t,`${von}T00:00:00.000Z`,`${bis}T23:59:59.000Z`);
+        if(!planId)throw new ApiError('TIMETABLE_PLAN_NOT_FOUND',404);
+        const r=await api(q(`/api/education/timetable-plans/${encodeURIComponent(planId)}/autofill`,t),{method:'POST',body:JSON.stringify({course_ids:kurse})});
+        const geprueft=await api(q(`/api/education/timetable-plans/${encodeURIComponent(planId)}/validate`,t),{method:'POST',body:'{}'});
+        ziel.innerHTML=entwurfBericht(r,geprueft);
+        bindeFreigabe(ziel,planId);
+      }catch(x){ziel.innerHTML=`<div class="notice">${E(friendly(x.code,x.status))}</div>`;}
+      submitButton(autofillForm,false);
+    };
   }
 
   // Die Vorschlaege waren bisher reine Anzeige: Namen, die wie Schaltflaechen aussahen, aber
@@ -76,7 +95,7 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
   // -> veroeffentlichen ist der Weg, den das Portal ohnehin kennt, und er laesst dem Kunden die
   // Bestaetigung. Ein bestehender Entwurf desselben Zeitraums wird weiterverwendet, damit nicht
   // bei jedem Vorschlag ein neuer entsteht.
-  async function entwurfFuer(tenant,course,starts,ends){
+  async function entwurfFuer(tenant,starts,ends){
     const tag=v=>String(v||'').slice(0,10);
     const vorhandene=(await api(q('/api/education/timetable-plans',tenant))).plans||[];
     const passend=vorhandene.find(x=>String(x.status)==='draft'&&tag(x.starts_on)<=tag(starts)&&tag(x.ends_on)>=tag(ends));
@@ -84,6 +103,31 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
     const neu=await api(q('/api/education/timetable-plans',tenant),{method:'POST',body:JSON.stringify({
       name:`Planung ab ${tag(starts)}`,starts_on:tag(starts),ends_on:tag(ends),status:'draft'})});
     return neu.plan?.id||neu.id;
+  }
+  const LUECKEN_GRUND={NO_TEACHER_AVAILABLE:'keine freie Dozentin / kein freier Dozent',NO_ROOM_AVAILABLE:'kein freier Raum',LESSON_EXCEEDS_DAY:'die Kursregel ergibt keine gültige Unterrichtszeit',LESSON_AFTER_LATEST_END:'die Unterrichtszeit läge nach dem gewünschten Ende'};
+  function entwurfBericht(r,geprueft){
+    const fehler=Number(geprueft.errors||0),warn=Number(geprueft.warnings||0),offen=Number(r.gap_count||0);
+    const proKurs=(r.courses||[]).map(c=>`<li>${E(c.course_name)}: ${E(c.created)} Termin(e)</li>`).join('');
+    const luecken=(r.gaps||[]).slice(0,50).map(g=>`<li>${E(g.course_name)} · ${E(g.date)} · ${E(LUECKEN_GRUND[g.reason]||g.reason)}</li>`).join('');
+    return `<div class="notice ${fehler?'':'ok'}"><strong>${E(Number(r.created||0))} Termin(e) im Entwurf angelegt.</strong>`
+      +`<div class="muted">${fehler?`${fehler} Konflikt(e) und `:''}${warn} Hinweis(e) aus der Prüfung. Nichts ist veröffentlicht.</div></div>`
+      +(proKurs?`<h4>Je Klasse / Kurs</h4><ul>${proKurs}</ul>`:'')
+      +(offen?`<h4>${offen} offene Lücke(n)</h4><ul>${luecken}</ul>${offen>50?'<div class="muted">Es werden die ersten 50 gezeigt.</div>':''}`:'<div class="muted">Keine offenen Lücken.</div>')
+      +(r.limit_reached?'<div class="notice">Die Obergrenze je Lauf wurde erreicht. Bitte den Zeitraum verkleinern und erneut ausführen.</div>':'')
+      +`<div class="toolbar" style="margin-top:12px"><button type="button" class="btn" data-release${fehler?' disabled':''}>Entwurf verbindlich veröffentlichen</button>`
+      +`<span class="muted">${fehler?'Erst die Konflikte klären – mit Konflikten veröffentlicht der Server nicht.':'Erst nach Deiner Bestätigung wird veröffentlicht.'}</span></div>`
+      +`<div data-release-result style="margin-top:10px"></div>`;
+  }
+  function bindeFreigabe(ziel,planId){
+    const b=ziel.querySelector('[data-release]');if(!b||b.disabled)return;
+    const out=ziel.querySelector('[data-release-result]');
+    b.onclick=async()=>{
+      if(!confirm('Der Entwurf wird verbindlich veröffentlicht und ist danach für alle sichtbar. Fortfahren?'))return;
+      b.disabled=true;out.textContent='Wird veröffentlicht …';
+      try{const r=await api(q(`/api/education/timetable-plans/${encodeURIComponent(planId)}/publish`,t),{method:'POST',body:'{}'});
+        out.innerHTML=`<div class="notice ok"><strong>Veröffentlicht.</strong><div class="muted">${E(Number(r.published||0))} Termin(e) sind jetzt im Betrieb sichtbar.</div></div>`;
+      }catch(x){out.innerHTML=`<div class="notice">${E(friendly(x.code,x.status))}</div>`;b.disabled=false;}
+    };
   }
   function bindeUebernahme(out,ctx){
     const wahl={teacher:null,room:null};
@@ -98,7 +142,7 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
     knopf.onclick=async()=>{
       knopf.disabled=true;ergebnis.textContent='Wird in den Entwurf übernommen …';
       try{
-        const tenant=t,planId=await entwurfFuer(tenant,ctx.course,ctx.starts,ctx.ends);
+        const tenant=t,planId=await entwurfFuer(tenant,ctx.starts,ctx.ends);
         if(!planId)throw new Error('TIMETABLE_PLAN_NOT_FOUND');
         await api(q(`/api/education/timetable-plans/${encodeURIComponent(planId)}/entries`,tenant),{method:'POST',
           body:JSON.stringify({course_id:ctx.course,teacher_id:wahl.teacher.id,room:wahl.room.label,
