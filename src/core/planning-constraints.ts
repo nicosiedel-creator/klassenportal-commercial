@@ -133,15 +133,27 @@ export async function deleteTeacherAvailability(env:Env,auth:CoreAuthContext,ten
 
 export async function planningSuggestions(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){requireManage(auth);const courseId=required(input.course_id,120),starts=iso(input.starts_at),ends=iso(input.ends_at),subjectId=optional(input.subject_id,120);courseScope(auth,courseId);if(!starts||!ends||starts>=ends)throw new Error('SUGGESTION_TIME_INVALID');
   const tag=wochentag(starts),zeitVon=localTime(starts),zeitBis=localTime(ends),datum=dateKey(starts);
+  // Die Auslastung zaehlt Unterricht UND Entwuerfe: sonst waere die vereinbarte Grenze einer
+  // Honorarkraft schon ueberschritten, bevor der Entwurf ueberhaupt veroeffentlicht ist.
+  const montag=new Date(starts);montag.setUTCDate(montag.getUTCDate()-((montag.getUTCDay()+6)%7));
+  const sonntag=new Date(montag);sonntag.setUTCDate(sonntag.getUTCDate()+6);
+  const wocheVon=montag.toISOString().slice(0,10),wocheBis=sonntag.toISOString().slice(0,10);
+  const dauer=Math.max(0,Math.round((Date.parse(ends)-Date.parse(starts))/60000));
   const participantCount=Number((await env.DB.prepare("SELECT COUNT(DISTINCT user_id) n FROM memberships WHERE tenant_id=? AND course_id=? AND role IN ('participant','class_admin')").bind(tenantId,courseId).first<{n:number}>())?.n||0);
   const teachers=(await env.DB.prepare(`SELECT t.id,t.name,t.email,
     CASE WHEN ? IS NOT NULL AND EXISTS(SELECT 1 FROM teacher_qualifications q WHERE q.tenant_id=t.tenant_id AND q.teacher_id=t.id AND q.subject_id=? AND q.status='valid' AND (q.valid_until IS NULL OR q.valid_until>=date('now'))) THEN 1 ELSE 0 END qualified,
     (SELECT COUNT(*) FROM lessons l WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND l.course_id=?) familiarity,
-    (SELECT COALESCE(SUM((julianday(l.ends_at)-julianday(l.starts_at))*1440),0) FROM lessons l WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND substr(l.starts_at,1,10)=substr(?,1,10)) day_minutes,
+    COALESCE(wr.max_daily_minutes,0) max_daily_minutes,COALESCE(wr.max_weekly_minutes,0) max_weekly_minutes,
+    (SELECT COALESCE(SUM((julianday(l.ends_at)-julianday(l.starts_at))*1440),0) FROM lessons l WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND substr(l.starts_at,1,10)=?)
+    +(SELECT COALESCE(SUM((julianday(e.ends_at)-julianday(e.starts_at))*1440),0) FROM timetable_plan_entries e JOIN timetable_plan_versions v ON v.id=e.plan_id AND v.tenant_id=e.tenant_id
+      WHERE e.tenant_id=t.tenant_id AND e.teacher_id=t.id AND v.status IN ('draft','review') AND substr(e.starts_at,1,10)=? AND NOT(e.course_id=? AND e.starts_at=? AND e.ends_at=?)) day_minutes,
+    (SELECT COALESCE(SUM((julianday(l.ends_at)-julianday(l.starts_at))*1440),0) FROM lessons l WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND substr(l.starts_at,1,10) BETWEEN ? AND ?)
+    +(SELECT COALESCE(SUM((julianday(e.ends_at)-julianday(e.starts_at))*1440),0) FROM timetable_plan_entries e JOIN timetable_plan_versions v ON v.id=e.plan_id AND v.tenant_id=e.tenant_id
+      WHERE e.tenant_id=t.tenant_id AND e.teacher_id=t.id AND v.status IN ('draft','review') AND substr(e.starts_at,1,10) BETWEEN ? AND ? AND NOT(e.course_id=? AND e.starts_at=? AND e.ends_at=?)) week_minutes,
     (SELECT COALESCE(MAX(CASE WHEN av.preference='preferred' THEN 1 ELSE 0 END),0) FROM teacher_availability av
       WHERE av.tenant_id=t.tenant_id AND av.teacher_id=t.id AND av.weekday=? AND av.starts_time<=? AND av.ends_time>=?
         AND (av.valid_from IS NULL OR av.valid_from<=?) AND (av.valid_until IS NULL OR av.valid_until>=?)) preferred
-    FROM teachers t WHERE t.tenant_id=?
+    FROM teachers t LEFT JOIN teacher_workload_rules wr ON wr.tenant_id=t.tenant_id AND wr.teacher_id=t.id WHERE t.tenant_id=?
       AND NOT EXISTS(SELECT 1 FROM teacher_unavailability u WHERE u.tenant_id=t.tenant_id AND u.teacher_id=t.id AND u.starts_at<? AND u.ends_at>?)
       AND NOT EXISTS(SELECT 1 FROM lessons l WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND l.starts_at<? AND l.ends_at>?)
       AND NOT EXISTS(SELECT 1 FROM timetable_plan_entries e JOIN timetable_plan_versions v ON v.id=e.plan_id AND v.tenant_id=e.tenant_id
@@ -151,8 +163,15 @@ export async function planningSuggestions(env:Env,auth:CoreAuthContext,tenantId:
         OR EXISTS(SELECT 1 FROM teacher_availability av WHERE av.tenant_id=t.tenant_id AND av.teacher_id=t.id
           AND av.weekday=? AND av.starts_time<=? AND av.ends_time>=?
           AND (av.valid_from IS NULL OR av.valid_from<=?) AND (av.valid_until IS NULL OR av.valid_until>=?)))
-    ORDER BY qualified DESC,preferred DESC,familiarity DESC,day_minutes ASC,t.name LIMIT 20`).bind(subjectId,subjectId,courseId,starts,tag,zeitVon,zeitBis,datum,datum,tenantId,ends,starts,ends,starts,ends,starts,courseId,starts,ends,tag,zeitVon,zeitBis,datum,datum).all<Record<string,unknown>>()).results??[];
-  const rooms=(await env.DB.prepare(`SELECT r.id,r.name,r.code,r.location,r.capacity,r.features_json FROM planning_resources r WHERE r.tenant_id=? AND r.resource_type='room' AND r.status='active' AND (r.capacity IS NULL OR r.capacity>=?) AND NOT EXISTS(SELECT 1 FROM planning_resource_unavailability u WHERE u.tenant_id=r.tenant_id AND u.resource_id=r.id AND u.starts_at<? AND u.ends_at>?) AND NOT EXISTS(SELECT 1 FROM lesson_resource_reservations rr JOIN lessons l ON l.id=rr.lesson_id AND l.tenant_id=rr.tenant_id WHERE rr.tenant_id=r.tenant_id AND rr.resource_id=r.id AND l.starts_at<? AND l.ends_at>?) AND NOT EXISTS(SELECT 1 FROM timetable_plan_entries e JOIN timetable_plan_versions v ON v.id=e.plan_id AND v.tenant_id=e.tenant_id LEFT JOIN timetable_plan_entry_resources pr ON pr.tenant_id=e.tenant_id AND pr.entry_id=e.id WHERE e.tenant_id=r.tenant_id AND v.status IN ('draft','review') AND e.starts_at<? AND e.ends_at>? AND (pr.resource_id=r.id OR lower(COALESCE(e.room,''))=lower(r.name) OR (r.code IS NOT NULL AND r.code<>'' AND lower(COALESCE(e.room,''))=lower(r.code))) AND NOT(e.course_id=? AND e.starts_at=? AND e.ends_at=?)) ORDER BY CASE WHEN r.capacity IS NULL THEN 999999 ELSE r.capacity END,r.name LIMIT 20`).bind(tenantId,participantCount,ends,starts,ends,starts,ends,starts,courseId,starts,ends).all<Record<string,unknown>>()).results??[];return{teachers,rooms,participant_count:participantCount};}
+    ORDER BY qualified DESC,
+      CASE WHEN (max_daily_minutes>0 AND day_minutes+?>max_daily_minutes) OR (max_weekly_minutes>0 AND week_minutes+?>max_weekly_minutes) THEN 1 ELSE 0 END ASC,
+      preferred DESC,familiarity DESC,day_minutes ASC,t.name LIMIT 20`).bind(subjectId,subjectId,courseId,datum,datum,courseId,starts,ends,wocheVon,wocheBis,wocheVon,wocheBis,courseId,starts,ends,tag,zeitVon,zeitBis,datum,datum,tenantId,ends,starts,ends,starts,ends,starts,courseId,starts,ends,tag,zeitVon,zeitBis,datum,datum,dauer,dauer).all<Record<string,unknown>>()).results??[];
+  const rooms=(await env.DB.prepare(`SELECT r.id,r.name,r.code,r.location,r.capacity,r.features_json FROM planning_resources r WHERE r.tenant_id=? AND r.resource_type='room' AND r.status='active' AND (r.capacity IS NULL OR r.capacity>=?) AND NOT EXISTS(SELECT 1 FROM planning_resource_unavailability u WHERE u.tenant_id=r.tenant_id AND u.resource_id=r.id AND u.starts_at<? AND u.ends_at>?) AND NOT EXISTS(SELECT 1 FROM lesson_resource_reservations rr JOIN lessons l ON l.id=rr.lesson_id AND l.tenant_id=rr.tenant_id WHERE rr.tenant_id=r.tenant_id AND rr.resource_id=r.id AND l.starts_at<? AND l.ends_at>?) AND NOT EXISTS(SELECT 1 FROM timetable_plan_entries e JOIN timetable_plan_versions v ON v.id=e.plan_id AND v.tenant_id=e.tenant_id LEFT JOIN timetable_plan_entry_resources pr ON pr.tenant_id=e.tenant_id AND pr.entry_id=e.id WHERE e.tenant_id=r.tenant_id AND v.status IN ('draft','review') AND e.starts_at<? AND e.ends_at>? AND (pr.resource_id=r.id OR lower(COALESCE(e.room,''))=lower(r.name) OR (r.code IS NOT NULL AND r.code<>'' AND lower(COALESCE(e.room,''))=lower(r.code))) AND NOT(e.course_id=? AND e.starts_at=? AND e.ends_at=?)) ORDER BY CASE WHEN r.capacity IS NULL THEN 999999 ELSE r.capacity END,r.name LIMIT 20`).bind(tenantId,participantCount,ends,starts,ends,starts,ends,starts,courseId,starts,ends).all<Record<string,unknown>>()).results??[];const teachersMitLast=teachers.map(t=>{
+    const tag=Number(t.max_daily_minutes||0),woche=Number(t.max_weekly_minutes||0);
+    const ueberTag=tag>0&&Number(t.day_minutes||0)+dauer>tag,ueberWoche=woche>0&&Number(t.week_minutes||0)+dauer>woche;
+    return{...t,over_limit:ueberTag||ueberWoche?1:0,over_limit_reason:ueberTag?'DAILY':ueberWoche?'WEEKLY':null};
+  });
+  return{teachers:teachersMitLast,rooms,participant_count:participantCount};}
 
 // Erzeugt aus den hinterlegten Kursregeln einen vollstaendigen Stundenplanentwurf.
 // Bewusst nur ein Entwurf: es wird nichts veroeffentlicht, nichts im laufenden
