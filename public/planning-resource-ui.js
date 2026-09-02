@@ -64,7 +64,53 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
     const absenceForm=w.querySelector('[data-absence]');absenceForm.onsubmit=async e=>{e.preventDefault();if(readOnly)return;submitButton(absenceForm,true);const fd=new FormData(absenceForm);try{const d=await post(t,'/api/education/planning/teacher-unavailability',{teacher_id:String(fd.get('teacher_id')||''),starts_at:localToUtc(fd.get('starts_at'),tz),ends_at:localToUtc(fd.get('ends_at'),tz),reason:String(fd.get('reason')||''),source:String(fd.get('source')||'manual')});status(w,`${Number(d.substitution_cases_created||0)} Vertretungsfall/-fälle automatisch angelegt.`);setTimeout(reload,350);}catch(x){submitButton(absenceForm,false);status(w,friendly(x.code,x.status),'warn');}};
     const rulesForm=w.querySelector('[data-rules]');rulesForm.onsubmit=async e=>{e.preventDefault();if(readOnly)return;submitButton(rulesForm,true);const fd=new FormData(rulesForm),course=String(fd.get('course_id')||'');try{await api(q(`/api/education/planning/courses/${encodeURIComponent(course)}/rules`,t),{method:'PUT',body:JSON.stringify({earliest_start:String(fd.get('earliest_start')||'')||null,latest_end:String(fd.get('latest_end')||'')||null,max_daily_minutes:fd.get('max_daily_minutes')===''?null:Number(fd.get('max_daily_minutes')),max_consecutive_minutes:fd.get('max_consecutive_minutes')===''?null:Number(fd.get('max_consecutive_minutes')),min_break_minutes:fd.get('min_break_minutes')===''?null:Number(fd.get('min_break_minutes')),allow_saturday:fd.get('allow_saturday')==='on',allow_sunday:fd.get('allow_sunday')==='on'})});status(w,'Kursregeln gespeichert.');}catch(x){status(w,friendly(x.code,x.status),'warn');}finally{submitButton(rulesForm,false);}};
     rulesForm.elements.course_id.onchange=async()=>{const course=rulesForm.elements.course_id.value;if(!course)return;try{const d=await api(q(`/api/education/planning/courses/${encodeURIComponent(course)}/rules`,t)),r=d.rules||{};for(const k of ['earliest_start','latest_end','max_daily_minutes','max_consecutive_minutes','min_break_minutes'])rulesForm.elements[k].value=r[k]??'';rulesForm.elements.allow_saturday.checked=Boolean(Number(r.allow_saturday));rulesForm.elements.allow_sunday.checked=Boolean(Number(r.allow_sunday));}catch(x){status(w,friendly(x.code,x.status),'warn');}};
-    const suggestionForm=w.querySelector('[data-suggestion]');suggestionForm.onsubmit=async e=>{e.preventDefault();const fd=new FormData(suggestionForm),out=w.querySelector('[data-suggestions]'),course=String(fd.get('course_id')||''),starts=localToUtc(fd.get('starts_at'),tz),ends=localToUtc(fd.get('ends_at'),tz);out.textContent='Vorschläge werden berechnet …';try{const d=await api(q('/api/education/planning/suggestions',t,{course_id:course,starts_at:starts,ends_at:ends}));out.innerHTML=`<div class="notice"><strong>${E(d.participant_count||0)} Teilnehmende berücksichtigt</strong><div class="muted">Nur verfügbare und passende Optionen werden vorgeschlagen.</div></div><h4>Dozenten</h4><div class="toolbar">${(d.teachers||[]).map(x=>`<span class="pill" data-teacher-id="${E(x.id)}">${E(x.name)}${Number(x.qualified)?' · fachqualifiziert':''}</span>`).join('')||'<span class="muted">Kein passender Dozent frei.</span>'}</div><h4>Räume</h4><div class="toolbar">${(d.rooms||[]).map(x=>`<span class="pill" data-resource-id="${E(x.id)}">${E(x.name)}${x.capacity!=null?` · ${E(x.capacity)} Plätze`:''}</span>`).join('')||'<span class="muted">Kein passender Raum frei.</span>'}</div>`;}catch(x){out.innerHTML=`<div class="notice">${E(friendly(x.code,x.status))}</div>`;}};
+    const suggestionForm=w.querySelector('[data-suggestion]');suggestionForm.onsubmit=async e=>{e.preventDefault();const fd=new FormData(suggestionForm),out=w.querySelector('[data-suggestions]'),course=String(fd.get('course_id')||''),starts=localToUtc(fd.get('starts_at'),tz),ends=localToUtc(fd.get('ends_at'),tz);out.textContent='Vorschläge werden berechnet …';try{const d=await api(q('/api/education/planning/suggestions',t,{course_id:course,starts_at:starts,ends_at:ends}));out.innerHTML=`<div class="notice"><strong>${E(d.participant_count||0)} Teilnehmende berücksichtigt</strong><div class="muted">Nur verfügbare und passende Optionen werden vorgeschlagen.</div></div><h4>Dozent/in wählen</h4><div class="toolbar">${(d.teachers||[]).map(x=>`<button type="button" class="pill" data-pick="teacher" data-id="${E(x.id)}" data-label="${E(x.name)}" aria-pressed="false">${E(x.name)}${Number(x.qualified)?' · fachqualifiziert':''}</button>`).join('')||'<span class="muted">Kein passender Dozent frei.</span>'}</div><h4>Raum wählen</h4><div class="toolbar">${(d.rooms||[]).map(x=>`<button type="button" class="pill" data-pick="room" data-id="${E(x.id)}" data-label="${E(x.name)}" aria-pressed="false">${E(x.name)}${x.capacity!=null?` · ${E(x.capacity)} Plätze`:''}</button>`).join('')||'<span class="muted">Kein passender Raum frei.</span>'}</div><div class="toolbar" style="margin-top:12px"><button type="button" class="btn" data-apply-suggestion disabled>In Stundenplanentwurf übernehmen</button><span class="muted" data-apply-hint>Wähle Dozent/in und Raum.</span></div><div data-apply-result style="margin-top:10px"></div>`;bindeUebernahme(out,{course,starts,ends});}catch(x){out.innerHTML=`<div class="notice">${E(friendly(x.code,x.status))}</div>`;}};
+  }
+
+  // Die Vorschlaege waren bisher reine Anzeige: Namen, die wie Schaltflaechen aussahen, aber
+  // keine waren. Wer einen passenden Dozenten und Raum gefunden hatte, musste die Stunde
+  // anschliessend von Hand woanders anlegen - die Oberflaeche versprach etwas, was sie nicht
+  // einloeste. Gemeldet aus dem Kundenbetrieb.
+  //
+  // Uebernommen wird in einen ENTWURF, nicht direkt in den laufenden Betrieb: Entwurf -> pruefen
+  // -> veroeffentlichen ist der Weg, den das Portal ohnehin kennt, und er laesst dem Kunden die
+  // Bestaetigung. Ein bestehender Entwurf desselben Zeitraums wird weiterverwendet, damit nicht
+  // bei jedem Vorschlag ein neuer entsteht.
+  async function entwurfFuer(tenant,course,starts,ends){
+    const tag=v=>String(v||'').slice(0,10);
+    const vorhandene=(await api(q('/api/education/timetable-plans',tenant))).plans||[];
+    const passend=vorhandene.find(x=>String(x.status)==='draft'&&tag(x.starts_on)<=tag(starts)&&tag(x.ends_on)>=tag(ends));
+    if(passend)return passend.id;
+    const neu=await api(q('/api/education/timetable-plans',tenant),{method:'POST',body:JSON.stringify({
+      name:`Planung ab ${tag(starts)}`,starts_on:tag(starts),ends_on:tag(ends),status:'draft'})});
+    return neu.plan?.id||neu.id;
+  }
+  function bindeUebernahme(out,ctx){
+    const wahl={teacher:null,room:null};
+    const knopf=out.querySelector('[data-apply-suggestion]'),hinweis=out.querySelector('[data-apply-hint]'),ergebnis=out.querySelector('[data-apply-result]');
+    const auffrischen=()=>{const fertig=Boolean(wahl.teacher&&wahl.room);knopf.disabled=!fertig;
+      hinweis.textContent=fertig?`${wahl.teacher.label} · ${wahl.room.label}`:'Wähle Dozent/in und Raum.';};
+    out.querySelectorAll('[data-pick]').forEach(b=>{b.onclick=()=>{
+      const art=b.dataset.pick;
+      out.querySelectorAll(`[data-pick="${art}"]`).forEach(x=>x.setAttribute('aria-pressed','false'));
+      b.setAttribute('aria-pressed','true');
+      wahl[art]={id:b.dataset.id,label:b.dataset.label};auffrischen();};});
+    knopf.onclick=async()=>{
+      knopf.disabled=true;ergebnis.textContent='Wird in den Entwurf übernommen …';
+      try{
+        const tenant=t,planId=await entwurfFuer(tenant,ctx.course,ctx.starts,ctx.ends);
+        if(!planId)throw new Error('TIMETABLE_PLAN_NOT_FOUND');
+        await api(q(`/api/education/timetable-plans/${encodeURIComponent(planId)}/entries`,tenant),{method:'POST',
+          body:JSON.stringify({course_id:ctx.course,teacher_id:wahl.teacher.id,room:wahl.room.label,
+            starts_at:ctx.starts,ends_at:ctx.ends,activity_type:'lesson'})});
+        const geprueft=await api(q(`/api/education/timetable-plans/${encodeURIComponent(planId)}/validate`,tenant),{method:'POST',body:'{}'});
+        const fehler=Number(geprueft.errors||0),warnungen=Number(geprueft.warnings||0);
+        ergebnis.innerHTML=`<div class="notice ${fehler?'':'ok'}"><strong>In den Entwurf übernommen.</strong>`
+          +`<div class="muted">${fehler?`${fehler} Konflikt(e) und `:''}${warnungen} Hinweis(e). `
+          +`Nichts ist im laufenden Betrieb verändert – der Entwurf wird erst nach Deiner Freigabe veröffentlicht.</div></div>`;
+      }catch(x){ergebnis.innerHTML=`<div class="notice">${E(friendly(x.code,x.status))}</div>`;knopf.disabled=false;}
+    };
+    auffrischen();
   }
 
   function enhance(){const side=document.querySelector('.side');if(!side||side.querySelector('#planning-resource-nav'))return;const b=document.createElement('button');b.id='planning-resource-nav';b.className='nav';b.textContent='Ressourcen & Regeln';b.onclick=()=>void open();const spacer=side.querySelector('.spacer');side.insertBefore(b,spacer||null);}

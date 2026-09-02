@@ -81,4 +81,54 @@ if(p6.scenario_type==='room_outage')
 const p7=await frage('Frau Hoffmann ist morgen krank');
 assert.equal(p7.scenario_type,'teacher_absence','die bestehende Erkennung darf nicht verdrängt werden');
 
+// ---------------------------------------------------------------------------------------------
+// 5. Personen und Klassen bei ihrem Namen - nicht nur Räume. Und zwei Vorgänge, die der Betrieb
+//    wirklich braucht: Zeugnisse und Nachweise für eine Klasse.
+// ---------------------------------------------------------------------------------------------
+db.exec(`
+INSERT INTO courses(id,tenant_id,location_id,name,code,access_mode,is_active,created_at,updated_at) VALUES('crs_vfa','${T}',NULL,'Umschulung Verwaltungsfachangestellte','VFA-26-A','login',1,'${TS}','${TS}');
+INSERT INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at) VALUES('usr_lea','lea@example.invalid','Lea Becker','x',0,0,'active','${TS}','${TS}');
+INSERT INTO memberships(id,tenant_id,course_id,user_id,role,created_at) VALUES('mem_lea','${T}','crs_vfa','usr_lea','participant','${TS}');
+INSERT INTO teachers(id,tenant_id,name,email,created_at) VALUES('tch_h','${T}','Dr. Lena Hoffmann','lena@example.invalid','${TS}');
+`);
+
+// Eine Krankmeldung mit dem echten Namen der Dozentin.
+const k1=await frage('Dr. Lena Hoffmann ist am 10.09.2026 krank');
+assert.equal(k1.scenario_type,'teacher_absence');
+assert.equal(k1.resolved.teacher_id,'tch_h',`die Dozentin muss über ihren Namen aufgelöst werden: ${JSON.stringify(k1.resolved)}`);
+
+// Abschlusszeugnisse für eine Klasse.
+const z=await frage('Erstelle die Abschlusszeugnisse für Umschulung Verwaltungsfachangestellte');
+assert.equal(z.scenario_type,'certificate_batch',`Zeugnisse müssen als eigener Vorgang erkannt werden, war: ${z.scenario_type}`);
+assert.equal(z.resolved.course_id,'crs_vfa','die Klasse muss über ihren Namen aufgelöst werden');
+assert.equal(z.resolved.participant_count,1,'die Betroffenen müssen aus den echten Mitgliedschaften gezählt werden');
+assert.ok(z.warnings.some(x=>/nur vorbereitet/i.test(x)),
+  `es muss ausdrücklich stehen, dass nichts ausgestellt wird: ${JSON.stringify(z.warnings)}`);
+
+// Berichtshefte / Tätigkeitsnachweise.
+const b=await frage('Fordere die Berichtshefte für Umschulung Verwaltungsfachangestellte an');
+assert.equal(b.scenario_type,'reportbook_batch',`Nachweise müssen erkannt werden, war: ${b.scenario_type}`);
+assert.equal(b.resolved.document_kind,'reportbook');
+assert.equal(b.resolved.course_id,'crs_vfa');
+// "Tätigkeitsnachweis" ist dasselbe.
+assert.equal((await frage('Tätigkeitsnachweise für Umschulung Verwaltungsfachangestellte')).scenario_type,'reportbook_batch');
+
+// Ohne Klasse bleibt es unvollständig, statt irgendeine zu nehmen.
+const ohne=await frage('Erstelle die Abschlusszeugnisse');
+assert.equal(ohne.scenario_type,'certificate_batch');
+assert.ok(ohne.missing.includes('course_id')||ohne.ambiguities.length,
+  `ohne benannte Klasse darf keine gewählt werden: ${JSON.stringify(ohne.resolved)}`);
+
+// ---------------------------------------------------------------------------------------------
+// 6. Die Planungsvorschläge sind übernehmbar - und übernehmen in einen Entwurf, nicht in den
+//    laufenden Betrieb.
+// ---------------------------------------------------------------------------------------------
+const ui=await readFile('public/planning-resource-ui.js','utf8');
+assert.ok(/<button[^>]*data-apply-suggestion/.test(ui),'es muss eine Schaltfläche zum Übernehmen geben, nicht nur einen Selektor darauf');
+assert.ok(/data-pick="teacher"[\s\S]{0,400}data-pick="room"/.test(ui),'Dozent/in und Raum müssen wählbar sein');
+assert.ok(/timetable-plans\/\$\{encodeURIComponent\(planId\)\}\/entries/.test(ui),'die Auswahl muss als Planeintrag entstehen');
+assert.ok(/\/validate/.test(ui),'der Entwurf muss anschließend geprüft werden');
+assert.ok(!/\/publish/.test(ui),'veröffentlicht wird nicht von hier - das bleibt die Freigabe des Kunden');
+assert.ok(/status:'draft'/.test(ui),'ein neuer Plan entsteht als Entwurf');
+
 console.log('intent-room-by-name: ok');
