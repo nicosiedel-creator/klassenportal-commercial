@@ -86,7 +86,9 @@ export async function ensureReportBookPeriod(env:Env,auth:CoreAuthContext,tenant
 // Berichtshefte fuer eine ganze Klasse eroeffnen. Der Traeger legt den Zeitraum an - schreiben
 // und einreichen bleibt Sache der Teilnehmenden, sonst waere der Nachweis keiner mehr. Deshalb
 // entstehen hier ausschliesslich leere Zeitraeume, niemals Eintraege.
-const REPORT_BOOK_BATCH_MAX=500;
+// Gemessen kostet ein eroeffneter Zeitraum rund 2 Abfragen. 300 Personen bleiben damit sicher
+// unter der Unteranfragen-Grenze der Plattform.
+const REPORT_BOOK_BATCH_MAX=300;
 export async function openReportBookPeriodsForCourse(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,input:Record<string,unknown>){
   requireManage(auth);courseScope(auth,courseId);
   const start=day(input.period_start),end=day(input.period_end);

@@ -105,4 +105,50 @@ assert.match(dialog,/nur vorbereitet/i,'und dem Kunden muss das ausdrücklich ge
 assert.match(ui,/ATTENDANCE_BELOW_MINIMUM:'[^']+'/,'die offenen Fälle müssen im Klartext erklärt werden, nicht als Fehlercode');
 assert.match(ui,/PROGRESS_INCOMPLETE:'[^']+'/);
 
+// ---------------------------------------------------------------------------
+// 7. Ein Sammellauf sprengt nicht die Grenze der Plattform.
+//
+//    Cloudflare begrenzt die Zahl der Unteranfragen je Aufruf; jede Datenbankabfrage zählt dazu.
+//    Gemessen kostet eine vorbereitete Bescheinigung rund elf Abfragen. Ein Lauf über eine große
+//    Klasse wäre mitten im Schreiben abgebrochen worden - ein Teil hätte eine Bescheinigung, der
+//    Rest nicht, und niemand könnte sagen, wo die Grenze lag.
+// ---------------------------------------------------------------------------
+db.exec(`INSERT INTO courses(id,tenant_id,name,code,is_active,created_at,updated_at) VALUES('crs_gross','${T}','Große Klasse','G',1,'${TS}','${TS}');`);
+for(let i=0;i<40;i++)db.exec(`
+INSERT INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at) VALUES('usr_g${i}','g${i}@example.invalid','Person ${i}','x',0,0,'active','${TS}','${TS}');
+INSERT INTO memberships(id,tenant_id,course_id,user_id,role,created_at) VALUES('mem_g${i}','${T}','crs_gross','usr_g${i}','participant','${TS}');
+INSERT INTO tenant_users(tenant_id,user_id,status,source,created_at,updated_at) VALUES('${T}','usr_g${i}','active','manual','${TS}','${TS}');`);
+const roh=d1(db);let abfragen=0;
+const gezaehlt={DB:{...roh,prepare(sql){abfragen++;return roh.prepare(sql);},batch(...a){abfragen++;return roh.batch(...a);}}};
+const gross=await prepareCertificatesForCourse(gezaehlt,auth,T,'crs_gross','ctm_1');
+assert.equal(gross.participants,40);
+assert.ok(abfragen<800,`ein Sammellauf muss deutlich unter der Plattformgrenze bleiben, war: ${abfragen} Abfragen`);
+
+// Eine zu große Klasse wird abgewiesen, statt halb bearbeitet zu werden.
+db.exec(`INSERT INTO courses(id,tenant_id,name,code,is_active,created_at,updated_at) VALUES('crs_riesig','${T}','Riesige Klasse','R',1,'${TS}','${TS}');`);
+for(let i=0;i<80;i++)db.exec(`
+INSERT INTO users(id,email,display_name,password_hash,force_password_change,is_platform_admin,status,created_at,updated_at) VALUES('usr_r${i}','r${i}@example.invalid','Riese ${i}','x',0,0,'active','${TS}','${TS}');
+INSERT INTO memberships(id,tenant_id,course_id,user_id,role,created_at) VALUES('mem_r${i}','${T}','crs_riesig','usr_r${i}','participant','${TS}');
+INSERT INTO tenant_users(tenant_id,user_id,status,source,created_at,updated_at) VALUES('${T}','usr_r${i}','active','manual','${TS}','${TS}');`);
+await assert.rejects(()=>prepareCertificatesForCourse(env,auth,T,'crs_riesig','ctm_1'),/CERTIFICATE_BATCH_TOO_LARGE/,
+  'eine zu große Klasse muss vorher abgewiesen werden, nicht halb bearbeitet');
+assert.equal(zahl(`SELECT COUNT(*) FROM certificate_records WHERE tenant_id='${T}' AND course_id='crs_riesig'`),0,
+  'und dabei darf nicht eine einzige Bescheinigung entstanden sein');
+
+// Aber es gibt einen Weg: in Gruppen vorbereiten.
+const ersteHaelfte=Array.from({length:40},(_,i)=>`usr_r${i}`);
+const g1=await prepareCertificatesForCourse(env,auth,T,'crs_riesig','ctm_1',ersteHaelfte);
+assert.equal(g1.participants,40,'die gewählte Gruppe wird bearbeitet');
+assert.equal(g1.course_participants,80,'und die Größe der ganzen Klasse bleibt sichtbar');
+assert.equal(zahl(`SELECT COUNT(*) FROM certificate_records WHERE tenant_id='${T}' AND course_id='crs_riesig'`),40);
+const g2=await prepareCertificatesForCourse(env,auth,T,'crs_riesig','ctm_1',Array.from({length:40},(_,i)=>`usr_r${i+40}`));
+assert.equal(g2.participants,40);
+assert.equal(zahl(`SELECT COUNT(*) FROM certificate_records WHERE tenant_id='${T}' AND course_id='crs_riesig'`),80,
+  'nach beiden Gruppen ist die ganze Klasse vorbereitet');
+
+// Und die Meldung sagt, wie es geht.
+const texte=await readFile('public/kp-error-text.js','utf8');
+assert.match(texte,/CERTIFICATE_BATCH_TOO_LARGE:'[^']*Gruppen[^']*'/,
+  'die Meldung muss den Weg über Gruppen nennen, nicht nur das Scheitern');
+
 console.log('certificate-batch: ok');

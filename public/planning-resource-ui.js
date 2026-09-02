@@ -140,7 +140,7 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
       +`<div class="muted">${fehler?`${fehler} Konflikt(e) und `:''}${warn} Hinweis(e) aus der Prüfung. Nichts ist veröffentlicht.</div></div>`
       +(proKurs?`<h4>Je Klasse / Kurs</h4><ul>${proKurs}</ul>`:'')
       +(offen?`<h4>${offen} offene Lücke(n)</h4><ul>${luecken}</ul>${offen>50?'<div class="muted">Es werden die ersten 50 gezeigt.</div>':''}`:'<div class="muted">Keine offenen Lücken.</div>')
-      +(r.limit_reached?'<div class="notice">Die Obergrenze je Lauf wurde erreicht. Bitte den Zeitraum verkleinern und erneut ausführen.</div>':'')
+      +(r.limit_reached?'<div class="notice">Der Lauf hat seine Obergrenze erreicht und wurde bewusst vorher beendet, damit kein halb befüllter Entwurf entsteht. Führe ihn einfach erneut aus – er setzt dort fort, wo er aufgehört hat.</div>':'')
       +`<div class="toolbar" style="margin-top:12px"><button type="button" class="btn" data-release${fehler?' disabled':''}>Entwurf verbindlich veröffentlichen</button>`
       +`<span class="muted">${fehler?'Erst die Konflikte klären – mit Konflikten veröffentlicht der Server nicht.':'Erst nach Deiner Bestätigung wird veröffentlicht.'}</span></div>`
       +`<div data-release-result style="margin-top:10px"></div>`;

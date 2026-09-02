@@ -174,4 +174,44 @@ assert.ok(r6.gaps.some(g=>g.course_id==='crs_ohne'&&g.reason==='NO_COURSE_RULES'
 assert.ok(r6.gaps.some(g=>g.course_name==='Klasse ohne Regeln'),'und zwar im Klartext');
 assert.ok(r6.created>0,'die andere Klasse wird trotzdem geplant');
 
+// ---------------------------------------------------------------------------------------------
+// 11. Ein langer Zeitraum sprengt nicht die Grenze der Plattform.
+//
+//     Cloudflare begrenzt die Zahl der Unteranfragen je Aufruf; jede Datenbankabfrage zählt dazu.
+//     Ein Lauf über ein Schuljahr hätte die Grenze weit überschritten und wäre mitten im
+//     Schreiben abgebrochen worden - der Entwurf bliebe halb befüllt liegen. Der Lauf rechnet
+//     sein Budget deshalb selbst mit und hört vorher auf; ein erneuter Lauf setzt fort.
+// ---------------------------------------------------------------------------------------------
+db.exec(`
+INSERT INTO courses(id,tenant_id,name,code,is_active,created_at,updated_at) VALUES('crs_jahr','${T}','Klasse Jahr','J',1,'${TS}','${TS}');
+INSERT INTO course_scheduling_rules(tenant_id,course_id,earliest_start,latest_end,default_lesson_minutes,allow_saturday,allow_sunday,updated_by,updated_at) VALUES('${T}','crs_jahr','08:00','16:00',90,0,0,'${U}','${TS}');
+INSERT INTO timetable_plan_versions(id,tenant_id,name,starts_on,ends_on,status,created_by,created_at,updated_at) VALUES('tpv_jahr','${T}','Schuljahr','2026-09-07','2027-07-30','draft','${U}','${TS}','${TS}');
+`);
+// Dieselbe Datenbank, aber mit Zähler: so wird gemessen statt geschätzt.
+const roh=d1(db);let abfragen=0;
+const gezaehlt={DB:{...roh,prepare(sql){abfragen++;return roh.prepare(sql);},batch(...a){abfragen++;return roh.batch(...a);}}};
+const GRENZE=1000; // Cloudflare-Grenze je Aufruf
+let gesamt=0,laeufe=0;
+while(laeufe<12){
+  abfragen=0;
+  const lauf=await autofillTimetablePlan(gezaehlt,auth,T,'tpv_jahr',{course_ids:['crs_jahr']});
+  laeufe++;gesamt+=lauf.created;
+  assert.ok(abfragen<GRENZE*0.8,
+    `ein einzelner Lauf muss deutlich unter der Plattformgrenze bleiben, war: ${abfragen} Abfragen`);
+  if(!lauf.limit_reached){
+    assert.equal(lauf.created,0,'der letzte Lauf hat nichts mehr zu tun');
+    break;
+  }
+  assert.ok(lauf.created>0,'solange die Grenze gemeldet wird, muss ein Lauf auch etwas geschafft haben');
+}
+assert.ok(laeufe<12,`der Zeitraum muss in wenigen Läufen fertig werden, brauchte: ${laeufe}`);
+assert.ok(gesamt>200,`ein Schuljahr ergibt viele Termine, waren: ${gesamt}`);
+assert.equal(zahl(`SELECT COUNT(*) FROM timetable_plan_entries WHERE tenant_id='${T}' AND plan_id='tpv_jahr'`),gesamt,
+  'jeder gemeldete Termin muss auch wirklich im Entwurf stehen');
+
+// Die Oberfläche gibt dazu den richtigen Rat: erneut ausführen, nicht den Zeitraum verkleinern.
+const planUi=await readFile('public/planning-resource-ui.js','utf8');
+assert.match(planUi,/setzt dort fort, wo er aufgehört hat/,
+  'dem Kunden muss gesagt werden, dass ein erneuter Lauf fortsetzt');
+
 console.log('timetable-autofill: ok');

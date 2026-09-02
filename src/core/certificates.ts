@@ -25,10 +25,18 @@ export async function prepareCertificate(env:Env,auth:CoreAuthContext,tenantId:s
 // Jahrgangs tut. Vorbereitet wird nur; freigegeben und ausgestellt wird weiterhin einzeln und
 // ausdruecklich. Wer die Kriterien der Vorlage nicht erfuellt, bekommt kein Zeugnis, sondern
 // steht mit Grund in der Liste - geraten wird nichts.
-const CERTIFICATE_BATCH_MAX=500;
-export async function prepareCertificatesForCourse(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,templateId:string){
+// Cloudflare begrenzt die Zahl der Unteranfragen je Aufruf; jede Datenbankabfrage zaehlt dazu.
+// Gemessen kostet eine vorbereitete Bescheinigung rund 11 Abfragen. Eine Obergrenze von 500 haette
+// den Lauf mitten im Schreiben abgebrochen - ein Teil der Klasse haette eine Bescheinigung, der
+// Rest nicht, und niemand koennte sagen wo die Grenze lag. 70 Personen bleiben sicher darunter und
+// decken jede uebliche Klasse ab; groessere Jahrgaenge lassen sich ueber user_ids in Gruppen
+// vorbereiten.
+const CERTIFICATE_BATCH_MAX=70;
+export async function prepareCertificatesForCourse(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,templateId:string,userIds?:unknown){
   requireRole(auth,'class_admin');
-  const teilnehmende=await certificateEligibleParticipants(env,auth,tenantId,courseId);
+  const alle=await certificateEligibleParticipants(env,auth,tenantId,courseId);
+  const gewuenscht=Array.isArray(userIds)?new Set(userIds.map(x=>safeString(x,120)).filter(Boolean)):null;
+  const teilnehmende=gewuenscht?alle.filter(t=>gewuenscht.has(String(t.id))):alle;
   if(teilnehmende.length>CERTIFICATE_BATCH_MAX)throw new Error('CERTIFICATE_BATCH_TOO_LARGE');
   const vorbereitet:Array<{user_id:string;display_name:string;certificate_id:string;status:string}>=[];
   const offen:Array<{user_id:string;display_name:string;reason:string}>=[];
@@ -40,7 +48,7 @@ export async function prepareCertificatesForCourse(env:Env,auth:CoreAuthContext,
     else vorbereitet.push({user_id:userId,display_name:name,certificate_id:String(zeugnis.id||''),status:String(zeugnis.status||'')});
   }
   await audit(env.DB,auth.userId,'certificate.batch_prepared',tenantId,courseId,'course',courseId,{templateId,prepared:vorbereitet.length,open:offen.length});
-  return{course_id:courseId,template_id:templateId,participants:teilnehmende.length,prepared:vorbereitet,open:offen,approved:0,issued:0};
+  return{course_id:courseId,template_id:templateId,participants:teilnehmende.length,course_participants:alle.length,prepared:vorbereitet,open:offen,approved:0,issued:0};
 }
 
 export async function listCertificateRecords(env:Env,auth:CoreAuthContext,tenantId:string,courseId?:string){requireRole(auth,'class_admin');let sql='SELECT r.*,u.display_name participant_name,u.email,c.name course_name,t.name template_name FROM certificate_records r JOIN users u ON u.id=r.user_id JOIN courses c ON c.id=r.course_id JOIN certificate_templates t ON t.id=r.template_id WHERE r.tenant_id=?',args:unknown[]=[tenantId];if(courseId){requireCourseAccess(auth,courseId);sql+=' AND r.course_id=?';args.push(courseId);}else if(!auth.isPlatformAdmin&&auth.role!=='tenant_admin'){if(!auth.courseIds.length)return[];sql+=` AND r.course_id IN (${auth.courseIds.map(()=>'?').join(',')})`;args.push(...auth.courseIds);}sql+=' ORDER BY r.prepared_at DESC LIMIT 1000';return (await env.DB.prepare(sql).bind(...args).all<Record<string,unknown>>()).results??[];}
