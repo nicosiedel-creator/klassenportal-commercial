@@ -279,6 +279,16 @@
     PLAN_GENERATION_TOO_MANY:'Es würden zu viele Termine auf einmal entstehen. Bitte den Zeitraum verkleinern.',
     PLAN_AUTOFILL_NO_RULES:'Für die gewählten Klassen sind keine Kursregeln hinterlegt. Ohne Kursregeln entsteht kein Termin.',
 
+    // Arbeitszeiten von Dozentinnen und Dozenten
+    AVAILABILITY_WEEKDAY_INVALID:'Bitte einen Wochentag von Montag bis Sonntag auswählen.',
+    AVAILABILITY_TIME_INVALID:'Bitte gültige Uhrzeiten angeben; das Ende muss nach dem Beginn liegen.',
+    AVAILABILITY_PERIOD_INVALID:'Bitte einen gültigen Gültigkeitszeitraum angeben; das Ende darf nicht vor dem Beginn liegen.',
+    AVAILABILITY_PREFERENCE_INVALID:'Bitte angeben, ob dieses Zeitfenster möglich oder bevorzugt ist.',
+    AVAILABILITY_TOO_MANY:'Für diese Person sind bereits sehr viele Zeitfenster hinterlegt. Bitte nicht mehr benötigte entfernen.',
+    AVAILABILITY_NOT_FOUND:'Dieses Zeitfenster wurde nicht gefunden. Möglicherweise wurde es bereits entfernt.',
+    FORBIDDEN_TEACHER_AVAILABILITY:'Arbeitszeiten darf nur die betreffende Person selbst oder die Planungsverwaltung eintragen.',
+    TEACHER_NOT_FOUND:'Diese Dozentin oder dieser Dozent wurde nicht gefunden.',
+
     // Bescheinigungen und Zeugnisse
     CERTIFICATE_TEMPLATE_NOT_FOUND:'Diese Bescheinigungsvorlage wurde nicht gefunden.',
     CERTIFICATE_TEMPLATE_FIELDS_REQUIRED:'Bitte alle Pflichtfelder der Vorlage ausfüllen.',

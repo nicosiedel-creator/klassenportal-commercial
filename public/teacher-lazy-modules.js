@@ -3,7 +3,7 @@ if(KP_TEACHER_LAZY_PATH){
   const VERSION='20260823-2';
   const GROUPS={
     cards:['teacher-calendar-ui','teacher-assignment-guidance','teacher-dashboard-ui','teacher-lesson-hub-ui'],
-    workspace:['teacher-workspace-ui','teacher-curriculum-ui','teacher-learning-operations-ui','teacher-learning-mode-display','teacher-classbook-export-ui','teacher-operational-insights-ui','teams-management-ui']
+    workspace:['teacher-workspace-ui','teacher-availability-ui','teacher-curriculum-ui','teacher-learning-operations-ui','teacher-learning-mode-display','teacher-classbook-export-ui','teacher-operational-insights-ui','teams-management-ui']
   };
   const modulePromises=new Map(),groupPromises=new Map();
   function loadModule(name){if(modulePromises.has(name))return modulePromises.get(name);const p=import(`/${name}.js?v=${VERSION}`).catch(error=>{modulePromises.delete(name);throw error;});modulePromises.set(name,p);return p;}
