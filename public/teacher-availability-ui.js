@@ -109,16 +109,29 @@ if(teacherAvailabilityRoot){
     });
   }
 
+  // Das Portal baut seine Oberflaeche nach und nach auf. Wird nur einmal gerendert und der Anker
+  // ist in diesem Augenblick noch nicht da, erscheint die Karte nie - genau so ist im Betrieb
+  // schon einmal ein ganzer Knopf verschwunden. Deshalb wird beobachtet und nachgezogen.
+  let laueft=false;
   async function start(){
-    if(aktuell)return;
+    if(laueft)return;laueft=true;
     try{
-      zuordnungen=(await api('/api/attendance/teacher/courses')).courses||[];
-      // Eine Person kann bei mehreren Traegern unterrichten; die Arbeitszeiten gelten je Traeger.
-      aktuell=zuordnungen.find(c=>c.tenant_id&&c.teacher_id)||null;
-      if(!aktuell)return;
-      await laden();zeichnen();
+      if(!aktuell){
+        zuordnungen=(await api('/api/attendance/teacher/courses')).courses||[];
+        // Eine Person kann bei mehreren Traegern unterrichten; die Arbeitszeiten gelten je Traeger.
+        aktuell=zuordnungen.find(c=>c.tenant_id&&c.teacher_id)||null;
+        if(!aktuell)return;
+        await laden();
+      }
+      if(!teacherAvailabilityRoot.querySelector('.portal-main'))return;
+      if(teacherAvailabilityRoot.querySelector('#tp-availability'))return;
+      zeichnen();
     }catch{/* das Portal bleibt ohne diese Karte bedienbar */}
+    finally{laueft=false;}
   }
-  window.addEventListener('kp:teacher-modules-ready',start);
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
+  const anstossen=()=>queueMicrotask(()=>void start());
+  window.addEventListener('kp:teacher-modules-ready',anstossen);
+  window.addEventListener('kp:teacher-state',anstossen);
+  new MutationObserver(anstossen).observe(teacherAvailabilityRoot,{subtree:true,childList:true});
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',anstossen);else anstossen();
 }

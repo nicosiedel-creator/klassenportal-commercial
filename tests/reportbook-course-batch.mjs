@@ -101,6 +101,17 @@ const ui=await readFile('public/education-operations-extended-ui.js','utf8');
 assert.match(ui,/report-book\/periods\/open-course/,'die Oberfläche muss den Sammellauf aufrufen');
 assert.match(ui,/report-book\/coverage/,'und anschließend die Übersicht zeigen');
 assert.match(ui,/nur leere Zeiträume/i,'dem Kunden muss gesagt werden, dass keine Einträge entstehen');
+// Scheitert die Klassenliste, muss das dastehen. Ein leeres Auswahlfeld ohne Erklärung ist
+// genau das Bild, das schon einmal für "da ist nichts" gehalten wurde.
+assert.match(ui,/Klassenliste konnte nicht geladen werden/,'ein Fehler beim Laden der Klassen muss sichtbar sein');
+assert.match(ui,/noch keine Klassen angelegt/,'und eine leere Liste muss als solche benannt werden');
+// Der Grund muss wirklich aus dem Fehler kommen - eine leere Zuweisung im catch wäre
+// dasselbe Verschlucken mit mehr Zeilen.
+const holen=ui.slice(ui.indexOf('async function ensureCourses('),ui.indexOf('async function openExt('));
+assert.ok(holen,'die gemeinsame Klassenliste muss auffindbar bleiben');
+assert.match(holen,/catch\([a-z]+\)\{[^}]*kursFehler=\([^}]*(KP_ERROR_TEXT|\.message)/,
+  'der Grund des Fehlers muss festgehalten werden, nicht nur eine leere Zeichenkette');
+assert.ok(!/\/api\/courses',t\)\)?\.catch\(\(\)=>/.test(ui),'keine Stelle darf den Fehler der Klassenliste wegwerfen');
 const karte=ui.slice(ui.indexOf('async function eroeffneZeitraeume('),ui.indexOf('async function renderReportbooks('));
 assert.ok(!/\/submit|\/review|\/entries/.test(karte),
   'aus dem Sammellauf heraus darf weder geschrieben noch eingereicht noch geprüft werden');
