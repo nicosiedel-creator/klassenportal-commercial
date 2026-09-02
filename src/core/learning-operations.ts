@@ -83,6 +83,50 @@ export async function signDocument(env:Env,auth:CoreAuthContext,tenantId:string,
 
 export async function listMyReportBooks(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string){courseScope(auth,courseId);if(!['participant','class_admin','tenant_admin','platform_admin'].includes(auth.role))throw new Error('FORBIDDEN_REPORT_BOOK');const uid=isAdmin(auth)&&optional((auth as any).participant_user_id,120)?String((auth as any).participant_user_id):auth.userId;const periods=(await env.DB.prepare('SELECT * FROM report_book_periods WHERE tenant_id=? AND course_id=? AND participant_user_id=? ORDER BY period_start DESC').bind(tenantId,courseId,uid).all<Record<string,unknown>>()).results??[];for(const p of periods)(p as any).entries=(await env.DB.prepare('SELECT * FROM report_book_entries WHERE tenant_id=? AND period_id=? ORDER BY entry_date,id').bind(tenantId,p.id).all<Record<string,unknown>>()).results??[];return periods;}
 export async function ensureReportBookPeriod(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,input:Record<string,unknown>){courseScope(auth,courseId);if(!['participant','class_admin'].includes(auth.role)&&!isAdmin(auth))throw new Error('FORBIDDEN_REPORT_BOOK');const start=day(input.period_start),end=day(input.period_end);if(!start||!end||start>end)throw new Error('REPORT_BOOK_PERIOD_INVALID');const uid=auth.userId,existing=await env.DB.prepare('SELECT id FROM report_book_periods WHERE tenant_id=? AND course_id=? AND participant_user_id=? AND period_start=? AND period_end=?').bind(tenantId,courseId,uid,start,end).first<{id:string}>();if(existing)return{period_id:existing.id};const periodId=id('rbp_'),ts=nowIso();await env.DB.prepare("INSERT INTO report_book_periods(id,tenant_id,course_id,participant_user_id,period_start,period_end,title,status,total_minutes,submitted_at,reviewed_by,reviewed_at,review_note,signature_document_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'draft',0,NULL,NULL,NULL,NULL,NULL,?,?)").bind(periodId,tenantId,courseId,uid,start,end,optional(input.title,300),ts,ts).run();return{period_id:periodId};}
+// Berichtshefte fuer eine ganze Klasse eroeffnen. Der Traeger legt den Zeitraum an - schreiben
+// und einreichen bleibt Sache der Teilnehmenden, sonst waere der Nachweis keiner mehr. Deshalb
+// entstehen hier ausschliesslich leere Zeitraeume, niemals Eintraege.
+const REPORT_BOOK_BATCH_MAX=500;
+export async function openReportBookPeriodsForCourse(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,input:Record<string,unknown>){
+  requireManage(auth);courseScope(auth,courseId);
+  const start=day(input.period_start),end=day(input.period_end);
+  if(!start||!end||start>end)throw new Error('REPORT_BOOK_PERIOD_INVALID');
+  const titel=optional(input.title,300);
+  const teilnehmende=(await env.DB.prepare("SELECT DISTINCT u.id,u.display_name FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.tenant_id=? AND m.course_id=? AND m.role='participant' AND u.status='active' ORDER BY u.display_name").bind(tenantId,courseId).all<{id:string;display_name:string}>()).results??[];
+  if(teilnehmende.length>REPORT_BOOK_BATCH_MAX)throw new Error('REPORT_BOOK_BATCH_TOO_LARGE');
+  const zeitraeume:Array<{user_id:string;display_name:string;period_id:string;created:boolean}>=[];
+  for(const t of teilnehmende){
+    const vorhanden=await env.DB.prepare('SELECT id FROM report_book_periods WHERE tenant_id=? AND course_id=? AND participant_user_id=? AND period_start=? AND period_end=?').bind(tenantId,courseId,t.id,start,end).first<{id:string}>();
+    if(vorhanden){zeitraeume.push({user_id:t.id,display_name:t.display_name,period_id:vorhanden.id,created:false});continue;}
+    const periodId=id('rbp_'),ts=nowIso();
+    await env.DB.prepare("INSERT INTO report_book_periods(id,tenant_id,course_id,participant_user_id,period_start,period_end,title,status,total_minutes,submitted_at,reviewed_by,reviewed_at,review_note,signature_document_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'draft',0,NULL,NULL,NULL,NULL,NULL,?,?)").bind(periodId,tenantId,courseId,t.id,start,end,titel,ts,ts).run();
+    zeitraeume.push({user_id:t.id,display_name:t.display_name,period_id:periodId,created:true});
+  }
+  await audit(env.DB,auth.userId,'education.report_book_periods_opened',tenantId,courseId,'course',courseId,{start,end,participants:teilnehmende.length,created:zeitraeume.filter(x=>x.created).length});
+  return{course_id:courseId,period_start:start,period_end:end,participants:teilnehmende.length,
+    created:zeitraeume.filter(x=>x.created).length,existing:zeitraeume.filter(x=>!x.created).length,periods:zeitraeume,entries_created:0};
+}
+
+// Wer ist noch nicht so weit? Die Uebersicht des Traegers zeigt jeden Teilnehmenden - auch die
+// ohne Zeitraum und die, die noch im Entwurf stecken. Sie zeigt Stand und Umfang, nicht Inhalte.
+export async function reportBookCoverageForCourse(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,input:Record<string,unknown>={}){
+  requireManage(auth);courseScope(auth,courseId);
+  const start=day(input.period_start),end=day(input.period_end);
+  const zeilen=(await env.DB.prepare(`SELECT u.id user_id,u.display_name,p.id period_id,p.status,p.total_minutes,p.submitted_at,p.reviewed_at,
+      (SELECT COUNT(*) FROM report_book_entries e WHERE e.tenant_id=p.tenant_id AND e.period_id=p.id) entry_count
+    FROM memberships m JOIN users u ON u.id=m.user_id
+    LEFT JOIN report_book_periods p ON p.tenant_id=m.tenant_id AND p.course_id=m.course_id AND p.participant_user_id=u.id
+      AND (?1 IS NULL OR p.period_start=?1) AND (?2 IS NULL OR p.period_end=?2)
+    WHERE m.tenant_id=?3 AND m.course_id=?4 AND m.role='participant' AND u.status='active'
+    ORDER BY u.display_name`).bind(start,end,tenantId,courseId).all<Record<string,unknown>>()).results??[];
+  const stand=(r:Record<string,unknown>)=>r.period_id?String(r.status||'draft'):'missing';
+  return{course_id:courseId,participants:zeilen.length,
+    rows:zeilen.map(r=>({user_id:String(r.user_id),display_name:String(r.display_name||''),period_id:r.period_id?String(r.period_id):null,
+      state:stand(r),entry_count:Number(r.entry_count||0),total_minutes:Number(r.total_minutes||0),
+      submitted_at:r.submitted_at?String(r.submitted_at):null,reviewed_at:r.reviewed_at?String(r.reviewed_at):null})),
+    open:zeilen.filter(r=>!r.period_id||['draft','revision_required'].includes(String(r.status))).length};
+}
+
 export async function saveReportBookEntry(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,periodId:string,input:Record<string,unknown>){courseScope(auth,courseId);const p=await env.DB.prepare('SELECT participant_user_id,status FROM report_book_periods WHERE tenant_id=? AND course_id=? AND id=?').bind(tenantId,courseId,periodId).first<{participant_user_id:string;status:string}>();if(!p)throw new Error('REPORT_BOOK_PERIOD_NOT_FOUND');if(p.participant_user_id!==auth.userId&&!isAdmin(auth))throw new Error('FORBIDDEN_REPORT_BOOK');if(!['draft','revision_required'].includes(p.status))throw new Error('REPORT_BOOK_LOCKED');const entryId=optional(input.id,120)||id('rbe_'),date=day(input.entry_date);if(!date)throw new Error('REPORT_BOOK_DATE_REQUIRED');const type=oneOf(input.activity_type,ACTIVITY_TYPES,'classroom'),minutes=Math.max(0,Math.min(1440,Number(input.minutes||0)||0)),ts=nowIso(),found=await exists(env,'SELECT 1 FROM report_book_entries WHERE tenant_id=? AND period_id=? AND id=?',tenantId,periodId,entryId);if(found)await env.DB.prepare('UPDATE report_book_entries SET entry_date=?,activity_type=?,location_label=?,subject_text=?,minutes=?,activity_text=?,learning_outcome=?,source_type=?,source_id=?,updated_at=? WHERE tenant_id=? AND period_id=? AND id=?').bind(date,type,optional(input.location_label,500),optional(input.subject_text,300),minutes,required(input.activity_text,8000),optional(input.learning_outcome,6000),oneOf(input.source_type,['manual','lesson','self_study','practice','excursion','legacy_import'] as const,'manual'),optional(input.source_id,160),ts,tenantId,periodId,entryId).run();else await env.DB.prepare('INSERT INTO report_book_entries(id,tenant_id,period_id,entry_date,activity_type,location_label,subject_text,minutes,activity_text,learning_outcome,source_type,source_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(entryId,tenantId,periodId,date,type,optional(input.location_label,500),optional(input.subject_text,300),minutes,required(input.activity_text,8000),optional(input.learning_outcome,6000),oneOf(input.source_type,['manual','lesson','self_study','practice','excursion','legacy_import'] as const,'manual'),optional(input.source_id,160),ts,ts).run();await env.DB.prepare('UPDATE report_book_periods SET total_minutes=(SELECT COALESCE(SUM(minutes),0) FROM report_book_entries WHERE tenant_id=? AND period_id=?),updated_at=? WHERE tenant_id=? AND id=?').bind(tenantId,periodId,ts,tenantId,periodId).run();return{entry_id:entryId};}
 
 export async function generateReportBookFromSchedule(env:Env,auth:CoreAuthContext,tenantId:string,courseId:string,periodId:string){courseScope(auth,courseId);const p=await env.DB.prepare('SELECT participant_user_id,period_start,period_end,status FROM report_book_periods WHERE tenant_id=? AND course_id=? AND id=?').bind(tenantId,courseId,periodId).first<{participant_user_id:string;period_start:string;period_end:string;status:string}>();if(!p)throw new Error('REPORT_BOOK_PERIOD_NOT_FOUND');if(p.participant_user_id!==auth.userId)throw new Error('FORBIDDEN_REPORT_BOOK');if(!['draft','revision_required'].includes(p.status))throw new Error('REPORT_BOOK_LOCKED');const rows=(await env.DB.prepare(`SELECT l.id,l.starts_at,l.ends_at,l.room,s.name subject,t.name teacher,a.activity_type,a.location_label,a.task_text,a.expected_outcome,cb.topic,cb.content_summary

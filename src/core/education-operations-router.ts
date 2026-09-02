@@ -9,8 +9,7 @@ import {
   listSubstitutionCases,listTeacherQualifications,replaceCurriculumItems,saveCourseLifecycle,saveCurriculumFramework,saveDeadline,saveEducationDocument,
   saveExamWorkflow,savePracticePhase,saveQualityAction,saveSubstitutionCase,saveTeacherQualification,updateLifecycleItem,
 } from './education-operations.js';
-import {
-  applyLegacyClassbookImport,createSignatureDocument,ensureReportBookPeriod,generateReportBookFromSchedule,generateTimetablePlanEntries,getTimetablePlan,
+import { openReportBookPeriodsForCourse,reportBookCoverageForCourse,applyLegacyClassbookImport,createSignatureDocument,ensureReportBookPeriod,generateReportBookFromSchedule,generateTimetablePlanEntries,getTimetablePlan,
   listCourseActivities,listExcursions,listLegacyImports,listMyReportBooks,listMySignatureRequests,listTimetablePlans,publishTimetablePlan,
   previewLegacyImport,reviewReportBook,saveActivityDetail,saveExcursion,saveReportBookEntry,saveTimetablePlan,saveTimetablePlanEntry,
   signDocument,submitReportBook,teacherReportBooks,validateTimetablePlan,
@@ -57,6 +56,8 @@ export async function handleEducationOperationsApi(request:Request,env:Env):Prom
     const reportEntry=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/periods\/([^/]+)\/entries$/);if(reportEntry&&request.method==='POST')return json({ok:true,...await saveReportBookEntry(env,auth,tenantId,decodeURIComponent(reportEntry[1]),decodeURIComponent(reportEntry[2]),await body(request))},201);
     const reportGenerate=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/periods\/([^/]+)\/generate$/);if(reportGenerate&&request.method==='POST')return json({ok:true,...await generateReportBookFromSchedule(env,auth,tenantId,decodeURIComponent(reportGenerate[1]),decodeURIComponent(reportGenerate[2]))});
     const reportSubmit=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/periods\/([^/]+)\/submit$/);if(reportSubmit&&request.method==='POST')return json({ok:true,...await submitReportBook(env,auth,tenantId,decodeURIComponent(reportSubmit[1]),decodeURIComponent(reportSubmit[2]))});
+    const reportOpenAll=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/periods\/open-course$/);if(reportOpenAll&&request.method==='POST')return json({ok:true,batch:await openReportBookPeriodsForCourse(env,auth,tenantId,decodeURIComponent(reportOpenAll[1]),await body(request))},201);
+    const reportCoverage=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/coverage$/);if(reportCoverage&&request.method==='GET')return json({ok:true,coverage:await reportBookCoverageForCourse(env,auth,tenantId,decodeURIComponent(reportCoverage[1]),{period_start:url.searchParams.get('period_start'),period_end:url.searchParams.get('period_end')})});
     const reportTeacher=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/teacher$/);if(reportTeacher&&request.method==='GET')return json({ok:true,periods:await teacherReportBooks(env,auth,tenantId,decodeURIComponent(reportTeacher[1]))});
     const reportReview=path.match(/^\/api\/education\/courses\/([^/]+)\/report-book\/periods\/([^/]+)\/review$/);if(reportReview&&request.method==='POST')return json({ok:true,...await reviewReportBook(env,auth,tenantId,decodeURIComponent(reportReview[1]),decodeURIComponent(reportReview[2]),await body(request))});
 
