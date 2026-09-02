@@ -132,4 +132,46 @@ assert.ok(offen.includes('lesson-room-blocked:les_3:rblk_1'),
 assert.ok(offen.includes('lesson-teacher-overlap:les_1:les_2'),
   'die Doppelverplanung der Dozentin ist davon unberührt');
 
+// ---------------------------------------------------------------------------------------------
+// Der fuenfte Sollkonflikt des Abnahmepakets: "Dozent krank". Bisher war nur belegt, dass die
+// Zeichenkette lesson-absent-teacher im Quelltext vorkommt - ausgefuehrt wurde der Befund nie.
+// ---------------------------------------------------------------------------------------------
+db.exec(`
+INSERT INTO teacher_unavailability(id,tenant_id,teacher_id,starts_at,ends_at,reason,source,created_by,created_at,updated_at) VALUES('tun_1','${T}','tch_d001','${j}T00:00:00','${j}T23:59:00','Krankmeldung','sickness','${U}','${TS}','${TS}');
+`);
+await scanTenantConsistency(env,T);
+const krank=db.prepare("SELECT finding_key,severity,actual_json FROM education_consistency_findings WHERE tenant_id=? AND status='open' AND finding_key LIKE 'lesson-absent-teacher:%'").all(T);
+assert.equal(krank.length,2,
+  `beide Stunden der krankgemeldeten Dozentin müssen auffallen, gefunden: ${JSON.stringify(krank.map(f=>f.finding_key))}`);
+assert.deepEqual(krank.map(f=>f.finding_key).sort(),['lesson-absent-teacher:les_1:tun_1','lesson-absent-teacher:les_2:tun_1']);
+const krankDaten=JSON.parse(krank[0].actual_json);
+assert.equal(krankDaten.teacher_name,'Dr. Lena Hoffmann','der Befund muss die Person benennen, nicht nur eine Kennung');
+assert.equal(krankDaten.absence_source,'sickness','die Art der Abwesenheit gehört in den Befund');
+assert.ok(!('reason' in krankDaten),
+  'der Freitextgrund gehört nicht in den Befund - bei Krankheit minimiert ihn die Datenbank ohnehin, sonst kann er Gesundheitsangaben enthalten');
+assert.ok(!JSON.stringify(krankDaten).includes('Krankmeldung'),'kein eingegebener Grundtext im Befund');
+assert.ok(String(krankDaten.block_start).startsWith(j),'der Befund muss den Zeitraum der Abwesenheit nennen');
+assert.ok(String(krankDaten.block_end).startsWith(j));
+
+// Eine Abwesenheit muss auch dann auffallen, wenn sie die Stunde nur teilweise überdeckt -
+// eine halbe Stunde ohne Aufsicht ist genauso ein Betriebsproblem wie ein ganzer Tag.
+db.exec(`
+INSERT INTO teacher_unavailability(id,tenant_id,teacher_id,starts_at,ends_at,reason,source,created_by,created_at,updated_at) VALUES('tun_2','${T}','tch_d002','${j}T15:00:00','${j}T15:20:00','Arzttermin','manual','${U}','${TS}','${TS}');
+`);
+await scanTenantConsistency(env,T);
+const teil=db.prepare("SELECT finding_key FROM education_consistency_findings WHERE tenant_id=? AND status='open' AND finding_key LIKE 'lesson-absent-teacher:%:tun_2'").all(T).map(f=>f.finding_key);
+assert.deepEqual(teil,['lesson-absent-teacher:les_3:tun_2'],
+  `eine teilweise Überdeckung muss genauso auffallen, gefunden: ${JSON.stringify(teil)}`);
+const teilDaten=JSON.parse(db.prepare("SELECT actual_json FROM education_consistency_findings WHERE tenant_id=? AND finding_key='lesson-absent-teacher:les_3:tun_2'").get(T).actual_json);
+assert.equal(teilDaten.absence_source,'manual');
+assert.ok(!JSON.stringify(teilDaten).includes('Arzttermin'),
+  'auch bei einer manuell erfassten Abwesenheit gehört der eingegebene Grund nicht in den Befund');
+
+// Wird die Krankmeldung zurückgenommen, schließt sich der Befund von selbst.
+db.exec(`DELETE FROM teacher_unavailability WHERE id IN ('tun_1','tun_2');`);
+await scanTenantConsistency(env,T);
+const nachher=db.prepare("SELECT finding_key FROM education_consistency_findings WHERE tenant_id=? AND status='open'").all(T).map(f=>f.finding_key);
+assert.ok(!nachher.some(k=>k.startsWith('lesson-absent-teacher:')),
+  `eine zurückgenommene Krankmeldung darf keinen offenen Befund hinterlassen: ${JSON.stringify(nachher)}`);
+
 console.log('lesson-conflict-findings: ok');
