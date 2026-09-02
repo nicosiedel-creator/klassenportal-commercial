@@ -21,7 +21,19 @@ function scenarioType(n:string){if(/\b(krank|fällt\s+aus|faellt\s+aus|nicht\s+d
 export async function previewEducationIntent(env:Env,auth:CoreAuthContext,tenantId:string,intentText:string,explicit:Record<string,unknown>={}):Promise<IntentPreview>{
   if(!auth.isPlatformAdmin&&!auth.tenantIds.includes(tenantId))throw new Error('FORBIDDEN_TENANT');
   const intent=safeString(intentText,5000);if(!intent)throw new Error('INTENT_REQUIRED');
-  const n=norm(intent),type=scenarioType(n),resolved:Record<string,unknown>={},missing:string[]=[],ambiguities:IntentPreview['ambiguities']=[],warnings:string[]=[],explanation:string[]=[],tz=await tenantTimezone(env,tenantId);
+  const n=norm(intent),resolved:Record<string,unknown>={},missing:string[]=[],ambiguities:IntentPreview['ambiguities']=[],warnings:string[]=[],explanation:string[]=[],tz=await tenantTimezone(env,tenantId);
+  // Ein Raum heisst beim Kunden nicht "Raum", sondern "IT-Labor Nord 1" oder "Seminarraum B202".
+  // Die Worterkennung verlangte aber wortwoertlich "raum" oder "ressource" im Satz - "IT-Labor
+  // Nord 1 ist die naechsten 3 Monate gesperrt" fiel deshalb mit 0 % durch, obwohl genau dieser
+  // Raum im Mandanten gefuehrt wird. Gemeldet aus Produktion.
+  // Nennt der Satz eine Sperrung UND genau eine bekannte Ressource dieses Mandanten, ist es eine
+  // Raumsperrung. Aufgeloest wird gegen die echten Daten; bei mehreren Treffern bleibt es
+  // unerkannt, statt zu raten.
+  let type=scenarioType(n);
+  if(!type&&/\b(gesperrt|defekt|ausgefallen|nicht\s+verfügbar|nicht\s+verfuegbar|geschlossen)\b/.test(n)){
+    const treffer=await resolveEntity(env,tenantId,'resource',intent,explicit.resource_id);
+    if(treffer.id)type='room_outage';
+  }
   if(!type)return{intent,scenario_type:null,confidence:0,complete:false,resolved,missing:['scenario_type'],ambiguities,warnings:['Die Absicht konnte keinem sicheren Szenario zugeordnet werden. Es wird nichts verändert.'],explanation:['Freitext wird ausschließlich in einen prüfbaren Szenariovorschlag übersetzt. Unklare Eingaben führen niemals zu Schreibzugriffen.']};
   explanation.push(`Erkanntes Szenario: ${type}.`);explanation.push(`Zeitangaben werden in der Mandanten-Zeitzone ${tz} aufgelöst.`);
   const d=relativeDate(intent,tz),period=datePeriod(intent,tz),range=timeRange(intent),course=await resolveEntity(env,tenantId,'course',intent,explicit.course_id);
