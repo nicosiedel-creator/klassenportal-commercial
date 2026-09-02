@@ -16,7 +16,11 @@ const MODULE=['intake-center','intake-document-extract','planning-constraints','
   // Zweite Runde: der Tagesbetrieb. Anwesenheit ist die meistbenutzte Funktion des Portals
   // ueberhaupt - dort einen technischen Code zu zeigen ist am teuersten.
   'auth','data','attendance-classbook','teacher-portal','collaboration-reporting','advanced-modules',
-  'commerce','enterprise-access','branding','tenant-portability'];
+  'commerce','enterprise-access','branding','tenant-portability',
+  // Dritte Runde: Unterricht und Bewertung. Aufgaben, Abgaben, Noten, Tests, Meldungen an
+  // Klassen, Verantwortlichkeiten, der Autopilot und die eigene Domain.
+  'assignments-gradebook','gradebook-correctness','learning-suite','education-autopilot','lesson-hub',
+  'responsibilities','secure-communications','custom-domains','microsoft-course-invitations','live-study-router'];
 
 const codes=new Set();
 for(const m of MODULE){
@@ -24,7 +28,7 @@ for(const m of MODULE){
   try{quelle=await readFile(`src/core/${m}.ts`,'utf8');}catch{continue;}
   for(const treffer of quelle.matchAll(/throw new Error\('([A-Z][A-Z0-9_]*)'\)/g))codes.add(treffer[1]);
 }
-assert.ok(codes.size>200,`es müssen die Fehler aller Kundenbereiche eingesammelt werden, waren: ${codes.size}`);
+assert.ok(codes.size>380,`es müssen die Fehler aller Kundenbereiche eingesammelt werden, waren: ${codes.size}`);
 
 // Das echte Wörterbuch ausführen, nicht nur lesen.
 const quelle=await readFile('public/kp-error-text.js','utf8');
