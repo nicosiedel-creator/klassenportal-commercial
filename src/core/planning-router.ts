@@ -3,7 +3,7 @@ import { resolveCoreAuth } from './auth.js';
 import { assertTenantWriteAllowed } from './commerce-offers.js';
 import { requireDelegatedPrivilegeAccess } from './delegated-privilege.js';
 import { assertSameOrigin, authStatus, json, safeErrorCode } from './utils.js';
-import { deleteTeacherAvailability,listTeacherAvailability,saveTeacherAvailability,autofillTimetablePlan,getCourseSchedulingRules,linkPlanEntryResource,listPlanningBlackouts,listTeacherUnavailability,
+import { teacherWorkloadSummary,deleteTeacherAvailability,listTeacherAvailability,saveTeacherAvailability,autofillTimetablePlan,getCourseSchedulingRules,linkPlanEntryResource,listPlanningBlackouts,listTeacherUnavailability,
   planningSuggestions,publishAdvancedTimetablePlan,saveCourseSchedulingRules,savePlanningBlackout,
   saveResourceUnavailability,saveTeacherWorkloadRules,substituteSuggestions,validateAdvancedTimetablePlan,
 } from './planning-constraints.js';
@@ -30,6 +30,7 @@ export async function handlePlanningApi(request:Request,env:Env):Promise<Respons
     const autofill=path.match(/^\/api\/education\/timetable-plans\/([^/]+)\/autofill$/);if(autofill&&request.method==='POST')return json({ok:true,...await autofillTimetablePlan(env,auth,tenantId,decodeURIComponent(autofill[1]),await body(request))},201);
     const publish=path.match(/^\/api\/education\/timetable-plans\/([^/]+)\/publish$/);if(publish&&request.method==='POST')return json({ok:true,...await publishAdvancedTimetablePlan(env,auth,tenantId,decodeURIComponent(publish[1]))});
 
+    if(path==='/api/education/planning/teacher-workload'&&request.method==='GET')return json({ok:true,workload:await teacherWorkloadSummary(env,auth,tenantId,{from:url.searchParams.get('from'),to:url.searchParams.get('to'),teacher_id:url.searchParams.get('teacher_id')||undefined})});
     if(path==='/api/education/planning/teacher-availability'&&request.method==='GET')return json({ok:true,availability:await listTeacherAvailability(env,auth,tenantId,url.searchParams.get('teacher_id')||undefined)});
     if(path==='/api/education/planning/teacher-availability'&&request.method==='POST')return json({ok:true,...await saveTeacherAvailability(env,auth,tenantId,await body(request))},201);
     const availabilityDelete=path.match(/^\/api\/education\/planning\/teacher-availability\/([^/]+)$/);if(availabilityDelete&&request.method==='DELETE')return json({ok:true,...await deleteTeacherAvailability(env,auth,tenantId,decodeURIComponent(availabilityDelete[1]))});

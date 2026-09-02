@@ -12,7 +12,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { d1 } from './helpers/d1.mjs';
 import { planningSuggestions, saveTeacherAvailability, listTeacherAvailability, deleteTeacherAvailability,
-  autofillTimetablePlan, validateAdvancedTimetablePlan } from '../dist/core/planning-constraints.js';
+  autofillTimetablePlan, validateAdvancedTimetablePlan, teacherWorkloadSummary } from '../dist/core/planning-constraints.js';
 
 const db=new DatabaseSync(':memory:');
 db.exec('PRAGMA foreign_keys=ON;');
@@ -187,13 +187,52 @@ assert.ok(ohneGrenze.teachers.every(t=>t.over_limit===0),'ohne vereinbarte Grenz
 db.exec(`DELETE FROM timetable_plan_entries WHERE tenant_id='${T}';DELETE FROM timetable_plan_versions WHERE id='tpv_last';`);
 
 // ---------------------------------------------------------------------------
-// 11. Beide Oberflächen bieten es an - und sagen, dass die Angabe freiwillig ist.
+// 11. Geleistete Stunden - die Grundlage der Honorarrechnung.
+//     Getrennt ausgewiesen: was stattgefunden hat und was erst geplant ist.
+// ---------------------------------------------------------------------------
+db.exec(`
+INSERT INTO lessons(id,tenant_id,course_id,teacher_id,starts_at,ends_at,room,created_at) VALUES('les_s1','${T}','crs_h','tch_hono','2026-09-07T08:00:00.000Z','2026-09-07T09:30:00.000Z','Raum 1','${TS}');
+INSERT INTO lessons(id,tenant_id,course_id,teacher_id,starts_at,ends_at,room,created_at) VALUES('les_s2','${T}','crs_h','tch_hono','2026-09-08T08:00:00.000Z','2026-09-08T10:00:00.000Z','Raum 1','${TS}');
+INSERT INTO lessons(id,tenant_id,course_id,teacher_id,starts_at,ends_at,room,created_at) VALUES('les_s3','${T}','crs_h','tch_hono','2026-10-01T08:00:00.000Z','2026-10-01T10:00:00.000Z','Raum 1','${TS}');
+INSERT INTO timetable_plan_versions(id,tenant_id,name,starts_on,ends_on,status,created_by,created_at,updated_at) VALUES('tpv_s','${T}','Entwurf','2026-09-09','2026-09-09','draft','${U}','${TS}','${TS}');
+INSERT INTO timetable_plan_entries(id,tenant_id,plan_id,course_id,teacher_id,starts_at,ends_at,activity_type,supervision_mode,attendance_expected,source,created_by,created_at,updated_at) VALUES('tpe_s','${T}','tpv_s','crs_h','tch_hono','2026-09-09T08:00:00.000Z','2026-09-09T09:00:00.000Z','classroom','instructor',1,'manual','${U}','${TS}','${TS}');
+`);
+const summe=await teacherWorkloadSummary(env,leitung,T,{from:'2026-09-01',to:'2026-09-30'});
+const zeile=summe.rows.find(x=>x.teacher_name==='Frau Honorar');
+assert.equal(zeile.held_minutes,210,`90 + 120 Minuten im September, war: ${zeile.held_minutes}`);
+assert.equal(zeile.held_lessons,2,'die Oktoberstunde darf nicht mitzählen');
+assert.equal(zeile.planned_minutes,60,'geplante Stunden werden getrennt ausgewiesen');
+assert.equal(summe.held_minutes_total,210);
+assert.ok(summe.rows.every(x=>x.teacher_name),'jede Zeile muss die Person benennen');
+
+// Die Honorarkraft sieht ihre eigenen Stunden - das braucht sie für ihre Rechnung.
+const eigene=await teacherWorkloadSummary(env,hono,T,{from:'2026-09-01',to:'2026-09-30',teacher_id:'tch_hono'});
+assert.equal(eigene.rows.length,1);
+assert.equal(eigene.rows[0].held_minutes,210);
+
+// Aber nicht die der anderen.
+await assert.rejects(()=>teacherWorkloadSummary(env,hono,T,{from:'2026-09-01',to:'2026-09-30',teacher_id:'tch_fest'}),
+  /FORBIDDEN_TEACHER_AVAILABILITY/,'die Stunden einer anderen Person gehen sie nichts an');
+await assert.rejects(()=>teacherWorkloadSummary(env,hono,T,{from:'2026-09-01',to:'2026-09-30'}),
+  /FORBIDDEN_TEACHER_WORKLOAD/,'und die Gesamtübersicht auch nicht');
+
+// Ein unsinniger Zeitraum wird abgewiesen.
+for(const zeitraum of [{from:'2026-09-30',to:'2026-09-01'},{from:'',to:'2026-09-30'},{from:'September',to:'2026-09-30'}])
+  await assert.rejects(()=>teacherWorkloadSummary(env,leitung,T,zeitraum),/WORKLOAD_PERIOD_INVALID/,
+    `unsinniger Zeitraum muss abgewiesen werden: ${JSON.stringify(zeitraum)}`);
+db.exec(`DELETE FROM lessons WHERE id IN ('les_s1','les_s2','les_s3');DELETE FROM timetable_plan_entries WHERE id='tpe_s';DELETE FROM timetable_plan_versions WHERE id='tpv_s';`);
+
+// ---------------------------------------------------------------------------
+// 12. Beide Oberflächen bieten es an - und sagen, dass die Angabe freiwillig ist.
 // ---------------------------------------------------------------------------
 const portal=await readFile('public/teacher-availability-ui.js','utf8');
 assert.match(portal,/\/api\/education\/planning\/teacher-availability/,'das Dozentenportal muss die Arbeitszeiten setzen können');
 assert.match(portal,/freiwillig/i,'und sagen, dass die Angabe freiwillig ist');
 assert.match(portal,/nur noch innerhalb/i,'und was passiert, sobald man etwas einträgt');
 assert.match(portal,/method:'DELETE'/,'zurücknehmen muss auch gehen');
+assert.match(portal,/teacher-workload/,'die eigene Stundenübersicht muss im Portal stehen');
+assert.match(portal,/gehalten/,'sie muss die geleisteten Stunden benennen');
+assert.match(portal,/noch nicht stattgefunden/,'und geplante Stunden klar davon trennen');
 const lazy=await readFile('public/teacher-lazy-modules.js','utf8');
 assert.match(lazy,/teacher-availability-ui/,'die Karte muss im Dozentenportal auch geladen werden');
 

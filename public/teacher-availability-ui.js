@@ -21,6 +21,33 @@ if(teacherAvailabilityRoot){
   }
   const q=(path,z,extra={})=>{const p=new URLSearchParams({tenant_id:z.tenant_id});for(const [k,v] of Object.entries(extra))if(v)p.set(k,String(v));return `${path}?${p}`;};
 
+  // Die eigenen geleisteten Stunden - fuer Honorarkraefte die Grundlage ihrer Rechnung.
+  function monatsGrenzen(){
+    const heute=new Date(),von=new Date(Date.UTC(heute.getUTCFullYear(),heute.getUTCMonth(),1)),
+      bis=new Date(Date.UTC(heute.getUTCFullYear(),heute.getUTCMonth()+1,0));
+    return[von.toISOString().slice(0,10),bis.toISOString().slice(0,10)];
+  }
+  const stunden=m=>`${Math.floor(m/60)} h ${String(m%60).padStart(2,'0')} min`;
+  async function meineStunden(host){
+    const box=host.querySelector('[data-stunden]');if(!box)return;
+    const f=box.querySelector('form'),out=box.querySelector('[data-stunden-ergebnis]');
+    const zeigen=async()=>{
+      const von=f.elements.from.value,bis=f.elements.to.value;
+      if(!von||!bis||von>bis){out.innerHTML='<div class="muted">Bitte einen gültigen Zeitraum wählen.</div>';return;}
+      out.textContent='Wird berechnet …';
+      try{
+        const d=await api(q('/api/education/planning/teacher-workload',aktuell,{from:von,to:bis,teacher_id:aktuell.teacher_id}));
+        const z=(d.workload?.rows||[])[0]||{held_minutes:0,held_lessons:0,planned_minutes:0};
+        out.innerHTML=`<div class="notice ok"><strong>${E(stunden(Number(z.held_minutes||0)))} gehalten</strong>`
+          +`<div class="muted">${E(Number(z.held_lessons||0))} Termin(e) im gewählten Zeitraum.`
+          +(Number(z.planned_minutes||0)?` Zusätzlich ${E(stunden(Number(z.planned_minutes)))} geplant, aber noch nicht stattgefunden.`:'')
+          +`</div></div>`;
+      }catch(x){out.innerHTML=`<div class="muted">${E(fehler(x))}</div>`;}
+    };
+    f.onsubmit=e=>{e.preventDefault();void zeigen();};
+    void zeigen();
+  }
+
   async function laden(){
     if(!aktuell)return;
     eintraege=(await api(q('/api/education/planning/teacher-availability',aktuell,{teacher_id:aktuell.teacher_id}))).availability||[];
@@ -50,8 +77,13 @@ if(teacherAvailabilityRoot){
       +`<label class="field">Art<select name="preference"><option value="available">möglich</option><option value="preferred">bevorzugt</option></select></label>`
       +`</div><div class="row"><label class="field">Gültig ab <span class="muted">optional</span><input name="valid_from" type="date"></label>`
       +`<label class="field">Gültig bis <span class="muted">optional</span><input name="valid_until" type="date"></label></div>`
-      +`<button class="btn" type="submit">Zeitfenster hinzufügen</button> <span class="muted" data-status>${E(meldung)}</span></form></div>`;
+      +`<button class="btn" type="submit">Zeitfenster hinzufügen</button> <span class="muted" data-status>${E(meldung)}</span></form></div>`
+      +`<div class="tp-workspace-card" data-stunden style="margin-top:12px"><div class="tp-workspace-head"><strong>Meine geleisteten Stunden</strong></div>`
+      +`<form><div class="row"><label class="field">Von<input name="from" type="date" value="${E(monatsGrenzen()[0])}"></label>`
+      +`<label class="field">Bis<input name="to" type="date" value="${E(monatsGrenzen()[1])}"></label></div>`
+      +`<button class="btn secondary" type="submit">Stunden anzeigen</button></form><div data-stunden-ergebnis style="margin-top:10px"></div></div>`;
     binden(host);
+    void meineStunden(host);
   }
 
   function binden(host){
