@@ -152,7 +152,42 @@ assert.deepEqual(namen(wiederFrei),['Anna Fest','Frau Honorar'],
   'ohne jede Zusage gilt wieder keine Einschränkung');
 
 // ---------------------------------------------------------------------------
-// 10. Beide Oberflächen bieten es an - und sagen, dass die Angabe freiwillig ist.
+// 10. Wer seine vereinbarte Grenze überschreiten würde, steht hinten - nicht draußen.
+//     Für Honorarkräfte ist die Wochengrenze eine Vertragsgrenze, keine Vorliebe.
+// ---------------------------------------------------------------------------
+db.exec(`
+DELETE FROM timetable_plan_entries WHERE tenant_id='${T}';
+DELETE FROM teacher_availability WHERE tenant_id='${T}';
+INSERT INTO teacher_workload_rules(tenant_id,teacher_id,max_daily_minutes,max_weekly_minutes,updated_by,updated_at) VALUES('${T}','tch_hono',120,120,'${U}','${TS}');
+INSERT INTO lessons(id,tenant_id,course_id,teacher_id,starts_at,ends_at,room,created_at) VALUES('les_last','${T}','crs_h','tch_hono','2026-09-07T06:00:00.000Z','2026-09-07T07:30:00.000Z','Raum 1','${TS}');
+`);
+const last=await planningSuggestions(env,leitung,T,{course_id:'crs_h',starts_at:MO,ends_at:MO_ENDE});
+const honoZeile=last.teachers.find(t=>t.name==='Frau Honorar');
+assert.ok(honoZeile,'die Person bleibt wählbar - eine Grenze ist kein Verbot');
+assert.equal(honoZeile.over_limit,1,
+  `90 Minuten zusätzlich zu 90 bereits verplanten überschreiten die vereinbarten 120 Minuten: ${JSON.stringify(honoZeile)}`);
+assert.equal(honoZeile.over_limit_reason,'DAILY','und der Grund muss benannt sein');
+assert.equal(last.teachers[last.teachers.length-1].name,'Frau Honorar',
+  `wer die Grenze überschreiten würde, muss hinten stehen: ${JSON.stringify(namen(last))}`);
+
+// Ein Entwurfstermin zählt genauso mit - sonst wäre die Grenze erst nach dem Veröffentlichen überschritten.
+db.exec(`
+DELETE FROM lessons WHERE id='les_last';
+INSERT INTO timetable_plan_versions(id,tenant_id,name,starts_on,ends_on,status,created_by,created_at,updated_at) VALUES('tpv_last','${T}','Entwurf','2026-09-07','2026-09-07','draft','${U}','${TS}','${TS}');
+INSERT INTO timetable_plan_entries(id,tenant_id,plan_id,course_id,teacher_id,starts_at,ends_at,activity_type,supervision_mode,attendance_expected,source,created_by,created_at,updated_at) VALUES('tpe_last','${T}','tpv_last','crs_h','tch_hono','2026-09-07T06:00:00.000Z','2026-09-07T07:30:00.000Z','classroom','instructor',1,'manual','${U}','${TS}','${TS}');
+`);
+const mitEntwurf=await planningSuggestions(env,leitung,T,{course_id:'crs_h',starts_at:MO,ends_at:MO_ENDE});
+assert.equal(mitEntwurf.teachers.find(t=>t.name==='Frau Honorar').over_limit,1,
+  'auch ein noch nicht veröffentlichter Entwurfstermin zählt auf die vereinbarte Grenze');
+
+// Ohne vereinbarte Grenze gibt es nichts zu überschreiten.
+db.exec(`DELETE FROM teacher_workload_rules WHERE tenant_id='${T}';`);
+const ohneGrenze=await planningSuggestions(env,leitung,T,{course_id:'crs_h',starts_at:MO,ends_at:MO_ENDE});
+assert.ok(ohneGrenze.teachers.every(t=>t.over_limit===0),'ohne vereinbarte Grenze wird nichts überschritten');
+db.exec(`DELETE FROM timetable_plan_entries WHERE tenant_id='${T}';DELETE FROM timetable_plan_versions WHERE id='tpv_last';`);
+
+// ---------------------------------------------------------------------------
+// 11. Beide Oberflächen bieten es an - und sagen, dass die Angabe freiwillig ist.
 // ---------------------------------------------------------------------------
 const portal=await readFile('public/teacher-availability-ui.js','utf8');
 assert.match(portal,/\/api\/education\/planning\/teacher-availability/,'das Dozentenportal muss die Arbeitszeiten setzen können');
@@ -163,6 +198,8 @@ const lazy=await readFile('public/teacher-lazy-modules.js','utf8');
 assert.match(lazy,/teacher-availability-ui/,'die Karte muss im Dozentenportal auch geladen werden');
 
 const admin=await readFile('public/planning-resource-ui.js','utf8');
+assert.match(admin,/über der Wochengrenze/,'die Überschreitung der Vertragsgrenze muss am Vorschlag stehen');
+assert.match(admin,/wählbar bleibt er/,'und es muss klar sein, dass es kein Verbot ist');
 assert.match(admin,/data-availability-list/,'die Planungsverwaltung muss die zugesagten Arbeitszeiten zeigen');
 assert.match(admin,/geplant wie bisher/,'und erklären, was ohne Angabe gilt');
 for(const tag of ['Montag','Sonntag'])

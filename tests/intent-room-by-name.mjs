@@ -125,7 +125,11 @@ assert.ok(ohne.missing.includes('course_id')||ohne.ambiguities.length,
 // ---------------------------------------------------------------------------------------------
 const ui=await readFile('public/planning-resource-ui.js','utf8');
 assert.ok(/<button[^>]*data-apply-suggestion/.test(ui),'es muss eine Schaltfläche zum Übernehmen geben, nicht nur einen Selektor darauf');
-assert.ok(/data-pick="teacher"[\s\S]{0,400}data-pick="room"/.test(ui),'Dozent/in und Raum müssen wählbar sein');
+// Beide müssen als Schaltfläche wählbar sein. Der frühere Abstandsvergleich war zufällig: er
+// brach, sobald zwischen beiden ein erklärender Hinweis stand, obwohl beide wählbar blieben.
+for(const art of ['teacher','room'])
+  assert.ok(new RegExp(`<button[^>]*data-pick="${art}"`).test(ui),`${art} muss als Schaltfläche wählbar sein`);
+assert.ok(ui.indexOf('data-pick="teacher"')<ui.indexOf('data-pick="room"'),'erst die Person, dann der Raum');
 assert.ok(/timetable-plans\/\$\{encodeURIComponent\(planId\)\}\/entries/.test(ui),'die Auswahl muss als Planeintrag entstehen');
 assert.ok(/\/validate/.test(ui),'der Entwurf muss anschließend geprüft werden');
 // Veröffentlichen gibt es in dieser Oberfläche - aber nur als ausdrückliche Freigabe des Kunden,

@@ -27,7 +27,13 @@ assert.match(planning,/planningSuggestions/,'automatic teacher/room suggestions 
 // (Honorarkräfte geben ihre Arbeitszeiten selbst an), steht vor bloßer Vertrautheit mit der
 // Klasse. Fachqualifikation bleibt vorn, geringere Auslastung bleibt hinten. Ausgeführt
 // bewiesen in tests/teacher-availability.mjs.
-assert.match(planning,/qualified DESC,preferred DESC,familiarity DESC,day_minutes ASC/,'teacher suggestions should prefer qualification, declared preference, course familiarity and lower workload');
+// Die Reihenfolge hat einen zweiten Rang dazubekommen: wer mit diesem Termin seine vereinbarte
+// Tages- oder Wochengrenze überschreiten würde, steht hinten - vor Vorliebe und Vertrautheit,
+// denn eine Vertragsgrenze wiegt schwerer als beides. Ausgeführt bewiesen in
+// tests/teacher-availability.mjs.
+assert.match(planning,/ORDER BY qualified DESC,[\s\S]{0,220}preferred DESC,familiarity DESC,day_minutes ASC/,'teacher suggestions should prefer qualification, then keep contractual limits, then declared preference, course familiarity and lower workload');
+assert.match(planning,/max_daily_minutes>0 AND day_minutes\+\?>max_daily_minutes/,'the daily contractual limit must influence the suggestion order');
+assert.match(planning,/max_weekly_minutes>0 AND week_minutes\+\?>max_weekly_minutes/,'the weekly contractual limit must influence the suggestion order');
 assert.match(planning,/substituteSuggestions/,'automatic substitution suggestions missing');
 assert.match(auto,/substitution_cases/,'teacher absence must create substitution cases');
 assert.match(auto,/Automatisch aus Dozenten-Abwesenheit erzeugt/,'automatic substitution source marker missing');
