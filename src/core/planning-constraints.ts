@@ -87,16 +87,26 @@ export async function autofillTimetablePlan(env:Env,auth:CoreAuthContext,tenantI
   if(!plan)throw new Error('TIMETABLE_PLAN_NOT_FOUND');
   if(plan.status==='published'||plan.status==='archived')throw new Error('TIMETABLE_PLAN_LOCKED');
   const gewuenscht=Array.isArray(input.course_ids)?[...new Set(input.course_ids.map(x=>safeString(x,120)).filter((x):x is string=>!!x))]:[];
-  const kurse=((await env.DB.prepare(`SELECT c.id,c.name,r.earliest_start,r.latest_end,r.default_lesson_minutes,r.allow_saturday,r.allow_sunday
+  const alle=(await env.DB.prepare(`SELECT c.id,c.name,r.earliest_start,r.latest_end,r.default_lesson_minutes,r.allow_saturday,r.allow_sunday
     FROM courses c JOIN course_scheduling_rules r ON r.tenant_id=c.tenant_id AND r.course_id=c.id
-    WHERE c.tenant_id=? ORDER BY c.name`).bind(tenantId).all<Record<string,unknown>>()).results??[])
-    .filter(k=>!gewuenscht.length||gewuenscht.includes(String(k.id)));
+    WHERE c.tenant_id=? ORDER BY c.name`).bind(tenantId).all<Record<string,unknown>>()).results??[];
+  // Ohne ausdrueckliche Liste plant der Lauf, was die aufrufende Person verantwortet - eine
+  // Stundenplanung mit begrenztem Bereich koennte sonst nie ohne Liste starten, weil die erste
+  // fremde Klasse den ganzen Lauf abbraeche. Wird eine Klasse ausdruecklich genannt, gilt
+  // weiterhin: fehlt die Berechtigung, bricht der Lauf ab, statt sie still zu uebergehen.
+  const kurse=gewuenscht.length?alle.filter(k=>gewuenscht.includes(String(k.id)))
+    :alle.filter(k=>admin(auth)||auth.courseIds.includes(String(k.id)));
+  if(gewuenscht.length)for(const k of kurse)courseScope(auth,String(k.id));
   if(!kurse.length)throw new Error('PLAN_AUTOFILL_NO_RULES');
-  for(const k of kurse)courseScope(auth,String(k.id));
   const von=new Date(`${plan.starts_on}T00:00:00Z`),bis=new Date(`${plan.ends_on}T00:00:00Z`);
   if(Number.isNaN(von.getTime())||Number.isNaN(bis.getTime())||von>bis)throw new Error('PLAN_RANGE_INVALID');
   if((bis.getTime()-von.getTime())/86400000>AUTOFILL_MAX_DAYS)throw new Error('PLAN_RANGE_TOO_LONG');
   let erzeugt=0;const luecken:Array<{course_id:string;course_name:string;date:string;reason:string}>=[];
+  for(const gewollt of gewuenscht)if(!kurse.some(k=>String(k.id)===gewollt)){
+    courseScope(auth,gewollt);
+    const name=await env.DB.prepare('SELECT name FROM courses WHERE tenant_id=? AND id=?').bind(tenantId,gewollt).first<{name:string}>();
+    luecken.push({course_id:gewollt,course_name:String(name?.name||''),date:plan.starts_on,reason:name?'NO_COURSE_RULES':'COURSE_NOT_FOUND'});
+  }
   const proKurs=new Map<string,number>();
   for(const k of kurse){
     const kursId=String(k.id),kursName=String(k.name||''),

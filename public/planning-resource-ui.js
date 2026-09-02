@@ -104,7 +104,7 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
       name:`Planung ab ${tag(starts)}`,starts_on:tag(starts),ends_on:tag(ends),status:'draft'})});
     return neu.plan?.id||neu.id;
   }
-  const LUECKEN_GRUND={NO_TEACHER_AVAILABLE:'keine freie Dozentin / kein freier Dozent',NO_ROOM_AVAILABLE:'kein freier Raum',LESSON_EXCEEDS_DAY:'die Kursregel ergibt keine gültige Unterrichtszeit',LESSON_AFTER_LATEST_END:'die Unterrichtszeit läge nach dem gewünschten Ende'};
+  const LUECKEN_GRUND={NO_TEACHER_AVAILABLE:'keine freie Dozentin / kein freier Dozent',NO_ROOM_AVAILABLE:'kein freier Raum',LESSON_EXCEEDS_DAY:'die Kursregel ergibt keine gültige Unterrichtszeit',LESSON_AFTER_LATEST_END:'die Unterrichtszeit läge nach dem gewünschten Ende',NO_COURSE_RULES:'für diese Klasse sind keine Kursregeln hinterlegt',COURSE_NOT_FOUND:'diese Klasse wurde nicht gefunden'};
   function entwurfBericht(r,geprueft){
     const fehler=Number(geprueft.errors||0),warn=Number(geprueft.warnings||0),offen=Number(r.gap_count||0);
     const proKurs=(r.courses||[]).map(c=>`<li>${E(c.course_name)}: ${E(c.created)} Termin(e)</li>`).join('');

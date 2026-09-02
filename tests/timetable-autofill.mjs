@@ -144,4 +144,34 @@ const gast={userId:U,role:'participant',tenantIds:[T],courseIds:['crs_a'],orgUni
 await assert.rejects(()=>autofillTimetablePlan(env,gast,T,'tpv_1',{}),/FORBIDDEN_PLANNING_MANAGE/,
   'wer nicht planen darf, darf auch nicht automatisch planen lassen');
 
+// ---------------------------------------------------------------------------------------------
+// 9. Ohne ausdrückliche Liste plant der Lauf nur, was die aufrufende Person verantwortet.
+// ---------------------------------------------------------------------------------------------
+db.exec(`INSERT INTO timetable_plan_versions(id,tenant_id,name,starts_on,ends_on,status,created_by,created_at,updated_at) VALUES('tpv_4','${T}','Nur Klasse B','${VON}','${BIS}','draft','${U}','${TS}','${TS}');`);
+const planer={userId:U,role:'class_admin',tenantIds:[T],courseIds:['crs_b'],orgUnitIds:[],permissions:['courses.manage'],isPlatformAdmin:false};
+const r5=await autofillTimetablePlan(env,planer,T,'tpv_4',{});
+assert.deepEqual(r5.courses.map(c=>c.course_id),['crs_b'],
+  `ohne Liste darf nur die verantwortete Klasse geplant werden, war: ${JSON.stringify(r5.courses)}`);
+assert.equal(zahl(`SELECT COUNT(*) FROM timetable_plan_entries WHERE tenant_id='${T}' AND plan_id='tpv_4' AND course_id<>'crs_b'`),0,
+  'keine fremde Klasse darf in den Entwurf geraten');
+
+// Nennt sie eine fremde Klasse ausdrücklich, bricht der Lauf ab - still übergangen wird nichts.
+await assert.rejects(()=>autofillTimetablePlan(env,planer,T,'tpv_4',{course_ids:['crs_a']}),/FORBIDDEN_COURSE_SCOPE/,
+  'eine ausdrücklich genannte fremde Klasse muss abgewiesen werden');
+// Und zwar sofort, nicht erst zufällig beim ersten Schreibversuch: dieser Zeitraum umfasst nur
+// das Wochenende, es gäbe also gar nichts zu schreiben. Abgewiesen werden muss es trotzdem.
+db.exec(`INSERT INTO timetable_plan_versions(id,tenant_id,name,starts_on,ends_on,status,created_by,created_at,updated_at) VALUES('tpv_we','${T}','Nur Wochenende','2026-09-12','2026-09-13','draft','${U}','${TS}','${TS}');`);
+await assert.rejects(()=>autofillTimetablePlan(env,planer,T,'tpv_we',{course_ids:['crs_a']}),/FORBIDDEN_COURSE_SCOPE/,
+  'die fehlende Berechtigung muss vorab auffallen, nicht erst wenn zufällig etwas zu schreiben wäre');
+
+// ---------------------------------------------------------------------------------------------
+// 10. Eine genannte Klasse ohne Kursregeln wird benannt, nicht stillschweigend weggelassen.
+// ---------------------------------------------------------------------------------------------
+db.exec(`INSERT INTO timetable_plan_versions(id,tenant_id,name,starts_on,ends_on,status,created_by,created_at,updated_at) VALUES('tpv_5','${T}','Gemischt','${VON}','${BIS}','draft','${U}','${TS}','${TS}');`);
+const r6=await autofillTimetablePlan(env,auth,T,'tpv_5',{course_ids:['crs_b','crs_ohne']});
+assert.ok(r6.gaps.some(g=>g.course_id==='crs_ohne'&&g.reason==='NO_COURSE_RULES'),
+  `die Klasse ohne Kursregeln muss als Lücke benannt sein: ${JSON.stringify(r6.gaps)}`);
+assert.ok(r6.gaps.some(g=>g.course_name==='Klasse ohne Regeln'),'und zwar im Klartext');
+assert.ok(r6.created>0,'die andere Klasse wird trotzdem geplant');
+
 console.log('timetable-autofill: ok');
