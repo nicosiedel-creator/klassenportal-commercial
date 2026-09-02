@@ -23,7 +23,11 @@ assert.match(planning,/teacher_weekly_limit/,'teacher workload validation missin
 assert.match(planning,/publishAdvancedTimetablePlan/,'publish must be gated by advanced validation');
 assert.match(planning,/lesson_resource_reservations/,'published resource reservation missing');
 assert.match(planning,/planningSuggestions/,'automatic teacher/room suggestions missing');
-assert.match(planning,/qualified DESC,familiarity DESC,day_minutes ASC/,'teacher suggestions should prefer qualification, course familiarity and lower workload');
+// Die Reihenfolge hat einen Rang dazubekommen: wer diesen Zeitraum ausdrücklich bevorzugt
+// (Honorarkräfte geben ihre Arbeitszeiten selbst an), steht vor bloßer Vertrautheit mit der
+// Klasse. Fachqualifikation bleibt vorn, geringere Auslastung bleibt hinten. Ausgeführt
+// bewiesen in tests/teacher-availability.mjs.
+assert.match(planning,/qualified DESC,preferred DESC,familiarity DESC,day_minutes ASC/,'teacher suggestions should prefer qualification, declared preference, course familiarity and lower workload');
 assert.match(planning,/substituteSuggestions/,'automatic substitution suggestions missing');
 assert.match(auto,/substitution_cases/,'teacher absence must create substitution cases');
 assert.match(auto,/Automatisch aus Dozenten-Abwesenheit erzeugt/,'automatic substitution source marker missing');

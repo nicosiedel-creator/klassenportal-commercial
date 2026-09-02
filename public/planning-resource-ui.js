@@ -7,6 +7,9 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
     ['teaching_room','Unterrichtsraum'],['computer_room','EDV-/PC-Raum'],['exam_room','Prüfungsraum'],['meeting_room','Besprechungsraum'],['workshop','Praxisraum / Werkstatt'],['lab','Labor'],['event_space','Veranstaltungsraum'],['office','Büro'],['storage','Lager'],['outdoor','Außenfläche'],['equipment','Ausstattung / Gerät'],['vehicle','Fahrzeug'],['online_room','Online-Raum'],['other','Sonstiges']
   ];
   const TYPE_LABEL=new Map(TYPES);
+  const WOCHENTAGE=[['1','Montag'],['2','Dienstag'],['3','Mittwoch'],['4','Donnerstag'],['5','Freitag'],['6','Samstag'],['7','Sonntag']];
+  const WOCHENTAG_NAME=new Map(WOCHENTAGE);
+
   const FRIENDLY={
     RESOURCE_NAME_EXISTS:'Eine Ressource mit diesem Namen ist bereits vorhanden.',RESOURCE_CAPACITY_INVALID:'Bitte eine gültige Kapazität angeben.',RESOURCE_FEATURES_INVALID:'Die Ausstattung konnte nicht verarbeitet werden.',RESOURCE_SUBTYPE_INVALID:'Bitte einen gültigen Ressourcentyp auswählen.',FIELD_REQUIRED:'Bitte alle Pflichtfelder ausfüllen.',DATE_INVALID:'Bitte gültige Datums- und Zeitangaben verwenden.',RESOURCE_BLOCK_TIME_INVALID:'Das Ende der Sperrzeit muss nach dem Beginn liegen.',TEACHER_BLOCK_TIME_INVALID:'Das Ende der Abwesenheit muss nach dem Beginn liegen.',BLACKOUT_TIME_INVALID:'Das Ende der Sperrzeit muss nach dem Beginn liegen.',FORBIDDEN_PLANNING_MANAGE:'Für die Planungsverwaltung fehlt die erforderliche Berechtigung.',UNAUTHENTICATED:'Die Sitzung ist abgelaufen. Bitte erneut anmelden.'
   };
@@ -28,9 +31,9 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
   async function open(){
     const t=tenant();if(!t)return;
     const requests=await Promise.allSettled([
-      api(q('/api/education/planning/resources',t)),api(q('/api/education/planning/resources/unavailability',t)),api(q('/api/education/planning/blackouts',t)),api(q('/api/education/planning/teacher-unavailability',t)),api(q('/api/education/planning/teachers',t)),api(q('/api/courses',t)),api(q('/api/tenant/settings',t)),api('/api/auth/me')
+      api(q('/api/education/planning/resources',t)),api(q('/api/education/planning/resources/unavailability',t)),api(q('/api/education/planning/blackouts',t)),api(q('/api/education/planning/teacher-unavailability',t)),api(q('/api/education/planning/teachers',t)),api(q('/api/courses',t)),api(q('/api/tenant/settings',t)),api('/api/auth/me'),api(q('/api/education/planning/teacher-availability',t))
     ]);
-    const rr=settled(requests[0],{resources:[]}),rb=settled(requests[1],{blocks:[]}),bb=settled(requests[2],{blackouts:[]}),uu=settled(requests[3],{blocks:[]}),tt=settled(requests[4],{teachers:[]}),cc=settled(requests[5],{courses:[]}),ss=settled(requests[6],{settings:{}}),me=settled(requests[7],{user:{}}).user||{};
+    const rr=settled(requests[0],{resources:[]}),rb=settled(requests[1],{blocks:[]}),bb=settled(requests[2],{blackouts:[]}),uu=settled(requests[3],{blocks:[]}),tt=settled(requests[4],{teachers:[]}),cc=settled(requests[5],{courses:[]}),ss=settled(requests[6],{settings:{}}),me=settled(requests[7],{user:{}}).user||{},av=settled(requests[8],{availability:[]}).availability||[];
     const errors=requests.filter(x=>x.status==='rejected').map(x=>friendly(x.reason?.code,x.reason?.status));
     const resources=rr.resources||[],resourceBlocks=rb.blocks||[],blackouts=bb.blackouts||[],teacherBlocks=uu.blocks||[],teachers=tt.teachers||[],courses=cc.courses||[],tz=ss.settings?.timezone||'Europe/Berlin',readOnly=Boolean(me.supportPlatformAdmin);
     const w=modal(`
@@ -43,6 +46,7 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
         <section class="card"><h3>Kursregeln</h3><form data-rules><label class="field">Kurs / Klasse *<select name="course_id" required>${options(courses)}</select></label><div class="row"><label class="field">Frühester Beginn<input name="earliest_start" type="time"></label><label class="field">Spätestes Ende<input name="latest_end" type="time"></label></div><div class="row"><label class="field">Max. Minuten/Tag<input name="max_daily_minutes" type="number" min="0"></label><label class="field">Max. am Stück<input name="max_consecutive_minutes" type="number" min="0"></label><label class="field">Mindestpause<input name="min_break_minutes" type="number" min="0"></label></div><label><input type="checkbox" name="allow_saturday"> Samstag erlauben</label> <label><input type="checkbox" name="allow_sunday"> Sonntag erlauben</label><div><button class="btn" type="submit"${readOnly?' disabled':''}>Kursregeln speichern</button></div></form></section>
         <section class="card"><h3>Automatische Planungsvorschläge</h3><form data-suggestion><label class="field">Kurs / Klasse *<select name="course_id" required>${options(courses)}</select></label><div class="row"><label class="field">Beginn *<input name="starts_at" type="datetime-local" required></label><label class="field">Ende *<input name="ends_at" type="datetime-local" required></label></div><button class="btn secondary" type="submit">Passende Dozenten & Räume suchen</button></form><div data-suggestions style="margin-top:10px"></div></section>
         <section class="card"><h3>Stundenplan automatisch entwerfen</h3><div class="notice"><strong>Erzeugt nur einen Entwurf</strong><div class="muted" style="margin-top:4px">Es wird nichts veröffentlicht und nichts im laufenden Betrieb verändert. Grundlage sind die hinterlegten Kursregeln. Wo keine freie Dozentin, kein freier Dozent oder kein freier Raum gefunden wird, entsteht bewusst kein Termin – die Lücke wird benannt.</div></div><form data-autofill style="margin-top:12px"><label class="field">Klassen / Kurse <span class="muted">nichts ausgewählt = alle mit Kursregeln</span><select name="course_ids" multiple size="6">${courses.map(c=>`<option value="${E(c.id)}">${E(c.name)}</option>`).join('')}</select></label><div class="row"><label class="field">Von *<input name="starts_on" type="date" required></label><label class="field">Bis *<input name="ends_on" type="date" required></label></div><button class="btn" type="submit"${readOnly?' disabled':''}>Entwurf erzeugen</button></form><div data-autofill-result style="margin-top:10px"></div></section>
+        <section class="card"><h3>Zugesagte Arbeitszeiten</h3><div class="notice"><div class="muted">Viele Dozentinnen und Dozenten arbeiten auf Honorarbasis und geben selbst an, wann sie zur Verfügung stehen. Wer nichts angibt, wird geplant wie bisher. Wer mindestens ein Zeitfenster angibt, wird nur noch innerhalb dieser Fenster vorgeschlagen.</div></div><div style="margin-top:10px;overflow:auto"><table><thead><tr><th>Dozent/in</th><th>Tag</th><th>Zeit</th><th>Art</th><th>Gültigkeit</th><th></th></tr></thead><tbody data-availability-list></tbody></table></div><form data-availability style="margin-top:12px"><div class="row"><label class="field">Dozent/in *<select name="teacher_id" required>${options(teachers)}</select></label><label class="field">Tag *<select name="weekday">${WOCHENTAGE.map(([w,n])=>`<option value="${w}">${n}</option>`).join('')}</select></label><label class="field">Von *<input name="starts_time" type="time" value="08:00" required></label><label class="field">Bis *<input name="ends_time" type="time" value="16:00" required></label><label class="field">Art<select name="preference"><option value="available">möglich</option><option value="preferred">bevorzugt</option></select></label></div><div class="row"><label class="field">Gültig ab <span class="muted">optional</span><input name="valid_from" type="date"></label><label class="field">Gültig bis <span class="muted">optional</span><input name="valid_until" type="date"></label></div><button class="btn" type="submit"${readOnly?' disabled':''}>Arbeitszeit eintragen</button></form></section>
       </div>`);
     if(errors.length)status(w,`Einzelne Bereiche konnten nicht geladen werden: ${errors.join(' ')}`,'warn');
 
@@ -54,6 +58,29 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
     w.querySelector('[data-absence-list]').innerHTML=teacherBlocks.length?teacherBlocks.map(b=>`<div class="item"><strong>${E(b.teacher_name||'Dozent/in')}</strong><div class="muted">${E(formatDate(b.starts_at,tz))} – ${E(formatDate(b.ends_at,tz))}${b.reason?` · ${E(b.reason)}`:''}</div></div>`).join(''):'<div class="muted">Keine Abwesenheiten.</div>';
 
     const reload=()=>{w.remove();void open();};
+    const availabilityList=w.querySelector('[data-availability-list]');
+    availabilityList.innerHTML=av.length?av.map(x=>`<tr><td>${E(x.teacher_name||'')}</td><td>${E(WOCHENTAG_NAME.get(String(x.weekday))||x.weekday)}</td><td>${E(x.starts_time)} – ${E(x.ends_time)}</td><td>${x.preference==='preferred'?'bevorzugt':'möglich'}</td><td>${x.valid_from||x.valid_until?`${E(x.valid_from||'sofort')} – ${E(x.valid_until||'unbefristet')}`:'unbefristet'}</td><td><button class="btn secondary" type="button" data-remove-availability="${E(x.id)}"${readOnly?' disabled':''}>Entfernen</button></td></tr>`).join(''):'<tr><td colspan="6" class="muted">Noch keine zugesagten Arbeitszeiten. Ohne Angabe wird geplant wie bisher.</td></tr>';
+    const availabilityForm=w.querySelector('[data-availability]');
+    availabilityForm.onsubmit=async e=>{
+      e.preventDefault();if(readOnly)return;if(!availabilityForm.reportValidity())return;
+      const fd=new FormData(availabilityForm),von=String(fd.get('starts_time')||''),bis=String(fd.get('ends_time')||'');
+      if(!von||!bis||von>=bis)return void status(w,'Das Ende der Arbeitszeit muss nach dem Beginn liegen.','warn');
+      submitButton(availabilityForm,true);clearStatus(w);
+      try{
+        await post(t,'/api/education/planning/teacher-availability',{teacher_id:String(fd.get('teacher_id')||''),weekday:Number(fd.get('weekday')),
+          starts_time:von,ends_time:bis,preference:String(fd.get('preference')||'available'),
+          valid_from:String(fd.get('valid_from')||'')||undefined,valid_until:String(fd.get('valid_until')||'')||undefined});
+        status(w,'Arbeitszeit eingetragen.');setTimeout(reload,250);
+      }catch(x){status(w,friendly(x.code,x.status),'warn');submitButton(availabilityForm,false);}
+    };
+    availabilityList.addEventListener('click',async e=>{
+      const b=e.target.closest('[data-remove-availability]');if(!b||readOnly)return;
+      if(!confirm('Diese zugesagte Arbeitszeit wirklich entfernen?'))return;
+      b.disabled=true;
+      try{await api(q(`/api/education/planning/teacher-availability/${encodeURIComponent(b.dataset.removeAvailability)}`,t),{method:'DELETE'});reload();}
+      catch(x){b.disabled=false;status(w,friendly(x.code,x.status),'warn');}
+    });
+
     const resourceForm=w.querySelector('[data-resource]');
     w.querySelector('[data-resource-reset]').onclick=()=>{resourceForm.reset();resourceForm.elements.id.value='';resourceForm.elements.status.value='active';resourceForm.elements.resource_subtype.value='teaching_room';resourceForm.elements.capacity.min='1';clearStatus(w);};
     resourceForm.elements.resource_subtype.onchange=()=>{const kind=resourceForm.elements.resource_subtype.value;resourceForm.elements.capacity.min=['equipment','vehicle','online_room','other'].includes(kind)?'0':'1';};
