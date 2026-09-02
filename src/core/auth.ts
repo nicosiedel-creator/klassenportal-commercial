@@ -97,6 +97,10 @@ export async function resolveCoreAuth(env:Env,request:Request,tenantId?:string,c
         throw new Error(await tenantMembershipExists(env,tenantId,s.userId)?'TENANT_ACCESS_SUSPENDED':'FORBIDDEN');
       }
       if(!await tenantUserActive(env,tenantId,s.userId))throw new Error('TENANT_ACCESS_SUSPENDED');
+      // Ein beendeter oder in Loeschung befindlicher Mandant ist auch lesend zu. Ein gesperrter
+      // bleibt lesbar, damit der Kunde seine Daten noch sieht - schreiben kann er nicht mehr.
+      const mandant=await env.DB.prepare('SELECT status FROM tenants WHERE id=?').bind(tenantId).first<{status:string}>();
+      if(mandant&&(mandant.status==='ended'||mandant.status==='deleting'))throw new Error('TENANT_INACTIVE');
     }
     await enforceTenantSso(env,s,tenantId);
     if(courseId&&!a.isPlatformAdmin&&a.role!=='tenant_admin'&&!a.courseIds.includes(courseId))throw new Error('FORBIDDEN_COURSE');
