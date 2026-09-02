@@ -117,6 +117,8 @@
     // Zahlungen bleiben im Portal bewusst deaktiviert
     PAYMENT_DISABLED:'Die Zahlungsabwicklung im Portal ist derzeit deaktiviert. Die Abrechnung erfolgt außerhalb des Portals.',
     PAYMENT_REQUIRED:'Für diese Aktion ist eine aktive Buchung erforderlich.',
+    TENANT_SUSPENDED:'Dieser Zugang ist derzeit gesperrt. Änderungen sind nicht möglich; die vorhandenen Daten bleiben sichtbar. Bitte wende Dich an Deine Ansprechperson.',
+    TENANT_INACTIVE:'Dieser Zugang ist beendet.',
     TRIAL_EXPIRED:'Die Testphase ist beendet.',
     TRIAL_READ_ONLY:'Die Testphase erlaubt derzeit nur lesenden Zugriff.',
 

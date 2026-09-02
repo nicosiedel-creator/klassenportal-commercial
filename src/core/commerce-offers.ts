@@ -159,6 +159,12 @@ export async function refreshTrialStates(env:Env):Promise<void>{
 }
 
 export async function assertTenantWriteAllowed(env:Env,tenantId:string):Promise<void>{
+  // Ein Mandant, den die Plattform stillgelegt hat, darf nichts mehr schreiben - unabhaengig
+  // vom Abonnement. Bisher stand "gesperrt" nur in der Plattformverwaltung; im Portal arbeitete
+  // der Kunde unveraendert weiter. Lesen bleibt erlaubt, damit er seine Daten noch sieht und
+  // ausleiten kann; bei 'ended' und 'deleting' ist auch das vorbei (siehe resolveCoreAuth).
+  const mandant=await env.DB.prepare('SELECT status FROM tenants WHERE id=?').bind(tenantId).first<{status:string}>();
+  if(mandant&&mandant.status!=='active')throw new Error(mandant.status==='suspended'?'TENANT_SUSPENDED':'TENANT_INACTIVE');
   const sub=await env.DB.prepare('SELECT status FROM subscriptions WHERE tenant_id=?').bind(tenantId).first<{status:string}>();
   if(sub?.status==='active')return;
   const trial=await env.DB.prepare('SELECT status,trial_ends_at,read_only_ends_at FROM tenant_trials WHERE tenant_id=?').bind(tenantId).first<{status:string;trial_ends_at:string;read_only_ends_at:string}>();
