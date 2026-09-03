@@ -26,7 +26,19 @@ export async function createParticipantTargetResolver(env:Env,auth:CoreAuthConte
     const explicit=input.courseId?m.courses.find(x=>x.id===input.courseId):undefined;
     const accept=(c:Course,fallbackWarning:string|null=null):ParticipantTarget=>{if(!c.is_active)return{courseId:null,orgPath:null,status:'blocked',warning:'COURSE_INACTIVE'};if(!allowed(auth,c.id))return{courseId:null,orgPath:null,status:'blocked',warning:'COURSE_FORBIDDEN'};const p=coursePaths(m,c.id,ctx);if(ctx.length&&!p.length)return{courseId:null,orgPath:null,status:'blocked',warning:'ORG_CONTEXT_MISMATCH'};if(p.length>1&&ctx.length)return{courseId:null,orgPath:null,status:'review',warning:'ORG_CONTEXT_AMBIGUOUS'};return{courseId:c.id,orgPath:label(p[0]),status:'automatic',warning:fallbackWarning};};
     if(explicit)return accept(explicit);
-    const code=normalizeOrgToken(input.courseCode),name=normalizeOrgToken(input.courseName);let candidates=code?m.courses.filter(x=>normalizeOrgToken(x.code)===code):name?m.courses.filter(x=>normalizeOrgToken(x.name)===name):m.courses.slice();if(ctx.length)candidates=candidates.filter(c=>coursePaths(m,c.id,ctx).length>0);const active=candidates.filter(c=>c.is_active&&allowed(auth,c.id));if(active.length===1)return accept(active[0]);if(active.length>1)return{courseId:null,orgPath:null,status:'review',warning:'COURSE_AMBIGUOUS'};
+    const code=normalizeOrgToken(input.courseCode),name=normalizeOrgToken(input.courseName);
+    // Nennt die Zeile weder Kurscode noch Kursname noch einen Standort/Bereich, gibt es nichts,
+    // das mehrere Kurse treffen könnte - "mehrere passende Kurse" wäre dann falsch, denn es gab
+    // gar keine Anfrage, nur die vollständige Kursliste des Traegers als Zufallstreffer. Einzige
+    // Ausnahme bleibt die Bequemlichkeit fuer einen Traeger mit genau einem Kurs: fehlt jede
+    // Angabe, ist die Zuordnung trotzdem eindeutig.
+    if(!code&&!name&&!ctx.length){
+      const only=m.courses.filter(c=>c.is_active&&allowed(auth,c.id));
+      if(only.length===1)return accept(only[0]);
+      if(input.fallbackCourseId){const fallback=m.courses.find(x=>x.id===input.fallbackCourseId);if(fallback){const r=accept(fallback,'COURSE_FALLBACK_USED');if(r.status==='automatic')return r;}}
+      return{courseId:null,orgPath:null,status:'review',warning:'COURSE_NOT_RESOLVED'};
+    }
+    let candidates=code?m.courses.filter(x=>normalizeOrgToken(x.code)===code):name?m.courses.filter(x=>normalizeOrgToken(x.name)===name):m.courses.slice();if(ctx.length)candidates=candidates.filter(c=>coursePaths(m,c.id,ctx).length>0);const active=candidates.filter(c=>c.is_active&&allowed(auth,c.id));if(active.length===1)return accept(active[0]);if(active.length>1)return{courseId:null,orgPath:null,status:'review',warning:'COURSE_AMBIGUOUS'};
     if(input.fallbackCourseId){const fallback=m.courses.find(x=>x.id===input.fallbackCourseId);if(fallback){const r=accept(fallback,'COURSE_FALLBACK_USED');if(r.status==='automatic')return r;}}
     if(ctx.length&&!code&&!name){const scoped=m.courses.filter(c=>c.is_active&&allowed(auth,c.id)&&coursePaths(m,c.id,ctx).length);if(scoped.length===1)return accept(scoped[0],input.fallbackOrgUnitId?'ORG_FALLBACK_USED':null);if(scoped.length>1)return{courseId:null,orgPath:null,status:'review',warning:'COURSE_AMBIGUOUS'};}
     if(candidates.some(x=>!x.is_active))return{courseId:null,orgPath:null,status:'blocked',warning:'COURSE_INACTIVE'};if(candidates.length&&!active.length)return{courseId:null,orgPath:null,status:'blocked',warning:'COURSE_FORBIDDEN'};return{courseId:null,orgPath:null,status:'review',warning:ctx.length?'ORG_CONTEXT_UNRESOLVED':'COURSE_NOT_RESOLVED'};
