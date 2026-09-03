@@ -55,8 +55,13 @@ async function processMail(env:Env,parsed:ParsedMail,envelope:EmailMessageLike):
       let accepted=0,skipped=0,ok=true;
       if(organization){const r=await applyOrganizationImport(env,orgAuth,channel.tenant_id,{batch_id:organization.batch_id,digest:organization.digest});accepted+=r.results.filter((x:any)=>x.action!=='skipped').length;skipped+=r.results.filter((x:any)=>x.action==='skipped').length;try{preview=await buildParticipants();}catch{ok=false;issues++;}}
       if(ok&&preview&&!(preview.candidates?.length&&preview.candidates.every(safeAuto)))ok=false;
-      if(ok&&preview){const applied=await applyParticipantImport(env,auth,channel.tenant_id,{batch_id:preview.batch_id,digest:preview.digest});accepted+=applied.results.filter((x:any)=>x.action!=='skipped').length;skipped+=applied.results.filter((x:any)=>x.action==='skipped').length;}
-      if(ok&&(organization||preview)){await env.DB.prepare('UPDATE intake_batches SET status=?,accepted_count=?,skipped_count=?,completed_at=?,updated_at=? WHERE id=?').bind(skipped?'partial':'completed',accepted,skipped,nowIso(),nowIso(),batchId).run();await purge(env,batchId);auto=true;}
+      // Eine grosse Teilnehmerliste passt nicht in einen einzigen Aufruf: die Plattform laesst
+      // 1000 Unteranfragen zu, eine Person kostet rund 16. Bleibt etwas offen, wird der Eingang
+      // nicht abgeschlossen und nicht bereinigt - der naechste geplante Lauf fuehrt ihn zu Ende.
+      let vollstaendig=true;
+      if(ok&&preview){const applied=await applyParticipantImport(env,auth,channel.tenant_id,{batch_id:preview.batch_id,digest:preview.digest,max_apply:25});accepted+=applied.results.filter((x:any)=>x.action!=='skipped'&&x.action!=='already_applied').length;skipped+=applied.results.filter((x:any)=>x.action==='skipped').length;vollstaendig=applied.completed;}
+      if(ok&&(organization||preview)&&!vollstaendig){await env.DB.prepare("UPDATE intake_batches SET status='processing',accepted_count=?,skipped_count=?,updated_at=? WHERE id=?").bind(accepted,skipped,nowIso(),batchId).run();auto=true;}
+      else if(ok&&(organization||preview)){await env.DB.prepare('UPDATE intake_batches SET status=?,accepted_count=?,skipped_count=?,completed_at=?,updated_at=? WHERE id=?').bind(skipped?'partial':'completed',accepted,skipped,nowIso(),nowIso(),batchId).run();await purge(env,batchId);auto=true;}
       else if(organization){await env.DB.prepare('UPDATE intake_batches SET accepted_count=?,skipped_count=?,updated_at=? WHERE id=?').bind(accepted,skipped,nowIso(),batchId).run();}
     }
   }

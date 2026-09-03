@@ -307,6 +307,32 @@ async function acceptedOfferOnboarding(){
     .catch(()=>fail(`role routing did not land on the customer admin surface, stopped at ${new URL(page.url()).pathname}`));
   await settle(page);
 
+  // Die Ablegeflaeche fuer ganze Ordner liegt ueber der ganzen Seite. Ob sie etwas verdeckt,
+  // entscheidet allein, was der Browser wirklich zeichnet - ein Merkmal am Element genuegt dafuer
+  // nicht. Genau daran ging eine Fassung vorbei: hidden war gesetzt, das display am Element gewann,
+  // und der Kunde sah eine dunkle Flaeche, die nie wieder wegging. Und ohne die Flaeche gibt es
+  // ueberhaupt keinen Weg, einen Ordner einzuwerfen.
+  const ablegeflaeche=async()=>page.evaluate(()=>{
+    const z=document.querySelector('#intake-drop-overlay');
+    if(!z)return{da:false,hoehe:0,display:''};
+    return{da:true,hoehe:Math.round(z.getBoundingClientRect().height),display:getComputedStyle(z).display};
+  });
+  const inRuhe=await ablegeflaeche();
+  if(!inRuhe.da)fail('die fensterweite Ablegeflaeche fehlt auf der Kundenoberflaeche - ein Ordner laesst sich dann nicht einwerfen');
+  if(inRuhe.hoehe>0)fail(`die Ablegeflaeche verdeckt die Kundenoberflaeche ohne jeden Zug (${inRuhe.hoehe}px, display ${inRuhe.display})`);
+  await page.evaluate(()=>{
+    const dt=new DataTransfer();dt.items.add(new File(['x'],'x.csv',{type:'text/csv'}));
+    const e=new DragEvent('dragover',{bubbles:true,cancelable:true});
+    Object.defineProperty(e,'dataTransfer',{value:dt});
+    document.body.dispatchEvent(e);
+  });
+  const beimZug=await ablegeflaeche();
+  if(!(beimZug.hoehe>100))fail(`beim Ziehen einer Datei muss die Ablegeflaeche erscheinen, war ${beimZug.hoehe}px (display ${beimZug.display})`);
+  await page.waitForTimeout(700);
+  const nachDemZug=await ablegeflaeche();
+  if(nachDemZug.hoehe>0)fail(`nach dem Zug muss die Ablegeflaeche wieder verschwinden, war ${nachDemZug.hoehe}px`);
+  console.log('Ablegeflaeche fuer ganze Ordner: in Ruhe unsichtbar, beim Zug sichtbar, danach wieder weg: OK');
+
   const completed=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`);if(completed.status!==200||completed.data?.invitation?.status!=='completed')fail('successful browser onboarding did not persist completed invitation');
   const replay=await api(`/api/onboarding/${encodeURIComponent(onboardingToken)}`,{method:'POST',body:{}});if(replay.status===200||replay.data?.error!=='ONBOARDING_UNAVAILABLE')fail(`browser onboarding replay must fail closed, got ${replay.status}/${replay.data?.error}`);
   console.log('Accepted paid offer -> browser onboarding -> auto-login -> customer portal: OK');

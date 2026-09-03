@@ -59,12 +59,24 @@ if(INTAKE_CENTER_PATH){
       if(!confirm(`${parts.join(' und ')} jetzt übernehmen?${selected.length?' Neue Konten werden dabei automatisch eingeladen.':''}`))return;
       const b=area.querySelector('[data-apply-intake]'),st=area.querySelector('[data-apply-status]');b.disabled=true;st.textContent='Übernehme …';
       try{
-        const r=await api(q(`/api/enterprise/intake/batches/${encodeURIComponent(batchId)}/apply`,t),{method:'POST',body:JSON.stringify({selected_indexes:selected,selected_organization_indexes:orgSelected})});
-        st.textContent=`Fertig: ${r.accepted} übernommen, ${r.skipped} zur Prüfung/offen.`;b.remove();
+        // Eine grosse Teilnehmerliste passt nicht in einen Aufruf (die Plattform laesst 1000
+        // Unteranfragen zu, eine Person kostet rund 16). Der Rest wird hier gleich weiter
+        // uebernommen, statt den Kunden erneut klicken zu lassen.
+        let r=null,laeufe=0;
+        do{
+          r=await api(q(`/api/enterprise/intake/batches/${encodeURIComponent(batchId)}/apply`,t),{method:'POST',body:JSON.stringify({selected_indexes:selected,selected_organization_indexes:orgSelected})});
+          laeufe++;
+          if(r.completed!==false)break;
+          st.textContent=`Übernehme … ${r.accepted} erledigt, noch ${r.remaining} offen.`;
+        }while(laeufe<INTAKE_MAX_LAEUFE);
+        st.textContent=`Fertig: ${r.accepted} übernommen, ${r.skipped} zur Prüfung/offen.`
+          +(r.completed===false?` Es sind noch ${r.remaining} offen – der nächste geplante Lauf führt sie zu Ende.`:'');
+        if(r.completed!==false)b.remove();else b.disabled=false;
       }catch(e){st.textContent=(window.KP_ERROR_TEXT?window.KP_ERROR_TEXT(e):e.message);b.disabled=false;}
     };
   }
 
+  const INTAKE_MAX_LAEUFE=40;
   function enhance(){const side=document.querySelector('.side');if(!side||side.querySelector('#intake-center-nav'))return;const b=document.createElement('button');b.id='intake-center-nav';b.className='nav';b.textContent='Eingang & Automationen';const importBtn=side.querySelector('#participant-import-nav'),spacer=side.querySelector('.spacer');if(importBtn?.nextSibling)importBtn.parentNode.insertBefore(b,importBtn.nextSibling);else side.insertBefore(b,spacer||null);b.onclick=open;}
   new MutationObserver(()=>queueMicrotask(enhance)).observe(document.querySelector('#app')||document.body,{subtree:true,childList:true});enhance();
 }

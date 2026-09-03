@@ -132,6 +132,7 @@
     // Importe: Der Nutzer muss erfahren, was er an seiner Datei ändern soll.
     IMPORT_FILE_REQUIRED:'Bitte wähle eine Datei aus.',
     IMPORT_FILE_TOO_LARGE:'Die Datei ist zu groß. Erlaubt sind bis zu 15 MB.',
+    INTAKE_UPLOAD_MODULE_UNAVAILABLE:'Die Uploadhilfe konnte nicht geladen werden. Bitte die Seite neu laden und den Ordner noch einmal ablegen.',
     IMPORT_JSON_INVALID:'Die JSON-Datei ist nicht lesbar. Bitte das Format prüfen.',
     UNSUPPORTED_PARTICIPANT_IMPORT_FILE:'Dieses Dateiformat wird nicht unterstützt. Möglich sind CSV, XLSX, JSON und Text.',
     PDF_CLIENT_EXTRACTION_REQUIRED:'PDF-Dateien werden direkt im Browser ausgelesen. Bitte die Datei über die PDF-Auswahl hochladen.',

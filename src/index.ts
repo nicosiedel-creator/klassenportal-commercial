@@ -25,7 +25,7 @@ import { calendarFeedResponse } from './core/advanced-modules.js';
 import { handleRuntimeSchemaApi } from './core/runtime-schema-router.js';
 import { handleEnterpriseRouter } from './core/enterprise-router.js';
 import { cleanupOidcStates } from './core/enterprise-sso.js';
-import { cleanupIntake } from './core/intake-center.js';
+import { cleanupIntake, continueParticipantImports } from './core/intake-center.js';
 import { handlePublicIntakeRoute } from './core/intake-router.js';
 import { handleCloudflareInboundEmail } from './core/cloudflare-inbound.js';
 import { handleCommunicationsApi } from './core/communications-router.js';
@@ -167,6 +167,9 @@ export default{
     await runCommunicationAutomation(env).catch(e=>console.error('Communication automation failed',{error:String((e as Error)?.message||e)}));
     await runAttendanceAttention(env).catch(e=>console.error('Attendance attention automation failed',{error:String((e as Error)?.message||e)}));
     await runPlatformAutomationCycle(env).catch(e=>console.error('Platform automation cycle failed',{error:String((e as Error)?.message||e)}));
+    // Grosse Teilnehmerlisten werden in Haeppchen uebernommen, damit ein Aufruf die
+    // Unteranfragen-Grenze der Plattform nicht reisst. Hier wird fortgesetzt, was noch offen ist.
+    await continueParticipantImports(env,1).catch(e=>console.error('Participant import continuation failed',{error:String((e as Error)?.message||e)}));
     if(controller?.cron==='*/5 * * * *')return;
     await refreshTrialStates(env);await processScheduledModuleCancellations(env,25);await ensureCustomDomainGuards(env).catch(()=>undefined);await reconcilePendingCustomDomains(env,25).catch(e=>console.error('Custom domain reconciliation failed',{error:String((e as Error)?.message||e)}));await runScheduledTenantBackups(env,portabilityConfig,'system:backup',3);await verifyPendingBackups(env,2).catch(e=>console.error('Backup verification failed',{error:String((e as Error)?.message||e)}));await cleanupAccountActions(env).catch(()=>undefined);await cleanupOidcStates(env).catch(()=>undefined);await cleanupIntake(env).catch(e=>console.error('Intake cleanup failed',{error:String((e as Error)?.message||e)}));
     const now=new Date(),nowIso=now.toISOString();await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(nowIso).run();await env.DB.prepare("UPDATE onboarding_invitations SET status='expired' WHERE status='open' AND expires_at <= ?").bind(nowIso).run();await env.DB.prepare('DELETE FROM login_attempts WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run();await env.DB.prepare('DELETE FROM legal_content_report_limits WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run().catch(()=>undefined);await env.DB.prepare('DELETE FROM integration_rate_limits WHERE window_started_at <= ?').bind(new Date(now.getTime()-24*60*60_000).toISOString()).run().catch(()=>undefined);await env.DB.prepare("UPDATE org_import_batches SET status='expired' WHERE status='previewed' AND expires_at<=?").bind(nowIso).run().catch(()=>undefined);await env.DB.prepare("DELETE FROM participant_import_batches WHERE (status='preview' AND expires_at<=?) OR (status IN ('applied','cancelled','expired') AND COALESCE(applied_at,created_at)<=?)").bind(nowIso,new Date(now.getTime()-90*86400000).toISOString()).run().catch(()=>undefined);await env.DB.prepare('DELETE FROM microsoft_oauth_states WHERE expires_at<=?').bind(nowIso).run().catch(()=>undefined);await env.DB.prepare('DELETE FROM live_study_sessions WHERE expires_at<=?').bind(nowIso).run().catch(()=>undefined);
