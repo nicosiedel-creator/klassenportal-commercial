@@ -101,14 +101,22 @@
   function windowDropOverlay(options){
     const opt=options||{},scope=opt.scope||window,doc=opt.document||document;
     if(doc.querySelector('#intake-drop-overlay'))return null;
-    const zone=doc.createElement('div');zone.id='intake-drop-overlay';zone.hidden=true;
-    zone.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.72);pointer-events:none';
+    const zone=doc.createElement('div');zone.id='intake-drop-overlay';
+    // hidden allein blendet hier NICHTS aus: die Browser-Regel [hidden]{display:none} steht in der
+    // Stilvorlage des Browsers, das display:flex steht direkt am Element - und was direkt am
+    // Element steht, gewinnt. Im Browser gemessen: mit hidden=true war display weiterhin 'flex'
+    // und die Flaeche voll sichtbar. Genau das meldete der Kunde: die dunkle Flaeche kam, sobald
+    // ein Bereich geladen wurde, und ging nie wieder weg. Deshalb wird die Sichtbarkeit hier ueber
+    // display selbst gefuehrt; hidden bleibt als Zustandsmerkmal daneben stehen.
+    zone.style.cssText='position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;background:rgba(15,23,42,.72);pointer-events:none';
+    const zeigen=an=>{zone.hidden=!an;zone.style.display=an?'flex':'none';};
+    zeigen(false);
     zone.innerHTML='<div style="border:3px dashed #fff;border-radius:18px;padding:38px 46px;text-align:center;color:#fff;font-size:1.1rem;max-width:min(560px,90vw)"><strong style="display:block;font-size:1.35rem;margin-bottom:8px">Ordner hier ablegen</strong>Ganze Ordner, einzelne Dateien oder ein ZIP-Archiv. Das Portal sortiert selbst und fragt nur nach, was wirklich unklar ist.</div>';
     doc.body.append(zone);
     const now=opt.now||(()=>Date.now()),every=opt.setInterval||scope.setInterval.bind(scope),stop=opt.clearInterval||scope.clearInterval.bind(scope);
     let lastDragAt=0,watchdog=0;
-    const hide=()=>{zone.hidden=true;if(watchdog){stop(watchdog);watchdog=0;}};
-    const show=()=>{lastDragAt=now();zone.hidden=false;if(!watchdog)watchdog=every(()=>{if(now()-lastDragAt>IDLE_MS)hide();},120);};
+    const hide=()=>{zeigen(false);if(watchdog){stop(watchdog);watchdog=0;}};
+    const show=()=>{lastDragAt=now();zeigen(true);if(!watchdog)watchdog=every(()=>{if(now()-lastDragAt>IDLE_MS)hide();},120);};
     // Ein Ablegebereich, den es schon gibt - der Stundenplan-Dialog, die sichtbare Flaeche im
     // Import-Dialog -, behandelt seinen Wurf selbst. Diese Uebernahme darf ihm nicht
     // dazwischenfunken, sonst laende dieselbe Datei zweimal im Eingang.
@@ -130,7 +138,9 @@
       const collect=captureDrop(e);
       try{await opt.onResult(await collect());}catch(error){(opt.onError||(m=>alert(m)))(window.KP_ERROR_TEXT?window.KP_ERROR_TEXT(error):(error?.message||String(error)));}
     });
-    return{element:zone,show,hide,visible:()=>!zone.hidden};
+    // Sichtbar ist, was der Browser wirklich zeichnet - nicht, was ein Merkmal behauptet. Genau
+    // daran ging die alte Fassung vorbei.
+    return{element:zone,show,hide,visible:()=>zone.style.display!=='none'};
   }
 
   // Wohin ein Wurf gehoert: eine einzelne strukturierte Liste direkt in die Vorschau, in der sich

@@ -46,9 +46,16 @@ function fenster(pfad){
 // ---------------------------------------------------------------------------------------------
 const kunde=fenster('/kunden-admin');
 assert.ok(kunde.overlay(),'die Ablegefläche muss ohne jedes Nachladen im Fenster liegen');
-assert.equal(kunde.overlay().hidden,true,'sichtbar wird sie erst, wenn wirklich etwas gezogen wird');
+// Gemessen wird, was der Browser zeichnet. Das Merkmal hidden allein blendet hier nichts aus:
+// die Regel dafuer steht in der Stilvorlage des Browsers, das display steht am Element - und was
+// am Element steht, gewinnt. Der Kunde sah deshalb eine dunkle Flaeche, die nie wieder wegging.
+assert.equal(kunde.overlay().style.display,'none','vor jedem Zug darf die Flaeche nichts verdecken');
+assert.equal(kunde.overlay().hidden,true,'und sie muss auch als ausgeblendet gelten');
 kunde.feuern('dragover');
-assert.equal(kunde.overlay().hidden,false,'beim Ziehen einer Datei muss sie sich zeigen');
+assert.equal(kunde.overlay().style.display,'flex','beim Ziehen einer Datei muss sie sich zeigen');
+kunde.feuern('dragend');
+assert.equal(kunde.overlay().style.display,'none','endet der Zug, muss sie wieder verschwinden');
+kunde.feuern('dragover');
 assert.equal(kunde.skripte.length,0,'solange nichts abgelegt wurde, darf nichts nachgeladen werden');
 
 // ---------------------------------------------------------------------------------------------
