@@ -16,3 +16,27 @@ export function d1(db){
     async batch(statements){const out=[];for(const s of statements)out.push(await s.run());return out;},
   };
 }
+
+// Zaehlt Unteranfragen so, wie die Plattform sie zaehlt: jede einzeln ausgefuehrte Anweisung eine,
+// ein Stapel genau eine - unabhaengig davon, wie viele Anweisungen er traegt. Nur so misst ein
+// Test wirklich das, was auf Cloudflare gegen die Grenze von 1000 zaehlt.
+export function d1MitZaehler(db){
+  const roh=d1(db),stand={abfragen:0},roheAnweisung=new WeakMap();
+  const zaehlen=(fn)=>{stand.abfragen++;return fn();};
+  const DB={
+    prepare(sql){
+      const s=roh.prepare(sql);
+      const h={
+        bind(...p){s.bind(...p);return h;},
+        all:()=>zaehlen(()=>s.all()),
+        run:()=>zaehlen(()=>s.run()),
+        first:()=>zaehlen(()=>s.first()),
+        raw:()=>zaehlen(()=>s.raw()),
+      };
+      roheAnweisung.set(h,s);
+      return h;
+    },
+    async batch(liste){stand.abfragen++;return roh.batch(liste.map(x=>roheAnweisung.get(x)||x));},
+  };
+  return{DB,stand};
+}

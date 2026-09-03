@@ -1,7 +1,7 @@
 import type { CoreAuthContext, Env } from './types.js';
 import { audit } from './audit.js';
 import { hasPermission } from './enterprise-access.js';
-import { getTimetablePlan, publishTimetablePlan, saveTimetablePlanEntry, validateTimetablePlan } from './learning-operations.js';
+import { ausFaechern, getTimetablePlan, inFaecher, publishTimetablePlan, saveTimetablePlanEntry, stapelSchreiben, validateTimetablePlan } from './learning-operations.js';
 import { id, nowIso, safeString } from './utils.js';
 
 function admin(auth:CoreAuthContext){return auth.isPlatformAdmin||auth.role==='tenant_admin';}
@@ -34,36 +34,110 @@ export async function saveTeacherWorkloadRules(env:Env,auth:CoreAuthContext,tena
 
 export async function linkPlanEntryResource(env:Env,auth:CoreAuthContext,tenantId:string,planId:string,entryId:string,input:Record<string,unknown>){requireManage(auth);const resourceId=required(input.resource_id,120),quantity=Math.max(1,Math.floor(Number(input.quantity||1)||1));if(!await env.DB.prepare('SELECT 1 ok FROM timetable_plan_entries WHERE tenant_id=? AND plan_id=? AND id=?').bind(tenantId,planId,entryId).first())throw new Error('PLAN_ENTRY_NOT_FOUND');if(!await env.DB.prepare("SELECT 1 ok FROM planning_resources WHERE tenant_id=? AND id=? AND status='active'").bind(tenantId,resourceId).first())throw new Error('RESOURCE_NOT_AVAILABLE');await env.DB.prepare('INSERT INTO timetable_plan_entry_resources(tenant_id,plan_id,entry_id,resource_id,quantity,created_by,created_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(tenant_id,entry_id,resource_id) DO UPDATE SET quantity=excluded.quantity').bind(tenantId,planId,entryId,resourceId,quantity,auth.userId,nowIso()).run();return{entry_id:entryId,resource_id:resourceId};}
 
-async function addConflict(env:Env,tenantId:string,planId:string,entryId:string,type:string,severity:'warning'|'error',message:string,otherId?:string|null){await env.DB.prepare('INSERT INTO timetable_plan_conflicts(id,tenant_id,plan_id,entry_id,conflicting_entry_id,conflict_type,severity,message,detected_at,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,NULL)').bind(id('tpc_'),tenantId,planId,entryId,otherId||null,type,severity,message,nowIso()).run();}
+// Ein Fach je Schluessel: erst holen, sonst anlegen. Damit lassen sich Sperren, Belegungen und
+// Termine einmal geladen nach Ressource oder Person und Kalendertag einsortieren.
+function unterFach<T>(m:Map<string,Map<string,T[]>>,schluessel:string){let f=m.get(schluessel);if(!f){f=new Map();m.set(schluessel,f);}return f;}
 
+// Die erweiterte Pruefung stellte frueher elf Abfragen JE TERMIN. Ein Schuljahresplan mit 250
+// Terminen kam damit auf rund 2750 Unteranfragen - die Plattform laesst 1000 zu. Der Kunde konnte
+// also einen Jahresplan erzeugen, aber weder pruefen noch veroeffentlichen. Jetzt wird jeder
+// Datenbestand genau einmal geladen und im Speicher zugeordnet; die Zahl der Abfragen ist von der
+// Zahl der Termine unabhaengig.
 export async function validateAdvancedTimetablePlan(env:Env,auth:CoreAuthContext,tenantId:string,planId:string){
-  requireManage(auth);const base=await validateTimetablePlan(env,auth,tenantId,planId),data=await getTimetablePlan(env,auth,tenantId,planId),entries=data.entries as any[],issues:Array<{entry_id:string;type:string;severity:'warning'|'error';message:string}>=[];
-  const add=async(e:any,type:string,severity:'warning'|'error',message:string,otherId?:string|null)=>{issues.push({entry_id:String(e.id),type,severity,message});await addConflict(env,tenantId,planId,String(e.id),type,severity,message,otherId);};
-  const courseRules=new Map<string,any>(),teacherRules=new Map<string,any>();
+  requireManage(auth);const base=await validateTimetablePlan(env,auth,tenantId,planId),data=await getTimetablePlan(env,auth,tenantId,planId),entries=data.entries as any[],issues:Array<{entry_id:string;type:string;severity:'warning'|'error';message:string}>=[],konflikte:any[]=[];
+  const add=(e:any,type:string,severity:'warning'|'error',message:string,otherId?:string|null)=>{issues.push({entry_id:String(e.id),type,severity,message});konflikte.push(env.DB.prepare('INSERT INTO timetable_plan_conflicts(id,tenant_id,plan_id,entry_id,conflicting_entry_id,conflict_type,severity,message,detected_at,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,NULL)').bind(id('tpc_'),tenantId,planId,String(e.id),otherId||null,type,severity,message,nowIso()));};
+  const courseRules=new Map<string,any>(),teacherRules=new Map<string,any>(),kursRegelnAlle=new Map<string,any>(),dozentRegelnAlle=new Map<string,any>();
+  const sperrzeiten=new Map<string,Record<string,unknown>[]>(),dozentSperren=new Map<string,Map<string,Record<string,unknown>[]>>(),arbeitszeiten=new Map<string,Record<string,unknown>[]>();
+  const teilnahmen=new Map<string,number>(),terminMittel=new Map<string,Record<string,unknown>[]>();
+  const raumNachName=new Map<string,Record<string,unknown>>(),raumNachCode=new Map<string,Record<string,unknown>>();
+  const mittelSperren=new Map<string,Map<string,Record<string,unknown>[]>>(),mittelBelegung=new Map<string,Map<string,any[]>>(),veroeffentlichteBelegung=new Map<string,Map<string,Record<string,unknown>[]>>();
+  if(entries.length){
+    let von=String(entries[0].starts_at),bis=String(entries[0].ends_at);
+    for(const e of entries){if(String(e.starts_at)<von)von=String(e.starts_at);if(String(e.ends_at)>bis)bis=String(e.ends_at);}
+    const [sperrZeilen,dozentZeilen,zeitZeilen,kursRegeln,dozentRegeln,teilnahmeZeilen,mittelZeilen,raumZeilen,mittelSperrZeilen,belegtZeilen]=await Promise.all([
+      env.DB.prepare('SELECT title,blackout_type,course_id,starts_at,ends_at FROM planning_blackouts WHERE tenant_id=? AND blocks_teaching=1 AND starts_at<? AND ends_at>?').bind(tenantId,bis,von).all<Record<string,unknown>>(),
+      env.DB.prepare('SELECT teacher_id,reason,starts_at,ends_at FROM teacher_unavailability WHERE tenant_id=? AND starts_at<? AND ends_at>?').bind(tenantId,bis,von).all<Record<string,unknown>>(),
+      env.DB.prepare('SELECT teacher_id,weekday,starts_time,ends_time,valid_from,valid_until FROM teacher_availability WHERE tenant_id=?').bind(tenantId).all<Record<string,unknown>>(),
+      env.DB.prepare('SELECT * FROM course_scheduling_rules WHERE tenant_id=?').bind(tenantId).all<Record<string,unknown>>(),
+      env.DB.prepare('SELECT * FROM teacher_workload_rules WHERE tenant_id=?').bind(tenantId).all<Record<string,unknown>>(),
+      env.DB.prepare("SELECT course_id,COUNT(DISTINCT user_id) n FROM memberships WHERE tenant_id=? AND role IN ('participant','class_admin') GROUP BY course_id").bind(tenantId).all<Record<string,unknown>>(),
+      env.DB.prepare('SELECT pr.entry_id,r.* FROM timetable_plan_entry_resources pr JOIN planning_resources r ON r.id=pr.resource_id AND r.tenant_id=pr.tenant_id WHERE pr.tenant_id=? AND pr.plan_id=?').bind(tenantId,planId).all<Record<string,unknown>>(),
+      env.DB.prepare("SELECT * FROM planning_resources WHERE tenant_id=? AND resource_type='room' AND status='active'").bind(tenantId).all<Record<string,unknown>>(),
+      env.DB.prepare('SELECT resource_id,reason,starts_at,ends_at FROM planning_resource_unavailability WHERE tenant_id=? AND starts_at<? AND ends_at>?').bind(tenantId,bis,von).all<Record<string,unknown>>(),
+      env.DB.prepare('SELECT rr.resource_id,l.id,l.starts_at,l.ends_at FROM lesson_resource_reservations rr JOIN lessons l ON l.id=rr.lesson_id AND l.tenant_id=rr.tenant_id WHERE rr.tenant_id=? AND l.starts_at<? AND l.ends_at>?').bind(tenantId,bis,von).all<Record<string,unknown>>(),
+    ]);
+    for(const b of sperrZeilen.results??[])inFaecher(sperrzeiten,String(b.starts_at),String(b.ends_at),b);
+    for(const b of dozentZeilen.results??[])inFaecher(unterFach(dozentSperren,String(b.teacher_id)),String(b.starts_at),String(b.ends_at),b);
+    for(const z of zeitZeilen.results??[]){const k=String(z.teacher_id),l=arbeitszeiten.get(k);if(l)l.push(z);else arbeitszeiten.set(k,[z]);}
+    for(const r of kursRegeln.results??[])kursRegelnAlle.set(String(r.course_id),r);
+    for(const r of dozentRegeln.results??[])dozentRegelnAlle.set(String(r.teacher_id),r);
+    for(const t of teilnahmeZeilen.results??[])teilnahmen.set(String(t.course_id),Number(t.n)||0);
+    for(const m of mittelZeilen.results??[]){const k=String(m.entry_id),l=terminMittel.get(k);if(l)l.push(m);else terminMittel.set(k,[m]);}
+    for(const r of raumZeilen.results??[]){const name=String(r.name??'').toLowerCase(),code=String(r.code??'').toLowerCase();if(name&&!raumNachName.has(name))raumNachName.set(name,r);if(code&&!raumNachCode.has(code))raumNachCode.set(code,r);}
+    for(const s of mittelSperrZeilen.results??[])inFaecher(unterFach(mittelSperren,String(s.resource_id)),String(s.starts_at),String(s.ends_at),s);
+    for(const b of belegtZeilen.results??[])inFaecher(unterFach(veroeffentlichteBelegung,String(b.resource_id)),String(b.starts_at),String(b.ends_at),b);
+    // Belegungen im selben Entwurf ergeben sich aus den bereits geladenen Terminen und ihren Mitteln.
+    const nachId=new Map<string,any>();for(const e of entries)nachId.set(String(e.id),e);
+    for(const [entryId,mittel] of terminMittel){const e=nachId.get(entryId);if(!e)continue;for(const m of mittel)inFaecher(unterFach(mittelBelegung,String(m.id)),String(e.starts_at),String(e.ends_at),e);}
+  }
+  // Fuer die Tages- und Wochenbilanz zaehlen nur die wirklich verplanten Kurse und Personen - in
+  // der Reihenfolge, in der sie im Plan vorkommen, damit die Meldungen dieselbe Ordnung behalten.
+  for(const e of entries){const k=String(e.course_id);if(!courseRules.has(k))courseRules.set(k,kursRegelnAlle.get(k)??null);if(e.teacher_id){const t=String(e.teacher_id);if(!teacherRules.has(t))teacherRules.set(t,dozentRegelnAlle.get(t)??null);}}
   for(const e of entries){
     const start=String(e.starts_at),end=String(e.ends_at),day=dateKey(start),dow=new Date(start).getUTCDay();
-    if(!courseRules.has(String(e.course_id)))courseRules.set(String(e.course_id),await env.DB.prepare('SELECT * FROM course_scheduling_rules WHERE tenant_id=? AND course_id=?').bind(tenantId,e.course_id).first<Record<string,unknown>>());const rule=courseRules.get(String(e.course_id));
-    if(rule){if(rule.earliest_start&&localTime(start)<String(rule.earliest_start))await add(e,'course_time_window','warning',`Beginn ${localTime(start)} liegt vor der gewünschten Startzeit ${rule.earliest_start}.`);if(rule.latest_end&&localTime(end)>String(rule.latest_end))await add(e,'course_time_window','warning',`Ende ${localTime(end)} liegt nach der gewünschten Endzeit ${rule.latest_end}.`);if(dow===6&&!Number(rule.allow_saturday))await add(e,'weekend_not_allowed','error','Samstagsunterricht ist für diesen Kurs nicht freigegeben.');if(dow===0&&!Number(rule.allow_sunday))await add(e,'weekend_not_allowed','error','Sonntagsunterricht ist für diesen Kurs nicht freigegeben.');}
-    const blackouts=(await env.DB.prepare(`SELECT title,blackout_type FROM planning_blackouts WHERE tenant_id=? AND blocks_teaching=1 AND (course_id IS NULL OR course_id=?) AND starts_at<? AND ends_at>?`).bind(tenantId,e.course_id,end,start).all<Record<string,unknown>>()).results??[];for(const b of blackouts)await add(e,'planning_blackout','error',`Termin liegt in Sperrzeit: ${String(b.title)} (${String(b.blackout_type)}).`);
-    if(e.teacher_id){const blocks=(await env.DB.prepare('SELECT reason FROM teacher_unavailability WHERE tenant_id=? AND teacher_id=? AND starts_at<? AND ends_at>?').bind(tenantId,e.teacher_id,end,start).all<Record<string,unknown>>()).results??[];for(const b of blocks)await add(e,'teacher_unavailable','error',`Dozent/in ist nicht verfügbar${b.reason?`: ${String(b.reason)}`:''}.`);if(!teacherRules.has(String(e.teacher_id)))teacherRules.set(String(e.teacher_id),await env.DB.prepare('SELECT * FROM teacher_workload_rules WHERE tenant_id=? AND teacher_id=?').bind(tenantId,e.teacher_id).first<Record<string,unknown>>());
+    const rule=courseRules.get(String(e.course_id));
+    if(rule){if(rule.earliest_start&&localTime(start)<String(rule.earliest_start))add(e,'course_time_window','warning',`Beginn ${localTime(start)} liegt vor der gewünschten Startzeit ${rule.earliest_start}.`);if(rule.latest_end&&localTime(end)>String(rule.latest_end))add(e,'course_time_window','warning',`Ende ${localTime(end)} liegt nach der gewünschten Endzeit ${rule.latest_end}.`);if(dow===6&&!Number(rule.allow_saturday))add(e,'weekend_not_allowed','error','Samstagsunterricht ist für diesen Kurs nicht freigegeben.');if(dow===0&&!Number(rule.allow_sunday))add(e,'weekend_not_allowed','error','Sonntagsunterricht ist für diesen Kurs nicht freigegeben.');}
+    for(const b of ausFaechern(sperrzeiten,start,end)){if(b.course_id!==null&&b.course_id!==undefined&&String(b.course_id)!==String(e.course_id))continue;if(!overlaps(start,end,String(b.starts_at),String(b.ends_at)))continue;add(e,'planning_blackout','error',`Termin liegt in Sperrzeit: ${String(b.title)} (${String(b.blackout_type)}).`);}
+    if(e.teacher_id){
+      for(const b of ausFaechern(unterFach(dozentSperren,String(e.teacher_id)),start,end)){if(!overlaps(start,end,String(b.starts_at),String(b.ends_at)))continue;add(e,'teacher_unavailable','error',`Dozent/in ist nicht verfügbar${b.reason?`: ${String(b.reason)}`:''}.`);}
       // Hat die Person Arbeitszeiten zugesagt, darf ausserhalb davon nicht stillschweigend
       // geplant werden. Bewusst ein Hinweis und kein Fehler: eine Absprache im Einzelfall soll
       // moeglich bleiben, sie muss nur sichtbar sein.
-      const zusagen=Number((await env.DB.prepare('SELECT COUNT(*) n FROM teacher_availability WHERE tenant_id=? AND teacher_id=?').bind(tenantId,e.teacher_id).first<{n:number}>())?.n||0);
-      if(zusagen){const passend=await env.DB.prepare(`SELECT 1 ok FROM teacher_availability av WHERE av.tenant_id=? AND av.teacher_id=? AND av.weekday=? AND av.starts_time<=? AND av.ends_time>=? AND (av.valid_from IS NULL OR av.valid_from<=?) AND (av.valid_until IS NULL OR av.valid_until>=?) LIMIT 1`).bind(tenantId,e.teacher_id,wochentag(start),localTime(start),localTime(end),day,day).first();
-        if(!passend)await add(e,'teacher_outside_availability','warning','Der Termin liegt außerhalb der zugesagten Arbeitszeiten dieser Dozentin oder dieses Dozenten.');}}
-    const participantCount=Number((await env.DB.prepare("SELECT COUNT(DISTINCT user_id) n FROM memberships WHERE tenant_id=? AND course_id=? AND role IN ('participant','class_admin')").bind(tenantId,e.course_id).first<{n:number}>())?.n||0);
-    let resources=(await env.DB.prepare(`SELECT r.* FROM timetable_plan_entry_resources pr JOIN planning_resources r ON r.id=pr.resource_id AND r.tenant_id=pr.tenant_id WHERE pr.tenant_id=? AND pr.plan_id=? AND pr.entry_id=?`).bind(tenantId,planId,e.id).all<Record<string,unknown>>()).results??[];
-    if(!resources.length&&e.room){const r=await env.DB.prepare("SELECT * FROM planning_resources WHERE tenant_id=? AND resource_type='room' AND status='active' AND (lower(name)=lower(?) OR lower(code)=lower(?)) LIMIT 1").bind(tenantId,String(e.room),String(e.room)).first<Record<string,unknown>>();if(r)resources=[r];}
-    for(const r of resources){if(String(r.status)!=='active')await add(e,'resource_inactive','error',`Ressource ${String(r.name)} ist nicht aktiv.`);if(r.capacity!==null&&r.capacity!==undefined&&participantCount>Number(r.capacity))await add(e,'resource_capacity','error',`${String(r.name)} hat nur ${Number(r.capacity)} Plätze für ${participantCount} Teilnehmende.`);const unavailable=await env.DB.prepare('SELECT reason FROM planning_resource_unavailability WHERE tenant_id=? AND resource_id=? AND starts_at<? AND ends_at>? LIMIT 1').bind(tenantId,r.id,end,start).first<Record<string,unknown>>();if(unavailable)await add(e,'resource_unavailable','error',`${String(r.name)} ist nicht verfügbar${unavailable.reason?`: ${String(unavailable.reason)}`:''}.`);const planned=(await env.DB.prepare(`SELECT pe.id FROM timetable_plan_entry_resources pr JOIN timetable_plan_entries pe ON pe.id=pr.entry_id AND pe.tenant_id=pr.tenant_id WHERE pr.tenant_id=? AND pr.plan_id=? AND pr.resource_id=? AND pe.id<>? AND pe.starts_at<? AND pe.ends_at>? LIMIT 1`).bind(tenantId,planId,r.id,e.id,end,start).first<{id:string}>());if(planned)await add(e,'resource_overlap','error',`${String(r.name)} ist im selben Plan bereits belegt.`,planned.id);const published=await env.DB.prepare(`SELECT l.id FROM lesson_resource_reservations rr JOIN lessons l ON l.id=rr.lesson_id AND l.tenant_id=rr.tenant_id WHERE rr.tenant_id=? AND rr.resource_id=? AND l.starts_at<? AND l.ends_at>? LIMIT 1`).bind(tenantId,r.id,end,start).first<{id:string}>();if(published)await add(e,'resource_overlap','error',`${String(r.name)} ist durch veröffentlichten Unterricht belegt.`);}
+      const zusagen=arbeitszeiten.get(String(e.teacher_id))??[];
+      if(zusagen.length){const passend=zusagen.some(av=>Number(av.weekday)===wochentag(start)&&String(av.starts_time)<=localTime(start)&&String(av.ends_time)>=localTime(end)&&(av.valid_from===null||av.valid_from===undefined||String(av.valid_from)<=day)&&(av.valid_until===null||av.valid_until===undefined||String(av.valid_until)>=day));
+        if(!passend)add(e,'teacher_outside_availability','warning','Der Termin liegt außerhalb der zugesagten Arbeitszeiten dieser Dozentin oder dieses Dozenten.');}}
+    const participantCount=teilnahmen.get(String(e.course_id))||0;
+    let resources=terminMittel.get(String(e.id))??[];
+    if(!resources.length&&e.room){const schluessel=String(e.room).toLowerCase(),r=raumNachName.get(schluessel)||raumNachCode.get(schluessel);if(r)resources=[r];}
+    for(const r of resources){
+      if(String(r.status)!=='active')add(e,'resource_inactive','error',`Ressource ${String(r.name)} ist nicht aktiv.`);
+      if(r.capacity!==null&&r.capacity!==undefined&&participantCount>Number(r.capacity))add(e,'resource_capacity','error',`${String(r.name)} hat nur ${Number(r.capacity)} Plätze für ${participantCount} Teilnehmende.`);
+      const unavailable=ausFaechern(unterFach(mittelSperren,String(r.id)),start,end).find(s=>overlaps(start,end,String(s.starts_at),String(s.ends_at)));
+      if(unavailable)add(e,'resource_unavailable','error',`${String(r.name)} ist nicht verfügbar${unavailable.reason?`: ${String(unavailable.reason)}`:''}.`);
+      const planned=ausFaechern(unterFach(mittelBelegung,String(r.id)),start,end).find(o=>String(o.id)!==String(e.id)&&overlaps(start,end,String(o.starts_at),String(o.ends_at)));
+      if(planned)add(e,'resource_overlap','error',`${String(r.name)} ist im selben Plan bereits belegt.`,String(planned.id));
+      const published=ausFaechern(unterFach(veroeffentlichteBelegung,String(r.id)),start,end).find(o=>overlaps(start,end,String(o.starts_at),String(o.ends_at)));
+      if(published)add(e,'resource_overlap','error',`${String(r.name)} ist durch veröffentlichten Unterricht belegt.`);
+    }
     void day;
   }
-  for(const [courseId,rule] of courseRules){if(!rule?.max_daily_minutes)continue;const days=new Map<string,number>();for(const e of entries.filter(x=>String(x.course_id)===courseId)){const k=dateKey(String(e.starts_at));days.set(k,(days.get(k)||0)+minutes(String(e.starts_at),String(e.ends_at)));}for(const [d,total] of days)if(total>Number(rule.max_daily_minutes)){const e=entries.find(x=>String(x.course_id)===courseId&&dateKey(String(x.starts_at))===d);if(e)await add(e,'course_daily_limit','warning',`Geplante Unterrichtszeit ${total} Min. überschreitet das Tagesziel ${rule.max_daily_minutes} Min.`);}}
-  for(const [teacherId,rule] of teacherRules){if(!rule)continue;const teacherEntries=entries.filter(x=>String(x.teacher_id||'')===teacherId),days=new Map<string,number>(),weeks=new Map<string,number>();for(const e of teacherEntries){const m=minutes(String(e.starts_at),String(e.ends_at)),d=dateKey(String(e.starts_at)),w=mondayKey(String(e.starts_at));days.set(d,(days.get(d)||0)+m);weeks.set(w,(weeks.get(w)||0)+m);}if(rule.max_daily_minutes)for(const [d,total] of days)if(total>Number(rule.max_daily_minutes)){const e=teacherEntries.find(x=>dateKey(String(x.starts_at))===d);if(e)await add(e,'teacher_daily_limit','warning',`Dozentenbelastung ${total} Min. überschreitet Tagesgrenze ${rule.max_daily_minutes} Min.`);}if(rule.max_weekly_minutes)for(const [w,total] of weeks)if(total>Number(rule.max_weekly_minutes)){const e=teacherEntries.find(x=>mondayKey(String(x.starts_at))===w);if(e)await add(e,'teacher_weekly_limit','warning',`Dozentenbelastung ${total} Min. überschreitet Wochengrenze ${rule.max_weekly_minutes} Min.`);}}
+  for(const [courseId,rule] of courseRules){if(!rule?.max_daily_minutes)continue;const days=new Map<string,number>();for(const e of entries.filter(x=>String(x.course_id)===courseId)){const k=dateKey(String(e.starts_at));days.set(k,(days.get(k)||0)+minutes(String(e.starts_at),String(e.ends_at)));}for(const [d,total] of days)if(total>Number(rule.max_daily_minutes)){const e=entries.find(x=>String(x.course_id)===courseId&&dateKey(String(x.starts_at))===d);if(e)add(e,'course_daily_limit','warning',`Geplante Unterrichtszeit ${total} Min. überschreitet das Tagesziel ${rule.max_daily_minutes} Min.`);}}
+  for(const [teacherId,rule] of teacherRules){if(!rule)continue;const teacherEntries=entries.filter(x=>String(x.teacher_id||'')===teacherId),days=new Map<string,number>(),weeks=new Map<string,number>();for(const e of teacherEntries){const m=minutes(String(e.starts_at),String(e.ends_at)),d=dateKey(String(e.starts_at)),w=mondayKey(String(e.starts_at));days.set(d,(days.get(d)||0)+m);weeks.set(w,(weeks.get(w)||0)+m);}if(rule.max_daily_minutes)for(const [d,total] of days)if(total>Number(rule.max_daily_minutes)){const e=teacherEntries.find(x=>dateKey(String(x.starts_at))===d);if(e)add(e,'teacher_daily_limit','warning',`Dozentenbelastung ${total} Min. überschreitet Tagesgrenze ${rule.max_daily_minutes} Min.`);}if(rule.max_weekly_minutes)for(const [w,total] of weeks)if(total>Number(rule.max_weekly_minutes)){const e=teacherEntries.find(x=>mondayKey(String(x.starts_at))===w);if(e)add(e,'teacher_weekly_limit','warning',`Dozentenbelastung ${total} Min. überschreitet Wochengrenze ${rule.max_weekly_minutes} Min.`);}}
+  await stapelSchreiben(env,konflikte);
   const errors=Number(base.errors||0)+issues.filter(x=>x.severity==='error').length,warnings=Number(base.warnings||0)+issues.filter(x=>x.severity==='warning').length;await audit(env.DB,auth.userId,'planning.advanced_validated',tenantId,undefined,'timetable_plan',planId,{errors,warnings,advancedIssues:issues.length});return{issues:[...(base.issues||[]),...issues],errors,warnings};
 }
 
-async function reservePublishedResources(env:Env,tenantId:string,planId:string){const data=await env.DB.prepare(`SELECT e.id,e.published_lesson_id,e.room FROM timetable_plan_entries e WHERE e.tenant_id=? AND e.plan_id=? AND e.published_lesson_id IS NOT NULL`).bind(tenantId,planId).all<Record<string,unknown>>();for(const e of data.results??[]){let resources=(await env.DB.prepare('SELECT resource_id,quantity FROM timetable_plan_entry_resources WHERE tenant_id=? AND plan_id=? AND entry_id=?').bind(tenantId,planId,e.id).all<{resource_id:string;quantity:number}>()).results??[];if(!resources.length&&e.room){const r=await env.DB.prepare("SELECT id FROM planning_resources WHERE tenant_id=? AND resource_type='room' AND status='active' AND (lower(name)=lower(?) OR lower(code)=lower(?)) LIMIT 1").bind(tenantId,String(e.room),String(e.room)).first<{id:string}>();if(r)resources=[{resource_id:r.id,quantity:1}];}for(const r of resources)await env.DB.prepare('INSERT OR IGNORE INTO lesson_resource_reservations(tenant_id,lesson_id,resource_id,quantity,source_plan_id,created_at) VALUES(?,?,?,?,?,?)').bind(tenantId,String(e.published_lesson_id),r.resource_id,r.quantity||1,planId,nowIso()).run();}}
+// Auch das Reservieren lief frueher je Termin mit eigenen Abfragen. Bei einem Jahresplan blieb es
+// mitten im Reservieren stehen. Jetzt: einmal laden, gestapelt schreiben.
+async function reservePublishedResources(env:Env,tenantId:string,planId:string){
+  const data=await env.DB.prepare('SELECT e.id,e.published_lesson_id,e.room FROM timetable_plan_entries e WHERE e.tenant_id=? AND e.plan_id=? AND e.published_lesson_id IS NOT NULL').bind(tenantId,planId).all<Record<string,unknown>>();
+  const eintraege=data.results??[];
+  if(!eintraege.length)return;
+  const [mittelZeilen,raumZeilen]=await Promise.all([
+    env.DB.prepare('SELECT entry_id,resource_id,quantity FROM timetable_plan_entry_resources WHERE tenant_id=? AND plan_id=?').bind(tenantId,planId).all<Record<string,unknown>>(),
+    env.DB.prepare("SELECT id,name,code FROM planning_resources WHERE tenant_id=? AND resource_type='room' AND status='active'").bind(tenantId).all<Record<string,unknown>>(),
+  ]);
+  const jeTermin=new Map<string,Array<{resource_id:string;quantity:number}>>(),raumNachName=new Map<string,string>(),raumNachCode=new Map<string,string>();
+  for(const m of mittelZeilen.results??[]){const k=String(m.entry_id),w={resource_id:String(m.resource_id),quantity:Number(m.quantity)||1},l=jeTermin.get(k);if(l)l.push(w);else jeTermin.set(k,[w]);}
+  for(const r of raumZeilen.results??[]){const name=String(r.name??'').toLowerCase(),code=String(r.code??'').toLowerCase();if(name&&!raumNachName.has(name))raumNachName.set(name,String(r.id));if(code&&!raumNachCode.has(code))raumNachCode.set(code,String(r.id));}
+  const ts=nowIso(),anweisungen:any[]=[];
+  for(const e of eintraege){
+    let resources=jeTermin.get(String(e.id))??[];
+    if(!resources.length&&e.room){const schluessel=String(e.room).toLowerCase(),rid=raumNachName.get(schluessel)||raumNachCode.get(schluessel);if(rid)resources=[{resource_id:rid,quantity:1}];}
+    for(const r of resources)anweisungen.push(env.DB.prepare('INSERT OR IGNORE INTO lesson_resource_reservations(tenant_id,lesson_id,resource_id,quantity,source_plan_id,created_at) VALUES(?,?,?,?,?,?)').bind(tenantId,String(e.published_lesson_id),r.resource_id,r.quantity||1,planId,ts));
+  }
+  await stapelSchreiben(env,anweisungen);
+}
 export async function publishAdvancedTimetablePlan(env:Env,auth:CoreAuthContext,tenantId:string,planId:string){const validation=await validateAdvancedTimetablePlan(env,auth,tenantId,planId);if(validation.errors)throw new Error('TIMETABLE_PLAN_HAS_CONFLICTS');const result=await publishTimetablePlan(env,auth,tenantId,planId);await reservePublishedResources(env,tenantId,planId);return{...result,validation};}
 
 // Wann eine Dozentin oder ein Dozent arbeiten MOECHTE - fuer Honorarkraefte der eigentliche
@@ -218,7 +292,12 @@ export async function planningSuggestions(env:Env,auth:CoreAuthContext,tenantId:
 // sein eigenes Budget mit und hoert vorher auf. Ein erneuter Lauf setzt fort, weil bereits belegte
 // Tage uebersprungen werden.
 const AUTOFILL_MAX_DAYS=400;
-const AUTOFILL_ABFRAGE_BUDGET=700,AUTOFILL_KOSTEN_TAG=2,AUTOFILL_KOSTEN_TERMIN=12;
+// Das Abfragebudget eines Laufs. Gemessen, nicht geschaetzt: ein Vorschlag kostet drei Abfragen,
+// das Anlegen eines Termins samt Raumbindung sieben. Beides ist hier mit einer Reserve versehen.
+// Das blosse Durchgehen des Kalenders kostet nichts mehr - genau daran scheiterte der Lauf frueher:
+// bei einem Schuljahr ging das ganze Budget fuer die Tagesabfragen drauf, der Lauf blieb im ersten
+// Kurs stecken und meldete auch dann noch "Obergrenze erreicht", wenn er gar nichts mehr schaffte.
+const AUTOFILL_ABFRAGE_BUDGET=850,AUTOFILL_KOSTEN_VORSCHLAG=4,AUTOFILL_KOSTEN_ANLAGE=8;
 function tagSchluessel(d:Date){return d.toISOString().slice(0,10);}
 function uhrzeit(v:unknown,fallback:string){const s=safeString(v,5);return s&&/^\d\d:\d\d$/.test(s)?s:fallback;}
 export async function autofillTimetablePlan(env:Env,auth:CoreAuthContext,tenantId:string,planId:string,input:Record<string,unknown>){
@@ -242,41 +321,62 @@ export async function autofillTimetablePlan(env:Env,auth:CoreAuthContext,tenantI
   if(Number.isNaN(von.getTime())||Number.isNaN(bis.getTime())||von>bis)throw new Error('PLAN_RANGE_INVALID');
   if((bis.getTime()-von.getTime())/86400000>AUTOFILL_MAX_DAYS)throw new Error('PLAN_RANGE_TOO_LONG');
   let erzeugt=0,budget=0;const luecken:Array<{course_id:string;course_name:string;date:string;reason:string}>=[];
-  for(const gewollt of gewuenscht)if(!kurse.some(k=>String(k.id)===gewollt)){
+  // Sperrzeiten und bereits verplante Tage einmal laden statt je Tag zu fragen.
+  const vonIso=`${plan.starts_on}T00:00:00.000Z`,bisIso=`${plan.ends_on}T23:59:59.999Z`;
+  const [sperrZeilen,belegtZeilen]=await Promise.all([
+    env.DB.prepare('SELECT course_id,title,starts_at,ends_at FROM planning_blackouts WHERE tenant_id=? AND blocks_teaching=1 AND starts_at<? AND ends_at>?').bind(tenantId,bisIso,vonIso).all<Record<string,unknown>>(),
+    env.DB.prepare('SELECT course_id,substr(starts_at,1,10) tag FROM timetable_plan_entries WHERE tenant_id=? AND plan_id=? GROUP BY course_id,substr(starts_at,1,10)').bind(tenantId,planId).all<Record<string,unknown>>(),
+  ]);
+  const sperrFach=new Map<string,Record<string,unknown>[]>(),belegteTage=new Map<string,Set<string>>();
+  for(const b of sperrZeilen.results??[])inFaecher(sperrFach,String(b.starts_at),String(b.ends_at),b);
+  for(const b of belegtZeilen.results??[]){const k=String(b.course_id),t=belegteTage.get(k);if(t)t.add(String(b.tag));else belegteTage.set(k,new Set([String(b.tag)]));}
+  // Wo der vorige Lauf aufgehoert hat. Ohne diesen Merker begaenne jeder Lauf wieder von vorn -
+  // und Tage, an denen sich nichts planen laesst (kein freier Raum, keine freie Person), wuerden
+  // in jedem Lauf erneut geprueft. Bei genuegend solchen Tagen ginge das ganze Budget dafuer drauf
+  // und der Kunde klickte ewig weiter, ohne dass je ein Termin dazukaeme. Mit dem Merker geht
+  // jeder Lauf ein Stueck weiter, und die Folge endet garantiert.
+  let fortsetzenKurs=safeString(input.resume_course_id,120)||'';
+  const fortsetzenTag=safeString(input.resume_date,10)||'';
+  if(fortsetzenKurs&&!kurse.some(k=>String(k.id)===fortsetzenKurs))fortsetzenKurs='';
+  let ueberspringen=Boolean(fortsetzenKurs),naechsterKurs='',naechsterTag='';
+  if(!fortsetzenKurs)for(const gewollt of gewuenscht)if(!kurse.some(k=>String(k.id)===gewollt)){
     courseScope(auth,gewollt);
     const name=await env.DB.prepare('SELECT name FROM courses WHERE tenant_id=? AND id=?').bind(tenantId,gewollt).first<{name:string}>();
     luecken.push({course_id:gewollt,course_name:String(name?.name||''),date:plan.starts_on,reason:name?'NO_COURSE_RULES':'COURSE_NOT_FOUND'});
   }
   const proKurs=new Map<string,number>();
   for(const k of kurse){
-    if(budget>=AUTOFILL_ABFRAGE_BUDGET)break;
+    if(naechsterKurs)break;
     const kursId=String(k.id),kursName=String(k.name||''),
       beginn=uhrzeit(k.earliest_start,'08:00'),dauer=Math.max(15,Math.min(600,Number(k.default_lesson_minutes||0)||90));
+    if(ueberspringen&&kursId!==fortsetzenKurs)continue;
     const [bh,bm]=beginn.split(':').map(Number),endeMinuten=bh*60+bm+dauer;
     if(endeMinuten>=24*60){luecken.push({course_id:kursId,course_name:kursName,date:plan.starts_on,reason:'LESSON_EXCEEDS_DAY'});continue;}
     const ende=`${String(Math.floor(endeMinuten/60)).padStart(2,'0')}:${String(endeMinuten%60).padStart(2,'0')}`;
     if(k.latest_end&&ende>String(k.latest_end)){luecken.push({course_id:kursId,course_name:kursName,date:plan.starts_on,reason:'LESSON_AFTER_LATEST_END'});continue;}
     proKurs.set(kursId,0);
     for(let d=new Date(von.getTime());d<=bis;d.setUTCDate(d.getUTCDate()+1)){
-      if(budget>=AUTOFILL_ABFRAGE_BUDGET)break;
       const dow=d.getUTCDay(),datum=tagSchluessel(d);
+      if(ueberspringen){if(datum<fortsetzenTag)continue;ueberspringen=false;}
+      if(budget>=AUTOFILL_ABFRAGE_BUDGET){naechsterKurs=kursId;naechsterTag=datum;break;}
       if(dow===6&&!Number(k.allow_saturday))continue;
       if(dow===0&&!Number(k.allow_sunday))continue;
       const start=`${datum}T${beginn}:00.000Z`,schluss=`${datum}T${ende}:00.000Z`;
-      budget+=AUTOFILL_KOSTEN_TAG;
-      if(await env.DB.prepare('SELECT 1 ok FROM timetable_plan_entries WHERE tenant_id=? AND plan_id=? AND course_id=? AND substr(starts_at,1,10)=? LIMIT 1').bind(tenantId,planId,kursId,datum).first())continue;
-      const gesperrt=await env.DB.prepare('SELECT title FROM planning_blackouts WHERE tenant_id=? AND blocks_teaching=1 AND (course_id IS NULL OR course_id=?) AND starts_at<? AND ends_at>? LIMIT 1').bind(tenantId,kursId,schluss,start).first<{title:string}>();
-      if(gesperrt)continue;
+      if(belegteTage.get(kursId)?.has(datum))continue;
+      if(ausFaechern(sperrFach,start,schluss).some(b=>(b.course_id===null||b.course_id===undefined||String(b.course_id)===kursId)&&overlaps(start,schluss,String(b.starts_at),String(b.ends_at))))continue;
+      budget+=AUTOFILL_KOSTEN_VORSCHLAG;
       const vorschlag=await planningSuggestions(env,auth,tenantId,{course_id:kursId,starts_at:start,ends_at:schluss});
       const person=(vorschlag.teachers as Array<Record<string,unknown>>)[0],raum=(vorschlag.rooms as Array<Record<string,unknown>>)[0];
       if(!person||!raum){luecken.push({course_id:kursId,course_name:kursName,date:datum,reason:person?'NO_ROOM_AVAILABLE':'NO_TEACHER_AVAILABLE'});continue;}
       const {entry_id}=await saveTimetablePlanEntry(env,auth,tenantId,planId,{course_id:kursId,teacher_id:String(person.id),room:String(raum.name||''),starts_at:start,ends_at:schluss,activity_type:'classroom',source:'automation'});
       await linkPlanEntryResource(env,auth,tenantId,planId,entry_id,{resource_id:String(raum.id)});
-      erzeugt++;budget+=AUTOFILL_KOSTEN_TERMIN;proKurs.set(kursId,(proKurs.get(kursId)||0)+1);
+      erzeugt++;budget+=AUTOFILL_KOSTEN_ANLAGE;belegteTage.get(kursId)?.add(datum)??belegteTage.set(kursId,new Set([datum]));proKurs.set(kursId,(proKurs.get(kursId)||0)+1);
     }
+    ueberspringen=false;
   }
   await audit(env.DB,auth.userId,'education.timetable_plan_autofilled',tenantId,undefined,'timetable_plan',planId,{created:erzeugt,gaps:luecken.length,courses:kurse.length});
-  return{plan_id:planId,created:erzeugt,limit_reached:budget>=AUTOFILL_ABFRAGE_BUDGET,
+  return{plan_id:planId,created:erzeugt,limit_reached:Boolean(naechsterKurs),
+    resume_course_id:naechsterKurs||null,resume_date:naechsterTag||null,
     courses:kurse.map(k=>({course_id:String(k.id),course_name:String(k.name||''),created:proKurs.get(String(k.id))||0})),
     gaps:luecken.slice(0,200),gap_count:luecken.length,published:false};
 }
