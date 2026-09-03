@@ -52,9 +52,58 @@ export async function previewParticipantImport(env:Env,auth:CoreAuthContext,tena
   await resolveCourses(env,auth,tenantId,candidates,fallbackCourseId,fallbackOrgUnitId);const seen=new Set<string>();for(const c of candidates){if(c.email){const k=`${c.email}|${c.course_id||''}`;if(seen.has(k))c.warnings.push('DUPLICATE_IN_IMPORT');seen.add(k);}if(c.detected_not_imported.special_category_hint)c.warnings.push('SPECIAL_CATEGORY_DATA_DETECTED_NOT_IMPORTED');if(c.detected_not_imported.bank_data)c.warnings.push('BANK_DATA_DETECTED_NOT_IMPORTED');}
   const clean=canonical(candidates),digest=await sha256Text(JSON.stringify(clean)),batchId=id('pib_'),ts=nowIso(),expires=new Date(Date.now()+2*3600_000).toISOString();const storedKind=['contract_text','pdf_text','pasted_text','api'].includes(kind)?kind:'structured';await env.DB.prepare("INSERT INTO participant_import_batches(id,tenant_id,source_name,source_kind,course_id,preview_digest,preview_json,status,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,'preview',?,?,?)").bind(batchId,tenantId,sourceName,storedKind,fallbackCourseId,digest,JSON.stringify(clean),auth.userId,ts,expires).run();await audit(env.DB,auth.userId,'participants.import.previewed',tenantId,fallbackCourseId??undefined,'participant_import_batch',batchId,{sourceName,rows:clean.length,fallbackOrgUnitId});return{batch_id:batchId,digest,expires_at:expires,candidates};
 }
+// Wie viele Personen ein einzelner Aufruf anlegt. Gemessen, nicht geschaetzt: eine Person kostet
+// rund 16 Unteranfragen (Konto suchen, Konto anlegen, Mandantenzuordnung, Mitgliedschaft,
+// Einladung samt Mailversand, Nachweiszeile) - die Plattform laesst 1000 je Aufruf zu.
+//
+// Ohne diese Grenze brach eine Liste mit hundert Teilnehmenden mitten im Anlegen ab: ein Teil war
+// angelegt und eingeladen, der Rest nicht, und der Kunde sah nur einen Abbruch, ohne zu wissen wer
+// schon drin ist. Jetzt bleibt der Rest ausdruecklich uebrig und wird fortgesetzt - von der
+// Oberflaeche sofort, im automatischen Betrieb vom naechsten Lauf.
+const PARTICIPANT_APPLY_MAX=50;
+
 export async function applyParticipantImport(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
-  canImport(auth);const batchId=safeString(input.batch_id,100),digest=safeString(input.digest,128);const batch=await env.DB.prepare("SELECT preview_digest,preview_json,status,expires_at FROM participant_import_batches WHERE id=? AND tenant_id=?").bind(batchId,tenantId).first<{preview_digest:string;preview_json:string;status:string;expires_at:string}>();if(!batch)throw new Error('PARTICIPANT_IMPORT_NOT_FOUND');if(batch.status!=='preview')throw new Error('PARTICIPANT_IMPORT_NOT_PENDING');if(batch.expires_at<=nowIso())throw new Error('PARTICIPANT_IMPORT_EXPIRED');if(batch.preview_digest!==digest)throw new Error('PARTICIPANT_IMPORT_PREVIEW_CHANGED');const rows=JSON.parse(batch.preview_json) as ParticipantCandidate[],selected=new Set((Array.isArray(input.selected_indexes)?input.selected_indexes:rows.map((_,i)=>i)).map(Number)),results:any[]=[];
+  canImport(auth);
+  const batchId=safeString(input.batch_id,100),digest=safeString(input.digest,128);
+  const batch=await env.DB.prepare("SELECT preview_digest,preview_json,status,expires_at FROM participant_import_batches WHERE id=? AND tenant_id=?").bind(batchId,tenantId).first<{preview_digest:string;preview_json:string;status:string;expires_at:string}>();
+  if(!batch)throw new Error('PARTICIPANT_IMPORT_NOT_FOUND');
+  if(batch.status!=='preview')throw new Error('PARTICIPANT_IMPORT_NOT_PENDING');
+  if(batch.expires_at<=nowIso())throw new Error('PARTICIPANT_IMPORT_EXPIRED');
+  if(batch.preview_digest!==digest)throw new Error('PARTICIPANT_IMPORT_PREVIEW_CHANGED');
+  const rows=JSON.parse(batch.preview_json) as ParticipantCandidate[],selected=new Set((Array.isArray(input.selected_indexes)?input.selected_indexes:rows.map((_,i)=>i)).map(Number)),results:any[]=[];
+  // Eine Obergrenze aus der Anfrage darf die gemessene Grenze nur unterschreiten, nie anheben.
+  const grenze=Math.max(1,Math.min(PARTICIPANT_APPLY_MAX,Math.floor(Number(input.max_apply))||PARTICIPANT_APPLY_MAX));
   const blocking=new Set(['EMAIL_NOT_DETECTED','MULTIPLE_EMAILS','COURSE_AMBIGUOUS','COURSE_NOT_FOUND','COURSE_NOT_RESOLVED','COURSE_INACTIVE','COURSE_FORBIDDEN','ORG_CONTEXT_MISMATCH','ORG_CONTEXT_AMBIGUOUS','ORG_CONTEXT_UNRESOLVED','ORG_FALLBACK_INVALID','DUPLICATE_IN_IMPORT']);
-  for(let i=0;i<rows.length;i++){const r=rows[i];if(!selected.has(i))continue;if(!r.display_name||!r.email||!r.course_id||r.warnings.some(w=>blocking.has(w))){results.push({index:i,action:'skipped',reason:'REVIEW_REQUIRED'});continue;}try{const created=await createTenantUser(env,auth,tenantId,{display_name:r.display_name,email:r.email,role:'participant',course_id:r.course_id});if(r.external_id)await env.DB.prepare("UPDATE tenant_users SET external_id=COALESCE(external_id,?),source=CASE WHEN source='manual' THEN 'import' ELSE source END,updated_at=? WHERE tenant_id=? AND user_id=? AND (external_id IS NULL OR external_id=?)").bind(r.external_id,nowIso(),tenantId,created.user_id,r.external_id).run();const action=created.invitation_sent?'created_invited':'existing_added';await env.DB.prepare('INSERT INTO participant_import_results(id,batch_id,tenant_id,course_id,user_id,email,display_name,external_id,action,detail_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(id('pir_'),batchId,tenantId,r.course_id,created.user_id,r.email,r.display_name,r.external_id,action,JSON.stringify({enrollment_start:r.enrollment_start,enrollment_end:r.enrollment_end,org_path:r.org_path}),nowIso()).run();results.push({index:i,action,user_id:created.user_id,invitation_sent:created.invitation_sent});}catch(e){results.push({index:i,action:'skipped',reason:String((e as Error).message||e)});}}
-  await env.DB.prepare("UPDATE participant_import_batches SET status='applied',applied_at=? WHERE id=? AND tenant_id=? AND status='preview'").bind(nowIso(),batchId,tenantId).run();await audit(env.DB,auth.userId,'participants.import.applied',tenantId,undefined,'participant_import_batch',batchId,{selected:selected.size,created:results.filter(x=>x.action==='created_invited').length,skipped:results.filter(x=>x.action==='skipped').length});return{batch_id:batchId,results};
+  // Was ein frueherer Aufruf schon erledigt hat, steht in den Ergebniszeilen. Daran erkennt ein
+  // Folgeaufruf, wo er weitermachen muss - auch dann, wenn dazwischen etwas abgestuerzt ist.
+  const erledigt=new Set((((await env.DB.prepare('SELECT email FROM participant_import_results WHERE batch_id=? AND tenant_id=?').bind(batchId,tenantId).all<{email:string}>()).results)??[]).map(x=>String(x.email||'').toLowerCase()));
+  let bearbeitet=0,offen=0;
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i];
+    if(!selected.has(i))continue;
+    if(!r.display_name||!r.email||!r.course_id||r.warnings.some(w=>blocking.has(w))){results.push({index:i,action:'skipped',reason:'REVIEW_REQUIRED'});continue;}
+    if(erledigt.has(r.email.toLowerCase())){results.push({index:i,action:'already_applied'});continue;}
+    if(bearbeitet>=grenze){offen++;continue;}
+    bearbeitet++;
+    const ts=nowIso();
+    try{
+      const created=await createTenantUser(env,auth,tenantId,{display_name:r.display_name,email:r.email,role:'participant',course_id:r.course_id});
+      if(r.external_id)await env.DB.prepare("UPDATE tenant_users SET external_id=COALESCE(external_id,?),source=CASE WHEN source='manual' THEN 'import' ELSE source END,updated_at=? WHERE tenant_id=? AND user_id=? AND (external_id IS NULL OR external_id=?)").bind(r.external_id,ts,tenantId,created.user_id,r.external_id).run();
+      const action=created.invitation_sent?'created_invited':'existing_added';
+      await env.DB.prepare('INSERT INTO participant_import_results(id,batch_id,tenant_id,course_id,user_id,email,display_name,external_id,action,detail_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(id('pir_'),batchId,tenantId,r.course_id,created.user_id,r.email,r.display_name,r.external_id,action,JSON.stringify({enrollment_start:r.enrollment_start,enrollment_end:r.enrollment_end,org_path:r.org_path}),ts).run();
+      erledigt.add(r.email.toLowerCase());
+      results.push({index:i,action,user_id:created.user_id,invitation_sent:created.invitation_sent});
+    }catch(e){
+      // Auch das Scheitern wird festgehalten. Sonst versuchte es jeder Folgeaufruf erneut, kaeme
+      // nie ans Ende der Liste - und niemand koennte spaeter nachlesen, wer nicht angelegt wurde.
+      const grund=String((e as Error).message||e).slice(0,200);
+      await env.DB.prepare('INSERT INTO participant_import_results(id,batch_id,tenant_id,course_id,user_id,email,display_name,external_id,action,detail_json,created_at) VALUES(?,?,?,?,NULL,?,?,?,?,?,?)').bind(id('pir_'),batchId,tenantId,r.course_id,r.email,r.display_name,r.external_id,'skipped',JSON.stringify({reason:grund}),ts).run();
+      erledigt.add(r.email.toLowerCase());
+      results.push({index:i,action:'skipped',reason:grund});
+    }
+  }
+  const fertig=!offen;
+  if(fertig)await env.DB.prepare("UPDATE participant_import_batches SET status='applied',applied_at=? WHERE id=? AND tenant_id=? AND status='preview'").bind(nowIso(),batchId,tenantId).run();
+  await audit(env.DB,auth.userId,'participants.import.applied',tenantId,undefined,'participant_import_batch',batchId,{selected:selected.size,created:results.filter(x=>x.action==='created_invited').length,skipped:results.filter(x=>x.action==='skipped').length,remaining:offen,completed:fertig});
+  return{batch_id:batchId,results,completed:fertig,remaining:offen};
 }

@@ -139,5 +139,47 @@
   // Pruefung stellt.
   const routeDropped=result=>(!result.folder&&result.files.length===1&&STRUCTURED.test(result.files[0].name))?'preview':'intake';
 
-  window.KPFolderDrop={ACCEPT,SUPPORTED,STRUCTURED,IDLE_MS,routeDropped,usable,captureDrop,pick,dropCard,windowDropOverlay,hasFiles,emptyMessage};
+  // Die fensterweite Ablegeflaeche entstand bisher erst, wenn der Kunde vorher den Bereich
+  // "Organisation & Betrieb" geoeffnet hatte - denn eingerichtet wurde sie von einem nachladbaren
+  // Modul. Im Browser gemessen: auf einer frisch geladenen Kundenoberflaeche passierte beim Ziehen
+  // eines Ordners gar nichts. Kein Rahmen, kein Wurf, keine Meldung - der Weg, auf dem ein
+  // Bildungstraeger seine Unterlagen ueberhaupt ins Portal bekommt, war schlicht nicht da.
+  //
+  // Deshalb wird die Flaeche jetzt sofort eingerichtet. Die Verarbeitung bleibt nachladbar und
+  // kommt erst beim ersten Wurf dazu; oeffnet der Kunde den Bereich vorher, findet dessen eigener
+  // Aufruf die Flaeche schon vor und legt keine zweite an.
+  const EINWURF_MODUL='/intake-quick-upload-ui.js';
+  let einwurfWartet=null;
+  function einwurfModul(){
+    if(window.KPIntakeUpload)return Promise.resolve(window.KPIntakeUpload);
+    if(einwurfWartet)return einwurfWartet;
+    einwurfWartet=new Promise((fertig,fehler)=>{
+      const bis=Date.now()+8000;
+      const warten=()=>{const t=setInterval(()=>{
+        if(window.KPIntakeUpload){clearInterval(t);fertig(window.KPIntakeUpload);}
+        else if(Date.now()>bis){clearInterval(t);fehler(new Error('INTAKE_UPLOAD_MODULE_UNAVAILABLE'));}},60);};
+      // Laedt das Modul gerade schon (etwa weil der Kunde den Bereich in derselben Sekunde
+      // oeffnet), wird kein zweites Mal geladen, sondern gewartet.
+      if([...document.scripts].some(x=>String(x.src||'').includes('intake-quick-upload-ui.js')))return warten();
+      const tag=document.createElement('script');
+      tag.src=EINWURF_MODUL;
+      tag.onload=()=>window.KPIntakeUpload?fertig(window.KPIntakeUpload):fehler(new Error('INTAKE_UPLOAD_MODULE_UNAVAILABLE'));
+      tag.onerror=()=>fehler(new Error('INTAKE_UPLOAD_MODULE_UNAVAILABLE'));
+      document.head.append(tag);
+    }).catch(x=>{einwurfWartet=null;throw x;});
+    return einwurfWartet;
+  }
+  function einwurfFlaeche(){
+    windowDropOverlay({
+      onResult:async ergebnis=>{const modul=await einwurfModul();await modul.accept(ergebnis);},
+      onError:text=>alert(text),
+    });
+  }
+  const pfad=typeof location==='undefined'?'':String(location.pathname||'').replace(/\/$/,'');
+  if(pfad==='/kunden-admin'){
+    if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',einwurfFlaeche);
+    else einwurfFlaeche();
+  }
+
+  window.KPFolderDrop={ACCEPT,SUPPORTED,STRUCTURED,IDLE_MS,routeDropped,usable,captureDrop,pick,dropCard,windowDropOverlay,hasFiles,emptyMessage,einwurfModul};
 })();

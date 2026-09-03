@@ -131,8 +131,18 @@ async function maybeAutoApply(env:Env,tenantId:string,batchId:string,built:Built
       await event(env,tenantId,'intake.partially_auto_applied',batchId,{accepted,skipped});
       return true;
     }
-    const r=await applyParticipantImport(env,auth,tenantId,{batch_id:rebuilt.batch_id,digest:rebuilt.digest});
+    const r=await applyParticipantImport(env,auth,tenantId,{batch_id:rebuilt.batch_id,digest:rebuilt.digest,max_apply:INTAKE_APPLY_MAX});
     tally(r.results);
+    // Eine grosse Teilnehmerliste passt nicht in einen einzigen Aufruf - die Plattform laesst
+    // 1000 Unteranfragen zu, eine Person kostet rund 16. Der Rest bleibt stehen und wird vom
+    // naechsten geplanten Lauf geholt; die Unterlagen werden bis dahin nicht geloescht und der
+    // Eingang gilt noch nicht als erledigt. Der Kunde muss dafuer nichts tun.
+    if(!r.completed){
+      const ts=nowIso();
+      await env.DB.prepare("UPDATE intake_batches SET status='processing',accepted_count=?,skipped_count=?,updated_at=? WHERE id=?").bind(accepted,skipped,ts,batchId).run();
+      await event(env,tenantId,'intake.partially_auto_applied',batchId,{accepted,skipped,remaining:r.remaining});
+      return true;
+    }
   }
   const status=skipped?'partial':'completed',ts=nowIso();
   await env.DB.prepare('UPDATE intake_batches SET status=?,accepted_count=?,skipped_count=?,completed_at=?,updated_at=? WHERE id=?').bind(status,accepted,skipped,ts,ts,batchId).run();
@@ -186,7 +196,7 @@ export async function applyIntakeBatch(env:Env,auth:CoreAuthContext,tenantId:str
   // die noch nicht migriert ist, darf keine Abfrage sie benennen - sonst braeche das Uebernehmen
   // an einer Spalte, ohne die es genauso arbeiten kann.
   const tracksOrganization=await intakeTracksOrganizationImport(env);
-  const b=await env.DB.prepare(`SELECT participant_import_batch_id,${tracksOrganization?'organization_import_batch_id':'NULL AS organization_import_batch_id'},source_subject,default_course_id FROM intake_batches WHERE tenant_id=? AND id=?`).bind(tenantId,batchId).first<{participant_import_batch_id:string|null;organization_import_batch_id:string|null;source_subject:string|null;default_course_id:string|null}>();
+  const b=await env.DB.prepare(`SELECT participant_import_batch_id,${tracksOrganization?'organization_import_batch_id':'NULL AS organization_import_batch_id'},source_subject,default_course_id,accepted_count,skipped_count FROM intake_batches WHERE tenant_id=? AND id=?`).bind(tenantId,batchId).first<{participant_import_batch_id:string|null;organization_import_batch_id:string|null;source_subject:string|null;default_course_id:string|null;accepted_count:number;skipped_count:number}>();
   if(!b?.participant_import_batch_id&&!b?.organization_import_batch_id)throw new Error('INTAKE_PREVIEW_REQUIRED');
   await env.DB.prepare("UPDATE intake_batches SET status='processing',updated_at=? WHERE tenant_id=? AND id=?").bind(nowIso(),tenantId,batchId).run();
   const results:unknown[]=[];let accepted=0,skipped=0,organizationApplied=false;
@@ -219,9 +229,29 @@ export async function applyIntakeBatch(env:Env,auth:CoreAuthContext,tenantId:str
     // Der Neubau erzeugt dieselben Zeilen in derselben Reihenfolge - nur die Kurszuordnung ist
     // jetzt aufgeloest. Die Auswahl des Pruefenden bleibt deshalb gueltig und wird nicht
     // uebergangen: sonst wuerde uebernommen, was jemand ausdruecklich abgewaehlt hat.
+    // Eine grosse Liste braucht mehrere Aufrufe. Die Zaehler des Eingangs duerfen dabei weder von
+    // vorn beginnen noch doppelt zaehlen: der Anteil der Personen wird deshalb jedes Mal neu aus
+    // den festgehaltenen Ergebniszeilen gelesen - die stehen dauerhaft und nennen jede Zeile
+    // genau einmal. Der Anteil der Struktur wird nur im Lauf gezaehlt, der ihn uebernommen hat.
+    const teilnehmerStand=async()=>{
+      const z=await env.DB.prepare("SELECT SUM(CASE WHEN action='skipped' THEN 0 ELSE 1 END) angenommen,SUM(CASE WHEN action='skipped' THEN 1 ELSE 0 END) uebersprungen FROM participant_import_results WHERE tenant_id=? AND batch_id=?").bind(tenantId,participantBatchId).first<{angenommen:number;uebersprungen:number}>();
+      return{angenommen:Number(z?.angenommen)||0,uebersprungen:Number(z?.uebersprungen)||0};
+    };
+    const vorher=await teilnehmerStand();
+    const strukturAngenommen=(Number(b.accepted_count)||0)-vorher.angenommen+accepted,strukturUebersprungen=(Number(b.skipped_count)||0)-vorher.uebersprungen+skipped;
     const r=await applyParticipantImport(env,auth,tenantId,{batch_id:participantBatchId,digest:participantDigest,selected_indexes:input.selected_indexes});
-    accepted+=r.results.filter((x:any)=>x.action!=='skipped').length;skipped+=r.results.filter((x:any)=>x.action==='skipped').length;
+    const nachher=await teilnehmerStand();
+    accepted=strukturAngenommen+nachher.angenommen;
+    skipped=strukturUebersprungen+nachher.uebersprungen+r.results.filter((x:any)=>x.action==='skipped'&&x.reason==='REVIEW_REQUIRED').length;
     results.push(...r.results.map((x:any)=>({...x,source:'participants'})));
+    // Bleibt etwas offen, ist der Eingang nicht erledigt: Unterlagen bleiben liegen, der Zustand
+    // bleibt "in Arbeit", und die Oberflaeche setzt sofort fort (der geplante Lauf ebenfalls).
+    if(!r.completed){
+      const ts=nowIso();
+      await env.DB.prepare("UPDATE intake_batches SET status='processing',accepted_count=?,skipped_count=?,updated_at=? WHERE tenant_id=? AND id=?").bind(accepted,skipped,ts,tenantId,batchId).run();
+      await event(env,tenantId,'intake.partially_applied',batchId,{accepted,skipped,remaining:r.remaining});
+      return{status:'processing',accepted,skipped,remaining:r.remaining,completed:false,results};
+    }
   }
 
   const status=skipped?'partial':'completed',ts=nowIso();
@@ -231,7 +261,62 @@ export async function applyIntakeBatch(env:Env,auth:CoreAuthContext,tenantId:str
   ]);
   await purgeBatchDocuments(env,batchId);
   await event(env,tenantId,'intake.applied',batchId,{accepted,skipped});
-  return{status,accepted,skipped,results};
+  return{status,accepted,skipped,remaining:0,completed:true,results};
+}
+
+// Wie viele Personen ein automatischer Lauf uebernimmt. Kleiner als die Grenze der Uebernahme
+// selbst, weil im selben geplanten Aufruf noch andere Automatiken laufen.
+const INTAKE_APPLY_MAX=25;
+
+// Was ein Lauf nicht geschafft hat, holt der naechste. Ohne das bliebe eine grosse Teilnehmerliste
+// zur Haelfte uebernommen liegen - ein Teil angelegt und eingeladen, der Rest nie, und niemand
+// bekaeme es zu sehen.
+export async function continueParticipantImports(env:Env,maxBatches=1){
+  const offen=(await env.DB.prepare("SELECT id,tenant_id,participant_import_batch_id,accepted_count,skipped_count FROM intake_batches WHERE status='processing' AND participant_import_batch_id IS NOT NULL ORDER BY updated_at LIMIT ?").bind(Math.max(1,Math.min(5,Math.floor(Number(maxBatches))||1))).all<{id:string;tenant_id:string;participant_import_batch_id:string;accepted_count:number;skipped_count:number}>()).results??[];
+  let fortgesetzt=0,abgeschlossen=0;
+  for(const b of offen){
+    const p=await env.DB.prepare('SELECT preview_digest,status FROM participant_import_batches WHERE tenant_id=? AND id=?').bind(b.tenant_id,b.participant_import_batch_id).first<{preview_digest:string;status:string}>();
+    const ts=nowIso();
+    if(!p||p.status!=='preview'){
+      // Nichts mehr offen (oder der Entwurf ist fort): der Eingang wird abgeschlossen, statt
+      // dauerhaft als "in Arbeit" zu stehen.
+      await env.DB.prepare('UPDATE intake_batches SET status=?,completed_at=?,updated_at=? WHERE tenant_id=? AND id=?').bind(Number(b.skipped_count)?'partial':'completed',ts,ts,b.tenant_id,b.id).run();
+      await purgeBatchDocuments(env,b.id);
+      await event(env,b.tenant_id,'intake.applied',b.id,{accepted:Number(b.accepted_count)||0,skipped:Number(b.skipped_count)||0});
+      abgeschlossen++;continue;
+    }
+    const auth=systemAuth(b.tenant_id,b.id);
+    let r;
+    try{r=await applyParticipantImport(env,auth,b.tenant_id,{batch_id:b.participant_import_batch_id,digest:p.preview_digest,max_apply:INTAKE_APPLY_MAX});}
+    catch(e){
+      // Auch ein Fehlschlag darf den Eingang nicht stumm liegen lassen.
+      await env.DB.prepare("UPDATE intake_batches SET status='partial',error_code=?,completed_at=?,updated_at=? WHERE tenant_id=? AND id=?").bind(String((e as Error)?.message||'INTAKE_CONTINUE_FAILED').slice(0,100),ts,ts,b.tenant_id,b.id).run();
+      await createTask(env,b.tenant_id,b.id,'Teilnehmerliste konnte nicht zu Ende übernommen werden','urgent',{reason:String((e as Error)?.message||'').slice(0,120)});
+      continue;
+    }
+    // Jede Zeile wird genau einmal gezaehlt: die, um die sich dieser Lauf gekuemmert hat. Zeilen
+    // aus frueheren Laeufen melden sich als 'already_applied' und zaehlen hier nicht noch einmal;
+    // die zur Pruefung zurueckgelegten wurden im ersten Lauf gezaehlt.
+    const neuAngenommen=r.results.filter((x:any)=>x.action!=='already_applied'&&x.action!=='skipped').length;
+    const neuUebersprungen=r.results.filter((x:any)=>x.action==='skipped'&&x.reason!=='REVIEW_REQUIRED').length;
+    const accepted=(Number(b.accepted_count)||0)+neuAngenommen,skipped=(Number(b.skipped_count)||0)+neuUebersprungen;
+    if(r.completed){
+      const status=skipped?'partial':'completed';
+      await env.DB.prepare('UPDATE intake_batches SET status=?,accepted_count=?,skipped_count=?,completed_at=?,updated_at=? WHERE tenant_id=? AND id=?').bind(status,accepted,skipped,ts,ts,b.tenant_id,b.id).run();
+      if(skipped)await createTask(env,b.tenant_id,b.id,`Teile des Eingangs wurden nicht übernommen (${skipped})`,'important',{accepted,skipped});
+      await purgeBatchDocuments(env,b.id);
+      await event(env,b.tenant_id,'intake.auto_applied',b.id,{accepted,skipped});
+      abgeschlossen++;
+    }else{
+      // Solange es vorangeht, darf der Entwurf nicht wegen Zeitablaufs verfallen.
+      await env.DB.batch([
+        env.DB.prepare('UPDATE intake_batches SET accepted_count=?,skipped_count=?,updated_at=? WHERE tenant_id=? AND id=?').bind(accepted,skipped,ts,b.tenant_id,b.id),
+        env.DB.prepare("UPDATE participant_import_batches SET expires_at=? WHERE tenant_id=? AND id=? AND status='preview'").bind(new Date(Date.now()+2*3600_000).toISOString(),b.tenant_id,b.participant_import_batch_id),
+      ]);
+    }
+    fortgesetzt++;
+  }
+  return{continued:fortgesetzt,finished:abgeschlossen};
 }
 
 export async function completeAutomationTask(env:Env,auth:CoreAuthContext,tenantId:string,taskId:string,status:'done'|'dismissed'='done'){requireReviewer(auth);const ts=nowIso();await env.DB.prepare("UPDATE automation_tasks SET status=?,completed_at=?,updated_at=? WHERE tenant_id=? AND id=? AND status IN ('open','in_progress')").bind(status,ts,ts,tenantId,taskId).run();await audit(env.DB,auth.userId,'automation.task.completed',tenantId,undefined,'automation_task',taskId,{status});}
