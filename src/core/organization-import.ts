@@ -274,41 +274,65 @@ export function textRows(text:string){const blocks=text.replace(/\r/g,'\n').repl
 // Jetzt ist eine unbekannte Kennung nur dann ein Hindernis, wenn daneben weder Kursname noch
 // Kurscode steht. Nur dann ist wirklich nicht zu erkennen, welcher Kurs gemeint ist.
 function resolveCourse(c:{id:string|null;name:string|null;code:string|null},courses:ExistingCourse[]){if(c.id){const x=courses.find(v=>v.id===c.id);if(x)return{course:x,warning:null};if(!c.code&&!c.name)return{course:null,warning:'COURSE_NOT_FOUND'};}const code=c.code?.toLowerCase(),name=c.name?.toLocaleLowerCase('de-DE');if(code){const found=courses.filter(v=>v.code.toLowerCase()===code);if(found.length===1)return{course:found[0],warning:null};if(found.length>1)return{course:null,warning:'COURSE_AMBIGUOUS'};}if(name){const found=courses.filter(v=>v.name.toLocaleLowerCase('de-DE')===name);if(found.length===1)return{course:found[0],warning:null};if(found.length>1)return{course:null,warning:'COURSE_AMBIGUOUS'};}return{course:null,warning:null};}
-function baseCandidate(row:Record<string,unknown>,i:number,courses:ExistingCourse[]):OrganizationCandidate{
+// Eine Zeile kann mehrere Kurse gleichzeitig nennen - Semikolon, Komma, senkrechter Strich oder
+// Zeilenumbruch getrennt, dieselben Trennzeichen wie bei jeder anderen Mehrfachangabe in diesem
+// Import (siehe "features" bei Ressourcen). Eine Zelle ohne Trennzeichen bleibt unveraendert.
+function splitList(v:string|null):string[]{if(!v)return[];const parts=v.split(/[;,|\n]+/).map(x=>norm(x)).filter(Boolean);return parts.length?[...new Set(parts)]:[];}
+// Vorher war eine Zelle wie "VFA-26-A, VFA-26-B" EIN Kursname, den kein Kurs so trug: die ganze
+// Teilnehmerzeile blieb mit "Angegebener Kurs existiert nicht" liegen, obwohl beide Kurse laengst
+// bestanden - und wer wirklich in zwei Klassen sitzt, kam ueberhaupt nicht durch den Import.
+// Jetzt entsteht aus einer solchen Zeile fuer jeden genannten Kurs eine eigene Kursangabe; ohne
+// Trennzeichen bleibt es bei der einen, die schon vorher galt.
+function courseVariants(c:{id:string|null;name:string|null;code:string|null}){
+  const codes=splitList(c.code),names=splitList(c.name),n=Math.max(codes.length,names.length);
+  if(n<=1)return[c];
+  return Array.from({length:n},(_,i)=>({id:null,name:names[i]??null,code:codes[i]??null}));
+}
+function baseCandidate(row:Record<string,unknown>,i:number,courses:ExistingCourse[]):OrganizationCandidate[]{
   const type=importRole(row),c=courseData(row),s=subjectData(row),resolved=resolveCourse(c,courses),warnings:string[]=[];let name:string|null=null,email:string|null=null;
   if(type==='resource'){const x=resourceData(row);if(!x.name)warnings.push('RESOURCE_NAME_REQUIRED');
-    return{type,display_name:x.name,email:null,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:null,subject_short_name:null,confidence:Math.max(0,100-warnings.length*25),warnings,source_row:i,external_id:x.external_id,parent_external_id:null,org_unit_ref:norm(rowValue(row,'location_external_id','org_unit_external_id','standort','location'),160)||null,resource_kind:x.kind,resource_status:x.status,capacity:x.capacity,features:x.features};}
+    return[{type,display_name:x.name,email:null,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:null,subject_short_name:null,confidence:Math.max(0,100-warnings.length*25),warnings,source_row:i,external_id:x.external_id,parent_external_id:null,org_unit_ref:norm(rowValue(row,'location_external_id','org_unit_external_id','standort','location'),160)||null,resource_kind:x.kind,resource_status:x.status,capacity:x.capacity,features:x.features}];}
   if(type==='org_unit'){const u=orgUnitData(row);if(!u.name)warnings.push('ORG_UNIT_NAME_REQUIRED');if(u.external_id&&u.parent_external_id&&key(u.external_id)===key(u.parent_external_id))warnings.push('ORG_UNIT_PARENT_INVALID');
-    return{type,display_name:u.name,email:null,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:null,subject_short_name:null,confidence:Math.max(0,100-warnings.length*25),warnings,source_row:i,external_id:u.external_id,parent_external_id:u.parent_external_id,org_unit_type_key:u.type.key,org_unit_type_label:u.type.label,address:u.address};}
+    return[{type,display_name:u.name,email:null,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:null,subject_short_name:null,confidence:Math.max(0,100-warnings.length*25),warnings,source_row:i,external_id:u.external_id,parent_external_id:u.parent_external_id,org_unit_type_key:u.type.key,org_unit_type_label:u.type.label,address:u.address}];}
   if(type==='staff'){const access=staffAccess(row),unitRef=norm(rowValue(row,'org_unit_external_id','org_unit','organisationseinheit_id','location_external_id','bereich','standort'),160)||null;
     name=personName(row,'participant')||null;email=validEmail(rowValue(row,'email','e_mail','mail','emailadresse'))||null;
     if(!name)warnings.push('NAME_REQUIRED');if(!email)warnings.push('EMAIL_REQUIRED');
     if(!unitRef)warnings.push('STAFF_ORG_UNIT_REQUIRED');
     if(access.confirm)warnings.push('ACCESS_RESPONSIBLE_CONFIRMATION_REQUIRED');
-    return{type,display_name:name,email,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:null,subject_short_name:null,confidence:Math.max(0,100-warnings.filter(w=>w!=='ACCESS_RESPONSIBLE_CONFIRMATION_REQUIRED').length*25),warnings,source_row:i,org_unit_ref:unitRef,access_profile:access.profile,access_permissions:access.permissions,access_label:access.label};}
+    return[{type,display_name:name,email,course_id:null,course_name:null,course_code:null,course_ref:null,subject_name:null,subject_short_name:null,confidence:Math.max(0,100-warnings.filter(w=>w!=='ACCESS_RESPONSIBLE_CONFIRMATION_REQUIRED').length*25),warnings,source_row:i,org_unit_ref:unitRef,access_profile:access.profile,access_permissions:access.permissions,access_label:access.label}];}
   if(type==='exam'){const l=lessonData(row);
     if(!l.date)l.date=parseDate(rowValue(row,'current_date','exam_date','pruefungsdatum','pruefungstermin','termin','termindatum','geplant_am'));const titel=norm(rowValue(row,'titel','title','bezeichnung','summary','display_name'),300)||null;
     if(!titel)warnings.push('EXAM_TITLE_REQUIRED');if(!l.date||!l.start)warnings.push('EXAM_TIME_REQUIRED');
     if(resolved.warning)warnings.push(resolved.warning);
     if(!resolved.course&&(c.name||c.code)&&!resolved.warning)warnings.push('COURSE_WILL_BE_CREATED');
-    return{type,display_name:titel,email:null,course_id:resolved.course?.id||null,course_name:resolved.course?.name||c.name,
+    return[{type,display_name:titel,email:null,course_id:resolved.course?.id||null,course_name:resolved.course?.name||c.name,
       course_code:resolved.course?.code||c.code,course_ref:courseRef(c),subject_name:s.name,subject_short_name:s.short,
       confidence:Math.max(0,100-warnings.filter(w=>w!=='COURSE_WILL_BE_CREATED').length*25),warnings,source_row:i,
       lesson_date:l.date,lesson_start:l.start,lesson_end:l.end,room:l.room,exam_title:titel,
       allowed_aids:norm(rowValue(row,'hilfsmittel','allowed_aids','beschreibung','description','hinweis'),1000)||null,
-      external_id:examRef(row),org_unit_ref:null};}
+      external_id:examRef(row),org_unit_ref:null}];}
   if(type==='lesson'){const l=lessonData(row);
     if(!l.date)warnings.push('LESSON_DATE_REQUIRED');if(!l.start||!l.end)warnings.push('LESSON_TIME_REQUIRED');
     if(l.start&&l.end&&l.end<=l.start)warnings.push('LESSON_END_BEFORE_START');
     if(!resolved.course&&!c.name&&!c.code&&!c.id)warnings.push('COURSE_REQUIRED');
     if(resolved.warning)warnings.push(resolved.warning);if(!resolved.course&&(c.name||c.code)&&!resolved.warning)warnings.push('COURSE_WILL_BE_CREATED');
-    return{type,display_name:[l.date,l.start&&l.end?`${l.start}–${l.end}`:''].filter(Boolean).join(' ')||null,email:null,course_id:resolved.course?.id||null,course_name:resolved.course?.name||c.name,course_code:resolved.course?.code||c.code,course_ref:courseRef(c),subject_name:s.name,subject_short_name:s.short,confidence:Math.max(0,100-warnings.filter(w=>w!=='COURSE_WILL_BE_CREATED').length*25),warnings,source_row:i,lesson_date:l.date,lesson_start:l.start,lesson_end:l.end,room:l.room,notes:l.notes,teacher_ref:l.teacher_ref,org_unit_ref:norm(rowValue(row,'org_unit_external_id','location_external_id','org_unit','organisationseinheit_id'),160)||null};}
+    return[{type,display_name:[l.date,l.start&&l.end?`${l.start}–${l.end}`:''].filter(Boolean).join(' ')||null,email:null,course_id:resolved.course?.id||null,course_name:resolved.course?.name||c.name,course_code:resolved.course?.code||c.code,course_ref:courseRef(c),subject_name:s.name,subject_short_name:s.short,confidence:Math.max(0,100-warnings.filter(w=>w!=='COURSE_WILL_BE_CREATED').length*25),warnings,source_row:i,lesson_date:l.date,lesson_start:l.start,lesson_end:l.end,room:l.room,notes:l.notes,teacher_ref:l.teacher_ref,org_unit_ref:norm(rowValue(row,'org_unit_external_id','location_external_id','org_unit','organisationseinheit_id'),160)||null}];}
   let personRef:string|null=null;
   if(type==='course'){name=c.name||norm(rowValue(row,'name','display_name'),200)||null;if(!name&&!c.code)warnings.push('COURSE_NAME_REQUIRED');}
   else if(type==='subject'){name=s.name||norm(rowValue(row,'name','display_name'),200)||null;if(!name)warnings.push('SUBJECT_NAME_REQUIRED');}
   else{name=personName(row,type)||null;email=validEmail(rowValue(row,'email','e_mail','mail','emailadresse','teacher_email','dozent_email'))||null;personRef=norm(rowValue(row,'dozenten_id','dozent_id','dozentin_id','lehrkraft_id','teacher_id','teacher_external_id','dozenten_kennung','personalnummer'),160)||null;if(!name)warnings.push('NAME_REQUIRED');if(!email&&type!=='teacher')warnings.push('EMAIL_REQUIRED');if(type==='teacher'&&!email)warnings.push('TEACHER_PORTAL_EMAIL_MISSING');}
-  if(['participant','class_admin','guest'].includes(type)&&!resolved.course&&!c.name&&!c.code&&!c.id)warnings.push('COURSE_REQUIRED');if(resolved.warning)warnings.push(resolved.warning);if(!resolved.course&&(c.name||c.code)&&!resolved.warning)warnings.push('COURSE_WILL_BE_CREATED');if(type==='tenant_admin_review')warnings.push('TENANT_ADMIN_CONFIRMATION_REQUIRED');
-  const confidence=Math.max(0,100-warnings.filter(w=>!['COURSE_WILL_BE_CREATED','TEACHER_PORTAL_EMAIL_MISSING'].includes(w)).length*25-(warnings.includes('TEACHER_PORTAL_EMAIL_MISSING')?10:0));return{type,display_name:name,email,course_id:resolved.course?.id||null,course_name:resolved.course?.name||c.name,course_code:resolved.course?.code||c.code,course_ref:courseRef(c),subject_name:s.name,subject_short_name:s.short,confidence,warnings,source_row:i,teacher_ref:personRef,org_unit_ref:norm(rowValue(row,'org_unit_external_id','location_external_id','org_unit','organisationseinheit_id'),160)||null};
+  const orgUnitRef=norm(rowValue(row,'org_unit_external_id','location_external_id','org_unit','organisationseinheit_id'),160)||null;
+  const isPersonInCourse=['participant','class_admin','guest'].includes(type);
+  const varianten=isPersonInCourse?courseVariants(c):[c];
+  return varianten.map(v=>{
+    const r=v===c?resolved:resolveCourse(v,courses),w=[...warnings];
+    if(isPersonInCourse&&!r.course&&!v.name&&!v.code&&!v.id)w.push('COURSE_REQUIRED');
+    if(r.warning)w.push(r.warning);
+    if(!r.course&&(v.name||v.code)&&!r.warning)w.push('COURSE_WILL_BE_CREATED');
+    if(type==='tenant_admin_review')w.push('TENANT_ADMIN_CONFIRMATION_REQUIRED');
+    const confidence=Math.max(0,100-w.filter(x=>!['COURSE_WILL_BE_CREATED','TEACHER_PORTAL_EMAIL_MISSING'].includes(x)).length*25-(w.includes('TEACHER_PORTAL_EMAIL_MISSING')?10:0));
+    return{type,display_name:name,email,course_id:r.course?.id||null,course_name:r.course?.name||v.name,course_code:r.course?.code||v.code,course_ref:courseRef(v),subject_name:s.name,subject_short_name:s.short,confidence,warnings:w,source_row:i,teacher_ref:personRef,org_unit_ref:orgUnitRef};
+  });
 }
 async function existingCourses(env:Env,tenantId:string){const r=await env.DB.prepare('SELECT id,name,code FROM courses WHERE tenant_id=? AND is_active=1 ORDER BY name').bind(tenantId).all<ExistingCourse>();return(r.results??[]) as ExistingCourse[];}
 // Zwei Einheiten koennen gleich heissen ("IT" an zwei Standorten). Unterschieden werden sie an
@@ -367,7 +391,7 @@ export async function previewOrganizationImport(env:Env,auth:CoreAuthContext,ten
   const kept:{row:Record<string,unknown>;index:number}[]=[];
   rows.forEach((row,index)=>{const choice=norm(overrides[String(index)],40).toLowerCase();if(choice==='ignore')return;kept.push({row:choice?{...row,role:choice}:row,index});});
   if(!kept.length)throw new Error('ORGANIZATION_IMPORT_DATA_REQUIRED');
-  const raw=kept.map(r=>baseCandidate(r.row,r.index,courses)),merged=synthesize(raw,courses);await markOrgUnitParents(env,tenantId,merged);const candidates=canonical(merged),digest=await sha256Text(JSON.stringify(candidates)),batchId=id('oib_'),ts=nowIso(),expires=new Date(Date.now()+2*3600_000).toISOString(),sourceName=norm(input.source_name,250)||'Organisationsimport',sourceKind=norm(input.source_kind,50)||'structured';await env.DB.prepare("INSERT INTO organization_import_batches(id,tenant_id,source_name,source_kind,preview_digest,preview_json,status,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,'preview',?,?,?)").bind(batchId,tenantId,sourceName,sourceKind,digest,JSON.stringify(candidates),auth.userId,ts,expires).run();await audit(env.DB,auth.userId,'organization.import.previewed',tenantId,undefined,'organization_import_batch',batchId,{sourceName,total:candidates.length,summary:summary(candidates)});return{batch_id:batchId,digest,expires_at:expires,candidates,summary:summary(candidates)};}
+  const raw=kept.flatMap(r=>baseCandidate(r.row,r.index,courses)),merged=synthesize(raw,courses);await markOrgUnitParents(env,tenantId,merged);const candidates=canonical(merged),digest=await sha256Text(JSON.stringify(candidates)),batchId=id('oib_'),ts=nowIso(),expires=new Date(Date.now()+2*3600_000).toISOString(),sourceName=norm(input.source_name,250)||'Organisationsimport',sourceKind=norm(input.source_kind,50)||'structured';await env.DB.prepare("INSERT INTO organization_import_batches(id,tenant_id,source_name,source_kind,preview_digest,preview_json,status,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,'preview',?,?,?)").bind(batchId,tenantId,sourceName,sourceKind,digest,JSON.stringify(candidates),auth.userId,ts,expires).run();await audit(env.DB,auth.userId,'organization.import.previewed',tenantId,undefined,'organization_import_batch',batchId,{sourceName,total:candidates.length,summary:summary(candidates)});return{batch_id:batchId,digest,expires_at:expires,candidates,summary:summary(candidates)};}
 async function findCourse(env:Env,tenantId:string,c:OrganizationCandidate){if(c.course_id)return c.course_id;const ref=key(c.course_ref||c.course_code||c.course_name);if(!ref)return null;const r=await env.DB.prepare('SELECT id,name,code FROM courses WHERE tenant_id=? AND is_active=1').bind(tenantId).all<ExistingCourse>();const found=(r.results??[]).filter(x=>[key(x.id),key(x.code),key(x.name)].includes(ref));return found.length===1?String(found[0].id):null;}
 async function ensureSubject(env:Env,tenantId:string,name:string,shortName:string|null){const existing=await env.DB.prepare('SELECT id FROM subjects WHERE tenant_id=? AND name=? COLLATE NOCASE').bind(tenantId,name).first<{id:string}>();if(existing)return{...existing,created:false};const sid=id('sub_');await env.DB.prepare('INSERT INTO subjects(id,tenant_id,name,short_name,created_at) VALUES(?,?,?,?,?)').bind(sid,tenantId,name,shortName,nowIso()).run();return{id:sid,created:true};}
 // Dieselbe Pruefung kommt aus der Pruefungsliste UND aus dem Pruefungskalender - beide nennen
