@@ -10,7 +10,7 @@ const ALIASES:Record<string,string>={
   vorname:'first_name',first_name:'first_name',nachname:'last_name',last_name:'last_name',
   email:'email',e_mail:'email',mail:'email',emailadresse:'email',e_mail_adresse:'email',
   teilnehmer:'participant',teilnehmer_name:'participant_name',schueler:'participant',schueler_name:'participant_name',student:'participant',student_name:'participant_name',
-  dozent:'teacher',dozentin:'teacher',dozent_name:'teacher_name',teacher:'teacher',teacher_name:'teacher_name',lehrkraft:'teacher',dozent_email:'teacher_email',teacher_email:'teacher_email',
+  dozent:'teacher',dozentin:'teacher',dozent_name:'teacher_name',teacher:'teacher',teacher_name:'teacher_name',lehrkraft:'teacher',lehrer:'teacher',lehrerin:'teacher',lehrer_name:'teacher_name',ausbilder:'teacher',ausbilderin:'teacher',referent:'teacher',referentin:'teacher',kursleiter:'teacher',kursleiterin:'teacher',dozent_email:'teacher_email',teacher_email:'teacher_email',lehrer_email:'teacher_email',
   course_id:'course_id',kurs_id:'course_id',course_code:'course_code',kurscode:'course_code',klassencode:'course_code',massnahmennummer:'course_code',massnahmenummer:'course_code',
   course_name:'course_name',kurs:'course_name',klasse:'course_name',lehrgang:'course_name',massnahme:'course_name',bildungsgang:'course_name',studiengang:'course_name',
   subject_name:'subject_name',subject:'subject_name',fach:'subject_name',fachname:'subject_name',subject_code:'subject_short_name',subject_short_name:'subject_short_name',fachkuerzel:'subject_short_name',kuerzel:'subject_short_name',

@@ -31,13 +31,22 @@ function extractContract(textRaw:string):ParticipantCandidate{
   const confidence=Math.max(0,Math.min(100,(name?35:0)+(emails.length===1?35:0)+(courseCode||courseName||orgContext.length?20:0)+(external?10:0)));
   return{display_name:name,email:emails.length===1?emails[0]:'',external_id:external||null,course_id:null,course_code:courseCode||null,course_name:courseName||null,org_context:orgContext,org_path:null,enrollment_start:isoDate(start),enrollment_end:isoDate(end),confidence,warnings,source_excerpt:text.slice(0,500),detected_not_imported:detectSensitive(text)};
 }
-function fromRow(row:Record<string,unknown>):ParticipantCandidate{
+function splitList(v:string):string[]{const parts=v.split(/[;,|\n]+/).map(x=>norm(x)).filter(Boolean);return parts.length?[...new Set(parts)]:[];}
+// Eine Person kann in mehreren Kursen zugleich stehen. Traegt die Kurs-Zelle mehrere durch
+// Semikolon/Komma/Pipe/Zeilenumbruch getrennte Werte, wird daraus je Kurs ein eigener Kandidat -
+// sonst verliert die Zeile alle Kurse bis auf den zuletzt aufgeloesten.
+function fromRow(row:Record<string,unknown>):ParticipantCandidate[]{
   const pick=(...keys:string[])=>{for(const k of keys)if(row[k]!==undefined&&row[k]!==null&&String(row[k]).trim())return row[k];return'';};
   const first=norm(pick('first_name','vorname')),last=norm(pick('last_name','nachname')),name=norm(pick('display_name','name','teilnehmer','schueler','student'))||[first,last].filter(Boolean).join(' '),email=emailOf(pick('email','e_mail','mail','emailadresse'));
-  const courseCode=norm(pick('course_code','kurscode','klassencode','massnahmennummer'))||null,courseName=norm(pick('course_name','kurs','klasse','lehrgang'))||null,external=norm(pick('external_id','teilnehmernummer','teilnehmer_id','matrikelnummer','schuelernummer','vertragsnummer'))||null,warnings:string[]=[];
-  const path=pick('org_path','organisationspfad','strukturpfad','hierarchiepfad'),orgContext=[...splitOrgPath(path),norm(pick('site','standort','schulstandort','campus','filiale','niederlassung')),norm(pick('area','bereich','fachbereich','abteilung','organisationseinheit')),norm(pick('measure','massnahme','maßnahme','bildungsgang','studiengang','programm','projekt'))].filter(Boolean);
-  if(!name)warnings.push('NAME_NOT_DETECTED');if(!email)warnings.push('EMAIL_NOT_DETECTED');if(!courseCode&&!courseName&&!pick('course_id')&&!orgContext.length)warnings.push('COURSE_NOT_DETECTED');
-  return{display_name:name,email,external_id:external,course_id:norm(pick('course_id'))||null,course_code:courseCode,course_name:courseName,org_context:[...new Set(orgContext)],org_path:null,enrollment_start:isoDate(norm(pick('enrollment_start','beginn','start'))),enrollment_end:isoDate(norm(pick('enrollment_end','ende'))),confidence:Math.max(0,100-warnings.length*30),warnings,source_excerpt:null,detected_not_imported:{}};
+  const courseCodeRaw=norm(pick('course_code','kurscode','klassencode','massnahmennummer')),courseNameRaw=norm(pick('course_name','kurs','klasse','lehrgang')),courseId=norm(pick('course_id'))||null,external=norm(pick('external_id','teilnehmernummer','teilnehmer_id','matrikelnummer','schuelernummer','vertragsnummer'))||null;
+  const path=pick('org_path','organisationspfad','strukturpfad','hierarchiepfad'),orgContext=[...new Set([...splitOrgPath(path),norm(pick('site','standort','schulstandort','campus','filiale','niederlassung')),norm(pick('area','bereich','fachbereich','abteilung','organisationseinheit')),norm(pick('measure','massnahme','maßnahme','bildungsgang','studiengang','programm','projekt'))].filter(Boolean))];
+  const enrollmentStart=isoDate(norm(pick('enrollment_start','beginn','start'))),enrollmentEnd=isoDate(norm(pick('enrollment_end','ende')));
+  const codes=splitList(courseCodeRaw),names=splitList(courseNameRaw),n=Math.max(codes.length,names.length,1);
+  const kurse=n<=1?[{code:courseCodeRaw||null,name:courseNameRaw||null,id:courseId}]:Array.from({length:n},(_,i)=>({code:codes[i]??null,name:names[i]??null,id:null}));
+  return kurse.map(k=>{
+    const warnings:string[]=[];if(!name)warnings.push('NAME_NOT_DETECTED');if(!email)warnings.push('EMAIL_NOT_DETECTED');if(!k.code&&!k.name&&!k.id&&!orgContext.length)warnings.push('COURSE_NOT_DETECTED');
+    return{display_name:name,email,external_id:external,course_id:k.id,course_code:k.code,course_name:k.name,org_context:orgContext,org_path:null,enrollment_start:enrollmentStart,enrollment_end:enrollmentEnd,confidence:Math.max(0,100-warnings.length*30),warnings,source_excerpt:null,detected_not_imported:{}};
+  });
 }
 async function resolveCourses(env:Env,auth:CoreAuthContext,tenantId:string,candidates:ParticipantCandidate[],fallbackCourseId:string|null,fallbackOrgUnitId:string|null){
   const resolve=await createParticipantTargetResolver(env,auth,tenantId);for(const c of candidates){const target=resolve({courseId:c.course_id,courseCode:c.course_code,courseName:c.course_name,orgContext:c.org_context,fallbackCourseId,fallbackOrgUnitId});c.course_id=target.courseId;c.org_path=target.orgPath;if(target.warning)c.warnings.push(target.warning);if(c.course_id)c.warnings=c.warnings.filter(x=>x!=='COURSE_NOT_DETECTED'&&x!=='COURSE_NOT_RESOLVED'&&x!=='ORG_CONTEXT_UNRESOLVED');}
@@ -45,7 +54,7 @@ async function resolveCourses(env:Env,auth:CoreAuthContext,tenantId:string,candi
 function canonical(candidates:ParticipantCandidate[]){return candidates.map(c=>({display_name:c.display_name,email:c.email,external_id:c.external_id,course_id:c.course_id,course_code:c.course_code,course_name:c.course_name,org_context:c.org_context,org_path:c.org_path,enrollment_start:c.enrollment_start,enrollment_end:c.enrollment_end,confidence:c.confidence,warnings:[...new Set(c.warnings)].sort()}));}
 export async function previewParticipantImport(env:Env,auth:CoreAuthContext,tenantId:string,input:Record<string,unknown>){
   canImport(auth);const sourceName=safeString(input.source_name,250)||'Import',kind=String(input.source_kind||'structured'),fallbackCourseId=safeString(input.default_course_id,100)||null,fallbackOrgUnitId=safeString(input.default_org_unit_id,100)||null;let candidates:ParticipantCandidate[]=[];
-  if(Array.isArray(input.rows))candidates.push(...(input.rows as Record<string,unknown>[]).slice(0,5000).map(fromRow));
+  if(Array.isArray(input.rows))candidates.push(...(input.rows as Record<string,unknown>[]).slice(0,5000).flatMap(fromRow));
   if(Array.isArray(input.documents))candidates.push(...(input.documents as unknown[]).slice(0,500).map(x=>extractContract(String(x||''))));
   if(typeof input.text==='string'&&input.text.trim())candidates.push(extractContract(input.text));
   if(!candidates.length)throw new Error('PARTICIPANT_IMPORT_DATA_REQUIRED');if(candidates.length>5000)throw new Error('PARTICIPANT_IMPORT_TOO_LARGE');
@@ -76,13 +85,17 @@ export async function applyParticipantImport(env:Env,auth:CoreAuthContext,tenant
   const blocking=new Set(['EMAIL_NOT_DETECTED','MULTIPLE_EMAILS','COURSE_AMBIGUOUS','COURSE_NOT_FOUND','COURSE_NOT_RESOLVED','COURSE_INACTIVE','COURSE_FORBIDDEN','ORG_CONTEXT_MISMATCH','ORG_CONTEXT_AMBIGUOUS','ORG_CONTEXT_UNRESOLVED','ORG_FALLBACK_INVALID','DUPLICATE_IN_IMPORT']);
   // Was ein frueherer Aufruf schon erledigt hat, steht in den Ergebniszeilen. Daran erkennt ein
   // Folgeaufruf, wo er weitermachen muss - auch dann, wenn dazwischen etwas abgestuerzt ist.
-  const erledigt=new Set((((await env.DB.prepare('SELECT email FROM participant_import_results WHERE batch_id=? AND tenant_id=?').bind(batchId,tenantId).all<{email:string}>()).results)??[]).map(x=>String(x.email||'').toLowerCase()));
+  // Der Schluessel ist E-Mail UND Kurs zusammen: dieselbe Person kann in mehreren Kursen dieses
+  // Batches stehen, und ein bereits erledigter Kurs darf einen anderen Kurs derselben Person
+  // nicht als "schon erledigt" verdecken.
+  const kursSchluessel=(email:string,courseId:string|null)=>`${email.toLowerCase()}|${courseId||''}`;
+  const erledigt=new Set((((await env.DB.prepare('SELECT email,course_id FROM participant_import_results WHERE batch_id=? AND tenant_id=?').bind(batchId,tenantId).all<{email:string;course_id:string|null}>()).results)??[]).map(x=>kursSchluessel(String(x.email||''),x.course_id)));
   let bearbeitet=0,offen=0;
   for(let i=0;i<rows.length;i++){
     const r=rows[i];
     if(!selected.has(i))continue;
     if(!r.display_name||!r.email||!r.course_id||r.warnings.some(w=>blocking.has(w))){results.push({index:i,action:'skipped',reason:'REVIEW_REQUIRED'});continue;}
-    if(erledigt.has(r.email.toLowerCase())){results.push({index:i,action:'already_applied'});continue;}
+    if(erledigt.has(kursSchluessel(r.email,r.course_id))){results.push({index:i,action:'already_applied'});continue;}
     if(bearbeitet>=grenze){offen++;continue;}
     bearbeitet++;
     const ts=nowIso();
@@ -91,14 +104,14 @@ export async function applyParticipantImport(env:Env,auth:CoreAuthContext,tenant
       if(r.external_id)await env.DB.prepare("UPDATE tenant_users SET external_id=COALESCE(external_id,?),source=CASE WHEN source='manual' THEN 'import' ELSE source END,updated_at=? WHERE tenant_id=? AND user_id=? AND (external_id IS NULL OR external_id=?)").bind(r.external_id,ts,tenantId,created.user_id,r.external_id).run();
       const action=created.invitation_sent?'created_invited':'existing_added';
       await env.DB.prepare('INSERT INTO participant_import_results(id,batch_id,tenant_id,course_id,user_id,email,display_name,external_id,action,detail_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(id('pir_'),batchId,tenantId,r.course_id,created.user_id,r.email,r.display_name,r.external_id,action,JSON.stringify({enrollment_start:r.enrollment_start,enrollment_end:r.enrollment_end,org_path:r.org_path}),ts).run();
-      erledigt.add(r.email.toLowerCase());
+      erledigt.add(kursSchluessel(r.email,r.course_id));
       results.push({index:i,action,user_id:created.user_id,invitation_sent:created.invitation_sent});
     }catch(e){
       // Auch das Scheitern wird festgehalten. Sonst versuchte es jeder Folgeaufruf erneut, kaeme
       // nie ans Ende der Liste - und niemand koennte spaeter nachlesen, wer nicht angelegt wurde.
       const grund=String((e as Error).message||e).slice(0,200);
       await env.DB.prepare('INSERT INTO participant_import_results(id,batch_id,tenant_id,course_id,user_id,email,display_name,external_id,action,detail_json,created_at) VALUES(?,?,?,?,NULL,?,?,?,?,?,?)').bind(id('pir_'),batchId,tenantId,r.course_id,r.email,r.display_name,r.external_id,'skipped',JSON.stringify({reason:grund}),ts).run();
-      erledigt.add(r.email.toLowerCase());
+      erledigt.add(kursSchluessel(r.email,r.course_id));
       results.push({index:i,action:'skipped',reason:grund});
     }
   }
