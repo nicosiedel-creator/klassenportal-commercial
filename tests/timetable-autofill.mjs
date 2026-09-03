@@ -7,7 +7,7 @@
 import { strict as assert } from 'node:assert';
 import { readFile, readdir } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { d1 } from './helpers/d1.mjs';
+import { d1, d1MitZaehler } from './helpers/d1.mjs';
 import { autofillTimetablePlan, planningSuggestions } from '../dist/core/planning-constraints.js';
 
 const db=new DatabaseSync(':memory:');
@@ -188,30 +188,38 @@ INSERT INTO course_scheduling_rules(tenant_id,course_id,earliest_start,latest_en
 INSERT INTO timetable_plan_versions(id,tenant_id,name,starts_on,ends_on,status,created_by,created_at,updated_at) VALUES('tpv_jahr','${T}','Schuljahr','2026-09-07','2027-07-30','draft','${U}','${TS}','${TS}');
 `);
 // Dieselbe Datenbank, aber mit Zähler: so wird gemessen statt geschätzt.
-const roh=d1(db);let abfragen=0;
-const gezaehlt={DB:{...roh,prepare(sql){abfragen++;return roh.prepare(sql);},batch(...a){abfragen++;return roh.batch(...a);}}};
+const {DB:gezaehltDB,stand}=d1MitZaehler(db),gezaehlt={DB:gezaehltDB};
 const GRENZE=1000; // Cloudflare-Grenze je Aufruf
-let gesamt=0,laeufe=0;
+let gesamt=0,laeufe=0,fertig=false,weiter={};
+const stellen=new Set();
 while(laeufe<12){
-  abfragen=0;
-  const lauf=await autofillTimetablePlan(gezaehlt,auth,T,'tpv_jahr',{course_ids:['crs_jahr']});
+  stand.abfragen=0;
+  const lauf=await autofillTimetablePlan(gezaehlt,auth,T,'tpv_jahr',{course_ids:['crs_jahr'],...weiter});
   laeufe++;gesamt+=lauf.created;
-  assert.ok(abfragen<GRENZE*0.8,
-    `ein einzelner Lauf muss deutlich unter der Plattformgrenze bleiben, war: ${abfragen} Abfragen`);
+  assert.ok(stand.abfragen<GRENZE*0.8,
+    `ein einzelner Lauf muss deutlich unter der Plattformgrenze bleiben, war: ${stand.abfragen} Abfragen`);
   if(!lauf.limit_reached){
-    assert.equal(lauf.created,0,'der letzte Lauf hat nichts mehr zu tun');
+    fertig=true;
+    assert.equal(lauf.resume_course_id,null,'ein abgeschlossener Lauf hat keine Fortsetzungsstelle');
     break;
   }
-  assert.ok(lauf.created>0,'solange die Grenze gemeldet wird, muss ein Lauf auch etwas geschafft haben');
+  // Jeder angehaltene Lauf muss sagen, wo weiterzumachen ist, und diese Stelle muss neu sein -
+  // sonst liefe dieselbe Arbeit endlos im Kreis.
+  assert.ok(lauf.resume_course_id&&lauf.resume_date,'ein angehaltener Lauf muss seine Fortsetzungsstelle nennen');
+  const stelle=`${lauf.resume_course_id}|${lauf.resume_date}`;
+  assert.ok(!stellen.has(stelle),`jeder Lauf muss weiterkommen - ${stelle} war schon einmal die Fortsetzungsstelle`);
+  stellen.add(stelle);
+  weiter={resume_course_id:lauf.resume_course_id,resume_date:lauf.resume_date};
 }
-assert.ok(laeufe<12,`der Zeitraum muss in wenigen Läufen fertig werden, brauchte: ${laeufe}`);
+assert.ok(fertig,`der Zeitraum muss in wenigen Läufen fertig werden, brauchte mehr als: ${laeufe}`);
 assert.ok(gesamt>200,`ein Schuljahr ergibt viele Termine, waren: ${gesamt}`);
 assert.equal(zahl(`SELECT COUNT(*) FROM timetable_plan_entries WHERE tenant_id='${T}' AND plan_id='tpv_jahr'`),gesamt,
   'jeder gemeldete Termin muss auch wirklich im Entwurf stehen');
 
-// Die Oberfläche gibt dazu den richtigen Rat: erneut ausführen, nicht den Zeitraum verkleinern.
+// Und die Oberfläche macht daraus keine Klickarbeit: sie gibt die Fortsetzungsstelle des vorigen
+// Laufs selbst wieder mit. Ausgeführt wird das in tests/autofill-multi-pass.mjs.
 const planUi=await readFile('public/planning-resource-ui.js','utf8');
-assert.match(planUi,/setzt dort fort, wo er aufgehört hat/,
-  'dem Kunden muss gesagt werden, dass ein erneuter Lauf fortsetzt');
+assert.match(planUi,/resume_course_id:r\.resume_course_id/,
+  'die Oberfläche muss die Durchläufe selbst fortsetzen, statt den Kunden erneut klicken zu lassen');
 
 console.log('timetable-autofill: ok');

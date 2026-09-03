@@ -100,13 +100,25 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
         von=String(fd.get('starts_on')||''),bis=String(fd.get('ends_on')||''),
         kurse=fd.getAll('course_ids').map(String).filter(Boolean);
       if(!von||!bis||von>bis){ziel.innerHTML='<div class="notice">Bitte einen gültigen Zeitraum wählen: das Ende darf nicht vor dem Beginn liegen.</div>';return;}
-      submitButton(autofillForm,true);ziel.textContent='Entwurf wird erzeugt …';
+      submitButton(autofillForm,true);ziel.innerHTML='<div class="notice">Entwurf wird erzeugt …</div>';
       try{
         const planId=await entwurfFuer(t,`${von}T00:00:00.000Z`,`${bis}T23:59:59.000Z`);
         if(!planId)throw new ApiError('TIMETABLE_PLAN_NOT_FOUND',404);
-        const r=await api(q(`/api/education/timetable-plans/${encodeURIComponent(planId)}/autofill`,t),{method:'POST',body:JSON.stringify({course_ids:kurse})});
+        // Ein einzelner Aufruf muss unter der Abfragegrenze der Plattform bleiben und meldet
+        // deshalb "Obergrenze erreicht", wenn noch etwas offen ist. Das ist Sache des Portals,
+        // nicht des Kunden: die Durchläufe werden hier automatisch fortgesetzt, bis der Entwurf
+        // steht. Abgebrochen wird nur, wenn ein Lauf nichts mehr schafft oder die Obergrenze an
+        // Durchläufen erreicht ist - dann sagt der Bericht das ausdrücklich.
+        let gesamt=null,laeufe=0,r=null,weiter={};
+        do{
+          r=await api(q(`/api/education/timetable-plans/${encodeURIComponent(planId)}/autofill`,t),{method:'POST',body:JSON.stringify({course_ids:kurse,...weiter})});
+          laeufe++;gesamt=entwurfSumme(gesamt,r);
+          if(!r.limit_reached||!r.resume_course_id)break;
+          weiter={resume_course_id:r.resume_course_id,resume_date:r.resume_date};
+          ziel.innerHTML=`<div class="notice">Entwurf wird erzeugt … ${E(gesamt.created)} Termin(e) bisher.</div>`;
+        }while(laeufe<AUTOFILL_MAX_LAEUFE);
         const geprueft=await api(q(`/api/education/timetable-plans/${encodeURIComponent(planId)}/validate`,t),{method:'POST',body:'{}'});
-        ziel.innerHTML=entwurfBericht(r,geprueft);
+        ziel.innerHTML=entwurfBericht(gesamt,geprueft,laeufe);
         bindeFreigabe(ziel,planId);
       }catch(x){ziel.innerHTML=`<div class="notice">${E(friendly(x.code,x.status))}</div>`;}
       submitButton(autofillForm,false);
@@ -132,7 +144,21 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
     return neu.plan?.id||neu.id;
   }
   const LUECKEN_GRUND={NO_TEACHER_AVAILABLE:'keine freie Dozentin / kein freier Dozent',NO_ROOM_AVAILABLE:'kein freier Raum',LESSON_EXCEEDS_DAY:'die Kursregel ergibt keine gültige Unterrichtszeit',LESSON_AFTER_LATEST_END:'die Unterrichtszeit läge nach dem gewünschten Ende',NO_COURSE_RULES:'für diese Klasse sind keine Kursregeln hinterlegt',COURSE_NOT_FOUND:'diese Klasse wurde nicht gefunden'};
-  function entwurfBericht(r,geprueft){
+  const AUTOFILL_MAX_LAEUFE=60;
+  // Mehrere Durchlaeufe, ein Bericht. Jeder Lauf setzt dort fort, wo der vorige aufgehoert hat,
+  // und sieht damit jeden Tag genau einmal - erzeugte Termine und offene Luecken werden deshalb
+  // schlicht addiert.
+  function entwurfSumme(bisher,r){
+    const proKurs=new Map((bisher?.courses||[]).map(c=>[String(c.course_id),{...c}]));
+    for(const c of r.courses||[]){const k=String(c.course_id),vorher=proKurs.get(k);
+      if(vorher)vorher.created=Number(vorher.created||0)+Number(c.created||0);
+      else proKurs.set(k,{...c,created:Number(c.created||0)});}
+    return{created:Number(bisher?.created||0)+Number(r.created||0),courses:[...proKurs.values()],
+      gaps:[...(bisher?.gaps||[]),...(r.gaps||[])].slice(0,50),
+      gap_count:Number(bisher?.gap_count||0)+Number(r.gap_count||0),
+      limit_reached:Boolean(r.limit_reached)};
+  }
+  function entwurfBericht(r,geprueft,laeufe){
     const fehler=Number(geprueft.errors||0),warn=Number(geprueft.warnings||0),offen=Number(r.gap_count||0);
     const proKurs=(r.courses||[]).map(c=>`<li>${E(c.course_name)}: ${E(c.created)} Termin(e)</li>`).join('');
     const luecken=(r.gaps||[]).slice(0,50).map(g=>`<li>${E(g.course_name)} · ${E(g.date)} · ${E(LUECKEN_GRUND[g.reason]||g.reason)}</li>`).join('');
@@ -140,7 +166,8 @@ if(location.pathname.replace(/\/$/,'')==='/kunden-admin'){
       +`<div class="muted">${fehler?`${fehler} Konflikt(e) und `:''}${warn} Hinweis(e) aus der Prüfung. Nichts ist veröffentlicht.</div></div>`
       +(proKurs?`<h4>Je Klasse / Kurs</h4><ul>${proKurs}</ul>`:'')
       +(offen?`<h4>${offen} offene Lücke(n)</h4><ul>${luecken}</ul>${offen>50?'<div class="muted">Es werden die ersten 50 gezeigt.</div>':''}`:'<div class="muted">Keine offenen Lücken.</div>')
-      +(r.limit_reached?'<div class="notice">Der Lauf hat seine Obergrenze erreicht und wurde bewusst vorher beendet, damit kein halb befüllter Entwurf entsteht. Führe ihn einfach erneut aus – er setzt dort fort, wo er aufgehört hat.</div>':'')
+      +(laeufe>1?`<div class="muted">Dafür waren ${E(laeufe)} Durchläufe nötig – das Portal hat sie selbst nacheinander ausgeführt.</div>`:'')
+      +(r.limit_reached?'<div class="notice">Der Entwurf ist noch nicht vollständig: die Durchläufe wurden bewusst angehalten, damit nichts halb Fertiges entsteht. Führe die Planung einfach erneut aus – sie setzt dort fort, wo sie aufgehört hat.</div>':'')
       +`<div class="toolbar" style="margin-top:12px"><button type="button" class="btn" data-release${fehler?' disabled':''}>Entwurf verbindlich veröffentlichen</button>`
       +`<span class="muted">${fehler?'Erst die Konflikte klären – mit Konflikten veröffentlicht der Server nicht.':'Erst nach Deiner Bestätigung wird veröffentlicht.'}</span></div>`
       +`<div data-release-result style="margin-top:10px"></div>`;
