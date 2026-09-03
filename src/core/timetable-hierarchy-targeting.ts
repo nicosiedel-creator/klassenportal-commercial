@@ -62,6 +62,16 @@ function resolveTarget(model:Model,auth:CoreAuthContext,sourceCourse:string|null
   const byCode=codeText?model.courses.filter(c=>norm(c.code)===codeText):courseText?model.courses.filter(c=>norm(c.code)===courseText):[];
   if(byCode.length===1){const c=byCode[0];if(!c.is_active)return{course:c,path:null,status:'blocked',reason:'Klasse/Kurs ist archiviert oder inaktiv.'};if(!courseAllowed(auth,c.id))return{course:c,path:null,status:'blocked',reason:'Keine Berechtigung für diese Klasse/Kurs.'};const paths=coursePaths(model,c.id,context);if(context.length&&!paths.length)return{course:c,path:null,status:'blocked',reason:'Klasse/Kurs passt nicht zum angegebenen Standort/Organisationsbereich.'};return{course:c,path:preferredPath(paths),status:'automatic',reason:'Eindeutiger Klassen-/Kurscode.'};}
   const aliasSource=courseText||codeText;if(aliasSource){const alias=model.aliases.find(x=>x.source_value_normalized===aliasSource&&x.org_context_normalized===contextKey);if(alias){const c=model.courses.find(x=>x.id===alias.course_id);if(!c||!c.is_active)return{course:c??null,path:null,status:'blocked',reason:'Bestätigte Zuordnung verweist auf eine inaktive Klasse.'};if(!courseAllowed(auth,c.id))return{course:c,path:null,status:'blocked',reason:'Keine Berechtigung für die bestätigte Zielklasse.'};const paths=coursePaths(model,c.id,context);if(context.length&&!paths.length)return{course:c,path:null,status:'blocked',reason:'Bestätigte Zuordnung passt nicht mehr zur aktuellen Organisationsstruktur.'};return{course:c,path:preferredPath(paths),status:'automatic',reason:'Bereits bestätigte Zuordnung wurde wiederverwendet.'};}}
+  // Nennt die Zeile weder Klassen-/Kursname noch -code noch Standort/Organisation, gibt es
+  // nichts, das mehrere Klassen treffen könnte - "mehrere passende Klassen" waere dann falsch,
+  // denn es gab gar keine Angabe, nur die vollstaendige Klassenliste des Traegers als Zufall.
+  // Einzige Ausnahme bleibt die Bequemlichkeit fuer einen Traeger mit genau einer aktiven,
+  // berechtigten Klasse: fehlt jede Angabe, ist die Zuordnung trotzdem eindeutig.
+  if(!courseText&&!codeText&&!context.length){
+    const only=model.courses.filter(c=>c.is_active&&courseAllowed(auth,c.id));
+    if(only.length===1){const c=only[0];return{course:c,path:preferredPath(coursePaths(model,c.id,context)),status:'automatic',reason:'Im Träger existiert genau eine aktive, berechtigte Klasse.'};}
+    return{course:null,path:null,status:'review',reason:'Standort/Organisation/Klasse konnte nicht eindeutig einer vorhandenen aktiven Klasse zugeordnet werden.'};
+  }
   let candidates=courseText?model.courses.filter(c=>norm(c.name)===courseText):model.courses.slice();
   if(context.length)candidates=candidates.filter(c=>coursePaths(model,c.id,context).length>0);
   const active=candidates.filter(c=>c.is_active&&courseAllowed(auth,c.id));
