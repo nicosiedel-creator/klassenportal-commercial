@@ -96,7 +96,7 @@ function resourceData(row:Record<string,unknown>){
 const EXPLICIT_ROLE:[RegExp,OrganizationCandidateType][]=[
   [/^(tenant_admin|kunden_?admin|bildungstraeger_admin|gesamtadmin|organisationsadmin)$/,'tenant_admin_review'],
   [/^(class_admin|klassen_?admin)$/,'class_admin'],
-  [/^(teacher|dozent|dozentin|lehrkraft|trainer|trainerin)$/,'teacher'],
+  [/^(teacher|dozent|dozentin|lehrkraft|lehrer|lehrerin|trainer|trainerin|ausbilder|ausbilderin|referent|referentin|kursleiter|kursleiterin)$/,'teacher'],
   [/^(guest|gast)$/,'guest'],
   [/^(course|kurs|klasse)$/,'course'],
   [/^(subject|fach)$/,'subject'],
@@ -147,8 +147,8 @@ function lessonData(row:Record<string,unknown>){
   // In den Hinweis gehoert nur ein Name: "Dozent/in: EMP-001" waere eine Auskunft, die keine ist.
   // Die Kennung wird davon getrennt mitgefuehrt, weil erst sie die Zeile dem Dozentenstamm
   // zuordnet - ohne sie entstuende die Unterrichtsstunde wie bisher ohne Dozent/in.
-  const teacher=norm(rowValue(row,'teacher','dozent','dozentin','lehrkraft','trainer','dozent_name','teacher_name'),200)||null;
-  const teacherRef=norm(rowValue(row,'dozenten_id','dozent_id','dozentin_id','lehrkraft_id','teacher_id','teacher_external_id','dozenten_kennung','personalnummer'),160)||null;
+  const teacher=norm(rowValue(row,'teacher','dozent','dozentin','lehrkraft','lehrer','lehrerin','trainer','ausbilder','referent','kursleiter','dozent_name','teacher_name','lehrer_name'),200)||null;
+  const teacherRef=norm(rowValue(row,'dozenten_id','dozent_id','dozentin_id','lehrkraft_id','lehrer_id','teacher_id','teacher_external_id','dozenten_kennung','personalnummer'),160)||null;
   const mode=norm(rowValue(row,'session_type','unterrichtsart','unterricht','format','modus'),120);
   const topic=norm(rowValue(row,'topic','thema','thema_der_stunde','hinweis','bemerkung','notiz','notes'),1500);
   const notes=[mode?`Unterrichtsart: ${mode}`:'',teacher?`Dozent/in: ${teacher}`:'',topic].filter(Boolean).join('\n')||null;
@@ -233,7 +233,7 @@ export function importRole(row:Record<string,unknown>):OrganizationCandidateType
   if(resourceSignal(row,raw))return'resource';
   if(orgUnitSignal(row,raw))return'org_unit';
   if(word('class_admin|klassen_?admin',raw))return'class_admin';
-  if(word('teacher|dozent|dozentin|lehrkraft|trainer|trainerin',raw))return'teacher';
+  if(word('teacher|dozent|dozentin|lehrkraft|lehrer|lehrerin|trainer|trainerin|ausbilder|ausbilderin|referent|referentin|kursleiter|kursleiterin',raw))return'teacher';
   if(staffSignal(row))return'staff';
   if(word('guest|gast',raw))return'guest';
   if(word('course|kurs|klasse',raw))return'course';
@@ -244,14 +244,14 @@ export function importRole(row:Record<string,unknown>):OrganizationCandidateType
   // Auffangfall "Teilnehmer": der Dozentenstamm blieb leer, und der Stundenplan fand spaeter
   // niemanden zum Zuordnen. Eine Stundenplanzeile fuehrt dieselbe Spalte, ist aber oben schon
   // als 'lesson' erkannt - sie kommt hier nicht an.
-  const teacherSignal=rowValue(row,'teacher','teacher_name','dozent','dozent_name','lehrkraft')
-    ||rowValue(row,'dozenten_id','dozent_id','dozentin_id','lehrkraft_id','dozenten_kennung');
+  const teacherSignal=rowValue(row,'teacher','teacher_name','dozent','dozent_name','lehrkraft','lehrer','lehrer_name','ausbilder','referent','kursleiter')
+    ||rowValue(row,'dozenten_id','dozent_id','dozentin_id','lehrkraft_id','lehrer_id','dozenten_kennung');
   if(teacherSignal)return'teacher';
   const personSignal=rowValue(row,'display_name','name','person','person_name','participant','participant_name','teilnehmer','schueler','student'),emailSignal=rowValue(row,'email','e_mail','mail','emailadresse');
   if(!personSignal&&!emailSignal){if(rowValue(row,'course_name','kurs','klasse','lehrgang','massnahme','course_code','kurscode','klassencode'))return'course';if(rowValue(row,'subject_name','subject','fach','fachname'))return'subject';}
   return'participant';
 }
-function personName(row:Record<string,unknown>,type:OrganizationCandidateType){const specific=type==='teacher'?rowValue(row,'teacher','teacher_name','dozent','dozent_name','lehrkraft'):rowValue(row,'participant','participant_name','teilnehmer','teilnehmer_name','schueler','student');const direct=norm(specific||rowValue(row,'display_name','name','person','person_name'));if(direct)return direct;const first=norm(rowValue(row,'first_name','vorname')),last=norm(rowValue(row,'last_name','nachname'));return[first,last].filter(Boolean).join(' ');}
+function personName(row:Record<string,unknown>,type:OrganizationCandidateType){const specific=type==='teacher'?rowValue(row,'teacher','teacher_name','dozent','dozent_name','lehrkraft','lehrer','lehrer_name','ausbilder','referent','kursleiter'):rowValue(row,'participant','participant_name','teilnehmer','teilnehmer_name','schueler','student');const direct=norm(specific||rowValue(row,'display_name','name','person','person_name'));if(direct)return direct;const first=norm(rowValue(row,'first_name','vorname')),last=norm(rowValue(row,'last_name','nachname'));return[first,last].filter(Boolean).join(' ');}
 function courseData(row:Record<string,unknown>){return{id:norm(rowValue(row,'course_id','kurs_id'),120)||null,name:norm(rowValue(row,'course_name','kurs','klasse','lehrgang','massnahme','maßnahme'),200)||null,code:norm(rowValue(row,'course_code','kurscode','klassencode','massnahmennummer','maßnahmennummer'),80)||null};}
 function subjectData(row:Record<string,unknown>){return{name:norm(rowValue(row,'subject_name','subject','fach','fachname'),200)||null,short:norm(rowValue(row,'subject_short_name','subject_code','fachkuerzel','fachkürzel','kuerzel','kürzel'),50)||null};}
 // Der Kurscode zuerst, die eigene Kennung des Kunden zuletzt: "CRS-001" sagt dem Portal nichts,
@@ -320,7 +320,7 @@ function baseCandidate(row:Record<string,unknown>,i:number,courses:ExistingCours
   let personRef:string|null=null;
   if(type==='course'){name=c.name||norm(rowValue(row,'name','display_name'),200)||null;if(!name&&!c.code)warnings.push('COURSE_NAME_REQUIRED');}
   else if(type==='subject'){name=s.name||norm(rowValue(row,'name','display_name'),200)||null;if(!name)warnings.push('SUBJECT_NAME_REQUIRED');}
-  else{name=personName(row,type)||null;email=validEmail(rowValue(row,'email','e_mail','mail','emailadresse','teacher_email','dozent_email'))||null;personRef=norm(rowValue(row,'dozenten_id','dozent_id','dozentin_id','lehrkraft_id','teacher_id','teacher_external_id','dozenten_kennung','personalnummer'),160)||null;if(!name)warnings.push('NAME_REQUIRED');if(!email&&type!=='teacher')warnings.push('EMAIL_REQUIRED');if(type==='teacher'&&!email)warnings.push('TEACHER_PORTAL_EMAIL_MISSING');}
+  else{name=personName(row,type)||null;email=validEmail(rowValue(row,'email','e_mail','mail','emailadresse','teacher_email','dozent_email','lehrer_email'))||null;personRef=norm(rowValue(row,'dozenten_id','dozent_id','dozentin_id','lehrkraft_id','lehrer_id','teacher_id','teacher_external_id','dozenten_kennung','personalnummer'),160)||null;if(!name)warnings.push('NAME_REQUIRED');if(!email&&type!=='teacher')warnings.push('EMAIL_REQUIRED');if(type==='teacher'&&!email)warnings.push('TEACHER_PORTAL_EMAIL_MISSING');}
   const orgUnitRef=norm(rowValue(row,'org_unit_external_id','location_external_id','org_unit','organisationseinheit_id'),160)||null;
   const isPersonInCourse=['participant','class_admin','guest'].includes(type);
   const varianten=isPersonInCourse?courseVariants(c):[c];

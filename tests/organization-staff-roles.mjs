@@ -105,6 +105,20 @@ assert.equal(portalRole({}), null);
 // Die echte Dozentenzeile bleibt Dozentenzeile - die Beschaeftigtenerkennung darf sie nicht holen.
 const dozent = rowsOf(`${KOPF}\n${zeile('001', 'Dario', 'Falkenau', 'Dozent/in', 'OU-VERW', 'instructor')}\n`)[0];
 assert.equal(importRole(dozent), 'teacher', 'eine Dozentin bleibt eine Dozentin');
+
+// Kunden nennen dieselbe Rolle mit unterschiedlichen Worten: "Lehrer" ist im deutschen
+// Bildungswesen mindestens so gebräuchlich wie "Dozent" - und in der freien Weiterbildung sind
+// "Ausbilder/in", "Referent/in" und "Kursleiter/in" ebenso üblich. Vorher fielen all diese Zeilen
+// mangels Erkennung auf den Auffangfall "Teilnehmer" zurück.
+for(const bezeichnung of ['Lehrer','Lehrerin','Ausbilder','Ausbilderin','Referent','Referentin','Kursleiter','Kursleiterin'])
+  assert.equal(importRole({ role: bezeichnung, display_name: 'Test Person' }), 'teacher',
+    `"${bezeichnung}" muss als Dozent/in erkannt werden, erkannt wurde: ${importRole({ role: bezeichnung, display_name: 'Test Person' })}`);
+// Auch ohne ausdrückliche Rollenspalte: eine Zeile mit einer Spalte "Lehrer" (Name der
+// unterrichtenden Person) muss über das Strukturmerkmal erkannt werden, nicht erst über den Text.
+assert.equal(importRole({ lehrer: 'Frau Nowak', display_name: 'Frau Nowak' }), 'teacher',
+  'eine Spalte "Lehrer" muss als Dozentenmerkmal erkannt werden');
+assert.equal(importRole({ ausbilder: 'Herr Krug', display_name: 'Herr Krug' }), 'teacher',
+  'eine Spalte "Ausbilder" muss als Dozentenmerkmal erkannt werden');
 // Und eine Organisationseinheit ohne Menschen wird keine Person, nur weil sie "Leitung" heisst.
 assert.notEqual(importRole({ node_type: 'org_unit', name: 'Geschäftsführung', type: 'Leitung' }), 'staff',
   'ohne Menschen ist "Leitung" ein Bereich, keine beschäftigte Person');
