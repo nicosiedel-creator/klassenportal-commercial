@@ -39,21 +39,23 @@ jobs:
           mkdir -p out
           data=$(curl --fail --location --silent --show-error --retry 5 --retry-all-errors -G \
             'https://web.archive.org/cdx/search/cdx' \
-            --data-urlencode "url=$URL" \
+            --data-urlencode "url=${URL}*" \
+            --data-urlencode 'matchType=prefix' \
             --data-urlencode 'output=json' \
             --data-urlencode 'fl=timestamp,original,statuscode,mimetype' \
             --data-urlencode 'filter=statuscode:200' \
             --data-urlencode 'from=2025' \
             --data-urlencode 'to=2026' \
-            --data-urlencode 'limit=1' \
+            --data-urlencode 'limit=10' \
             --data-urlencode 'collapse=digest')
           printf '%s\n' "$data"
           ts=$(printf '%s' "$data" | jq -r '.[1][0] // empty')
-          if [ -z "$ts" ]; then
-            echo "No snapshot found for $URL"
+          orig=$(printf '%s' "$data" | jq -r '.[1][1] // empty')
+          if [ -z "$ts" ] || [ -z "$orig" ]; then
+            echo "No snapshot found for $URL including query variants"
             exit 44
           fi
-          archive="https://web.archive.org/web/${ts}id_/${URL}"
+          archive="https://web.archive.org/web/${ts}id_/${orig}"
           echo "Snapshot: $archive"
           curl --fail --location --silent --show-error --retry 8 --retry-all-errors --max-time 600 "$archive" -o "out/$NAME"
           test "$(head -c 4 "out/$NAME")" = '%PDF'
