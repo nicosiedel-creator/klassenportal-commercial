@@ -37,14 +37,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          enc=$(jq -rn --arg v "$URL" '$v|@uri')
-          cdx="https://web.archive.org/cdx/search/cdx?url=${enc}&output=json&fl=timestamp,original,statuscode&filter=statuscode:200&filter=mimetype:application/pdf&from=2025&to=2026&limit=1&filter=collapse:digest"
-          echo "CDX: $cdx"
-          data=$(curl --fail --location --silent --show-error --retry 5 --retry-all-errors "$cdx")
+          data=$(curl --fail --location --silent --show-error --retry 5 --retry-all-errors -G \
+            'https://web.archive.org/cdx/search/cdx' \
+            --data-urlencode "url=$URL" \
+            --data-urlencode 'output=json' \
+            --data-urlencode 'fl=timestamp,original,statuscode,mimetype' \
+            --data-urlencode 'filter=statuscode:200' \
+            --data-urlencode 'from=2025' \
+            --data-urlencode 'to=2026' \
+            --data-urlencode 'limit=1' \
+            --data-urlencode 'collapse=digest')
           printf '%s\n' "$data"
           ts=$(printf '%s' "$data" | jq -r '.[1][0] // empty')
           if [ -z "$ts" ]; then
-            echo "No PDF snapshot found"
+            echo "No snapshot found for $URL"
             exit 44
           fi
           archive="https://web.archive.org/web/${ts}id_/${URL}"
