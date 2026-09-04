@@ -2,6 +2,7 @@ import type { CoreAuthContext, Env } from './types.js';
 import { parseCsv } from '../portability/csv.js';
 import { parseXlsx } from '../portability/xlsx.js';
 import { previewParticipantImport } from './participant-document-import.js';
+import { canonicalColumn } from './import-column-aliases.js';
 
 function key(v:string){return v.trim().toLowerCase().replace(/[ä]/g,'ae').replace(/[ö]/g,'oe').replace(/[ü]/g,'ue').replace(/[ß]/g,'ss').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');}
 const ALIASES:Record<string,string>={
@@ -14,7 +15,15 @@ const ALIASES:Record<string,string>={
   course_name:'course_name',kurs:'kurs',klasse:'klasse',massnahme:'massnahme',bildungsgang:'bildungsgang',studiengang:'studiengang',
   beginn:'beginn',start:'start',enrollment_start:'enrollment_start',ende:'ende',enrollment_end:'enrollment_end'
 };
-export function mapParticipantRows(rows:Record<string,unknown>[]){return rows.map(row=>{const out:Record<string,unknown>={};for(const [h,v] of Object.entries(row)){const target=ALIASES[key(h)]||key(h);out[target]=v;}return out;});}
+// Die Liste oben deckt nur die Schreibweisen ab, die dieses Portal von Anfang an kannte. Eine
+// Datei aus einem Fremdsystem heisst ihre Spalten anders - 'Kurs-Code' statt 'Kurscode',
+// 'class_id' statt 'course_code', 'first_name' statt 'Vorname'. Fuer alles, was die eigene
+// Liste nicht kennt, greift die gemeinsame, mehrsprachige Tabelle. Sie kommt bewusst danach:
+// eine hier ausdruecklich getroffene Entscheidung bleibt die staerkere.
+//
+// Und eine bereits gefuellte Zielspalte wird nicht ueberschrieben: fuehrt eine Datei 'Name'
+// UND 'Teilnehmername', gewinnt der zuerst gelesene Wert, statt dass der zweite ihn loescht.
+export function mapParticipantRows(rows:Record<string,unknown>[]){return rows.map(row=>{const out:Record<string,unknown>={};for(const [h,v] of Object.entries(row)){const target=ALIASES[key(h)]||canonicalColumn(h)||key(h);if(out[target]!==undefined&&String(out[target]??'').trim())continue;out[target]=v;}return out;});}
 
 export async function previewParticipantImportFile(env:Env,auth:CoreAuthContext,tenantId:string,request:Request){
   const form=await request.formData(),file=form.get('file');if(!(file instanceof File))throw new Error('IMPORT_FILE_REQUIRED');if(file.size>15*1024*1024)throw new Error('IMPORT_FILE_TOO_LARGE');const name=file.name.toLowerCase(),type=file.type.toLowerCase();

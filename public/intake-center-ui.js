@@ -42,15 +42,32 @@ if(INTAKE_CENTER_PATH){
     if(!org||!(org.candidates||[]).length)return'';
     return `<section class="card" style="margin-top:14px"><h3 style="margin-top:0">Erkannte Struktur</h3><p class="muted">Kurse, Fächer und Rollen aus denselben Unterlagen. Sie werden vor den Personen angelegt, damit ein Teilnehmer dem neuen Kurs zugeordnet werden kann. Ein Kundenadministrator entsteht nie automatisch.</p><div class="table-wrap"><table><tr><th>Übernehmen</th><th>Art</th><th>Bezeichnung</th><th>Kurs</th><th>Erkennung</th><th>Hinweise</th></tr>${org.candidates.map((c,i)=>`<tr><td><input type="checkbox" aria-label="Diesen Struktureintrag übernehmen" data-org-candidate="${i}" ${orgBlocking(c)?'disabled':'checked'}></td><td>${E(orgTypeText(c.type))}</td><td><strong>${E(c.display_name||c.course_name||c.subject_name||'—')}</strong>${c.email?`<div class="muted">${E(c.email)}</div>`:''}</td><td>${E(c.course_name||c.course_code||'—')}</td><td>${E(c.confidence||0)} %</td><td>${(c.warnings||[]).map(x=>`<div class="${orgBlocking({type:c.type,warnings:[x]})?'error':'muted'}">${E(orgWarningText(x))}</div>`).join('')||'✅ eindeutig'}</td></tr>`).join('')}</table></div></section>`;
   }
+  // Der Eingang hat bisher nur gezeigt, was er verwerten konnte. Aus dem Paket eines Kunden
+  // verschwanden dadurch neun Dateien mit rund 15.000 Zeilen ohne ein Wort - Abwesenheiten,
+  // Klassenbuch, Nachweise, Curriculum, Umfragen. Wer eine Datei einwirft, muss erfahren, was
+  // aus ihr geworden ist: als was sie gelesen wurde, oder warum aus ihr nichts entstand.
+  const ROUTE_TEXT={organization:'Struktur (Kurse, Fächer, Räume, Rollen)',participants:'Teilnehmer',none:'nicht verarbeitet'};
+  const ROUTE_GRUND={NO_PERSON_IN_DOCUMENT:'enthält keine Person – weder Name noch E-Mail',UNSUPPORTED:'Dateiformat wird nicht ausgewertet',EMPTY:'keine Zeilen'};
+  function renderRouting(d){
+    const rows=(d&&d.routing)||[],offen=(d&&d.unsupported)||[];
+    if(!rows.length&&!offen.length)return'';
+    const unverarbeitet=rows.filter(x=>x.route==='none'),zeilenOffen=unverarbeitet.reduce((n,x)=>n+Number(x.items||0),0);
+    return `<section class="card" style="margin-top:14px"><h3 style="margin-top:0">Was aus jeder Unterlage wurde</h3>`
+      +(zeilenOffen?`<div class="notice"><strong>${E(unverarbeitet.length)} Unterlage(n) mit ${E(zeilenOffen)} Zeilen wurden nicht verarbeitet.</strong><div class="muted" style="margin-top:4px">Sie bleiben gespeichert und lassen sich herunterladen – übernommen wurde daraus nichts.</div></div>`:'')
+      +`<div class="table-wrap"><table><tr><th>Unterlage</th><th>Gelesen als</th><th>Zeilen</th><th>Hinweis</th></tr>`
+      +rows.map(x=>`<tr><td>${E(x.source||'—')}</td><td>${x.route==='none'?`<span class="error">${E(ROUTE_TEXT.none)}</span>`:E(ROUTE_TEXT[x.route]||x.route)}</td><td>${E(x.items??'—')}</td><td class="muted">${E(x.route==='none'?(ROUTE_GRUND[x.reason]||x.reason||''):'')}</td></tr>`).join('')
+      +offen.map(name=>`<tr><td>${E(name)}</td><td><span class="error">${E(ROUTE_TEXT.none)}</span></td><td>—</td><td class="muted">${E(ROUTE_GRUND.UNSUPPORTED)}</td></tr>`).join('')
+      +`</table></div></section>`;
+  }
   function renderCandidates(w,area,d,t,batchId,courses){
     const p=d&&d.candidates?d:(d?.preview||null),org=d?.organization||null,cm=new Map(courses.map(c=>[c.id,c]));
     const participants=p?`<section class="card" style="margin-top:14px"><h3 style="margin-top:0">Erkannte Teilnehmer</h3><p class="muted">Neue Konten werden erst nach dieser Prüfung eingeladen. Eindeutige Eingänge erledigen diesen Schritt bei aktivem sicherem Automatikmodus selbst.</p><div class="table-wrap"><table><tr><th>Übernehmen</th><th>Name / E-Mail</th><th>Kurs</th><th>Erkennung</th><th>Hinweise</th></tr>${(p.candidates||[]).map((c,i)=>`<tr><td><input type="checkbox" aria-label="Diesen Eintrag übernehmen" data-candidate="${i}" ${blocking(c)?'disabled':'checked'}></td><td><strong>${E(c.display_name||'—')}</strong><div class="muted">${E(c.email||'—')}</div></td><td>${E(cm.get(c.course_id)?.name||c.course_name||c.course_code||'—')}</td><td>${E(c.confidence||0)} %</td><td>${(c.warnings||[]).map(x=>`<div class="${blocking({warnings:[x]})?'error':'muted'}">${E(warningText(x))}</div>`).join('')||'✅ eindeutig'}</td></tr>`).join('')}</table></div></section>`:'';
-    if(!p&&!org){area.innerHTML='<p class="muted">Aus diesen Unterlagen liess sich nichts ableiten.</p>';return;}
+    if(!p&&!org){area.innerHTML=`${renderRouting(d)}<p class="muted">Aus diesen Unterlagen liess sich nichts ableiten.</p>`;return;}
     // Der Knopf muss sagen, was er tut. Wo Personen dabei sind, entstehen Konten und Einladungen
     // gehen raus - das gehoert auf den Knopf und nicht nur in die Rueckfrage. Ein Stapel mit
     // reiner Struktur laedt niemanden ein und darf das auch nicht behaupten.
     const applyLabel=p?'Markierte übernehmen & automatisch einladen':'Markierte Struktur übernehmen';
-    area.innerHTML=`${renderStructure(area,org)}${participants}<div class="toolbar" style="margin-top:12px"><button class="btn" data-apply-intake>${applyLabel}</button><span data-apply-status class="muted"></span></div>`;
+    area.innerHTML=`${renderRouting(d)}${renderStructure(area,org)}${participants}<div class="toolbar" style="margin-top:12px"><button class="btn" data-apply-intake>${applyLabel}</button><span data-apply-status class="muted"></span></div>`;
     area.querySelector('[data-apply-intake]').onclick=async()=>{
       const selected=[...area.querySelectorAll('[data-candidate]:checked')].map(x=>Number(x.dataset.candidate));
       const orgSelected=[...area.querySelectorAll('[data-org-candidate]:checked')].map(x=>Number(x.dataset.orgCandidate));

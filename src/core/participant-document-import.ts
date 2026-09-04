@@ -38,7 +38,10 @@ function splitList(v:string):string[]{const parts=v.split(/[;,|\n]+/).map(x=>nor
 function fromRow(row:Record<string,unknown>):ParticipantCandidate[]{
   const pick=(...keys:string[])=>{for(const k of keys)if(row[k]!==undefined&&row[k]!==null&&String(row[k]).trim())return row[k];return'';};
   const first=norm(pick('first_name','vorname')),last=norm(pick('last_name','nachname')),name=norm(pick('display_name','name','teilnehmer','schueler','student'))||[first,last].filter(Boolean).join(' '),email=emailOf(pick('email','e_mail','mail','emailadresse'));
-  const courseCodeRaw=norm(pick('course_code','kurscode','klassencode','massnahmennummer')),courseNameRaw=norm(pick('course_name','kurs','klasse','lehrgang')),courseId=norm(pick('course_id'))||null,external=norm(pick('external_id','teilnehmernummer','teilnehmer_id','matrikelnummer','schuelernummer','vertragsnummer'))||null;
+  // Eine Teilnehmerliste verweist auf ihre Klasse fast nie ueber den Kurscode, sondern ueber die
+// eigene Kennung des Traegers ('class_id', 'course_external_id'). Fehlten diese Spalten hier,
+// stand bei jeder Zeile "Kein Kurs erkannt" - gemessen am Kundenpaket bei allen 1537.
+  const courseCodeRaw=norm(pick('course_code','kurscode','klassencode','massnahmennummer','course_external_id','class_id','klassen_id','kurs_external_id','class_external_id')),courseNameRaw=norm(pick('course_name','kurs','klasse','lehrgang')),courseId=norm(pick('course_id'))||null,external=norm(pick('external_id','teilnehmernummer','teilnehmer_id','matrikelnummer','schuelernummer','vertragsnummer'))||null;
   const path=pick('org_path','organisationspfad','strukturpfad','hierarchiepfad'),orgContext=[...new Set([...splitOrgPath(path),norm(pick('site','standort','schulstandort','campus','filiale','niederlassung')),norm(pick('area','bereich','fachbereich','abteilung','organisationseinheit')),norm(pick('measure','massnahme','maßnahme','bildungsgang','studiengang','programm','projekt'))].filter(Boolean))];
   const enrollmentStart=isoDate(norm(pick('enrollment_start','beginn','start'))),enrollmentEnd=isoDate(norm(pick('enrollment_end','ende')));
   const codes=splitList(courseCodeRaw),names=splitList(courseNameRaw),n=Math.max(codes.length,names.length,1);

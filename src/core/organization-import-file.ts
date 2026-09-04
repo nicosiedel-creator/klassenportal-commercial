@@ -2,6 +2,7 @@ import type { CoreAuthContext, Env } from './types.js';
 import { parseCsv } from '../portability/csv.js';
 import { parseXlsx } from '../portability/xlsx.js';
 import { previewOrganizationImport } from './organization-import.js';
+import { canonicalColumn } from './import-column-aliases.js';
 
 function key(v:string){return v.trim().toLowerCase().replace(/[ä]/g,'ae').replace(/[ö]/g,'oe').replace(/[ü]/g,'ue').replace(/[ß]/g,'ss').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');}
 const ALIASES:Record<string,string>={
@@ -17,7 +18,9 @@ const ALIASES:Record<string,string>={
   knotentyp:'node_type',ebene:'node_type',externe_id:'external_id',uebergeordnet:'parent_external_id',uebergeordnete_einheit:'parent_external_id',elternknoten:'parent_external_id',
   strasse:'street',plz:'postal_code',ort:'city',stadt:'city',land:'country',bezeichnung:'display_name',einheit:'display_name'
 };
-export function mapOrganizationRows(rows:Record<string,unknown>[]){return rows.map(row=>{const out:Record<string,unknown>={};for(const [h,v] of Object.entries(row))out[ALIASES[key(h)]||key(h)]=v;return out;});}
+// Wie beim Teilnehmerimport: was die eigene Liste nicht kennt, findet die gemeinsame,
+// mehrsprachige Tabelle - und eine bereits gefuellte Zielspalte wird nicht ueberschrieben.
+export function mapOrganizationRows(rows:Record<string,unknown>[]){return rows.map(row=>{const out:Record<string,unknown>={};for(const [h,v] of Object.entries(row)){const target=ALIASES[key(h)]||canonicalColumn(h)||key(h);if(out[target]!==undefined&&String(out[target]??'').trim())continue;out[target]=v;}return out;});}
 
 // Die Vorschau gibt die eingelesenen Zeilen mit zurueck. Nur so kann die Oberflaeche eine
 // Typkorrektur stellen, ohne dass der Kunde dieselbe Datei ein zweites Mal hochladen muss - es
