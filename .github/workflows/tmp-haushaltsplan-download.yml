@@ -8,69 +8,111 @@ on:
 
 jobs:
   download:
+    strategy:
+      fail-fast: false
+      max-parallel: 14
+      matrix:
+        include:
+          - id: '01'
+            name: Band_01_Haushaltsgesetz_Gesamtplaene_Uebersichten.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band01_2026_2027_hge_uebersichten.pdf?ts=1777462462
+          - id: '02'
+            name: Band_02_Einzelplaene_01_02_20_21_22.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band02_2026_2027_epl-01-02-20-21-22.pdf?ts=1777462467
+          - id: '03'
+            name: Band_03_Einzelplan_03.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band03_2026_2027_epl-03.pdf?ts=1777462460
+          - id: '04'
+            name: Band_04_Einzelplan_25.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band04_2026_2027_epl-25.pdf?ts=1777462465
+          - id: '05'
+            name: Band_05_Einzelplan_05.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band05_2026_2027_epl-05.pdf?ts=1777462474
+          - id: '06'
+            name: Band_06_Einzelplan_06.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band06_2026_2027_epl-06.pdf?ts=1777462488
+          - id: '07'
+            name: Band_07_Einzelplan_07.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band07_2026_2027_epl-07.pdf?ts=1777462458
+          - id: '08'
+            name: Band_08_Einzelplan_08.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band08_2026_2027_epl-08.pdf?ts=1777462479
+          - id: '09'
+            name: Band_09_Einzelplan_09.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band09_2026_2027_epl-09.pdf?ts=1777462482
+          - id: '10'
+            name: Band_10_Einzelplan_10.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band10_2026_2027_epl-10.pdf?ts=1777462484
+          - id: '11'
+            name: Band_11_Einzelplan_11.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band11_2026_2027_epl-11.pdf?ts=1777462475
+          - id: '12'
+            name: Band_12_Einzelplan_12.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band12_2026_2027_epl-12.pdf?ts=1777462471
+          - id: '13'
+            name: Band_13_Einzelplan_13.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band13_2026_2027_epl-13.pdf?ts=1777462478
+          - id: '14'
+            name: Band_14_Einzelplaene_15_27_29.pdf
+            url: https://www.berlin.de/sen/finanzen/haushalt/haushaltsplan/band14_2026_2027_epl-15-27-29.pdf?ts=1777462487
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
-      - name: Download all 14 official PDF volumes
+      - name: Download one official PDF volume
+        shell: bash
+        env:
+          URL: ${{ matrix.url }}
+          NAME: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          curl --fail --location --silent --show-error \
+            --retry 8 --retry-delay 4 --retry-all-errors \
+            --connect-timeout 30 --max-time 600 \
+            -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36' \
+            -H 'Accept: application/pdf,*/*' \
+            -H 'Referer: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/artikel.1644823.php' \
+            "$URL" -o "out/$NAME"
+          test "$(head -c 4 "out/$NAME")" = '%PDF'
+          test "$(stat -c%s "out/$NAME")" -gt 100000
+          ls -lh "out/$NAME"
+
+      - name: Upload single volume
+        uses: actions/upload-artifact@v4
+        with:
+          name: band-${{ matrix.id }}
+          path: out/*.pdf
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  combine:
+    needs: download
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all volume artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: band-*
+          path: combined
+          merge-multiple: true
+
+      - name: Verify 14 PDFs
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p haushaltsplan
-          base='https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27'
-          declare -a urls=(
-            "$base/band01_2026_2027_hge_uebersichten.pdf?ts=1777462462"
-            "$base/band02_2026_2027_epl-01-02-20-21-22.pdf?ts=1777462467"
-            "$base/band03_2026_2027_epl-03.pdf?ts=1777462460"
-            "$base/band04_2026_2027_epl-25.pdf?ts=1777462465"
-            "$base/band05_2026_2027_epl-05.pdf?ts=1777462474"
-            "$base/band06_2026_2027_epl-06.pdf?ts=1777462488"
-            "$base/band07_2026_2027_epl-07.pdf?ts=1777462458"
-            "$base/band08_2026_2027_epl-08.pdf?ts=1777462479"
-            "$base/band09_2026_2027_epl-09.pdf?ts=1777462482"
-            "$base/band10_2026_2027_epl-10.pdf?ts=1777462484"
-            "$base/band11_2026_2027_epl-11.pdf?ts=1777462475"
-            "$base/band12_2026_2027_epl-12.pdf?ts=1777462471"
-            "$base/band13_2026_2027_epl-13.pdf?ts=1777462478"
-            "https://www.berlin.de/sen/finanzen/haushalt/haushaltsplan/band14_2026_2027_epl-15-27-29.pdf?ts=1777462487"
-          )
-          declare -a names=(
-            'Band_01_Haushaltsgesetz_Gesamtplaene_Uebersichten.pdf'
-            'Band_02_Einzelplaene_01_02_20_21_22.pdf'
-            'Band_03_Einzelplan_03.pdf'
-            'Band_04_Einzelplan_25.pdf'
-            'Band_05_Einzelplan_05.pdf'
-            'Band_06_Einzelplan_06.pdf'
-            'Band_07_Einzelplan_07.pdf'
-            'Band_08_Einzelplan_08.pdf'
-            'Band_09_Einzelplan_09.pdf'
-            'Band_10_Einzelplan_10.pdf'
-            'Band_11_Einzelplan_11.pdf'
-            'Band_12_Einzelplan_12.pdf'
-            'Band_13_Einzelplan_13.pdf'
-            'Band_14_Einzelplaene_15_27_29.pdf'
-          )
-          for i in "${!urls[@]}"; do
-            out="haushaltsplan/${names[$i]}"
-            echo "Downloading ${names[$i]}"
-            curl --fail --location --silent --show-error \
-              --retry 12 --retry-delay 5 --retry-all-errors \
-              --connect-timeout 30 --max-time 600 \
-              -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36' \
-              -H 'Accept: application/pdf,*/*' \
-              -H 'Referer: https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/artikel.1644823.php' \
-              "${urls[$i]}" -o "$out"
-            test "$(head -c 4 "$out")" = '%PDF'
-            test "$(stat -c%s "$out")" -gt 100000
-            sleep 2
+          test "$(find combined -maxdepth 1 -type f -name '*.pdf' | wc -l)" -eq 14
+          for f in combined/*.pdf; do
+            test "$(head -c 4 "$f")" = '%PDF'
+            test "$(stat -c%s "$f")" -gt 100000
           done
-          test "$(find haushaltsplan -maxdepth 1 -type f -name '*.pdf' | wc -l)" -eq 14
-          ls -lh haushaltsplan
+          ls -lh combined
 
-      - name: Upload ZIP artifact containing only the 14 PDFs
+      - name: Upload final ZIP artifact containing only the 14 PDFs
         uses: actions/upload-artifact@v4
         with:
           name: Berlin_Haushaltsplan_2026_2027_Alle_14_Baende
-          path: haushaltsplan/*.pdf
+          path: combined/*.pdf
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
