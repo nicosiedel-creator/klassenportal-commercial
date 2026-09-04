@@ -57,6 +57,27 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+      # Der Kunde wirft seinen Betrieb als Dateien ein, und seine Dateien verweisen ueber SEINE
+      # Kennungen aufeinander. Gemessen an einem echten Kundenpaket scheiterte genau das
+      # vollstaendig: 0 von 96 Kursen, 0 von 1537 Teilnehmenden zugeordnet. Der Weg wird deshalb
+      # ausgefuehrt geprueft - hochladen, Vorschau lesen, uebernehmen, nachzaehlen - und nicht nur
+      # im Quelltext. Eine Zusicherung, die nur der Quelltext trug, hat diesen Fehler uebersehen.
+      - name: Import acceptance in the real browser
+        shell: bash
+        env:
+          COMMERCIAL_BASE_URL: http://127.0.0.1:8787
+          COMMERCIAL_WRANGLER_CONFIG: wrangler.browser-e2e.json
+        run: |
+          set +e
+          node scripts/commercial-import-acceptance.mjs 2>&1 | tee /tmp/commercial-import-acceptance.log
+          status=${PIPESTATUS[0]}
+          {
+            echo '### Commercial import acceptance diagnostic'
+            echo '```text'
+            tail -n 80 /tmp/commercial-import-acceptance.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
       # Der persistierte Zustand wird als SQLite-Datei gelesen. Solange der Worker sie offen haelt,
       # kann SQLite den lesenden Prozess mit SQLITE_BUSY abweisen. Deshalb erst anhalten, dann lesen.
       - name: Stop local PR candidate before reading D1
