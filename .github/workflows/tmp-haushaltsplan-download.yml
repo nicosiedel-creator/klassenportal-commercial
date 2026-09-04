@@ -6,29 +6,36 @@ on:
       - tmp-haushaltsplan-zip
 
 jobs:
-  test-proxy:
+  test-killcors:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: '02', name: 'Band_02_Einzelplaene_01_02_20_21_22.pdf', min_size: 1000000, url: 'https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band02_2026_2027_epl-01-02-20-21-22.pdf?ts=1777462467' }
+          - { id: '05', name: 'Band_05_Einzelplan_05.pdf', min_size: 5000000, url: 'https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band05_2026_2027_epl-05.pdf?ts=1777462474' }
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - name: Download Band 2 through neutral raw proxy
+      - name: Download through KillCORS
         shell: bash
+        env:
+          TARGET: ${{ matrix.url }}
+          NAME: ${{ matrix.name }}
+          MIN_SIZE: ${{ matrix.min_size }}
         run: |
           set -euo pipefail
-          target='https://www.berlin.de/sen/finanzen/haushalt/downloads/haushaltsplan-2026-27/band02_2026_2027_epl-01-02-20-21-22.pdf?ts=1777462467'
-          enc=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$target")
+          enc=$(python3 -c 'import urllib.parse,os; print(urllib.parse.quote(os.environ["TARGET"], safe=""))')
           mkdir -p out
-          curl --fail --location --silent --show-error --retry 6 --retry-all-errors --max-time 600 \
-            "https://api.allorigins.win/raw?url=$enc" \
-            -o out/Band_02_Einzelplaene_01_02_20_21_22.pdf
-          file out/Band_02_Einzelplaene_01_02_20_21_22.pdf
-          ls -lh out/Band_02_Einzelplaene_01_02_20_21_22.pdf
-          test "$(head -c 4 out/Band_02_Einzelplaene_01_02_20_21_22.pdf)" = '%PDF'
-          test "$(stat -c%s out/Band_02_Einzelplaene_01_02_20_21_22.pdf)" -gt 1000000
-
-      - name: Upload verified test PDF
+          curl --fail --location --silent --show-error --retry 4 --retry-all-errors --connect-timeout 20 --max-time 240 \
+            "https://proxy.killcors.com?url=$enc" -o "out/$NAME"
+          file "out/$NAME"
+          ls -lh "out/$NAME"
+          test "$(head -c 4 "out/$NAME")" = '%PDF'
+          test "$(stat -c%s "out/$NAME")" -gt "$MIN_SIZE"
+      - name: Upload verified PDF
         uses: actions/upload-artifact@v4
         with:
-          name: band-02-proxy-test
+          name: killcors-band-${{ matrix.id }}
           path: out/*.pdf
           if-no-files-found: error
           compression-level: 0
