@@ -220,15 +220,15 @@ export async function teacherWorkloadSummary(env:Env,auth:CoreAuthContext,tenant
   const sql=`SELECT t.id teacher_id,t.name teacher_name,
       COALESCE(wr.max_weekly_minutes,0) max_weekly_minutes,
       (SELECT COALESCE(SUM((julianday(l.ends_at)-julianday(l.starts_at))*1440),0) FROM lessons l
-        WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND substr(l.starts_at,1,10) BETWEEN ?1 AND ?2) held_minutes,
-      (SELECT COUNT(*) FROM lessons l WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND substr(l.starts_at,1,10) BETWEEN ?1 AND ?2) held_lessons,
+        WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND substr(l.starts_at,1,10) BETWEEN ? AND ?) held_minutes,
+      (SELECT COUNT(*) FROM lessons l WHERE l.tenant_id=t.tenant_id AND l.teacher_id=t.id AND substr(l.starts_at,1,10) BETWEEN ? AND ?) held_lessons,
       (SELECT COALESCE(SUM((julianday(e.ends_at)-julianday(e.starts_at))*1440),0) FROM timetable_plan_entries e
         JOIN timetable_plan_versions v ON v.id=e.plan_id AND v.tenant_id=e.tenant_id
-        WHERE e.tenant_id=t.tenant_id AND e.teacher_id=t.id AND v.status IN ('draft','review') AND substr(e.starts_at,1,10) BETWEEN ?1 AND ?2) planned_minutes
+        WHERE e.tenant_id=t.tenant_id AND e.teacher_id=t.id AND v.status IN ('draft','review') AND substr(e.starts_at,1,10) BETWEEN ? AND ?) planned_minutes
     FROM teachers t LEFT JOIN teacher_workload_rules wr ON wr.tenant_id=t.tenant_id AND wr.teacher_id=t.id
-    WHERE t.tenant_id=?3${gefiltert?' AND t.id=?4':''} ORDER BY t.name`;
-  const r=gefiltert?await env.DB.prepare(sql).bind(von,bis,tenantId,gefiltert).all<Record<string,unknown>>()
-                   :await env.DB.prepare(sql).bind(von,bis,tenantId).all<Record<string,unknown>>();
+    WHERE t.tenant_id=?${gefiltert?' AND t.id=?':''} ORDER BY t.name`;
+  const r=gefiltert?await env.DB.prepare(sql).bind(von,bis,von,bis,von,bis,tenantId,gefiltert).all<Record<string,unknown>>()
+                   :await env.DB.prepare(sql).bind(von,bis,von,bis,von,bis,tenantId).all<Record<string,unknown>>();
   const zeilen=(r.results??[]).map(x=>({
     teacher_id:String(x.teacher_id),teacher_name:String(x.teacher_name||''),
     held_minutes:Math.round(Number(x.held_minutes||0)),held_lessons:Number(x.held_lessons||0),

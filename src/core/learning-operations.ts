@@ -212,9 +212,9 @@ export async function reportBookCoverageForCourse(env:Env,auth:CoreAuthContext,t
       (SELECT COUNT(*) FROM report_book_entries e WHERE e.tenant_id=p.tenant_id AND e.period_id=p.id) entry_count
     FROM memberships m JOIN users u ON u.id=m.user_id
     LEFT JOIN report_book_periods p ON p.tenant_id=m.tenant_id AND p.course_id=m.course_id AND p.participant_user_id=u.id
-      AND (?1 IS NULL OR p.period_start=?1) AND (?2 IS NULL OR p.period_end=?2)
-    WHERE m.tenant_id=?3 AND m.course_id=?4 AND m.role='participant' AND u.status='active'
-    ORDER BY u.display_name`).bind(start,end,tenantId,courseId).all<Record<string,unknown>>()).results??[];
+      AND (? IS NULL OR p.period_start=?) AND (? IS NULL OR p.period_end=?)
+    WHERE m.tenant_id=? AND m.course_id=? AND m.role='participant' AND u.status='active'
+    ORDER BY u.display_name`).bind(start,start,end,end,tenantId,courseId).all<Record<string,unknown>>()).results??[];
   const stand=(r:Record<string,unknown>)=>r.period_id?String(r.status||'draft'):'missing';
   return{course_id:courseId,participants:zeilen.length,
     rows:zeilen.map(r=>({user_id:String(r.user_id),display_name:String(r.display_name||''),period_id:r.period_id?String(r.period_id):null,
