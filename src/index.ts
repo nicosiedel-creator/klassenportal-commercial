@@ -39,6 +39,7 @@ import { runPlatformAutomationCycle } from './core/automation-cycle.js';
 import { handleMicrosoftGraphApi } from './core/microsoft-graph-router.js';
 import { handleCollaborationReportingApi } from './core/collaboration-reporting-router.js';
 import { handleLiveStudyApi } from './core/live-study-router.js';
+import { handleAiGatewayApi } from './core/ai-gateway-router.js';
 import { matchPageAddress, refererSurface } from './core/page-routes.js';
 import type { Env } from './core/types.js';
 import { requestIsSecure } from './core/utils.js';
@@ -144,6 +145,7 @@ async function routeRequest(request:Request,env:Env):Promise<Response>{
   // TENANT_ID_REQUIRED auf der öffentlichen Zeugnisprüfung.
   const certificates=await handleCertificatesApi(request,env);if(certificates)return certificates;
   const workflows=await handleWorkflowApi(request,env);if(workflows)return workflows;
+  const aiGateway=await handleAiGatewayApi(request,env);if(aiGateway)return aiGateway;
 
   const onboardingPost=request.method==='POST'&&/^\/api\/onboarding\/[^/]+$/.test(url.pathname);if(onboardingPost){const payload=await request.clone().json().catch(()=>({}))as Record<string,unknown>;if(String(payload.commercial_action||'trial')==='book'&&paymentsEnabled(env)&&(!env.STRIPE_SECRET_KEY||!env.STRIPE_WEBHOOK_SECRET))return jsonError('STRIPE_NOT_CONFIGURED',503);}
   const tenantId=url.searchParams.get('tenant_id'),mutating=request.method!=='GET'&&request.method!=='HEAD',exemptMutation=url.pathname==='/api/timetable/preview'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/onboarding/')||url.pathname.startsWith('/api/platform/');if(tenantId&&mutating&&!exemptMutation){try{await assertPaymentWriteAccess(env,tenantId);}catch(e){return accessError(e);}}
