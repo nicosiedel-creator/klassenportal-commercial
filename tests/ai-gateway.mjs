@@ -38,6 +38,23 @@ try {
   globalThis.fetch = realFetch;
 }
 
+// --- Modellwahl: Rollenmodell greift, OPENROUTER_MODEL (Operator) hat Vorrang ---
+let sentModel = '';
+globalThis.fetch = async (url, init) => {
+  sentModel = JSON.parse(String(init.body)).model;
+  return new Response(JSON.stringify({ choices: [{ message: { content: 'Antwort' } }] }), { status: 200 });
+};
+try {
+  const roleModel = await callRoleModel({ OPENROUTER_API_KEY: 'sk-test' }, { role: 'lerncoach', system: 's', user: 'u', model: 'google/gemini-3.1-flash-lite' });
+  assert.equal(roleModel.model, 'google/gemini-3.1-flash-lite');
+  assert.equal(sentModel, 'google/gemini-3.1-flash-lite');
+  const override = await callRoleModel({ OPENROUTER_API_KEY: 'sk-test', OPENROUTER_MODEL: 'meta/llama-3.2-3b' }, { role: 'lerncoach', system: 's', user: 'u', model: 'google/gemini-3.1-flash-lite' });
+  assert.equal(override.model, 'meta/llama-3.2-3b', 'OPENROUTER_MODEL muss das Rollenmodell ueberschreiben');
+  assert.equal(sentModel, 'meta/llama-3.2-3b');
+} finally {
+  globalThis.fetch = realFetch;
+}
+
 // --- Fehlerantwort und leere Antwort bleiben fail-closed ---
 globalThis.fetch = async () => new Response('nope', { status: 500 });
 try {
@@ -62,6 +79,7 @@ assert.equal(listAiRoleAgents().length, 6, 'es muessen sechs Rollen definiert se
 for (const role of ['lerncoach', 'lehrkraft', 'verwaltung', 'qm', 'compliance', 'red_team']) {
   assert.ok(AI_ROLE_AGENTS[role], `Rolle ${role} fehlt`);
   assert.ok(AI_ROLE_AGENTS[role].system.length > 20, `Rolle ${role} braucht eine Leitlinie`);
+  assert.ok(String(AI_ROLE_AGENTS[role].model).includes('/'), `Rolle ${role} braucht ein Katalogmodell`);
 }
 
 // --- runAiRole ist ohne Schluessel ebenfalls fail-closed ---

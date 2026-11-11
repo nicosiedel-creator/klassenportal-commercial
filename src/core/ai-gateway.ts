@@ -16,6 +16,8 @@ export interface AiCallInput {
   user: string;
   maxTokens?: number;
   temperature?: number;
+  // Modell dieser Rolle. Ein gesetztes OPENROUTER_MODEL (Operator) hat Vorrang.
+  model?: string;
 }
 
 export type AiCallResult =
@@ -40,7 +42,7 @@ export async function callRoleModel(env: Env, input: AiCallInput): Promise<AiCal
   const key = String(env.OPENROUTER_API_KEY ?? '').trim();
   if (!key) return { ok: false, code: 'AI_NOT_CONFIGURED' };
 
-  const model = String(env.OPENROUTER_MODEL ?? '').trim() || DEFAULT_MODEL;
+  const model = String(env.OPENROUTER_MODEL ?? '').trim() || String(input.model ?? '').trim() || DEFAULT_MODEL;
   const maxTokens = Math.min(Math.max(Math.trunc(Number(input.maxTokens) || 1024), 1), MAX_TOKENS_LIMIT);
   const payload = {
     model,
