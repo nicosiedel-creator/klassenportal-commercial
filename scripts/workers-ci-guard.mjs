@@ -8,8 +8,12 @@ const npm=process.platform==='win32'?'npm.cmd':'npm';
 const workersBuild=process.env.WORKERS_CI === '1';
 const branch=String(process.env.WORKERS_CI_BRANCH||'').trim();
 const productionBranch='main';
+const fullReleaseGate=workersBuild||process.env.KP_LOCAL_PRODUCTION_DEPLOY==='1';
 console.log(`${workersBuild?'Cloudflare':'Local'} final release gate for ${process.env.WORKERS_CI_COMMIT_SHA || 'current commit'}...`);
-const result=spawnSync(npm,['run','ci:cloudflare'],{
+// Der fail-closed Gate laeuft im Cloudflare Workers Build und bei `npm run deploy`.
+// Ein reiner lokaler `wrangler dev` macht nur Typecheck + Build, damit die lokale
+// Iteration schnell bleibt, ohne das CI-/Produktions-Gate abzuschwaechen.
+const result=spawnSync(npm,['run',fullReleaseGate?'ci:cloudflare':'build'],{
   stdio:'inherit',
   env:{...process.env,WORKERS_CI_GUARD_ACTIVE:'1'},
 });

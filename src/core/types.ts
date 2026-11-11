@@ -45,6 +45,10 @@ export interface Env {
   VAPID_SUBJECT?: string;
   ERP_WEBHOOK_URL?: string;
   ERP_WEBHOOK_SIGNING_SECRET?: string;
+  // KI-Gateway (OpenRouter) - fail-closed: ohne OPENROUTER_API_KEY inaktiv.
+  AI_GATEWAY_ENABLED?: string;
+  OPENROUTER_API_KEY?: string;
+  OPENROUTER_MODEL?: string;
   CF_VERSION_METADATA?: WorkerVersionMetadataLike;
 }
 

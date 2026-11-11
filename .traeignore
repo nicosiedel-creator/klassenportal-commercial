@@ -1,0 +1,16 @@
+node_modules/
+.next/
+dist/
+build/
+out/
+coverage/
+.git/
+*.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+*.log
+*.bak*
+public/vendor/
+public/images/
+public/assets/
